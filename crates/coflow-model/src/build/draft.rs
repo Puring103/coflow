@@ -16,8 +16,6 @@ pub(crate) struct RecordDraft {
 pub(crate) enum ValueDraft {
     Value(CfdValue),
     OptionSome(Box<ValueDraft>),
-    ResultOk(Box<ValueDraft>),
-    ResultErr(Box<ValueDraft>),
     FormattedString(LoadedFormattedString),
     Object(Box<RecordDraft>),
     PendingRef {

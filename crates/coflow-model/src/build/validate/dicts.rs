@@ -53,6 +53,9 @@ impl Validator<'_, '_> {
         let value = match key {
             LoadedDictKeyDraft::String(value) => CfdDictKey::String(value.clone()),
             LoadedDictKeyDraft::Int(value) => CfdDictKey::Int(*value),
+            LoadedDictKeyDraft::EnumValue { enum_name, value } => CfdDictKey::Enum(
+                self.resolve_enum_int_value(enum_name, *value, record, path.clone())?,
+            ),
             LoadedDictKeyDraft::EnumVariant { enum_name, variant } => CfdDictKey::Enum(
                 self.resolve_enum_key_value(enum_name, variant, record, path.clone())?,
             ),

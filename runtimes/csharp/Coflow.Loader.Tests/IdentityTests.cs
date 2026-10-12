@@ -10,7 +10,7 @@ public sealed class IdentityTests
     {
         internal Node(string key) { Key = key; }
         internal string Key { get; }
-        internal Node? Next { get; set; }
+        internal Option<Node> Next { get; set; }
         internal string Label { get; set; } = null!;
     }
 
@@ -38,21 +38,21 @@ public sealed class IdentityTests
 
     private static readonly CfdField[] Fields =
     {
-        new CfdField<Node?>("next", CfdValues.OptionalReference(CfdValues.Reference<Node>("Node"))),
+        new CfdField<Option<Node>>("next", CfdValues.Optional(CfdValues.Reference<Node>("Node"))),
         new CfdField<string>("label", CfdValues.FormattedString, CfdDefaults.Template("f\"{self.id}\"")),
     };
 
     private static void Fill(Node node, CfdReader reader)
     {
-        node.Next = reader.Get<Node?>("next");
+        node.Next = reader.Get<Option<Node>>("next");
         node.Label = reader.Get<string>("label");
     }
 
     private static readonly CfdType[] Types =
     {
-        new CfdType<Node>("Node", Fields, key => new Node(key), Fill),
-        new CfdType<Child>("Child", Fields, key => new Child(key), (node, reader) => Fill(node, reader), parent: "Node"),
-        new CfdType<Other>("Other", System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }),
+        new CfdType<Node, Node>("Node", Fields, key => new Node(key), Fill, reader => { var value = new Node(null!); Fill(value, reader); return value; }),
+        new CfdType<Child, Child>("Child", Fields, key => new Child(key), (node, reader) => Fill(node, reader), reader => { var value = new Child(null!); Fill(value, reader); return value; }, parent: "Node"),
+        new CfdType<Other, Other>("Other", System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, reader => new Other(null!)),
     };
 
     private static LoadResult<Graph> Load(string source) => CfdLoader.Load(
@@ -65,8 +65,8 @@ public sealed class IdentityTests
         Assert.True(result.Success);
         var parent = result.Data.Nodes["base"];
         var child = Assert.IsType<Child>(result.Data.Nodes["child"]);
-        Assert.Same(child, parent.Next);
-        Assert.Same(parent, child.Next);
+        Assert.Same(child, parent.Next.Value);
+        Assert.Same(parent, child.Next.Value);
     }
 
     [Fact]
@@ -75,17 +75,20 @@ public sealed class IdentityTests
         var result = Load("same: Child { next: &Node::same, label: f\"{&Child::same.id}\" } same: Other {}");
         Assert.True(result.Success);
         var child = result.Data.Nodes["same"];
-        Assert.Same(child, child.Next);
+        Assert.Same(child, child.Next.Value);
         Assert.Equal("same", child.Label);
         Assert.Equal("same", result.Data.Others["same"].Key);
     }
 
     [Theory]
     [InlineData("Host", true)]
+    [InlineData("Result", true)]
+    [InlineData("Ok", true)]
+    [InlineData("Err", true)]
     [InlineData("fstring", false)]
     public void TypeIdentifiersFollowTheSharedLanguageReservations(string name, bool success)
     {
-        var type = new CfdType<Other>(name, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { });
+        var type = new CfdType<Other, Other>(name, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, reader => new Other(null!));
         var result = CfdLoader.Load(new[] { new CfdSource("names.cfd", "a: " + name + " {}") },
             new CfdType[] { type }, data => new Graph(data));
         Assert.Equal(success, result.Success);
@@ -95,6 +98,8 @@ public sealed class IdentityTests
 
     [Theory]
     [InlineData("same: Node {} same: Child {}", "CFD-DUPLICATE")]
+    [InlineData("Other { child: Child {} }", "CFD-TYPE")]
+    [InlineData("Missing { child: Child {} }", "CFD-TYPE")]
     [InlineData("base: Node {} child: Child { next: &Child::base }", "CFD-REFERENCE")]
     public void DuplicateInheritedIdentitiesAndWrongDerivedReferencesFail(string source, string code)
     {

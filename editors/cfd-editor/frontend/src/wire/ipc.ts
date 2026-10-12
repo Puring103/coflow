@@ -44,8 +44,6 @@ function normalizeTaggedWireObject(object: Record<string, unknown>): unknown {
     case 'object':
       return { ...object, value: normalizeWireValue(object.value) }
     case 'option_some':
-    case 'result_ok':
-    case 'result_err':
       return { ...object, value: normalizeWireValue(object.value) }
     case 'array':
       return {

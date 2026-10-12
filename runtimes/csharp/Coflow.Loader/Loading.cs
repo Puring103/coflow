@@ -71,7 +71,7 @@ internal sealed class LoadContext
     private int _depth;
     internal void EnterRead(string path, CfdSpan span)
     {
-        if (++_depth > 128) { _depth--; throw Error("CFD-LIMIT", "construction nesting exceeds 128 levels", path, span); }
+        if (++_depth > 256) { _depth--; throw Error("CFD-LIMIT", "construction nesting exceeds 256 levels", path, span); }
     }
     internal void ExitRead() { _depth--; }
     private readonly Dictionary<CfdValueNode, string> _sources = new Dictionary<CfdValueNode, string>();
@@ -88,8 +88,11 @@ internal sealed class LoadContext
         foreach (var document in documents)
             foreach (var node in document.Records)
             {
-                if (!_types.TryGetValue(node.DeclaredType, out var type) || !type.IsRecord || type.IsAbstract)
+                if (!_types.TryGetValue(node.DeclaredType, out var type) || type.IsAbstract)
                     throw Error("CFD-TYPE", $"invalid record type `{node.DeclaredType}`", document.Path, node.Span);
+                // 分组声明限定实际类型，未知分组与无关类型不能绕过继承校验。
+                if (node.GroupType != null && (!_types.ContainsKey(node.GroupType) || !Assignable(type, node.GroupType)))
+                    throw Error("CFD-TYPE", $"record type `{type.Name}` is not assignable to group `{node.GroupType}`", document.Path, node.Span);
                 var identity = (Root(type), node.Key);
                 if (_recordsByIdentity.ContainsKey(identity))
                     throw Error("CFD-DUPLICATE", $"duplicate record `{node.Key}`", document.Path, node.Span);
@@ -101,7 +104,7 @@ internal sealed class LoadContext
                     _recordsByKey.Add(node.Key, matching = new List<RecordState>());
                 matching.Add(record);
             }
-        foreach (var type in types.Where(type => type.IsRecord && type.IsSingleton && !type.IsAbstract))
+        foreach (var type in types.Where(type => type.IsSingleton && !type.IsAbstract))
         {
             var records = Records.Where(record => Assignable(record.Type, type.Name)).ToArray();
             if (records.Length != 1)
@@ -144,6 +147,7 @@ internal sealed class LoadContext
     private void Track(CfdValueNode node, string path)
     {
         _sources[node] = path;
+        if (node is CfdSomeValue some) Track(some.Value, path);
         if (node is CfdObjectValue obj) foreach (var field in obj.Fields) Track(field.Value, path);
         if (node is CfdArrayValue array) foreach (var value in array.Items) Track(value, path);
         if (node is CfdDictionaryValue dictionary) foreach (var entry in dictionary.Entries) { Track(entry.Key, path); Track(entry.Value, path); }
@@ -178,7 +182,15 @@ internal sealed class LoadContext
     {
         var reader = owner.ObjectReader(expected, node);
         reader.Validate();
-        if (reader.Type.Construct(reader) is T result) return result;
+        // 结构体子类型放入 class 父类型字段时使用生成的类表示，保留多态字段与实际类型。
+        object value;
+        if (reader.Type.IsStruct && !_types[expected].IsStruct)
+        {
+            value = reader.Type.CreateRecord(null!);
+            reader.Type.FillRecord(value, reader);
+        }
+        else value = reader.Type.Construct(reader);
+        if (value is T result) return result;
         throw owner.Error(node, "CFD-TYPE", "generated object type mismatch");
     }
     internal CfdReader CreateObjectReader(string expected, CfdValueNode node, CfdReader owner)
@@ -192,7 +204,7 @@ internal sealed class LoadContext
             fields = dictionary.Entries.Select(entry => new CfdFieldNode(entry.Key is CfdScalarValue key ? key.Value : entry.Key is CfdStringValue text ? text.Value : throw owner.Error(entry.Key, "CFD-TYPE", "expected field name"), entry.Value, entry.Span)).ToArray();
         }
         else throw owner.Error(node, "CFD-TYPE", "expected inline data object");
-        if (!_types.TryGetValue(actual ?? expected, out var type) || type.IsRecord || type.IsAbstract || !Assignable(type, expected)) throw owner.Error(node, "CFD-TYPE", "inline object type mismatch");
+        if (!_types.TryGetValue(actual ?? expected, out var type) || type.IsSingleton || type.IsAbstract || !Assignable(type, expected)) throw owner.Error(node, "CFD-TYPE", "inline object type mismatch");
         return new CfdReader(this, type, fields, Source(node, owner.Path), node.Span);
     }
     internal static CfdLoadException Error(string code, string message, string path, CfdSpan span) => new CfdLoadException(new[] { new CfdDiagnostic(code, message, path, span) });

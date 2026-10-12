@@ -361,22 +361,24 @@ impl<'a> Parser<'a> {
                     self.eat_keyword("None");
                     return Ok(CfdValue::OptionNone(Span::new(start, self.pos)));
                 }
-                for (name, constructor) in [("Some", 0_u8), ("Ok", 1_u8), ("Err", 2_u8)] {
-                    if self.peek_keyword(name) {
-                        let start = self.pos;
-                        self.eat_keyword(name);
-                        self.skip_ws_and_comments();
-                        self.expect_char('(', "constructor argument `(`")?;
+                if self.peek_keyword("Some") {
+                    let start = self.pos;
+                    self.eat_keyword("Some");
+                    self.skip_ws_and_comments();
+                    self.expect_char('(', "constructor argument `(`")?;
+                    // Some 与数组、对象共享嵌套预算，递归解析前必须收费。
+                    self.enter_nesting()?;
+                    let result = (|| {
                         let value = self.parse_value()?;
                         self.skip_ws_and_comments();
                         self.expect_char(')', "constructor end `)`")?;
-                        let span = Span::new(start, self.pos);
-                        return Ok(match constructor {
-                            0 => CfdValue::OptionSome(Box::new(value), span),
-                            1 => CfdValue::ResultOk(Box::new(value), span),
-                            _ => CfdValue::ResultErr(Box::new(value), span),
-                        });
-                    }
+                        Ok(CfdValue::OptionSome(
+                            Box::new(value),
+                            Span::new(start, self.pos),
+                        ))
+                    })();
+                    self.open_nesting = self.open_nesting.saturating_sub(1);
+                    return result;
                 }
                 // Peek ahead: if after a name token there is `{`, it's a block.
                 let saved = self.pos;

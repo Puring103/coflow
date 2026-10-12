@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::editor::EditorError;
+use cfd_editor_core::editor::EditorError;
 use crate::plugin_manifest::PluginManifest;
 
 #[derive(Debug, Clone, Serialize)]

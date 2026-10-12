@@ -51,12 +51,12 @@ public sealed class CfdField<T> : CfdField
 
 public abstract class CfdType
 {
-    protected CfdType(string name, IReadOnlyList<CfdField> fields, bool record, bool singleton, string? parent, bool abstractType)
-    { Name = name; Fields = fields; IsRecord = record; IsSingleton = singleton; Parent = parent; IsAbstract = abstractType; }
+    protected CfdType(string name, IReadOnlyList<CfdField> fields, bool singleton, string? parent, bool abstractType, bool structValue)
+    { Name = name; Fields = fields; IsSingleton = singleton; Parent = parent; IsAbstract = abstractType; IsStruct = structValue; }
     public string Name { get; }
     internal IReadOnlyList<CfdField> Fields { get; }
-    internal bool IsRecord { get; }
     internal bool IsSingleton { get; }
+    internal bool IsStruct { get; }
     internal bool IsAbstract { get; }
     internal string? Parent { get; }
     internal abstract object CreateRecord(string key);
@@ -64,30 +64,28 @@ public abstract class CfdType
     internal abstract object Construct(CfdReader reader);
 }
 
-public sealed class CfdType<T> : CfdType
+public sealed class CfdType<TValue, TRecord> : CfdType where TRecord : class
 {
-    private readonly Func<string, T>? _create;
-    private readonly Action<T, CfdReader>? _fill;
-    private readonly Func<CfdReader, T>? _construct;
-    // 记录先创建身份，再填充字段，允许直接对象引用成环。
-    public CfdType(string name, IReadOnlyList<CfdField> fields, Func<string, T>? create, Action<T, CfdReader>? fill, bool singleton = false, string? parent = null, bool abstractType = false)
-        : base(name, fields, true, singleton, parent, abstractType) { _create = create; _fill = fill; }
-    // struct 与内联 class 均通过完整字段值一次性构造。
-    public CfdType(string name, IReadOnlyList<CfdField> fields, Func<CfdReader, T>? construct, string? parent = null, bool abstractType = false)
-        : base(name, fields, false, false, parent, abstractType) { _construct = construct; }
-    internal override object CreateRecord(string key) => _create!(key)!;
-    internal override void FillRecord(object value, CfdReader reader) => _fill!((T)value, reader);
+    private readonly Func<string, TRecord>? _create;
+    private readonly Action<TRecord, CfdReader>? _fill;
+    private readonly Func<CfdReader, TValue>? _construct;
+    // 同一 CFT type 同时提供内联构造和记录构造；结构体记录使用生成的身份类。
+    public CfdType(string name, IReadOnlyList<CfdField> fields, Func<string, TRecord>? create, Action<TRecord, CfdReader>? fill, Func<CfdReader, TValue>? construct, bool singleton = false, string? parent = null, bool abstractType = false, bool structValue = false)
+        : base(name, fields, singleton, parent, abstractType, structValue) { _create = create; _fill = fill; _construct = construct; }
+    internal override object CreateRecord(string key) => _create!(key);
+    internal override void FillRecord(object value, CfdReader reader) => _fill!((TRecord)value, reader);
     internal override object Construct(CfdReader reader) => _construct!(reader)!;
 }
 
 public static class CfdDefaults
 {
     private static readonly CfdSpan Span = new CfdSpan(0, 0, 0, 0);
-    public static CfdValueNode Int(int value) => new CfdScalarValue(value.ToString(CultureInfo.InvariantCulture), Span);
-    public static CfdValueNode Float(float value) => new CfdScalarValue(value.ToString("R", CultureInfo.InvariantCulture), Span);
+    public static CfdValueNode Int(long value) => new CfdScalarValue(value.ToString(CultureInfo.InvariantCulture), Span);
+    public static CfdValueNode Float(double value) => new CfdScalarValue(value.ToString("R", CultureInfo.InvariantCulture), Span);
     public static CfdValueNode Bool(bool value) => new CfdScalarValue(value ? "true" : "false", Span);
     public static CfdValueNode String(string value) => new CfdStringValue(value, Span);
     public static CfdValueNode None() => new CfdNoneValue(Span);
+    public static CfdValueNode Some(CfdValueNode value) => new CfdSomeValue(value, Span);
     public static CfdValueNode Scalar(string value) => new CfdScalarValue(value, Span);
     public static CfdValueNode Enum(string type, long value) => new CfdEnumDefaultValue(type, value, Span);
     public static CfdValueNode Reference(string type, string key) => new CfdReferenceValue(type, key, Span);
@@ -111,26 +109,45 @@ public sealed class CfdDefaultEntry
 
 public static class CfdValues
 {
-    public static CfdValueType<int> Int { get; } = new CfdValueType<int>((context, node, owner) =>
+    public static CfdValueType<long> Int { get; } = new CfdValueType<long>((context, node, owner) =>
     {
-        if (node is CfdScalarValue scalar && int.TryParse(scalar.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value)) return value;
-        throw owner.Error(node, "CFD-TYPE", "expected a 32-bit integer");
+        if (node is CfdScalarValue scalar && long.TryParse(scalar.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value)) return value;
+        throw owner.Error(node, "CFD-TYPE", "expected a 64-bit integer");
     }, formatScalar: value => value.ToString(CultureInfo.InvariantCulture));
-    public static CfdValueType<float> Float { get; } = new CfdValueType<float>((context, node, owner) =>
+    public static CfdValueType<double> Float { get; } = new CfdValueType<double>((context, node, owner) =>
     {
-        if (node is CfdScalarValue scalar)
-        {
-            if (scalar.Value == "inf") return float.PositiveInfinity;
-            if (scalar.Value == "-inf") return float.NegativeInfinity;
-            if (float.TryParse(scalar.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && !float.IsInfinity(value) && !float.IsNaN(value)) return value;
-        }
-        throw owner.Error(node, "CFD-TYPE", "expected a binary32 number");
-    }, formatScalar: value => float.IsPositiveInfinity(value) ? "inf" : float.IsNegativeInfinity(value) ? "-inf" : value.ToString("R", CultureInfo.InvariantCulture));
+        if (node is CfdScalarValue scalar && double.TryParse(scalar.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && !double.IsInfinity(value) && !double.IsNaN(value)) return value;
+        throw owner.Error(node, "CFD-TYPE", "expected a finite binary64 number");
+    }, formatScalar: FormatFloat);
+    // Rust 的基础插值使用十进制最短文本；展开指数表示，保证跨语言文本一致。
+    private static string FormatFloat(double value)
+    {
+        if (value == 0) return BitConverter.DoubleToInt64Bits(value) < 0 ? "-0" : "0";
+        var text = value.ToString("R", CultureInfo.InvariantCulture);
+        var exponentIndex = text.IndexOf('E');
+        if (exponentIndex < 0) return text;
+        var negative = text[0] == '-';
+        var mantissa = text.Substring(negative ? 1 : 0, exponentIndex - (negative ? 1 : 0));
+        var decimalIndex = mantissa.IndexOf('.');
+        var digits = mantissa.Replace(".", "");
+        var position = (decimalIndex < 0 ? mantissa.Length : decimalIndex)
+            + int.Parse(text.Substring(exponentIndex + 1), CultureInfo.InvariantCulture);
+        var expanded = position <= 0 ? "0." + new string('0', -position) + digits
+            : position >= digits.Length ? digits + new string('0', position - digits.Length)
+            : digits.Insert(position, ".");
+        return negative ? "-" + expanded : expanded;
+    }
+
     public static CfdValueType<bool> Bool { get; } = new CfdValueType<bool>((context, node, owner) => node is CfdScalarValue scalar && scalar.Value == "true" ? true : node is CfdScalarValue other && other.Value == "false" ? false : throw owner.Error(node, "CFD-TYPE", "expected bool"), formatScalar: value => value ? "true" : "false");
     public static CfdValueType<string> String { get; } = new CfdValueType<string>((context, node, owner) => node is CfdStringValue value ? value.Value : throw owner.Error(node, "CFD-TYPE", "expected ordinary string"), formatScalar: value => value);
     public static CfdValueType<string> FormattedString { get; } = new CfdValueType<string>((context, node, owner) => node is CfdFormattedStringValue value ? owner.Format(value) : throw owner.Error(node, "CFD-TYPE", "expected fstring"), formatScalar: value => value);
-    public static CfdValueType<T?> Optional<T>(CfdValueType<T> type) where T : struct => new CfdValueType<T?>((context, node, owner) => node is CfdNoneValue ? (T?)null : (T)type.Read(context, node, owner)!, true, type.NamedType);
-    public static CfdValueType<T?> OptionalReference<T>(CfdValueType<T> type) where T : class => new CfdValueType<T?>((context, node, owner) => node is CfdNoneValue ? null : (T)type.Read(context, node, owner)!, true, type.NamedType);
+    public static CfdValueType<Option<T>> Optional<T>(CfdValueType<T> type) => new CfdValueType<Option<T>>((context, node, owner) =>
+    {
+        if (node is CfdNoneValue) return Option<T>.None;
+        // 裸值与 Some(value) 均只物化一层，内部 None 留给下一层描述读取。
+        var inner = node is CfdSomeValue some ? some.Value : node;
+        return Option<T>.Some((T)type.Read(context, inner, owner)!);
+    }, true, type.NamedType);
     public static CfdValueType<IReadOnlyList<T>> List<T>(CfdValueType<T> type) => new CfdValueType<IReadOnlyList<T>>((context, node, owner) => node is CfdArrayValue array ? System.Array.AsReadOnly(array.Items.Select(value => (T)type.Read(context, value, owner)!).ToArray()) : throw owner.Error(node, "CFD-TYPE", "expected array"));
     public static CfdValueType<IReadOnlyDictionary<K, V>> Dictionary<K, V>(CfdValueType<K> keyType, CfdValueType<V> valueType) where K : notnull => new CfdValueType<IReadOnlyDictionary<K, V>>((context, node, owner) =>
     {
@@ -170,6 +187,12 @@ public static class CfdValues
                 text = text.Substring(separator + 2);
             }
             if (variants.TryGetValue(text, out var result)) return result;
+            if (fromBits != null && long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var bits))
+            {
+                long mask = 0;
+                foreach (var variant in variants.Values) mask |= Convert.ToInt64(variant, CultureInfo.InvariantCulture);
+                if (bits >= 0 && (bits & ~mask) == 0) return fromBits(bits);
+            }
             throw owner.Error(node, "CFD-ENUM", $"unknown enum variant `{text}`");
         }
         if (node is CfdScalarValue scalar) return Parse(scalar.Value);

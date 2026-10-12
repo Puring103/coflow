@@ -72,24 +72,6 @@ impl Validator<'_, '_> {
                     .default_value(inner, value, record, path, cursor)
                     .map(|value| ValueDraft::OptionSome(Box::new(value)));
             }
-            CftSchemaDefaultValue::ResultOk(value) => {
-                let CftValueType::Result(ok, _) = ty else {
-                    self.push_default_type_mismatch(record, path);
-                    return None;
-                };
-                return self
-                    .default_value(ok, value, record, path, cursor)
-                    .map(|value| ValueDraft::ResultOk(Box::new(value)));
-            }
-            CftSchemaDefaultValue::ResultErr(value) => {
-                let CftValueType::Result(_, error) = ty else {
-                    self.push_default_type_mismatch(record, path);
-                    return None;
-                };
-                return self
-                    .default_value(error, value, record, path, cursor)
-                    .map(|value| ValueDraft::ResultErr(Box::new(value)));
-            }
             CftSchemaDefaultValue::Int(value) if type_accepts_default(ty, &CftValueType::Int) => {
                 CfdValue::Int(*value)
             }
@@ -361,11 +343,9 @@ fn draft_shape(root: &RecordDraft) -> (u64, u64) {
                         .map(|value| (DraftNode::Value(value), child_depth)),
                 );
             }
-            DraftNode::Value(
-                ValueDraft::OptionSome(value)
-                | ValueDraft::ResultOk(value)
-                | ValueDraft::ResultErr(value),
-            ) => pending.push((DraftNode::Value(value), child_depth)),
+            DraftNode::Value(ValueDraft::OptionSome(value)) => {
+                pending.push((DraftNode::Value(value), child_depth));
+            }
             DraftNode::Value(ValueDraft::Array(items)) => {
                 pending.extend(
                     items

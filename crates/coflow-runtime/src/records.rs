@@ -138,8 +138,6 @@ pub struct FieldShapeInfo {
     pub enum_is_flag: bool,
     pub nullable: bool,
     pub option_inner: Option<Box<Self>>,
-    pub result_ok: Option<Box<Self>>,
-    pub result_err: Option<Box<Self>>,
     pub polymorphic_types: Vec<String>,
     pub collection_key: Option<Box<Self>>,
     pub collection_item: Option<Box<Self>>,
@@ -168,8 +166,6 @@ pub fn value_summary(value: &CfdValue) -> String {
     match value {
         CfdValue::OptionNone => "None".to_string(),
         CfdValue::OptionSome(value) => format!("Some({})", value_summary(value)),
-        CfdValue::ResultOk(value) => format!("Ok({})", value_summary(value)),
-        CfdValue::ResultErr(value) => format!("Err({})", value_summary(value)),
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
@@ -231,8 +227,6 @@ const fn value_kind(value: &CfdValue) -> &'static str {
     match value {
         CfdValue::OptionNone => "None",
         CfdValue::OptionSome(_) => "Some",
-        CfdValue::ResultOk(_) => "Ok",
-        CfdValue::ResultErr(_) => "Err",
         CfdValue::Bool(_) => "bool",
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",

@@ -99,12 +99,6 @@ fn locate_target_in_value(
         (CftValueType::Option(inner_type), AstValue::OptionSome(inner_value, _)) => {
             return locate_target_in_value(schema, inner_type, inner_value, path, depth);
         }
-        (CftValueType::Result(ok_type, _), AstValue::ResultOk(inner_value, _)) => {
-            return locate_target_in_value(schema, ok_type, inner_value, path, depth);
-        }
-        (CftValueType::Result(_, error_type), AstValue::ResultErr(inner_value, _)) => {
-            return locate_target_in_value(schema, error_type, inner_value, path, depth);
-        }
         _ => {}
     }
     match (&path[0], value) {

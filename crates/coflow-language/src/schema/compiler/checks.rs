@@ -61,8 +61,6 @@ fn is_formattable(ty: &InferredType) -> bool {
             CftValueType::Array(_)
             | CftValueType::Dict(_, _)
             | CftValueType::Option(_)
-            | CftValueType::Result(_, _)
-            | CftValueType::Unit
             | CftValueType::Object(_)
             | CftValueType::RecordRef(_),
         )

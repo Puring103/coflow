@@ -2,10 +2,10 @@ using Coflow.Loader;
 
 var types = new CfdType[]
 {
-    new CfdType<Entry>("Entry", new CfdField[]
+    new CfdType<Entry, Entry>("Entry", new CfdField[]
     {
         new CfdField<DimensionValue<string>>("name", CfdValues.Dimension("language", CfdValues.String)),
-    }, key => new Entry(key), (entry, reader) => entry.Name = reader.Get<DimensionValue<string>>("name")),
+    }, key => new Entry(key), (entry, reader) => entry.Name = reader.Get<DimensionValue<string>>("name"), reader => new Entry(null!) { Name = reader.Get<DimensionValue<string>>("name") }),
 };
 var result = CfdLoader.Load(new[]
 {

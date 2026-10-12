@@ -252,18 +252,6 @@ impl<'a> DefaultValueMaterializer<'a> {
                     .map(|value| CfdValue::OptionSome(Box::new(value))),
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::ResultOk(value) => match ty {
-                CftValueType::Result(ok, _) => self
-                    .materialize_schema_default(ok, value, materialization)
-                    .map(|value| CfdValue::ResultOk(Box::new(value))),
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::ResultErr(value) => match ty {
-                CftValueType::Result(_, error) => self
-                    .materialize_schema_default(error, value, materialization)
-                    .map(|value| CfdValue::ResultErr(Box::new(value))),
-                _ => self.zero_for_ty(ty, materialization),
-            },
             CftSchemaDefaultValue::Int(value) => Ok(CfdValue::Int(*value)),
             CftSchemaDefaultValue::Float(value) => Ok(CfdValue::Float(*value)),
             CftSchemaDefaultValue::Bool(value) => Ok(CfdValue::Bool(*value)),
@@ -426,10 +414,6 @@ impl<'a> DefaultValueMaterializer<'a> {
                     fields,
                 ))))
             }
-            CftValueType::Result(_, _) | CftValueType::Unit => Err(one_mutation_error(
-                "MUTATION-DEFAULT",
-                format!("no implicit editable default exists for `{ty}`"),
-            )),
         }
     }
 }

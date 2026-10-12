@@ -4,7 +4,6 @@
   "scopeName": "source.cfd",
   "patterns": [
     { "include": "#comments" },
-    { "include": "#function" },
     { "include": "#strings" },
     { "include": "#references" },
     { "include": "#constructors" },
@@ -33,84 +32,16 @@
         ]
       }
     ] },
-    "function": { "patterns": [
-      {
-        "name": "meta.function.anonymous.cfd",
-        "begin": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(fn)(?=\\s*\\()",
-        "beginCaptures": { "1": { "name": "storage.type.function.cfd" } },
-        "end": "(?<=\\})",
-        "patterns": [
-          { "include": "#comments" },
-          { "include": "#strings" },
-          { "include": "#function" },
-          { "include": "#function-parameters" },
-          { "include": "#function-keywords" },
-          { "include": "#constructors" },
-          { "include": "#builtin-types" },
-          { "include": "#builtin-functions" },
-          { "include": "#references" },
-          { "include": "#metadata" },
-          { "include": "#numbers" },
-          { "include": "#operators" },
-          { "include": "#function-block" },
-          { "include": "#punctuation" },
-          { "include": "#user-types" }
-        ]
-      }
-    ] },
-    "function-block": { "patterns": [
-      {
-        "name": "meta.block.cfd",
-        "begin": "\\{",
-        "beginCaptures": { "0": { "name": "punctuation.definition.block.begin.cfd" } },
-        "end": "\\}",
-        "endCaptures": { "0": { "name": "punctuation.definition.block.end.cfd" } },
-        "patterns": [
-          { "include": "#comments" },
-          { "include": "#strings" },
-          { "include": "#function" },
-          { "include": "#function-keywords" },
-          { "include": "#constructors" },
-          { "include": "#builtin-types" },
-          { "include": "#builtin-functions" },
-          { "include": "#references" },
-          { "include": "#metadata" },
-          { "include": "#numbers" },
-          { "include": "#operators" },
-          { "include": "#function-block" },
-          { "include": "#punctuation" },
-          { "include": "#user-types" }
-        ]
-      }
-    ] },
-    "function-parameters": { "patterns": [
-      {
-        "name": "variable.parameter.function.cfd",
-        "match": "[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*(?=\\s*:)"
-      }
-    ] },
-    "function-keywords": { "patterns": [
-      {
-        "name": "keyword.control.cfd",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(fn|var|return|if|else|match|for|while|break|continue|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
-      }
-    ] },
     "constructors": { "patterns": [
       {
         "name": "support.function.constructor.cfd",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(Some|Ok|Err)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(Some)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
       }
     ] },
     "builtin-types": { "patterns": [
       {
         "name": "storage.type.primitive.cfd",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string|Option|Result|fn)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
-      }
-    ] },
-    "builtin-functions": { "patterns": [
-      {
-        "name": "support.function.builtin.cfd",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|len|contains|isUnique|min|max|sum|keys|values|matches|map|filter|fold|find|any|all)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string|fstring|Option)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
       }
     ] },
     "metadata": { "patterns": [

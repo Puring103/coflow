@@ -1,17 +1,11 @@
-# CFD 数据模型
+# 数据模型
 
-CFD 解析先得到语法节点，再按 CFT schema lower 为稳定的数据模型。模型不包含表格行号或目标语言格式。
+CFT type 同时描述记录与内联对象。顶层 CFD 记录具有类型与 key 身份，字段使用 `&Type` 连接记录；内联值使用 Type 保存字段内容。记录引用共享对象身份，可跨文件和成环。
 
-核心 identity 是 `(source_id, record_index)`；记录引用使用 `(declared_type, key)`，诊断位置来自 source span。
+数据加载验证字段类型、记录 key、枚举、必填值及引用，补全默认值并合成维度覆盖。Option 保留每层 None/Some 状态。普通字符串保持文本，fstring 在加载时按字段路径生成文本，错误包含来源位置。
 
-```text
-CfdDataModel
-  records: RecordIndex
-  values: CfdValue
-  source_index: SourceIndex
-  diagnostics: DiagnosticSet
-```
+数组保持顺序，字典 key 唯一。对象按实际类型和字段内容表示；记录引用按身份连接。加载后的 C# 数据使用生成业务类型、只读集合、`Option<T>` 和 `DimensionValue<T>`。
 
-`CfdValue` 覆盖 `Option`、`Result`、bool、整数、浮点、字符串、格式化字符串、函数、enum、引用、数组、字典和对象。默认值、继承、多态、维度 overlay 和 check 在 schema-guided lower/check 阶段完成；目标语言 generator 只读取最终 schema/model。
+编辑器保留缺失字段、非法引用和非法枚举的可修复状态，并将无法结构化的记录交给源码编辑。严格校验存在错误时失败。修改完成后重新加载并提供新的数据版本与完整诊断。
 
-重复记录、未知字段、缺失必填字段、错误引用和 check 失败均是带 source span 的诊断。模型发布是不可变操作，失败尝试不能覆盖上一份成功 generation。
+check 是编辑器执行的业务校验，保持数据只读，规则问题与加载诊断分别展示。

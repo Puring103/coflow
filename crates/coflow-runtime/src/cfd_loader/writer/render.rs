@@ -19,14 +19,6 @@ pub(super) fn serialize_value_for_type(
         CfdValue::OptionSome(value) => {
             serialize_value_for_type(value, schema, option_inner(expected), depth)
         }
-        CfdValue::ResultOk(value) => format!(
-            "Ok({})",
-            serialize_value_for_type(value, schema, result_ok(expected), depth)
-        ),
-        CfdValue::ResultErr(value) => format!(
-            "Err({})",
-            serialize_value_for_type(value, schema, result_error(expected), depth)
-        ),
         CfdValue::Bool(v) => v.to_string(),
         CfdValue::Int(v) => v.to_string(),
         CfdValue::Float(v) => {
@@ -133,9 +125,7 @@ pub(super) fn serialize_value_for_type(
 fn requires_multiline_collection_layout(value: &CfdValue) -> bool {
     match value {
         CfdValue::Object(_) => true,
-        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
-            requires_multiline_collection_layout(inner)
-        }
+        CfdValue::OptionSome(inner) => requires_multiline_collection_layout(inner),
         CfdValue::Array(items) => items.iter().any(requires_multiline_collection_layout),
         CfdValue::Dict(entries) => entries
             .iter()
@@ -189,20 +179,6 @@ fn render_enum_value(
 fn option_inner(expected: Option<&CftValueType>) -> Option<&CftValueType> {
     match expected {
         Some(CftValueType::Option(inner)) => Some(inner),
-        _ => None,
-    }
-}
-
-fn result_ok(expected: Option<&CftValueType>) -> Option<&CftValueType> {
-    match expected {
-        Some(CftValueType::Result(ok, _)) => Some(ok),
-        _ => None,
-    }
-}
-
-fn result_error(expected: Option<&CftValueType>) -> Option<&CftValueType> {
-    match expected {
-        Some(CftValueType::Result(_, error)) => Some(error),
         _ => None,
     }
 }

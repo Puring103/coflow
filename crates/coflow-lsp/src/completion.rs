@@ -425,8 +425,7 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
         TypeRefKind::Int
         | TypeRefKind::Float
         | TypeRefKind::String
-        | TypeRefKind::FormattedString
-        | TypeRefKind::Unit => {}
+        | TypeRefKind::FormattedString => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .schema()
@@ -471,20 +470,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Some(${1:value})",
                 "CFT Option constructor",
                 "Option containing a value.",
-            ));
-        }
-        TypeRefKind::Result(_, _) => {
-            items.push(snippet_completion_item(
-                "Ok",
-                "Ok(${1:value})",
-                "CFT Result constructor",
-                "Successful Result value.",
-            ));
-            items.push(snippet_completion_item(
-                "Err",
-                "Err(${1:error})",
-                "CFT Result constructor",
-                "Failed Result value.",
             ));
         }
         TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
@@ -548,7 +533,6 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
     for (label, documentation) in PRIMITIVE_TYPES {
         let insert_text = match *label {
             "Option" => Some("Option<${1:string}>"),
-            "Result" => Some("Result<${1:string}, ${2:string}>"),
             _ => None,
         };
         let mut item = completion_item(
@@ -582,7 +566,6 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             "CFT record reference type",
             "Reference a top-level record by key.",
         ),
-        completion_item("()", COMPLETION_KIND_KEYWORD, "CFT unit type", None),
     ]);
     if let Some(container) = build.schema() {
         for ty in container.all_types() {
@@ -790,12 +773,6 @@ fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
         | (TypeRefKind::String, CftConstValue::String(_)) => true,
         (TypeRefKind::Option(inner), CftConstValue::OptionSome(value)) => {
             const_value_assignable_to_type(value, inner)
-        }
-        (TypeRefKind::Result(ok, _), CftConstValue::ResultOk(value)) => {
-            const_value_assignable_to_type(value, ok)
-        }
-        (TypeRefKind::Result(_, error), CftConstValue::ResultErr(value)) => {
-            const_value_assignable_to_type(value, error)
         }
         _ => false,
     }

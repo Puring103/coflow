@@ -65,20 +65,6 @@ impl InferredType {
             _ => Self::Unknown,
         }
     }
-
-    pub(super) fn result(value: Self, error: Self) -> Self {
-        match (value, error) {
-            (Self::Value(value), Self::Value(error)) => {
-                Self::Value(CftValueType::Result(Box::new(value), Box::new(error)))
-            }
-            _ => Self::Unknown,
-        }
-    }
-
-    pub(super) const fn unit() -> Self {
-        Self::Value(CftValueType::Unit)
-    }
-
     // check 读取模板得到文本；集合与可选值中的模板也按读取类型参与检查。
     pub(super) fn read_type(self) -> Self {
         fn read_value_type(ty: CftValueType) -> CftValueType {

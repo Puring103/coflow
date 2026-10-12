@@ -20,6 +20,7 @@ pub(super) struct ParsedLoadedRecordDraft {
     pub(super) span: CfdTextSpan,
 }
 
+#[cfg(test)]
 pub(super) fn lower_records(
     schema: &CftSchema,
     ast: &CfdAst,
@@ -224,6 +225,11 @@ fn lower_value_resolved(
     ty: &CftValueType,
     preserve_repairable_values: bool,
 ) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+    if let CfdValue::Scalar(name, span) = value {
+        if let Some(constant) = schema.resolve_const(name) {
+            return super::constants::lower_constant(schema, &constant.value, ty, *span);
+        }
+    }
     match ty {
         CftValueType::Int => lower_int(value),
         CftValueType::Float => lower_float(value),
@@ -246,26 +252,6 @@ fn lower_value_resolved(
             value => lower_value_resolved(schema, value, inner, preserve_repairable_values)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value))),
         },
-        CftValueType::Result(ok, error_type) => match value {
-            CfdValue::ResultOk(value, _) => {
-                lower_value_resolved(schema, value, ok, preserve_repairable_values)
-                    .map(|value| LoadedValueDraft::ResultOk(Box::new(value)))
-            }
-            CfdValue::ResultErr(value, _) => {
-                lower_value_resolved(schema, value, error_type, preserve_repairable_values)
-                    .map(|value| LoadedValueDraft::ResultErr(Box::new(value)))
-            }
-            _ => Err(error(
-                CfdTextErrorCode::TypeMismatch,
-                format!("expected `Ok(...)` or `Err(...)` for `{ty}`"),
-                value.span(),
-            )),
-        },
-        CftValueType::Unit => Err(error(
-            CfdTextErrorCode::TypeMismatch,
-            format!("expected `{ty}`"),
-            value.span(),
-        )),
     }
 }
 
@@ -635,6 +621,17 @@ fn lower_dict_key(
                 )
             }),
         CftValueType::Enum(enum_name) => {
+            if schema
+                .resolve_enum(enum_name)
+                .is_some_and(|meta| meta.is_flag)
+                && raw.parse::<i64>().is_ok()
+            {
+                let value = lower_flag_operand(schema, enum_name, raw, span)?;
+                return Ok(LoadedDictKeyDraft::EnumValue {
+                    enum_name: enum_name.to_string(),
+                    value,
+                });
+            }
             let variant = enum_variant(enum_name, raw, span)?;
             let valid = schema.resolve_enum(enum_name).is_some_and(|schema_enum| {
                 schema_enum
@@ -746,7 +743,11 @@ pub(super) fn syntax_diagnostics(
     }
 }
 
-fn error(code: CfdTextErrorCode, message: impl Into<String>, span: Span) -> CfdTextDiagnostics {
+pub(super) fn error(
+    code: CfdTextErrorCode,
+    message: impl Into<String>,
+    span: Span,
+) -> CfdTextDiagnostics {
     CfdTextDiagnostics::one(CfdTextDiagnostic::error(code, message, text_span(span)))
 }
 

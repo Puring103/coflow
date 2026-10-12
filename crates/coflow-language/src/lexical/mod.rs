@@ -126,10 +126,7 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
             | "continue"
             | "None"
             | "Some"
-            | "Ok"
-            | "Err"
             | "Option"
-            | "Result"
             | "alert"
             | "records"
     )
@@ -153,11 +150,11 @@ mod tests {
     fn rejects_all_target_language_reserved_identifiers() {
         for name in [
             "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
-            "None", "Some", "Ok", "Err", "Option", "Result", "alert", "records",
+            "None", "Some", "Option", "alert", "records",
         ] {
             assert!(!is_cft_identifier(name), "`{name}` must be reserved");
         }
-        for name in ["namespace", "use", "as"] {
+        for name in ["namespace", "use", "as", "Result", "Ok", "Err"] {
             assert!(
                 is_cft_identifier(name),
                 "`{name}` is an ordinary identifier"

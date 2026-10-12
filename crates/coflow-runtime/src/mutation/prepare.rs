@@ -496,26 +496,6 @@ fn rename_pending_value_references(
                 new_key,
             );
         }
-        (CftValueType::Result(ok, _), CfdValue::ResultOk(value)) => {
-            rename_pending_value_references(
-                schema,
-                target_actual_type,
-                ok,
-                value,
-                old_key,
-                new_key,
-            );
-        }
-        (CftValueType::Result(_, error), CfdValue::ResultErr(value)) => {
-            rename_pending_value_references(
-                schema,
-                target_actual_type,
-                error,
-                value,
-                old_key,
-                new_key,
-            );
-        }
         (CftValueType::RecordRef(target_type), CfdValue::Ref(key))
             if key.as_str() == old_key && schema.is_assignable(target_actual_type, target_type) =>
         {
@@ -597,9 +577,7 @@ pub(super) fn set_nested_value(
         return Ok(());
     };
     match current {
-        CfdValue::OptionSome(inner) | CfdValue::ResultOk(inner) | CfdValue::ResultErr(inner) => {
-            return set_nested_value(inner, path, value)
-        }
+        CfdValue::OptionSome(inner) => return set_nested_value(inner, path, value),
         CfdValue::OptionNone => {
             return Err(one_path_error(
                 "cannot write a nested path through an empty option",

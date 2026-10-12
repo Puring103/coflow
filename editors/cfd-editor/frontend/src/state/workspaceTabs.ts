@@ -129,9 +129,9 @@ export function sanitizeProjectWorkspace(
     if (seen.has(id)) continue
     seen.add(id)
 
-    const rawKind = candidate.view_kind ?? candidate.viewKind
+    const rawKind = candidate.view_kind
     const requestedKind = isViewKind(rawKind) ? rawKind : 'table'
-    const requestedId = stringProperty(candidate, 'view_id', 'viewId')
+    const requestedId = stringProperty(candidate, 'view_id')
     const pluginView = requestedId.includes('/')
     const viewKind: ViewRenderKind = validTarget ? (validTarget.singleton ? 'record' : requestedKind === 'record' ? 'record' : 'table') : pluginView
       ? 'table'
@@ -153,7 +153,7 @@ export function sanitizeProjectWorkspace(
   if (tabs.length === 0) return null
   const requestedActiveId = typeof value.active_tab_id === 'string'
     ? value.active_tab_id
-    : typeof value.activeTabId === 'string' ? value.activeTabId : null
+    : null
   const activeTabId = requestedActiveId && tabs.some(tab => tab.id === requestedActiveId)
     ? requestedActiveId
     : tabs[0].id
@@ -195,9 +195,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function stringProperty(
   value: Record<string, unknown>,
   wireName: string,
-  legacyName: string = wireName,
 ): string {
-  const candidate = value[wireName] ?? value[legacyName]
+  const candidate = value[wireName]
   return typeof candidate === 'string' ? candidate : ''
 }
 

@@ -14,8 +14,6 @@ pub enum CftValueType {
     Array(Box<CftValueType>),
     Dict(Box<CftValueType>, Box<CftValueType>),
     Option(Box<CftValueType>),
-    Result(Box<CftValueType>, Box<CftValueType>),
-    Unit,
 }
 
 impl CftValueType {
@@ -39,8 +37,6 @@ impl fmt::Display for CftValueType {
             Self::Array(inner) => write!(formatter, "[{inner}]"),
             Self::Dict(key, value) => write!(formatter, "{{{key}: {value}}}"),
             Self::Option(inner) => write!(formatter, "Option<{inner}>"),
-            Self::Result(value, error) => write!(formatter, "Result<{value}, {error}>"),
-            Self::Unit => formatter.write_str("()"),
         }
     }
 }

@@ -1,4 +1,4 @@
-//! 编辑器共享/本机设置的原子读写、版本校验与旧文件迁移。
+//! 编辑器共享/本机设置的原子读写与版本校验。
 
 use std::fs;
 use std::io::Write;
@@ -18,10 +18,7 @@ fn settings_path(project_root: &Path) -> PathBuf {
     project_root.join("editor-setting").join(SETTINGS_FILE)
 }
 
-fn read_json<T: Default + for<'de> Deserialize<'de>>(path: &Path) -> Result<T, EditorError> {
-    if !path.exists() {
-        return Ok(T::default());
-    }
+fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, EditorError> {
     let bytes = fs::read(path).map_err(|error| {
         EditorError::other(format!("failed to read {}: {error}", path.display()))
     })?;
@@ -74,7 +71,7 @@ pub(super) fn local_settings_path(project_root: &Path) -> Result<PathBuf, Editor
         .join(SETTINGS_FILE))
 }
 
-/// 读取共享设置及本机覆盖；旧格式中的个人字段只在首次迁移时读取。
+/// 共享设置只包含项目字段，个人展示状态从本机设置读取。
 pub(crate) fn read_project_settings(
     project_root: &Path,
 ) -> Result<EditorProjectSettings, EditorError> {
@@ -101,119 +98,15 @@ pub(crate) fn read_project_settings(
             )));
         }
         local.apply(project_root, &mut settings)?;
-    } else if path.exists() && has_legacy_personal_settings(&path)? {
-        // 旧版共享文件的个人字段只迁移一次，先落本机，避免后续覆盖个人改动。
-        let legacy: LegacyPersonalSettings = read_json(&path)?;
-        legacy.apply(project_root, &mut settings)?;
-        write_json(
-            &local_path,
-            &LocalSettingsFile::from_runtime(project_root, &settings)?,
-        )?;
     }
     Ok(settings)
-}
-
-fn has_legacy_personal_settings(path: &Path) -> Result<bool, EditorError> {
-    let bytes = fs::read(path).map_err(|error| {
-        EditorError::other(format!("failed to read {}: {error}", path.display()))
-    })?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
-        EditorError::other(format!("failed to parse {}: {error}", path.display()))
-    })?;
-    Ok([
-        "graph_compact_modes",
-        "view_order",
-        "default_table_column_widths",
-        "workspace",
-    ]
-    .iter()
-    .any(|key| value.get(key).is_some())
-        || value
-            .get("views")
-            .and_then(serde_json::Value::as_object)
-            .is_some_and(|files| {
-                files.values().any(|types| {
-                    types.as_object().is_some_and(|types| {
-                        types.values().any(|views| {
-                            views.as_array().is_some_and(|entries| {
-                                entries
-                                    .iter()
-                                    .any(|view| view.get("column_widths").is_some())
-                            })
-                        })
-                    })
-                })
-            }))
-}
-
-#[derive(Default, Deserialize)]
-struct LegacyPersonalSettings {
-    #[serde(default)]
-    graph_compact_modes: std::collections::BTreeMap<String, bool>,
-    #[serde(default)]
-    view_order: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Vec<String>>>,
-    #[serde(default)]
-    default_table_column_widths: std::collections::BTreeMap<
-        String,
-        std::collections::BTreeMap<String, std::collections::BTreeMap<String, f64>>,
-    >,
-    #[serde(default)]
-    workspace: crate::editor::types::EditorWorkspaceState,
-    #[serde(default)]
-    views: std::collections::BTreeMap<
-        String,
-        std::collections::BTreeMap<String, Vec<LegacyViewWidths>>,
-    >,
-}
-
-#[derive(Deserialize)]
-struct LegacyViewWidths {
-    id: String,
-    #[serde(default)]
-    column_widths: std::collections::BTreeMap<String, f64>,
-}
-
-impl LegacyPersonalSettings {
-    fn apply(self, root: &Path, settings: &mut EditorProjectSettings) -> Result<(), EditorError> {
-        // 复用本机结构的路径转换，确保外部文件和旧视图列宽一并迁移。
-        let widths = self
-            .views
-            .into_iter()
-            .map(|(path, by_type)| {
-                (
-                    path,
-                    by_type
-                        .into_iter()
-                        .map(|(ty, views)| {
-                            (
-                                ty,
-                                views
-                                    .into_iter()
-                                    .map(|view| (view.id, view.column_widths))
-                                    .collect(),
-                            )
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-        LocalSettingsFile {
-            version: LOCAL_SETTINGS_VERSION,
-            graph_compact_modes: self.graph_compact_modes,
-            view_order: self.view_order,
-            default_table_column_widths: self.default_table_column_widths,
-            view_column_widths: widths,
-            workspace: self.workspace,
-        }
-        .apply(root, settings)
-    }
 }
 
 pub(crate) fn write_project_settings(
     project_root: &Path,
     settings: &EditorProjectSettings,
 ) -> Result<(), EditorError> {
-    // 只有共享字段变化才更新 Git 文件；旧版个人字段在本机迁移成功后清除。
+    // 只有共享字段变化才更新 Git 文件，个人状态写入本机目录。
     let path = settings_path(project_root);
     let next = SettingsFile::from_runtime(project_root, settings)?;
     let bytes = serde_json::to_vec_pretty(&next).map_err(|error| {

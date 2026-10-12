@@ -362,14 +362,13 @@ fn nested_type_target(ty: &CftValueType) -> Option<&TypeName> {
     match ty {
         CftValueType::Object(name) => Some(name),
         CftValueType::Array(inner) | CftValueType::Option(inner) => nested_type_target(inner),
-        CftValueType::Dict(_, value) | CftValueType::Result(_, value) => nested_type_target(value),
+        CftValueType::Dict(_, value) => nested_type_target(value),
         CftValueType::Int
         | CftValueType::Float
         | CftValueType::Bool
         | CftValueType::String
         | CftValueType::FormattedString
         | CftValueType::Enum(_)
-        | CftValueType::Unit
         | CftValueType::RecordRef(_) => None,
     }
 }

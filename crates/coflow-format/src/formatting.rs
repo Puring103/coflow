@@ -267,8 +267,9 @@ fn leading_generic_closers(line: &str, depth: usize) -> usize {
     tokenize_lossless(line)
         .into_iter()
         .skip_while(|token| token.kind == LosslessTokenKind::Whitespace)
-        .take_while(|token| token.text(line) == ">")
-        .count()
+        .take_while(|token| matches!(token.text(line), ">" | ">>"))
+        .map(|token| token.text(line).len())
+        .sum::<usize>()
         .min(depth)
 }
 
@@ -279,7 +280,7 @@ fn generic_depth_after_line(line: &str, mut depth: usize) -> usize {
         let text = token.text(code);
         match text {
             "<" if depth > 0 || is_generic_open(&prefix) => depth += 1,
-            ">" if depth > 0 => depth -= 1,
+            ">" | ">>" if depth > 0 => depth = depth.saturating_sub(text.len()),
             _ => {}
         }
         prefix.push_str(text);
@@ -339,8 +340,8 @@ fn expand_structural_lines(source: &str, language: FormatLanguage) -> String {
                 generic_depth += 1;
                 output.push_str(text);
             }
-            ">" if token.kind == LosslessTokenKind::Symbol && generic_depth > 0 => {
-                generic_depth -= 1;
+            ">" | ">>" if token.kind == LosslessTokenKind::Symbol && generic_depth > 0 => {
+                generic_depth = generic_depth.saturating_sub(text.len());
                 output.push_str(text);
             }
             "{" if token.kind == LosslessTokenKind::Symbol => {
@@ -675,10 +676,11 @@ fn normalize_inline_spacing(line: &str) -> String {
                 pending_space = false;
                 tight_right = true;
             }
-            ">" if generic_depth > 0 => {
+            // 词法扫描把连续右尖括号合成 >>；Option 类型上下文按两个闭合符处理。
+            ">" | ">>" if generic_depth > 0 => {
                 trim_end_spaces(&mut output);
-                output.push('>');
-                generic_depth -= 1;
+                output.push_str(text);
+                generic_depth = generic_depth.saturating_sub(text.len());
                 pending_space = false;
                 tight_right = true;
             }
@@ -783,7 +785,7 @@ fn is_generic_open(output: &str) -> bool {
         .find(|token| !token.is_trivia())
         .is_some_and(|token| {
             token.kind == LosslessTokenKind::Identifier
-                && matches!(token.text(output), "Option" | "Result")
+                && token.text(output) == "Option"
         })
 }
 

@@ -1,8 +1,8 @@
 //! Session state and host-facing editor operations.
 //!
 //! `SessionStore` owns a small population of `EditorSession`s — one per
-//! loaded project — and dispatches every editor command through a shared
-//! `CfdSourceCatalog`. Each session is wrapped in its own `RwLock` so reads
+//! loaded project — and dispatches commands through its runtime session.
+//! Each session is wrapped in its own `RwLock` so reads
 //! don't block one another and a write is scoped to a single session.
 //!
 //! 模块划分（仅结构拆分，不改行为）：
@@ -33,7 +33,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use coflow_runtime::{ProjectQueries, RecordCoordinate};
+use coflow_runtime::ProjectQueries;
 
 use crate::editor::types::{EditorError, ProjectBootstrap};
 
@@ -261,7 +261,3 @@ impl SessionStore {
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
     }
 }
-
-// 仅保留坐标占位引用，避免拆分后未使用导入告警。
-#[allow(dead_code)]
-fn _coordinate_hint(_: &RecordCoordinate) {}

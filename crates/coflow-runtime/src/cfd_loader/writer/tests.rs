@@ -15,7 +15,8 @@ use crate::api::{
     CfdSource, CfdSourcePath, DeleteRecordRequest, InsertRecordRequest, ReorderRecordsOperation,
     ReorderRecordsRequest, WriteCellRequest, WriteFieldPathSegment, WriteRecordRef,
 };
-use crate::{load_cfd_model, parse_cfd_input_records, CfdObject, CfdValue};
+use crate::cfd_loader::{load_cfd_model, parse_cfd_input_records};
+use crate::{CfdObject, CfdValue};
 use crate::{RecordOrigin, TextSpan};
 use coflow_format::format_cfd;
 use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};

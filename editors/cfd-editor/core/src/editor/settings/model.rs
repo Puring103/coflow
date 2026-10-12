@@ -256,7 +256,7 @@ impl LocalSettingsFile {
             map_outer_keys(std::mem::take(&mut self.view_column_widths), &mut map)?;
         self.graph_compact_modes =
             map_graph_keys(std::mem::take(&mut self.graph_compact_modes), &mut map)?;
-        // 维度标签的文件路径是虚拟入口，迁移时只转换其业务文件并同步当前标签 ID。
+        // 维度标签的文件路径是虚拟入口，路径映射只转换业务文件并同步当前标签 ID。
         for tab in &mut self.workspace.tabs {
             if let Some(target) = &mut tab.dimension_target {
                 let previous = serde_json::to_string(&[

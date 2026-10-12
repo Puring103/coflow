@@ -7,7 +7,7 @@ use cfd_editor_core::EditorHost;
 use tauri::State;
 
 use super::run_host_command;
-use crate::editor::{
+use cfd_editor_core::editor::{
     DimensionFileRecords, EditorError, EditorProjectSettings, EditorRecordGroup,
     EditorWorkspaceState, ProjectBootstrap, ViewConfig,
 };

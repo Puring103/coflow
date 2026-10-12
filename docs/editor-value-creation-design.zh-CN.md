@@ -182,24 +182,9 @@ default value materialization cycle: A.b -> B.a -> A.b
 runtime 不再把合法 schema 的默认递归作为普通 mutation 错误处理。结构深度和节点预算继续作为输入规模
 安全限制。
 
-## 5. `Result<T, E>` 的字段限制
+## 5. 编辑器交互
 
-`Result<T, E>` 不允许作为自定义类型的数据字段，也不能通过 `Option`、array、dictionary 或类型别名嵌套
-到数据字段中：
-
-```cft
-type Invalid {
-  result: Result<int, string>;
-  results: [Result<int, string>];
-  optional: Option<Result<int, string>>;
-}
-```
-
-字段类型检查解析别名并遍历全部数据容器。
-
-## 6. 编辑器交互
-
-### 6.1 新建记录
+### 5.1 新建记录
 
 新建顶层记录继续使用完整弹窗。弹窗包含 record key、具体类型和全部字段。字段初始状态由 runtime 返回
 的统一创建草稿提供。
@@ -207,7 +192,7 @@ type Invalid {
 弹窗允许缺失引用存在并创建记录。写入时缺失字段保持省略，重新加载后的 partial model 展示相同缺失
 状态与诊断。key、类型和已经提供的字段仍需满足相应的语法与类型约束。
 
-### 6.2 已有记录
+### 5.2 已有记录
 
 已有记录中的值在原位置创建：
 
@@ -220,7 +205,7 @@ type Invalid {
 
 记录内部不再打开完整 object 草稿弹窗，也不提供“创建默认类型”入口。界面命令统一使用“创建值”。
 
-### 6.3 多态类型显示
+### 5.3 多态类型显示
 
 object 卡片标题显示实际具体类型。多态值的类型右侧显示下拉按钮，支持在全部可赋值具体类型之间切换。
 新建多态值和集合元素时复用相同的候选数据与显示组件。
@@ -228,9 +213,9 @@ object 卡片标题显示实际具体类型。多态值的类型右侧显示下�
 具体类型切换作为一次 mutation 进入统一撤销/重做历史。切换过程中不产生可被其他视图观察到的中间
 generation。
 
-## 7. Runtime 与协议
+## 6. Runtime 与协议
 
-### 7.1 默认物化器
+### 6.1 默认物化器
 
 `coflow-runtime` 保留一套 schema-guided 默认物化器，负责：
 
@@ -244,7 +229,7 @@ generation。
 `DefaultMaterialization` 的模式按最终调用语义收敛，删除仅为旧 object 弹窗服务的分支。语言层已经拒绝
 默认物化环后，runtime 删除 `RecursiveObject` 形式的用户输入要求和依赖诊断字符串匹配。
 
-### 7.2 创建草稿
+### 6.2 创建草稿
 
 创建草稿明确区分字段来源和状态：
 
@@ -256,22 +241,21 @@ CreateRequiredInput = Ref | AbstractObject
 `RequiredInput` 表示字段尚无可写入值，具体缺失原因由 `CreateRequiredInput` 携带。协议直接携带目标引用
 类型和多态候选，不允许前端根据诊断文本或错误码推断交互。
 
-### 7.3 Partial 与 strict 边界
+### 6.3 Partial 与 strict 边界
 
 编辑会话继续使用 partial build。缺失必填引用、引用目标不存在以及引用类型不匹配均保留可定位字段和
 诊断。strict build、代码生成与发布只接受没有 error 的完整模型。
 
 结构化 writer 只写入草稿中实际存在的字段。缺失字段不序列化为 `None`、空 key 或其他占位值。
 
-## 8. 实现计划
+## 7. 实现计划
 
-### 8.1 `coflow-language`
+### 7.1 `coflow-language`
 
-1. 在字段类型校验中增加数据字段 `Result` 限制，解析 alias 并穿透数据容器，函数签名作为边界。
-2. 增加必然 object 展开图，在 schema 编译阶段拒绝直接和间接包含环。
-3. 完整化默认物化依赖分析，覆盖 `Some`、非空集合、object 显式字段和省略字段。
-4. 为字段类型限制、object 包含环和默认物化环提供稳定诊断码、source span 与路径。
-5. 保持 schema 编译成功后 `ValueDependencyPlan` 无不可物化环的不变量。
+1. 增加必然 object 展开图，在 schema 编译阶段拒绝直接和间接包含环。
+2. 完整化默认物化依赖分析，覆盖 `Some`、非空集合、object 显式字段和省略字段。
+3. 为 object 包含环和默认物化环提供稳定诊断码、source span 与路径。
+4. 保持 schema 编译成功后 `ValueDependencyPlan` 无不可物化环的不变量。
 
 主要涉及：
 
@@ -280,14 +264,14 @@ CreateRequiredInput = Ref | AbstractObject
 - `crates/coflow-language/src/schema/plans/value_dependencies.rs`
 - `crates/coflow-language/src/diagnostics/`
 
-### 8.2 `coflow-model`
+### 7.2 `coflow-model`
 
 1. 继续以字段缺失和非法引用状态构建 partial model。
 2. 保证嵌套 object 中的缺失引用保留完整字段路径。
 3. 删除针对 schema 默认物化环的模型层正常错误分支，由 schema 编译不变量替代。
 4. strict build 保持对所有缺失和非法引用诊断的拒绝。
 
-### 8.3 `coflow-runtime`
+### 7.3 `coflow-runtime`
 
 1. 将 `TypeSeed` 和相关注释、DTO 全量改为 `TypeDefault`。
 2. 重构 `mutation/defaults.rs`，实现统一创建优先级和缺失引用结果。
@@ -297,7 +281,7 @@ CreateRequiredInput = Ref | AbstractObject
 6. 多态创建 API 返回过滤后的具体类型候选；确认类型后返回具体 object 默认值。
 7. writer 省略缺失字段，并由下一 generation 的 partial model 返回诊断。
 
-### 8.4 编辑器 Core
+### 7.4 编辑器 Core
 
 1. 更新 wire DTO，明确传输 `SchemaDefault`、`TypeDefault`、缺失引用和具体类型候选。
 2. 新建记录草稿允许缺失引用，不再要求 object 在前端组装为无缺失的 `CfdValue`。
@@ -305,7 +289,7 @@ CreateRequiredInput = Ref | AbstractObject
 4. 类型切换、`Option` 切换和集合新增均转换为单次 runtime mutation。
 5. 保持诊断导航精确到嵌套 object 中的缺失引用字段。
 
-### 8.5 编辑器前端
+### 7.5 编辑器前端
 
 1. 保留新建记录弹窗，并使其支持缺失引用选择器。
 2. 删除记录内部的 object 草稿弹窗入口；`ObjectDraftHost` 仅保留为编辑器 lookup context。
@@ -316,25 +300,23 @@ CreateRequiredInput = Ref | AbstractObject
 7. array 和 dictionary 新增多态元素时复用类型选择器。
 8. 删除“创建默认类型”文案，统一使用“创建值”。
 
-### 8.6 文档
+### 7.6 文档
 
-1. 更新内部语言设计，记录 object 递归、默认物化递归和数据字段 `Result` 限制。
+1. 更新内部语言设计，记录 object 递归和默认物化递归。
 2. 更新编辑器容错加载设计，将“编辑种子”和首条引用修复改为类型默认值与缺失引用选择。
 3. 更新公共 CFT、CFD 和数据模型参考，只描述用户可见语义，不写依赖图、DTO 或组件实现。
 
-## 9. 测试与验收
+## 8. 测试与验收
 
-### 9.1 语言测试
+### 8.1 语言测试
 
 - 直接和间接的必然 object 包含环被拒绝；
 - `Option<Node>`、`[Node]`、dictionary 和引用递归合法；
 - `None`、空集合默认值终止递归；
 - `Some(object)`、非空集合和省略 object 字段造成的默认物化环被拒绝；
-- 数据字段及其容器内的 `Result` 被拒绝；
-- 函数签名、常量和表达式中的 `Result` 保持合法；
-- alias 不能绕过递归和 `Result` 字段检查。
+- alias 不能绕过递归检查。
 
-### 9.2 Model 与 runtime 测试
+### 8.2 Model 与 runtime 测试
 
 - CFT 默认值优先于类型默认值；
 - 所有类型默认值符合本设计；
@@ -345,7 +327,7 @@ CreateRequiredInput = Ref | AbstractObject
 - 具体 object 和 collection item 使用同一物化规则；
 - 缺失字段不会写成 `None` 或伪造引用。
 
-### 9.3 前端测试
+### 8.3 前端测试
 
 - `None` 显示加号，`Some` 显示叉号；
 - `Option<&T>` 可以创建为带缺失引用的 `Some`；
@@ -356,7 +338,7 @@ CreateRequiredInput = Ref | AbstractObject
 - 记录内部不再打开 object 草稿弹窗；
 - 类型切换、创建、删除均正确进入撤销/重做历史。
 
-### 9.4 验证命令
+### 8.4 验证命令
 
 正常开发必须从仓库根目录通过：
 

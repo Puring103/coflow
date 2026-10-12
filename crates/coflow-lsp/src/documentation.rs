@@ -25,10 +25,6 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
         "Option",
         "Optional value written as `None` or `Some(value)`.",
     ),
-    (
-        "Result",
-        "Success or error value written as `Ok(value)` or `Err(error)`.",
-    ),
 ];
 
 pub(crate) const LITERALS: &[(&str, &str)] =
@@ -37,8 +33,6 @@ pub(crate) const LITERALS: &[(&str, &str)] =
 pub(crate) const VALUE_CONSTRUCTORS: &[(&str, &str)] = &[
     ("None", "Option without a value."),
     ("Some", "Construct an Option containing a value."),
-    ("Ok", "Construct a successful Result value."),
-    ("Err", "Construct a failed Result value."),
 ];
 
 pub(crate) const CHECK_SPECIAL_FORMS: &[(&str, &str)] = &[(

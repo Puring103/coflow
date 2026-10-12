@@ -1,111 +1,64 @@
 # CFD 数据
 
-> 范围：基础记录、结构化字段值、引用和维度覆盖。
+## 记录与分组
 
-## 1. 文件与记录
-
-```text
-cfd-file := { use-decl } { record-decl | dimension-block }
-record-decl := record-key ":" qualified-name "{" [ field-list ] "}"
-record-key := identifier
-field-list := field { "," field } [ "," ]
-field := identifier ":" value
-dimension-block := identifier "[" identifier "]" "{" { record-override } "}"
-record-override := record-key ":" qualified-name "{" [ field-list ] "}"
-```
-
-CFD 可以导入名称，基础记录的类型必须为 table 或 singleton，data 用于内联字段值。
-CFD 不声明 namespace、类型、字段默认值或 check。
-记录 key 在整棵继承树内唯一；无共同父类型的独立类型允许同 key。
-类型名使用完整限定名或显式导入的短名。
+CFD 使用项目 CFT 声明的类型提供记录、字段值和维度覆盖。
 
 ```cfd
-use game::Item;
-
-sword: Item {
-  name: "Sword",
-  price: 100,
+sword: Item { name: "Sword", price: 100 }
+Item {
+  shield { name: "Shield", price: 80 },
+  bow: RangedItem { name: "Bow", price: 120, range: 10 },
 }
+```
 
+独立记录使用 `key: Type { ... }`。分组使用 `Type { key { ... } }`，其中显式提供的实际类型必须等于分组类型或继承自该类型。abstract 类型可以作为分组限定，实际记录必须为具体类型。
+
+记录 key 在整棵继承树内唯一，不同继承树可以有相同 key。同一记录字段只能提供一次；多余字段、类型错误和重复 key 产生诊断。
+
+`@singleton` 类型必须有且只有一条以类型名称为 key 的记录。普通 type 同时支持顶层记录和内联对象。
+
+## 字段值
+
+```cfd
+entry: Entry {
+  count: 2147483648,
+  ratio: 1.0000000000000002,
+  enabled: true,
+  text: "{literal}",
+  label: f"数量 {self.count}",
+  payload: Payload { score: 7 },
+  target: &Item::sword,
+  optional: Some(None),
+  values: [1, 2, 3],
+  lookup: { "first": 1, "second": 2 },
+}
+```
+
+内联对象可以提供实际类型，也可以在字段声明足以确定类型时使用 `{ field: value }`。对象字段与字典项根据 schema 解释。数组、字典和字段允许末尾逗号，相邻字段之间需要逗号。
+
+省略字段按 schema 默认值或 Option 默认空态物化。必填字段缺失属于数据诊断，编辑器可以保留记录及明确的 missing 状态。类型不一致的值不伪装成缺失字段。
+
+数字按 int64 或有限 binary64 验证；enum 使用成员名或 `Enum::Member`。flag 组合使用同类型成员的 `&`、`^`、`|` 和括号。常量通过项目全局名称解析。
+
+## 引用与 Option
+
+`&Type::key` 明确记录类型；`&key` 在字段已知目标类型时按该类型的继承域查找。查找到的实际类型仍必须符合字段声明。所有记录先建立身份，引用可以跨文件或成环。
+
+Option 可以使用 `None`、`Some(value)` 或在明确可选位置提供裸值。每层状态独立保留；嵌套可选用显式构造器表达不同层次。
+
+## 维度覆盖
+
+```cfd
 language[ja] {
-  sword: Item {
-    name: "剣",
-  }
+  sword: Item { name: "剣" },
 }
 ```
 
-`:` 与 `[` 直接区分基础记录和覆盖块，不依赖声明名称或文件名。
-字段及集合项以逗号分隔，允许尾逗号；记录和覆盖块之间不使用逗号。
-加载时完成类型检查、默认值补齐、维度覆盖与引用链接，check 单独执行。
+覆盖只提供明确写出的字段，不物化该记录的其他字段。目标记录必须已存在，字段必须绑定该维度；同一维度、变体、记录、字段重复覆盖报错。显式 None 覆盖保留为空态。
 
-## 2. 字段值
+文件加载顺序不决定覆盖优先级。全部覆盖共同构成变体集合，未覆盖字段使用基础值。维度读取和来源契约见[维度](./09-维度.md)。
 
-值文法见[类型与值](./03-类型与值.md)。数据值包括数字、布尔、字符串、模板、
-enum、集合、内联对象、记录引用、常量和 None。
+## 来源与容错
 
-```cfd
-item: Item {
-  name: "Sword",
-  label: f"名称：{self.name}",
-  price: 100,
-  tags: ["weapon", "fire"],
-  next: None,
-}
-```
-
-省略基础字段时使用声明默认值；无默认值的可选字段为 None，其余字段必填。
-显式 None 仅用于可选字段。字段与字典 key 不能重复。
-fstring 使用模板字面量或可访问的模板常量初始化，插值仅使用字段路径。
-
-## 3. 集合与对象
-
-```cfd
-tags: ["weapon", "rare"],
-weights: { "fire": 10, "ice": 5 },
-stats: Stats { hp: 100, speed: 1.5 },
-effect: DamageEffect { label: "Hit", amount: 20 },
-```
-
-数组保留元素顺序，字典保留原始 CFT/CFD 的键值项顺序。
-`{ ... }` 是字典；内联对象必须写 `DataName { ... }`，类型必须是具体 data。
-table 和 singleton 通过记录引用使用。读取集合中的具体 fstring 元素时生成文本。
-
-## 4. enum 与 flag
-
-enum 使用变体名或限定名。flag 支持 `&`、`^`、`|` 和括号，
-优先级为 `&` 高于 `^` 高于 `|`，操作数必须属于同一 flag 类型。
-
-```cfd
-permissions: Permission::Read | Permission::Write,
-```
-
-## 5. 记录引用
-
-```text
-reference-value := "&" [ qualified-name "::" ] record-key
-```
-
-- `&key` 按源码所在的静态本类型查找记录；其他类型使用 `&Type::key`。
-- 不按字段期望类型猜测目标；无本类型上下文时使用带类型写法。
-- 显式类型采用普通名称解析，查找该类型及其子类型。
-- 目标记录必须存在，实际类型必须可赋给字段声明类型。
-- 引用可以跨文件、自引用或形成跨记录循环，不是字符串。
-
-```cfd
-sword: Item {
-  name: "Sword",
-  next: &shield,
-  owner: &Character::hero,
-}
-```
-
-覆盖记录体使用头部指定的记录类型作为静态本类型，基础与覆盖中的引用遵循相同规则。
-字段路径插值也可使用记录引用，详见[类型与值](./03-类型与值.md)。
-
-## 6. 模板与维度覆盖
-
-普通 string 中的花括号是文本。fstring 的插值读取 self 或指定记录的字段路径，
-基础值直接转为文本；源码保存原模板，读取与预览生成 string。
-
-维度覆盖只写需要替换的字段，省略字段使用基础值，对象和集合按整个字段替换。
-基础记录与覆盖块可分文件管理；维度声明、重复覆盖检查、回退和编辑来源见[维度](./09-维度.md)。
+来源文件与记录、字段和值的跨度用于诊断、源码导航和局部写入。编辑会话接纳可修复的缺失字段或引用错误，拒绝无法由结构化模型表达的记录；严格消费者在存在数据错误时失败。具体行为见 [编辑器容错数据加载](../editor-tolerant-data-loading.zh-CN.md)。

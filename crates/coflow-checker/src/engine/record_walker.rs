@@ -137,9 +137,7 @@ impl<'a> RecordCheckWalker<'a> {
                     self.visit_value(item, location.dict_key_value(key), statement, cursor);
                 }
             }
-            CfdValue::OptionSome(value)
-            | CfdValue::ResultOk(value)
-            | CfdValue::ResultErr(value) => {
+            CfdValue::OptionSome(value) => {
                 self.visit_value(value, location, statement, cursor);
             }
             CfdValue::Ref(_)

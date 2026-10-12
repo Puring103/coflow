@@ -48,10 +48,6 @@ mod write_rules;
 mod writes;
 
 pub use api::*;
-pub use cfd_loader::{
-    load_cfd_model, parse_cfd_input_records, CfdTextDiagnostic, CfdTextDiagnostics,
-    CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
-};
 pub use coflow_checker::{
     execute_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckLimits,
     CheckOutput, CheckSchemaLocation, CheckTarget, CheckTask, CheckTaskResult,

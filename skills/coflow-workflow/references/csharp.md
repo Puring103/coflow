@@ -1,65 +1,65 @@
-# C# 代码生成
+# C# 代码生成与加载
 
-C# generator 根据 CFT 生成强类型 API 和 Schema 绑定代码。生成目录只包含 `.cs` 文件，不复制 CFD 数据。C# target 支持可选的 `namespace` 配置；未配置或为空字符串时使用全局命名空间：
+C# 应用引用 `Coflow.Loader` 与生成源码，支持 .NET Standard 2.1、.NET 8 和 Unity 2022+。调用方提供所选 CFD 文件的逻辑路径与内容，加载结果直接包含生成的业务对象。
 
 ```yaml
+schema: schema/
+data: data/
 codegen:
   - language: csharp
-    dir: Generated
+    dir: generated/csharp
     namespace: Game.Config
 ```
 
-类型、字段、函数、函数参数和 enum 成员保留 CFT 中的大小写与下划线；`@idAsEnum` 成员保留记录键的名称。例如 `hit_points` 生成 `hit_points`，`applyBonus` 生成 `applyBonus`。
-
-将生成目录和 `Coflow.Runtime` 引入 C# 项目后，先创建运行时实例，再按 Module 加载 CFD，最后编译并发布：
+运行 `coflow codegen .` 后，将 `runtimes/csharp/Coflow.Loader` 和生成文件加入 C# 项目。
 
 ```csharp
+using Coflow.Loader;
 using Game.Config;
-using Coflow.Runtime;
 
-var coflow = Schema.Create(new CoflowOptions(
-    maxInstructions: 10_000_000,
-    maxFrameDepth: 1_024));
-var baseModule = coflow.LoadModule(
-    new CoflowSource("items.cfd", itemsCfd));
-var rulesModule = coflow.LoadModule(
-    new CoflowSource("rules.cfd", rulesCfd));
-
-coflow.Bind(new HostServices(environment, log));
-
-var result = coflow.Compile();
-if (!result.Success)
-    throw new CoflowLoadException(result.Diagnostics);
-
-var item = coflow.Table(Item.Table).Get(ItemId.Sword);
-var settings = coflow.Singleton<Settings>();
+var result = CoflowData.Load(new[] {
+    new CfdSource("items.cfd", itemsText),
+    new CfdSource("ja.cfd", japaneseText),
+});
+if (!result.Success) {
+    foreach (var diagnostic in result.Diagnostics)
+        System.Console.WriteLine(diagnostic);
+    return;
+}
+var item = result.Data.Item["sword"];
+var name = item.name.For("ja");
 ```
 
-同一 `Coflow` 中的 Module 可以互相引用。`ReplaceModule` 和 `RemoveModule` 修改待编译状态；再次成功调用 `Compile` 后，新状态才会生效。编译失败时继续保留上一次成功发布的状态。
+互相引用的记录应在同一次加载中提供。逻辑路径用于定位诊断；失败结果包含 Diagnostics，读取失败结果的 Data 抛出异常。
 
-维度 CFD 与基础 CFD 一样通过 `CoflowSource` 加载。成功编译后，维度字段使用 `.Default` 读取基础值、`.For("zh")` 读取指定变体；格式和示例见[本地化与维度](https://puring103.github.io/coflow/docs/reference/10-localization)。
+## 类型映射
 
-`CoflowOptions` 为每个实例设置执行限制。不传参数时使用默认限制。每次顶层函数调用使用一份新预算；同步 Host 回调再次调用同一实例时与外层调用共享预算。
+| CFT | C# |
+| --- | --- |
+| int / float | long / double |
+| bool / string / fstring | bool / string / string |
+| enum | 以 long 为基础的 enum |
+| 普通 Type | class 内联对象 |
+| &Type | 对应记录 class 的对象引用 |
+| @struct Type | 内联值为结构体，记录及引用为 TypeRecord class |
+| `Option<T>` | `Coflow.Loader.Option<T>` |
+| [T] / {K: V} | `IReadOnlyList<T>` / `IReadOnlyDictionary<K, V>` |
+| 维度字段 | `DimensionValue<T>` |
 
-同一 `Coflow` 中的记录可以跨 Module 引用，并支持前向引用、自引用和引用环。
+普通 type 的记录与内联值使用同一业务 class。记录 id 为 CFD key，内联对象 id 为 null。`@struct` 的记录身份类具有相同业务字段，引用可以形成环。继承表与引用共享同一记录对象，结构体保留继承字段；结构体子类型放在 class 父类型字段时使用其类表示。
 
-每个可查询记录类型都会生成 `Table`。字符串键直接传入字符串，使用 `@idAsEnum` 的类型传入对应 enum 值。找不到记录或 singleton 时返回 `Option<T>.None`。
+所有类型都有对应记录表。`@singleton` 通过同名属性读取唯一记录。
 
-`@Host` 生成可直接构造的类型。一个 `Coflow` 可以绑定多个不同 Host 类型，同一类型再次 `Bind` 表示换绑，并在下一次成功编译后生效。
-
-生成实例函数显式接收要执行的 `Coflow`：
+## 可选值与维度
 
 ```csharp
-var damage = item.Value.Calculate(coflow, input);
+if (item.next.IsSome) {
+    var next = item.next.Value;
+}
 ```
 
-CFT `int` 生成 C# `long`，`float` 生成 C# `double`。CFT `@struct` 生成真正的 `readonly struct`，并支持普通字段、集合、引用、`Result` 和函数字段。
+Option 使用 `IsSome`、`IsNone`、`Value`；读取 None 的 Value 抛出异常。嵌套 `Option<Option<T>>` 区分 None、Some(None) 与 Some(Some(value))。
 
-CFT 函数值生成 `CoflowFunction<T1, ..., TResult>`。调用函数值时同样显式传入运行时实例：
+维度字段使用 `Default`、`For(variant)`、`Variants`。未覆盖字段及未知变体回退到基础值，显式 None 保持为空。一次加载可读取多个变体。
 
-```csharp
-var operation = scenario.MakeOperation(coflow, options);
-var output = operation.Invoke(coflow, input);
-```
-
-函数值可以出现在 class、struct、`Option`、`Result` 和集合中。默认函数值可以被构造和传递，但实际调用会报告函数未绑定。普通 C# delegate 不能作为 Coflow 数据传入；外部函数由 `@Host` 构造参数提供。
+普通字符串保持文本，fstring 在加载时生成结果。输入类型、默认值、引用、分组和覆盖错误通过加载诊断返回。CFT 用于声明检查与代码生成，check 规则由编辑器执行。

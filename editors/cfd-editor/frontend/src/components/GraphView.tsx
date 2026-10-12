@@ -38,7 +38,7 @@ import {
   layoutGraph,
   type GraphLayoutResult,
 } from './GraphView.layout'
-import { runGraphLayoutInWorker } from './GraphLayoutWorkerAdapter'
+import { runGraphLayoutInWorker } from '../graph/layoutWorkerClient'
 import { graphCardFields, relationPorts, relationValue, type RelationPort } from './GraphView.relations'
 import { useEditorLookups } from '../utils/editContext'
 import { SearchableSelect } from './SearchableSelect'

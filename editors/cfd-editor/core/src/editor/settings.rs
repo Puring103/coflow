@@ -2,7 +2,7 @@
 //!
 //! 按职责拆分：
 //! - `model`：版本化磁盘结构与常量；
-//! - `io`：共享/本机原子读写、迁移与版本校验；
+//! - `io`：共享/本机原子读写与版本校验；
 //! - `sanitize`：workspace/列宽/分组/视图归一化。
 
 #[path = "settings/io.rs"]
@@ -239,35 +239,6 @@ mod tests {
             Some("[\"language\",\"data/mixed.cfd\",\"Item\",\"name\"]")
         );
         let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
-        fs::remove_dir_all(root).expect("remove fixture");
-    }
-
-    #[test]
-    fn legacy_personal_settings_migrate_without_rewriting_shared_file() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("coflow-legacy-settings-{nonce}"));
-        let path = root.join("editor-setting").join(SETTINGS_FILE);
-        fs::create_dir_all(path.parent().expect("parent")).expect("create root");
-        let raw = r#"{"version":1,"unknown_setting":42,"workspace":{"tabs":[],"active_tab_id":null},"views":{"data/items.cfd":{"Item":[{"id":"view-1","name":"List","kind":"table","columns":["name"],"column_widths":{"name":120},"unknown_view_setting":true}]}}}"#;
-        fs::write(&path, raw).expect("write old settings");
-        let loaded = read_project_settings(&root).expect("migrate personal settings");
-        assert_eq!(
-            loaded.views
-                [&coflow_runtime::project_path(&root, std::path::Path::new("data/items.cfd"))]
-                ["Item"][0]
-                .column_widths["name"],
-            120.0
-        );
-        assert_eq!(
-            fs::read_to_string(&path).expect("unchanged shared file"),
-            raw
-        );
-        let local = super::io::local_settings_path(&root).expect("local path");
-        assert!(local.is_file());
-        let _ = fs::remove_file(local);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

@@ -311,7 +311,6 @@ type Item {\n\
 fn completion_items_cover_context_filters_and_default_boundaries() {
     let source = "const LIMIT: int = 5;\n\
 const NAME: string = \"boss\";\n\
-const OUTCOME: Result<int, string> = Ok(1);\n\
 enum Kind { One = 1, Two = 2, }\n\
 type Target { key: string; value: int; }\n\
 type Item {\n\
@@ -382,7 +381,8 @@ type Item {\n\
     assert!(value_type_labels.contains(&"array".to_string()));
     assert!(value_type_labels.contains(&"dictionary".to_string()));
     assert!(value_type_labels.contains(&"reference".to_string()));
-    assert!(value_type_labels.contains(&"()".to_string()));
+    assert!(!value_type_labels.contains(&"()".to_string()));
+    assert!(!value_type_labels.contains(&"Result".to_string()));
 
     let const_position = position_from_byte(
         source,
@@ -421,17 +421,8 @@ type Item {\n\
     assert!(!option_labels.contains(&"LIMIT".to_string()));
     assert!(!option_labels.contains(&"NAME".to_string()));
 
-    let result_position = position_from_byte(
-        source,
-        source
-            .find("const OUTCOME: Result<int, string> = Ok(1)")
-            .expect("Result")
-            + "const OUTCOME: Result<int, string> = ".len(),
-    );
-    let result_labels = completion_labels(completion_items(&build, document, &result_position));
-    assert!(result_labels.contains(&"Ok".to_string()));
-    assert!(result_labels.contains(&"Err".to_string()));
-    assert!(!result_labels.contains(&"LIMIT".to_string()));
+    assert!(!option_labels.contains(&"Ok".to_string()));
+    assert!(!option_labels.contains(&"Err".to_string()));
 
     let array_position = position_from_byte(
         source,

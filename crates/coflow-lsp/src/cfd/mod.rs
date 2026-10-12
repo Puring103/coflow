@@ -124,14 +124,6 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             c.add_plain(Span::new(span.start, span.start + 4), SEM_KEYWORD);
             collect_value_tokens(value, c);
         }
-        CfdValue::ResultOk(value, span) => {
-            c.add_plain(Span::new(span.start, span.start + 2), SEM_KEYWORD);
-            collect_value_tokens(value, c);
-        }
-        CfdValue::ResultErr(value, span) => {
-            c.add_plain(Span::new(span.start, span.start + 3), SEM_KEYWORD);
-            collect_value_tokens(value, c);
-        }
         CfdValue::Block(block) => {
             if let Some((_, span)) = &block.type_marker {
                 c.add(*span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
@@ -708,12 +700,6 @@ fn completion_context_in_value<'a>(
         (CfdValue::OptionSome(inner_value, _), CftValueType::Option(inner)) => {
             completion_context_in_value(inner_value, schema, inner, offset)
         }
-        (CfdValue::ResultOk(inner_value, _), CftValueType::Result(ok, _)) => {
-            completion_context_in_value(inner_value, schema, ok, offset)
-        }
-        (CfdValue::ResultErr(inner_value, _), CftValueType::Result(_, error)) => {
-            completion_context_in_value(inner_value, schema, error, offset)
-        }
         (CfdValue::Block(block), CftValueType::Dict(_, value_type)) => {
             for field in &block.fields {
                 if offset >= field.name_span.end && offset <= field.span.end {
@@ -790,22 +776,6 @@ fn value_completion_items(
             items.extend(value_completion_items(schema, inner, build));
             items
         }
-        CftValueType::Result(ok, error) => vec![
-            json!({
-                "label": "Ok",
-                "kind": 3,
-                "detail": format!("Ok({})", ok.display_label()),
-                "insertText": format!("Ok(${{1:{}}})", value_placeholder(ok)),
-                "insertTextFormat": 2,
-            }),
-            json!({
-                "label": "Err",
-                "kind": 3,
-                "detail": format!("Err({})", error.display_label()),
-                "insertText": format!("Err(${{1:{}}})", value_placeholder(error)),
-                "insertTextFormat": 2,
-            }),
-        ],
         CftValueType::Array(_) => {
             vec![json!({ "label": "[]", "kind": 21, "detail": value_type.display_label() })]
         }
@@ -818,9 +788,6 @@ fn value_completion_items(
                 schema, name, build, false,
             ));
             items
-        }
-        CftValueType::Unit => {
-            vec![json!({ "label": "()", "kind": 21, "detail": "unit" })]
         }
         CftValueType::Int
         | CftValueType::Float
@@ -1041,9 +1008,7 @@ fn value_placeholder(value_type: &CftValueType) -> String {
         CftValueType::Array(_) => "[]".to_string(),
         CftValueType::Dict(_, _) | CftValueType::Object(_) => "{}".to_string(),
         CftValueType::Option(_) => "None".to_string(),
-        CftValueType::Result(_, _) => "Ok(value)".to_string(),
 
-        CftValueType::Unit => "()".to_string(),
     }
 }
 

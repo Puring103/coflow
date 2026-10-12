@@ -231,12 +231,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             (CftValueType::Option(inner), value) => self
                 .validate_value_inner(inner, value, record, path, cursor)
                 .map(|value| ValueDraft::OptionSome(Box::new(value))),
-            (CftValueType::Result(ok, _), LoadedValueDraft::ResultOk(value)) => self
-                .validate_value_inner(ok, value, record, path, cursor)
-                .map(|value| ValueDraft::ResultOk(Box::new(value))),
-            (CftValueType::Result(_, error), LoadedValueDraft::ResultErr(value)) => self
-                .validate_value_inner(error, value, record, path, cursor)
-                .map(|value| ValueDraft::ResultErr(Box::new(value))),
             (CftValueType::Int, LoadedValueDraft::Int(value)) => {
                 Some(ValueDraft::Value(CfdValue::Int(*value)))
             }
@@ -525,8 +519,6 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
     match value {
         LoadedValueDraft::OptionNone => "None",
         LoadedValueDraft::OptionSome(_) => "Some",
-        LoadedValueDraft::ResultOk(_) => "Ok",
-        LoadedValueDraft::ResultErr(_) => "Err",
         LoadedValueDraft::Bool(_) => "bool",
         LoadedValueDraft::Int(_) => "int",
         LoadedValueDraft::Float(_) => "float",

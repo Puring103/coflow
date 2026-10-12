@@ -18,6 +18,30 @@ fn legacy_nullable_type_and_null_default_are_rejected() {
 }
 
 #[test]
+fn deeply_nested_option_types_are_rejected_before_recursing() {
+    use coflow_language::cft::syntax::parser::{parse_module_with_options, CftParseOptions};
+    use coflow_language::limits::StructuralLimits;
+    let source = format!(
+        "type Item {{ value: {}int{}; }}",
+        "Option<".repeat(300),
+        ">".repeat(300)
+    );
+    let result = parse_module_with_options(
+        &ModuleId::from("depth"),
+        &source,
+        CftParseOptions {
+            structural_limits: StructuralLimits::new(4, 1000, 1000),
+        },
+    );
+    assert!(result
+        .expect_err("Option type must use depth budget")
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code
+            == coflow_language::diagnostics::CftErrorCode::SyntaxStructureLimitExceeded));
+}
+
+#[test]
 fn option_types_preserve_nested_defaults() {
     let schema = compile(
         r#"
@@ -26,7 +50,7 @@ fn option_types_preserve_nested_defaults() {
             }
         "#,
     )
-    .expect("new Option and Result syntax should compile");
+    .expect("nested Option syntax should compile");
     let item = schema.resolve_type("Item").expect("Item type");
     let nested = item.field("nested").expect("nested field");
     assert_eq!(

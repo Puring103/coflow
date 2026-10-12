@@ -86,9 +86,7 @@ impl CfdRecord {
         let mut current = self.fields().get(field.as_str())?;
         for segment in segments {
             current = match current {
-                CfdValue::OptionSome(value)
-                | CfdValue::ResultOk(value)
-                | CfdValue::ResultErr(value) => value,
+                CfdValue::OptionSome(value) => value,
                 CfdValue::OptionNone => return None,
                 _ => current,
             };
@@ -197,8 +195,6 @@ impl CfdObject {
 pub enum CfdValue {
     OptionNone,
     OptionSome(Box<CfdValue>),
-    ResultOk(Box<CfdValue>),
-    ResultErr(Box<CfdValue>),
     Bool(bool),
     Int(
         #[serde(with = "crate::serde_i64")]

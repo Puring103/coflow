@@ -56,14 +56,6 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
         "some".to_string(),
         CfdValue::OptionSome(Box::new(CfdValue::OptionNone)),
     );
-    fields.insert(
-        "ok".to_string(),
-        CfdValue::ResultOk(Box::new(CfdValue::OptionSome(Box::new(CfdValue::Int(3))))),
-    );
-    fields.insert(
-        "err".to_string(),
-        CfdValue::ResultErr(Box::new(CfdValue::String("bad".to_string()))),
-    );
 
     let record = CfdRecord {
         key: RecordCoordinate::try_new("Item", "potion")?.key,
@@ -90,6 +82,17 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
         return Err(std::io::Error::other(format!("round trip changed record: {round:?}")).into());
     }
     Ok(())
+}
+
+#[test]
+fn removed_result_wire_variants_are_rejected() {
+    for kind in ["result_ok", "result_err"] {
+        let json = format!(r#"{{"kind":"{kind}","value":{{"kind":"int","value":"1"}}}}"#);
+        assert!(
+            serde_json::from_str::<CfdValue>(&json).is_err(),
+            "removed wire variant must fail: {kind}"
+        );
+    }
 }
 
 #[test]

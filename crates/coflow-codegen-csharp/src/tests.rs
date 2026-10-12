@@ -29,9 +29,9 @@ fn emits_typed_business_objects_and_shared_loader_descriptors() {
     let text = all(&generate_csharp(&schema).expect("generate"));
     assert!(text.contains("public struct Stats"));
     assert!(text.contains("public class Item"));
-    assert!(text.contains("public int hp { get; internal set; }"));
-    assert!(text.contains("public Item? next { get; internal set; }"));
-    assert!(text.contains("new CfdType<Stats>"));
+    assert!(text.contains("public long hp { get; internal set; }"));
+    assert!(text.contains("public Option<Item> next { get; internal set; }"));
+    assert!(text.contains("new CfdType<Stats, StatsRecord>"));
     assert!(text.contains("reader => new Stats"));
     assert!(text.contains("key => new Item(key)"));
     assert!(text.contains("CfdValues.Reference<Item>(\"Item\")"));
@@ -57,7 +57,7 @@ fn inheritance_preserves_shared_record_identity() {
     .expect("generate"));
     assert!(text.contains("public abstract class Base"));
     assert!(text.contains("public class Child : Base"));
-    assert!(text.contains("internal Child(string key) : base(key)"));
+    assert!(text.contains("internal Child(string? key) : base(key)"));
     assert!(text.contains("value.name = reader.Get<string>(\"name\")"));
     assert!(text.contains("parent: \"Base\""));
     assert!(text.contains("abstractType: true"));
@@ -88,7 +88,7 @@ fn descriptor_defaults_preserve_literal_strings_and_explicit_templates() {
     assert!(text.contains("CfdDefaults.String(\"{literal}\")"));
     assert!(text.contains("CfdValues.FormattedString"));
     assert!(text.contains("CfdDefaults.Template(\"f\\\"{{text}} {self.name}\\\"\")"));
-    assert!(text.contains("CfdDefaults.Array(CfdDefaults.Int(1), CfdDefaults.Int(2))"));
+    assert!(text.contains("CfdDefaults.Array(CfdDefaults.Int(1L), CfdDefaults.Int(2L))"));
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn enums_flags_constants_and_namespaces_use_loader_contracts() {
     assert!(text.contains("namespace Game.Config"));
     assert!(text.contains("[Flags]"));
     assert!(text.contains("bits => (Flags)bits"));
-    assert!(text.contains("[\"SIZE\"] = CfdDefaults.Int(3)"));
+    assert!(text.contains("[\"SIZE\"] = CfdDefaults.Int(3L)"));
 }
 
 #[test]
@@ -126,6 +126,8 @@ fn invalid_identifiers_and_generated_name_collisions_are_reported() {
         "type class {}",
         "type CoflowData {}",
         "type Item { Item: int; }",
+        "@struct sealed type Shape {} type ShapeRecord {}",
+        "@struct sealed type Shape { ShapeRecord: int; }",
     ] {
         assert!(generate_csharp(&schema(source)).is_err(), "{source}");
     }

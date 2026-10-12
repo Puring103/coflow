@@ -142,22 +142,6 @@ fn coerce_json_value(
             enum_value(session, name, variant).map(CfdValue::Enum)
         }
         CftValueType::Object(name) => coerce_json_named_value(session, name, value),
-        CftValueType::Result(ok, error) => {
-            let object = single_tag_object(value, "Result", &["$ok", "$err"])?;
-            object.get("$ok").map_or_else(
-                || {
-                    coerce_json_value(session, error, &object["$err"])
-                        .map(|value| CfdValue::ResultErr(Box::new(value)))
-                },
-                |value| {
-                    coerce_json_value(session, ok, value)
-                        .map(|value| CfdValue::ResultOk(Box::new(value)))
-                },
-            )
-        }
-        CftValueType::Unit => Err(one_value_error(format!(
-            "JSON coercion for `{expected}` is not supported"
-        ))),
     }
 }
 
@@ -197,12 +181,6 @@ fn normalize_cfd_value(
     match value {
         CfdValue::OptionSome(value) => {
             normalize_cfd_value(session, *value).map(|value| CfdValue::OptionSome(Box::new(value)))
-        }
-        CfdValue::ResultOk(value) => {
-            normalize_cfd_value(session, *value).map(|value| CfdValue::ResultOk(Box::new(value)))
-        }
-        CfdValue::ResultErr(value) => {
-            normalize_cfd_value(session, *value).map(|value| CfdValue::ResultErr(Box::new(value)))
         }
         CfdValue::Array(items) => items
             .into_iter()

@@ -90,19 +90,11 @@ mutation 发布成功后重新加载完整项目并返回完整 `ProjectBootstra
 
 编辑会话使用 partial build。CLI check、代码生成、运行时加载和发布继续使用 strict build；只要存在任何 error，strict build 必须失败。partial model 不能通过公共 API 被误当成可发布模型。
 
-## 7. 迁移要求
+## 7. 构建与协议入口
 
-迁移必须一次完成并删除：
+`build_partial()` 与严格的 `build()` 共享同一验证实现。记录接纳与拒绝携带明确诊断，重复身份的冲突集合全部拒绝。
 
-- 旧 `build_editable()` 命名和 mutation 层维护的第二份可编辑错误码白名单。
-- `Option<RecordDraft>` 造成的无原因静默丢弃。
-- 重复记录选择第一条的行为。
-- 前端 `isJumpable`、`onJumpToRecord`、`onJumpToField` 和诊断跳转推断。
-- 旧 `FlatDiagnostic` 导航字段及新旧 DTO 转换。
-- 普通数据错误触发空模型的全局 fallback。
-- 兼容别名、deprecated 类型和双写协议。
-
-最终只保留 `build_partial()` 与严格的 `build()` 两个入口，共享同一验证实现。
+前端导航使用 DiagnosticTarget，后端在当前 revision 中形成完整 DTO 与来源目标。结构化写入只操作接纳模型中的记录，源码修复负责无法结构化的内容。
 
 ## 8. 验收
 

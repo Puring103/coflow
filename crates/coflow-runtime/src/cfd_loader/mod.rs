@@ -19,20 +19,31 @@ use crate::api::{
     CfdLoadContext, CfdSource, Diagnostic, DiagnosticSet, LineIndex, LoadedCfdSource,
 };
 
+mod constants;
 mod diagnostics;
+#[cfg(test)]
+mod loader_tests;
 mod lower;
 mod writer;
-use crate::data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
+use crate::data_model::RecordOrigin;
+#[cfg(test)]
+use crate::data_model::{CfdDataModel, LoadedRecordDraft};
 use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
-use coflow_language::cft::{CftSchema, DimensionName, VariantName};
+#[cfg(test)]
+use coflow_language::cft::CftSchema;
+use coflow_language::cft::{DimensionName, VariantName};
+#[cfg(test)]
+use diagnostics::CfdTextLoadError;
 use diagnostics::{cfd_error_to_diagnostics, text_span};
-pub use diagnostics::{
-    CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
-};
-use lower::{lower_records, lower_records_partial, syntax_diagnostics, ParsedLoadedRecordDraft};
+pub use diagnostics::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
+#[cfg(test)]
+use lower::{lower_records, ParsedLoadedRecordDraft};
+use lower::{lower_records_partial, syntax_diagnostics};
 use std::borrow::Cow;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::sync::Arc;
 pub(crate) use writer::{CfdWriter, CFD_WRITER_CAPABILITIES};
 
@@ -44,7 +55,8 @@ pub(crate) use writer::{CfdWriter, CFD_WRITER_CAPABILITIES};
 /// # Errors
 ///
 /// Returns text diagnostics when parsing or schema-guided conversion fails.
-pub fn parse_cfd_input_records(
+#[cfg(test)]
+fn parse_cfd_input_records(
     schema: &CftSchema,
     source: &str,
 ) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
@@ -56,6 +68,7 @@ pub fn parse_cfd_input_records(
     })
 }
 
+#[cfg(test)]
 fn parse_cfd_input_records_with_spans(
     schema: &CftSchema,
     source: &str,
@@ -78,7 +91,8 @@ fn parse_cfd_input_records_with_spans(
 ///
 /// Returns text diagnostics for CFD syntax/conversion errors or data-model
 /// diagnostics for schema/data/reference errors.
-pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
+#[cfg(test)]
+fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
     let (ast, errors) = parse_cfd_with_options(
         source,
         CfdParseOptions {
@@ -208,17 +222,14 @@ impl CfdLoader {
                 })
             })
             .collect();
-        let mut diagnostics = cfd_error_to_diagnostics(
-            file,
-            &contents,
-            CfdTextLoadError::Text(syntax_diagnostics(parse_errors)),
-        );
+        let mut diagnostics =
+            cfd_error_to_diagnostics(file, &contents, syntax_diagnostics(parse_errors));
         diagnostics.extend(cfd_error_to_diagnostics(
             file,
             &contents,
-            CfdTextLoadError::Text(CfdTextDiagnostics {
+            CfdTextDiagnostics {
                 diagnostics: lower_errors,
-            }),
+            },
         ));
         let dimension_variants = ast
             .dimensions
