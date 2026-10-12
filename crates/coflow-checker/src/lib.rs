@@ -27,7 +27,6 @@
 )]
 
 mod diagnostics;
-mod dimensions;
 mod engine;
 mod eval;
 mod limits;
@@ -40,9 +39,9 @@ use coflow_model::CfdDataModel;
 pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
 pub use limits::EvaluationLimits;
 pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult};
-pub use task::{CheckLimits, CheckProjection, CheckTarget, CheckTask};
+pub use task::{CheckLimits, CheckTarget, CheckTask};
 
-/// Executes the requested CFT `check` statement tasks and projections.
+/// Executes the requested CFT `check` statement tasks.
 ///
 /// Empty targets perform no work. Diagnostics always retain the record that
 /// initiated evaluation, including failures reported on values reached through

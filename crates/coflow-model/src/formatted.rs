@@ -1,6 +1,6 @@
 use crate::{
-    CfdDataModel, CfdDictKey, CfdFormattedString, CfdValue, LoadedFieldReference,
-    LoadedFormatSegment, LoadedFormattedString,
+    CfdDataModel, CfdFormattedString, CfdValue, LoadedFieldReference, LoadedFormatSegment,
+    LoadedFormattedString,
 };
 use coflow_language::cft::{CftSchema, CftValueType};
 
@@ -27,7 +27,7 @@ pub fn evaluate_formatted_string(
                     current_type,
                     current_key,
                     reference,
-                )?));
+                )?)?);
             }
         }
     }
@@ -106,64 +106,15 @@ fn field_type(schema: &CftSchema, type_name: &str, field: &str) -> Result<CftVal
         .ok_or_else(|| format!("unknown field `{field}` on type `{type_name}`"))
 }
 
-pub fn stringify_value(value: &CfdValue) -> String {
-    match value {
-        CfdValue::OptionNone => "None".to_string(),
-        CfdValue::OptionSome(value) => format!("Some({})", stringify_value(value)),
-        CfdValue::ResultOk(value) => format!("Ok({})", stringify_value(value)),
-        CfdValue::ResultErr(value) => format!("Err({})", stringify_value(value)),
+/// 基础插值仅接受标量及已求值模板，复合值必须先选择具体字段。
+pub fn stringify_value(value: &CfdValue) -> Result<String, String> {
+    Ok(match value {
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
         CfdValue::String(value) => value.clone(),
         CfdValue::FormattedString(value) => value.rendered.clone(),
-        CfdValue::Function(value) => value.source.clone(),
-        CfdValue::Enum(value) => value
-            .variant
-            .as_ref()
-            .map_or_else(|| value.value.to_string(), ToString::to_string),
-        CfdValue::Ref(key) => format!("&{key}"),
-        CfdValue::Object(object) => format!(
-            "{}{{{}}}",
-            object.actual_type(),
-            object
-                .fields()
-                .iter()
-                .map(|(name, value)| format!("{name}: {}", nested(value)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        CfdValue::Array(items) => format!(
-            "[{}]",
-            items.iter().map(nested).collect::<Vec<_>>().join(", ")
-        ),
-        CfdValue::Dict(entries) => format!(
-            "{{{}}}",
-            entries
-                .iter()
-                .map(|(key, value)| format!("{}: {}", dict_key(key), nested(value)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-fn nested(value: &CfdValue) -> String {
-    match value {
-        CfdValue::String(value) => format!("{value:?}"),
-        CfdValue::FormattedString(value) => format!("{:?}", value.rendered),
-        CfdValue::Function(value) => value.source.clone(),
-        _ => stringify_value(value),
-    }
-}
-
-fn dict_key(key: &CfdDictKey) -> String {
-    match key {
-        CfdDictKey::String(value) => format!("{value:?}"),
-        CfdDictKey::Int(value) => value.to_string(),
-        CfdDictKey::Enum(value) => value
-            .variant
-            .as_ref()
-            .map_or_else(|| value.value.to_string(), ToString::to_string),
-    }
+        CfdValue::Enum(value) => value.variant.as_ref().map_or_else(|| value.value.to_string(), ToString::to_string),
+        _ => return Err("formatted string interpolation must end at a string, number, bool, enum or fstring field".to_string()),
+    })
 }

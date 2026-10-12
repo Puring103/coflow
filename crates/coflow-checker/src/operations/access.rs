@@ -6,7 +6,7 @@ use coflow_model::CfdDataModel;
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
 use super::value::{
-    dict_key_from_check_value, dict_key_matches, EvalRecordRef, EvalValue, LocatedBudgetExceeded,
+    dict_key_from_check_value, values_equal, EvalRecordRef, EvalValue, LocatedBudgetExceeded,
     LocatedEvalValue, ScalarValue, ValueLocation,
 };
 
@@ -73,7 +73,7 @@ pub(crate) fn index_value<'model>(
             key_type,
             value_type,
         } => {
-            let Some(key) = dict_key_from_check_value(&index.value) else {
+            let Some(_key) = dict_key_from_check_value(&index.value) else {
                 return Err(OpsError::eval_type(
                     index.location,
                     format!(
@@ -83,15 +83,11 @@ pub(crate) fn index_value<'model>(
                 ));
             };
             let key_label = format_value_for_message(&index.value);
-            let value_location = target
-                .location
-                .clone()
-                .map(|location| location.dict_key(key_label.clone()));
             for entry_index in 0..entries.len() {
-                let Some((entry_key, _)) = entries.model_entry_at(model, entry_index) else {
+                let Some(entry_key) = entries.key_at(model, entry_index) else {
                     continue;
                 };
-                if !dict_key_matches(entry_key, &key) {
+                if !values_equal(&entry_key, &index.value) {
                     continue;
                 }
                 let Some(entry) = entries
@@ -107,10 +103,11 @@ pub(crate) fn index_value<'model>(
                 else {
                     break;
                 };
+                let entry_location = entry.location;
                 let EvalValue::Entry(entry) = entry.value else {
                     break;
                 };
-                return Ok(LocatedEvalValue::new(entry.value, value_location));
+                return Ok(LocatedEvalValue::new(entry.value, entry_location));
             }
             Err(OpsError::new(
                 CfdErrorCode::CheckMissingDictKey,
@@ -149,6 +146,36 @@ pub(crate) fn field_type_for_record<'a>(
         .map(|field| &field.value_type)
 }
 
+fn dimension_field<'a>(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    record: &EvalRecordRef,
+    name: &str,
+    value: LocatedEvalValue<'a>,
+) -> LocatedEvalValue<'a> {
+    let meta = record
+        .actual_type(model)
+        .and_then(|ty| schema.field(ty, name));
+    if let Some(field) = meta.filter(|field| field.dimension.is_some()) {
+        let location = value.location.clone();
+        return LocatedEvalValue::new(
+            EvalValue::Dimension {
+                base: Box::new(value),
+                field: field.name.clone(),
+                dimension: field
+                    .dimension
+                    .as_ref()
+                    .expect("dimensional field")
+                    .dimension
+                    .clone(),
+                value_type: field.value_type.clone(),
+            },
+            location,
+        );
+    }
+    value
+}
+
 pub(crate) fn current_field<'model>(
     schema: &CftSchema,
     model: &'model CfdDataModel,
@@ -169,6 +196,7 @@ pub(crate) fn current_field<'model>(
             name,
             budget,
         )
+        .map(|value| value.map(|value| dimension_field(schema, model, record, name, value)))
         .map_err(budget_error)
 }
 
@@ -200,6 +228,7 @@ pub(crate) fn field_value<'model>(
                     budget,
                 )
                 .map_err(budget_error)?
+                .map(|value| dimension_field(schema, model, &record, name, value))
                 .ok_or_else(|| {
                     OpsError::eval_type(target.location, format!("记录没有字段 `{name}`"))
                 })

@@ -71,6 +71,31 @@ impl ModelCursor {
         }
     }
 
+    // 覆盖存储路径相对于字段值，诊断路径补回字段名并携带原始文件位置。
+    pub(crate) fn diagnostic_label(
+        &self,
+        model: &CfdDataModel,
+        message: Option<String>,
+    ) -> coflow_model::CfdLabel {
+        let mut path = self.path.clone();
+        let origin = self.dimension.as_ref().and_then(|coordinate| {
+            let mut full = CfdPath::root().field(&coordinate.field);
+            full.segments.extend(path.segments.iter().cloned());
+            path = full;
+            model
+                .record(self.record)
+                .and_then(|record| record.dimension_field(&coordinate.field))
+                .and_then(|values| values.variants.get(coordinate.variant.as_str()))
+                .map(|value| value.origin.clone())
+        });
+        coflow_model::CfdLabel {
+            record: Some(self.record),
+            path,
+            message,
+            origin,
+        }
+    }
+
     pub(crate) fn ref_site(&self, model: &CfdDataModel) -> Option<RefSite> {
         let Some(dimension) = &self.dimension else {
             return Some(RefSite::new(self.record, self.path.clone()));
@@ -143,14 +168,6 @@ impl ValueLocation {
         Self {
             storage: self.storage.dict_key(key.clone()),
             blame: self.blame.dict_key(key),
-            references: self.references.clone(),
-        }
-    }
-
-    pub(crate) fn backed_by(&self, storage: ModelCursor) -> Self {
-        Self {
-            storage,
-            blame: self.blame.clone(),
             references: self.references.clone(),
         }
     }

@@ -68,19 +68,7 @@ impl ResolvedTypes<'_> {
                     );
                 }
             }
-            if let Some(host) = find_annotation(&info.def.annotations, "Host") {
-                if info.def.is_abstract
-                    || find_annotation(&info.def.annotations, "singleton").is_none()
-                {
-                    push_diag(
-                        &mut diagnostics,
-                        CftErrorCode::InvalidAnnotatedFieldType,
-                        &info.module,
-                        host.span,
-                        "@Host requires a concrete type with an explicit @singleton annotation",
-                    );
-                }
-            }
+
             if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
                 if let Some(AnnotationArg::Name(enum_name)) = annotation.args.first() {
                     let resolved_name = enum_name.name.clone();
@@ -380,7 +368,7 @@ pub(super) struct AnnotationSpec {
 impl AnnotationSpec {
     pub(super) fn for_name(name: &str) -> Option<Self> {
         Some(match name {
-            "struct" | "singleton" | "Host" => Self {
+            "struct" | "singleton" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },
@@ -407,7 +395,7 @@ impl AnnotationSpec {
             },
             "localized" => Self {
                 targets: &[AnnotationTarget::Field],
-                args: AnnotationArgs::NoneOrOneString,
+                args: AnnotationArgs::None,
             },
             "dimension" => Self {
                 targets: &[AnnotationTarget::Field],
@@ -420,10 +408,6 @@ impl AnnotationSpec {
     pub(super) fn args_valid(&self, annotation: &Annotation) -> bool {
         match self.args {
             AnnotationArgs::None => annotation.args.is_empty(),
-            AnnotationArgs::NoneOrOneString => {
-                annotation.args.is_empty()
-                    || matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
-            }
             AnnotationArgs::OneName => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
             }
@@ -437,7 +421,6 @@ impl AnnotationSpec {
 #[derive(Debug, Clone, Copy)]
 enum AnnotationArgs {
     None,
-    NoneOrOneString,
     OneName,
     OneString,
 }

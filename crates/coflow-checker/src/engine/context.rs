@@ -2,7 +2,7 @@ use super::builtins;
 use super::evaluator::CheckEvaluator;
 use super::statements;
 use super::value::{EvalRecordRef, EvalValue, ValueLocation};
-use crate::{CheckDiagnostic, CheckDiagnosticContext, CheckProjection, CheckSchemaLocation};
+use crate::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
 use coflow_language::cft::{CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType};
 use coflow_model::CfdDataModel;
 use std::cell::RefCell;
@@ -10,7 +10,6 @@ use std::cell::RefCell;
 pub(super) struct ExecutionContext<'a> {
     pub(super) schema: &'a CftSchema,
     pub(super) model: &'a CfdDataModel,
-    pub(super) projection: &'a CheckProjection,
     pub(super) evaluation_limits: crate::EvaluationLimits,
     regex_cache: &'a RefCell<builtins::RegexCache>,
 }
@@ -19,14 +18,12 @@ impl<'a> ExecutionContext<'a> {
     pub(super) fn new(
         schema: &'a CftSchema,
         model: &'a CfdDataModel,
-        projection: &'a CheckProjection,
         evaluation_limits: crate::EvaluationLimits,
         regex_cache: &'a RefCell<builtins::RegexCache>,
     ) -> Self {
         Self {
             schema,
             model,
-            projection,
             evaluation_limits,
             regex_cache,
         }
@@ -52,7 +49,6 @@ impl<'a> ExecutionContext<'a> {
         evaluator.contexts.push(CheckDiagnosticContext::Check {
             name: check.name.to_string(),
         });
-        self.configure_projection(&mut evaluator);
         let _ = statements::eval_root_statement(&mut evaluator, statement);
         evaluator.into_execution()
     }
@@ -62,7 +58,6 @@ impl<'a> ExecutionContext<'a> {
         meta: &CftType,
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
-        project_dimension: bool,
     ) -> (Vec<CheckDiagnostic>, u64) {
         let mut evaluator = CheckEvaluator::new(
             self.schema,
@@ -76,23 +71,7 @@ impl<'a> ExecutionContext<'a> {
             module: meta.module.clone(),
             span: meta.check.as_ref().map_or(meta.span, |check| check.span),
         });
-        if project_dimension {
-            self.configure_projection(&mut evaluator);
-        }
         let _ = statements::eval_root_statement(&mut evaluator, statement);
         evaluator.into_execution()
-    }
-
-    fn configure_projection(&self, evaluator: &mut CheckEvaluator<'_>) {
-        evaluator.projection_view = crate::dimensions::CheckProjectionView::new(self.projection);
-        if let Some((dimension, variant)) = self.projection.dimension() {
-            evaluator.contexts.insert(
-                0,
-                CheckDiagnosticContext::Dimension {
-                    dimension: dimension.to_string(),
-                    variant: variant.to_string(),
-                },
-            );
-        }
     }
 }

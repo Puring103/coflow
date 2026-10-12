@@ -46,11 +46,11 @@ pub use diagnostics::{
 pub use formatted::{evaluate_formatted_string, stringify_value};
 pub use ingest::{
     DimensionValueDraft, LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment,
-    LoadedFormattedString, LoadedFunction, LoadedRecordDraft, LoadedValueDraft,
+    LoadedFormattedString, LoadedRecordDraft, LoadedValueDraft,
 };
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
-    CfdFormattedString, CfdFunction, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
+    CfdFormattedString, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup, RecordCoordinate,
     RefEdge, RefSite,
 };

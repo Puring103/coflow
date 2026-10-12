@@ -21,16 +21,6 @@
         "view_kind": "table"
       },
       {
-        "file_path": "data/04-functions.cfd",
-        "type_name": "RuleSet",
-        "view_id": "__default_record",
-        "view_kind": "record",
-        "coordinate": {
-          "actual_type": "RuleSet",
-          "key": "rules"
-        }
-      },
-      {
         "file_path": "data/05-ui.cfd",
         "type_name": "UiText",
         "view_id": "__default_record",
@@ -69,18 +59,12 @@
         "view_kind": "source"
       },
       {
-        "file_path": "schema/04-functions.cft",
-        "type_name": "",
-        "view_id": "__default_source",
-        "view_kind": "source"
-      },
-      {
         "file_path": "data/02-entities.cfd",
         "type_name": "Entity",
         "view_id": "__default_table",
         "view_kind": "table"
       }
     ],
-    "active_tab_id": "data/04-functions.cfd\u001fRuleSet"
+    "active_tab_id": "data/01-values.cfd\u001fValueGallery"
   }
 }

@@ -1,9 +1,7 @@
 use super::CftValueType;
 use crate::module::ModuleId;
 use crate::source::Span;
-use crate::{
-    BucketName, CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName,
-};
+use crate::{CheckName, ConstName, DimensionName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -115,7 +113,6 @@ pub enum CftConstValue {
     Bool(bool),
     String(String),
     FormattedString(String),
-    Function(String),
     Enum {
         enum_name: EnumName,
         variant: EnumVariantName,
@@ -147,7 +144,6 @@ pub struct CftType {
     pub is_sealed: bool,
     pub is_struct: bool,
     pub is_singleton: bool,
-    pub is_host: bool,
     pub id_as_enum: Option<EnumName>,
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
@@ -161,7 +157,6 @@ pub struct CftType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftFieldDimension {
     pub dimension: DimensionName,
-    pub bucket: Option<BucketName>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,7 +183,6 @@ pub enum CftSchemaDefaultValue {
     Bool(bool),
     String(String),
     FormattedString(String),
-    Function(String),
     Enum {
         enum_name: EnumName,
         variant: EnumVariantName,
@@ -417,21 +411,5 @@ impl CftDisplayMetadata {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftDimension {
     pub name: DimensionName,
-    pub variants: Vec<crate::VariantName>,
-    pub(crate) variant_by_name: BTreeMap<crate::VariantName, usize>,
     pub fields: Vec<Arc<CftField>>,
-}
-
-impl CftDimension {
-    #[must_use]
-    pub fn variant(&self, name: &str) -> Option<&crate::VariantName> {
-        self.variant_by_name
-            .get(name)
-            .and_then(|index| self.variants.get(*index))
-    }
-
-    #[must_use]
-    pub fn variant_index(&self, name: &str) -> Option<usize> {
-        self.variant_by_name.get(name).copied()
-    }
 }

@@ -28,14 +28,8 @@ impl CallSignature {
             });
         }
 
-        let Some(builtin) = Builtin::by_name(name) else {
-            return Err(CallSignatureError::UnknownFunction {
-                name: name.to_string(),
-            });
-        };
-        require_arity(builtin, arg_count, builtin.arity())?;
-        Ok(Self {
-            target: CallTarget::Builtin(builtin),
+        Err(CallSignatureError::UnknownFunction {
+            name: name.to_string(),
         })
     }
 
@@ -112,8 +106,8 @@ use regex::Regex;
 use super::diagnostics::{format_value_for_message, value_type_is_float};
 use super::ops::{self, OpsError, OpsResult};
 use super::value::{
-    comparable_key, dict_key_from_check_value, dict_key_matches, values_equal, EvalItems,
-    EvalValue, LocatedBudgetExceeded, LocatedEvalValue, ScalarValue, ValueLocation,
+    comparable_key, dict_key_from_check_value, values_equal, EvalItems, EvalValue,
+    LocatedBudgetExceeded, LocatedEvalValue, ScalarValue, ValueLocation,
 };
 
 pub(crate) type RegexCache = BTreeMap<String, Regex>;
@@ -184,7 +178,7 @@ pub(crate) fn contains_value(
             Ok(false)
         }
         EvalValue::Dict { entries, .. } => {
-            let Some(key) = dict_key_from_check_value(value) else {
+            let Some(_key) = dict_key_from_check_value(value) else {
                 return Err(OpsError::eval_type(
                     collection.location.clone(),
                     format!(
@@ -195,8 +189,8 @@ pub(crate) fn contains_value(
             };
             Ok((0..entries.len()).any(|index| {
                 entries
-                    .model_entry_at(model, index)
-                    .is_some_and(|(entry_key, _)| dict_key_matches(entry_key, &key))
+                    .key_at(model, index)
+                    .is_some_and(|entry_key| values_equal(&entry_key, value))
             }))
         }
         other => Err(OpsError::eval_type(

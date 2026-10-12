@@ -7,9 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_model::cell_value::{
     parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
 };
@@ -22,8 +20,7 @@ type TestResult = Result<(), String>;
 
 fn compile_schema(source: &str) -> Result<CftSchema, String> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
-        .map_err(|err| format!("schema should compile: {err:?}"))
+    build_schema(&modules).map_err(|err| format!("schema should compile: {err:?}"))
 }
 
 fn parse_ok(schema: &CftSchema, declared_type: &str, text: &str) -> Result<ParsedCell, String> {
@@ -305,49 +302,42 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
 #[test]
 fn parses_formatted_string_cell_references() -> TestResult {
     let schema = compile_schema("type Item { name: string; }")?;
-    let local = parse_value(&schema, "string", r#"{name}"#)?;
-    assert!(matches!(local, LoadedValueDraft::FormattedString(_)));
+    assert_eq!(
+        parse_value(&schema, "string", r#""{self.name}""#)?,
+        LoadedValueDraft::String("{self.name}".to_string())
+    );
     let value = parse_value(
         &schema,
-        "string",
-        r#"{name} {&sword.name} {&Item::sword.name}"#,
+        "fstring",
+        r#"f"{self.name} {&Item::sword.name} {&Item::shield.name}""#,
     )?;
     let LoadedValueDraft::FormattedString(value) = value else {
         return Err("expected formatted string cell value".to_string());
     };
     assert_eq!(
         value.source,
-        r#""{name} {&sword.name} {&Item::sword.name}""#
+        r#"f"{self.name} {&Item::sword.name} {&Item::shield.name}""#
     );
     assert_eq!(value.segments.len(), 5);
     let references = value
         .segments
         .iter()
         .filter_map(|segment| match segment {
-            coflow_model::LoadedFormatSegment::Reference(reference) => Some(reference),
-            coflow_model::LoadedFormatSegment::Text(_) => None,
+            coflow_model::LoadedFormatSegment::Reference(reference) => Some((
+                reference.type_name.as_deref(),
+                reference.key.as_deref(),
+                reference.path.clone(),
+            )),
+            _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        (
-            references[0].type_name.as_deref(),
-            references[0].key.as_deref()
-        ),
-        (None, None)
-    );
-    assert_eq!(
-        (
-            references[1].type_name.as_deref(),
-            references[1].key.as_deref()
-        ),
-        (None, Some("sword"))
-    );
-    assert_eq!(
-        (
-            references[2].type_name.as_deref(),
-            references[2].key.as_deref()
-        ),
-        (Some("Item"), Some("sword"))
+        references,
+        vec![
+            (None, None, vec!["name".to_string()]),
+            (Some("Item"), Some("sword"), vec!["name".to_string()]),
+            (Some("Item"), Some("shield"), vec!["name".to_string()]),
+        ]
     );
     Ok(())
 }

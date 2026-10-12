@@ -6,7 +6,6 @@ pub struct CheckExecutionStats {
     pub executed_tasks: usize,
     pub rejected_tasks: usize,
     pub work_used: u64,
-    pub dimension_projected_records: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]

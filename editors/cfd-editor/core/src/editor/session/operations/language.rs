@@ -4,14 +4,11 @@
 
 use super::super::{EditorSession, SessionStore};
 use crate::editor::types::{
-    EditorError, FunctionDocumentState, LanguageCompletion, LanguageDiagnostic,
-    LanguageDocumentState, LanguageFormattingResult, LanguagePosition, LanguageRange,
-    LanguageTextEdit, ProjectBootstrap,
+    EditorError, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
+    LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit, ProjectBootstrap,
 };
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use coflow_runtime::{
-    DataSourceTextOverride, FlatDiagnostic, ProjectRuntime, SchemaTextOverride,
-};
+use coflow_runtime::{DataSourceTextOverride, FlatDiagnostic, ProjectRuntime, SchemaTextOverride};
 use serde_json::{json, Value};
 use std::io::Write;
 
@@ -213,7 +210,6 @@ fn language_position_offset(source: &str, position: &LanguagePosition) -> usize 
     source.len()
 }
 
-
 impl SessionStore {
     #[allow(clippy::significant_drop_tightening)]
     pub fn highlight_source_snapshot(
@@ -373,77 +369,6 @@ impl SessionStore {
         Ok(())
     }
 
-    pub fn function_document(
-        &self,
-        id: u32,
-        source: &str,
-        body: Option<&str>,
-    ) -> Result<FunctionDocumentState, EditorError> {
-        let entry = self.session(id)?;
-        let mut session = entry.state.write();
-        let (result, _) = session
-            .language_server
-            .request(
-                "coflow/functionDocument",
-                &json!({ "source": source, "body": body }),
-            )
-            .map_err(EditorError::other)?;
-        let diagnostics = result
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(language_diagnostic)
-            .collect();
-        let completions =
-            completion_items(result.get("completions").unwrap_or_else(|| &Value::Null));
-        let document = FunctionDocumentState {
-            source: result
-                .get("source")
-                .and_then(Value::as_str)
-                .unwrap_or(source)
-                .to_string(),
-            signature: result
-                .get("signature")
-                .and_then(Value::as_str)
-                .unwrap_or("fn")
-                .to_string(),
-            body: result
-                .get("body")
-                .and_then(Value::as_str)
-                .unwrap_or(source)
-                .to_string(),
-            body_range: result
-                .get("bodyRange")
-                .and_then(language_range)
-                .unwrap_or_else(|| LanguageRange {
-                    start: LanguagePosition {
-                        line: 0,
-                        character: 0,
-                    },
-                    end: LanguagePosition {
-                        line: 0,
-                        character: source
-                            .encode_utf16()
-                            .fold(0u32, |length, _| length.saturating_add(1)),
-                    },
-                }),
-            diagnostics,
-            semantic_token_data: result
-                .pointer("/semanticTokens/data")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_u64)
-                .filter_map(|value| u32::try_from(value).ok())
-                .collect(),
-            semantic_token_types: coflow_lsp::EmbeddedLsp::semantic_token_types(),
-            completions,
-        };
-        drop(session);
-        Ok(document)
-    }
-
     pub fn validate_source_text(
         &self,
         id: u32,
@@ -499,17 +424,21 @@ impl SessionStore {
             EditorError::write(format!("failed to read {}: {error}", path.display()))
         })?;
         if current != expected_source {
-            return Err(EditorError::write("文件已被其他操作修改，请选择使用磁盘内容或保留本地内容"));
+            return Err(EditorError::write(
+                "文件已被其他操作修改，请选择使用磁盘内容或保留本地内容",
+            ));
         }
         // 旧核心需要有效的 CFT 才能建立数据会话；错误声明保留在前端草稿。
         if has_extension(file_path, "cft") {
             let project = session.engine.project().clone();
             let mut schema_runtime = ProjectRuntime::new(project);
-            schema_runtime.refresh_with_overrides(&[SchemaTextOverride {
-                requested_module: None,
-                normalized_path: coflow_runtime::normalize_path(&path),
-                source: source.to_string(),
-            }]).map_err(super::super::errors::api_diagnostics_to_editor_error)?;
+            schema_runtime
+                .refresh_with_overrides(&[SchemaTextOverride {
+                    requested_module: None,
+                    normalized_path: coflow_runtime::normalize_path(&path),
+                    source: source.to_string(),
+                }])
+                .map_err(super::super::errors::api_diagnostics_to_editor_error)?;
         }
         // CFD 源码允许保存尚未修正的语法，重新加载负责发布诊断。
         AtomicFile::new(&path, AllowOverwrite)
@@ -525,5 +454,4 @@ impl SessionStore {
             error
         })
     }
-
 }

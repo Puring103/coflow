@@ -262,7 +262,16 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 LoadedFormatSegment::Text(text) => rendered.push_str(text),
                 LoadedFormatSegment::Reference(reference) => {
                     let resolved = self.resolve_format_reference(reference, node, cursor)?;
-                    rendered.push_str(&stringify_value(&resolved));
+                    match stringify_value(&resolved) {
+                        Ok(text) => rendered.push_str(&text),
+                        Err(message) => {
+                            self.diagnostics.push(
+                                CfdDiagnostic::error(CfdErrorCode::TypeMismatch, message)
+                                    .with_primary(Some(node.record), node.path.clone()),
+                            );
+                            return None;
+                        }
+                    }
                 }
             }
         }
@@ -634,7 +643,6 @@ fn materialized_shape(root: &CfdValue) -> MaterializedShape {
             | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
-            | CfdValue::Function(_)
             | CfdValue::Enum(_)
             | CfdValue::Ref(_) => {}
         }

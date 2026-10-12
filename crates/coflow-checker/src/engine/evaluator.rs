@@ -1,7 +1,6 @@
 use super::access;
 use super::builtins::{self, Builtin, CallSignature, CallSignatureError, CallTarget};
 use super::diagnostics::{format_value_for_message, CheckDiagnostic, CheckDiagnosticContext};
-use super::dimensions::{self, DimensionVariantAbort};
 use super::evaluation_trace::EvaluationTrace;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
@@ -15,8 +14,6 @@ use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use super::value::EvalRecordRef;
-
 pub(super) struct CheckEvaluator<'model> {
     pub(super) schema: &'model CftSchema,
     pub(super) model: &'model CfdDataModel,
@@ -25,7 +22,6 @@ pub(super) struct CheckEvaluator<'model> {
     pub(super) scopes: Vec<BTreeMap<String, LocatedEvalValue<'model>>>,
     pub(super) contexts: Vec<CheckDiagnosticContext>,
     pub(super) diagnostics: Vec<CheckDiagnostic>,
-    pub(super) projection_view: Option<dimensions::CheckProjectionView>,
     trace: Option<EvaluationTrace>,
     regex_cache: &'model RefCell<builtins::RegexCache>,
     budget: EvaluationBudget,
@@ -36,13 +32,11 @@ pub(super) struct CheckEvaluator<'model> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EvalFlow {
     Continue,
-    Skipped,
     HardStop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EvalAbort {
-    Skipped,
     Error,
 }
 
@@ -65,7 +59,6 @@ impl<'model> CheckEvaluator<'model> {
             scopes: Vec::new(),
             contexts: Vec::new(),
             diagnostics: Vec::new(),
-            projection_view: None,
             trace: None,
             regex_cache,
             budget: EvaluationBudget::new(evaluation_limits),
@@ -84,35 +77,6 @@ impl<'model> CheckEvaluator<'model> {
             self.diag_at(code, location, message);
             EvalAbort::Error
         })
-    }
-
-    pub(super) fn apply_dimension_variant(
-        &mut self,
-        record: &EvalRecordRef,
-        field_name: &str,
-        located: &mut LocatedEvalValue<'model>,
-    ) -> EvalResult<()> {
-        match dimensions::apply_dimension_variant(
-            self.schema,
-            self.model,
-            self.projection_view.as_ref(),
-            record,
-            field_name,
-            located,
-            &mut self.budget,
-        ) {
-            Ok(Some(_)) => Ok(()),
-            Ok(None) => Ok(()),
-            Err(DimensionVariantAbort::Skipped) => Err(EvalAbort::Skipped),
-            Err(DimensionVariantAbort::Error {
-                code,
-                location,
-                message,
-            }) => {
-                self.diag_at(code, *location, message);
-                Err(EvalAbort::Error)
-            }
-        }
     }
 
     pub(super) fn eval_expr(
@@ -265,10 +229,7 @@ impl<'model> CheckEvaluator<'model> {
             name,
             &mut self.budget,
         );
-        if let Some(mut value) = self.eval_ops(current_field)? {
-            if let EvalValue::Record(record) = self.current.clone() {
-                self.apply_dimension_variant(&record, name, &mut value)?;
-            }
+        if let Some(value) = self.eval_ops(current_field)? {
             return Ok(value);
         }
         if let Some(value) = self.schema.resolve_const(name) {
@@ -291,16 +252,8 @@ impl<'model> CheckEvaluator<'model> {
         target: LocatedEvalValue<'model>,
         name: &str,
     ) -> EvalResult<LocatedEvalValue<'model>> {
-        let target_record = match &target.value {
-            EvalValue::Record(record) => Some(record.clone()),
-            _ => None,
-        };
         let field = access::field_value(self.schema, self.model, target, name, &mut self.budget);
-        let mut result = self.eval_ops(field)?;
-        if let Some(record) = target_record {
-            self.apply_dimension_variant(&record, name, &mut result)?;
-        }
-        Ok(result)
+        self.eval_ops(field)
     }
 
     pub(super) fn eval_index(
@@ -355,81 +308,12 @@ impl<'model> CheckEvaluator<'model> {
                     builtins::enum_with_value(self.schema, &enum_meta.name, value),
                 )))
             }
-            CallTarget::Builtin(builtin) => self.eval_builtin_call(builtin, args),
-        }
-    }
-
-    pub(super) fn eval_builtin_call(
-        &mut self,
-        builtin: Builtin,
-        args: &[CftSchemaCheckExpr],
-    ) -> EvalResult<LocatedEvalValue<'model>> {
-        match builtin {
-            Builtin::Len => {
-                let arg = &args[0];
-                let arg_value = self.eval_expr(arg)?;
-                self.eval_ops(builtins::len_value(arg_value))
-            }
-            Builtin::Contains => {
-                let collection = self.eval_expr(&args[0])?;
-                self.charge_collection_work(&collection)?;
-                let value = self.eval_expr(&args[1])?;
-                let contains = builtins::contains_value(
-                    &collection,
-                    &value.value,
-                    self.model,
-                    &mut self.budget,
+            CallTarget::Builtin(_) => {
+                self.diag(
+                    CfdErrorCode::CheckEvalTypeError,
+                    "check built-ins require method syntax",
                 );
-                Ok(LocatedEvalValue::new(
-                    EvalValue::bool(self.eval_ops(contains)?),
-                    collection.location.clone(),
-                ))
-            }
-            Builtin::Unique => {
-                let arg = &args[0];
-                let arg_value = self.eval_expr(arg)?;
-                self.eval_unique(arg, arg_value)
-            }
-            Builtin::Min | Builtin::Max => self.eval_min_max(builtin, args),
-            Builtin::Sum => self.eval_sum(args),
-            Builtin::Keys => {
-                let arg = &args[0];
-                let arg_value = self.eval_expr(arg)?;
-                self.charge_collection_work(&arg_value)?;
-                self.eval_ops(builtins::keys_value(arg_value))
-            }
-            Builtin::Values => {
-                let arg = &args[0];
-                let arg_value = self.eval_expr(arg)?;
-                self.charge_collection_work(&arg_value)?;
-                self.eval_ops(builtins::values_value(arg_value))
-            }
-            Builtin::Matches => {
-                let value = self.eval_expr(&args[0])?;
-                let pattern =
-                    self.resolve_call_signature(builtins::matches_pattern_arg(&args[1]))?;
-                let result = {
-                    let mut cache = self.regex_cache.borrow_mut();
-                    builtins::matches_value(value, pattern, &mut cache)
-                };
-                self.eval_ops(result)
-            }
-            Builtin::StartsWith
-            | Builtin::EndsWith
-            | Builtin::IsBlank
-            | Builtin::Abs
-            | Builtin::IsFinite
-            | Builtin::ApproxEqual
-            | Builtin::ContainsKey
-            | Builtin::ContainsValue
-            | Builtin::IsSorted
-            | Builtin::IsStrictlySorted
-            | Builtin::Intersects
-            | Builtin::IsDisjoint
-            | Builtin::IsSubsetOf
-            | Builtin::IsSupersetOf => {
-                let receiver_value = self.eval_expr(&args[0])?;
-                self.eval_extended_builtin(builtin, receiver_value, &args[1..])
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -452,6 +336,60 @@ impl<'model> CheckEvaluator<'model> {
 
         let receiver_value = self.eval_expr(receiver)?;
         match builtin {
+            Builtin::Default => match receiver_value.value {
+                EvalValue::Dimension { base, .. } => Ok(*base),
+                _ => {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.location,
+                        "default() requires a dimension field",
+                    );
+                    Err(EvalAbort::Error)
+                }
+            },
+            Builtin::Variants => match receiver_value.value {
+                EvalValue::Dimension {
+                    base,
+                    field,
+                    dimension,
+                    value_type,
+                } => {
+                    let Some(location) = base.location else {
+                        return Err(EvalAbort::Error);
+                    };
+                    let variants = self
+                        .model
+                        .dimension_variants(dimension.as_str())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    self.charge_nodes_at(
+                        EvaluationKind::DataValue,
+                        variants.len() as u64,
+                        Some(location.clone()),
+                    )?;
+                    Ok(LocatedEvalValue::new(
+                        EvalValue::Dict {
+                            entries: crate::eval::EvalEntries::dimension(
+                                location.clone(),
+                                field,
+                                variants,
+                            ),
+                            key_type: Some(coflow_language::cft::CftValueType::String),
+                            value_type: Some(value_type),
+                        },
+                        Some(location),
+                    ))
+                }
+                _ => {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.location,
+                        "variants() requires a dimension field",
+                    );
+                    Err(EvalAbort::Error)
+                }
+            },
+            Builtin::For => self.eval_dimension_for(receiver_value, &args[0]),
             Builtin::Len => self.eval_ops(builtins::len_value(receiver_value)),
             Builtin::Contains => {
                 self.charge_collection_work(&receiver_value)?;
@@ -501,6 +439,74 @@ impl<'model> CheckEvaluator<'model> {
             | Builtin::IsDisjoint
             | Builtin::IsSubsetOf
             | Builtin::IsSupersetOf => self.eval_extended_builtin(builtin, receiver_value, args),
+        }
+    }
+
+    fn eval_dimension_for(
+        &mut self,
+        receiver: LocatedEvalValue<'model>,
+        variant: &CftSchemaCheckExpr,
+    ) -> EvalResult<LocatedEvalValue<'model>> {
+        let selected = self.eval_expr(variant)?;
+        let Some(ScalarValue::String(variant)) = selected.value.scalar() else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                selected.location,
+                "dimension variant must be string",
+            );
+            return Err(EvalAbort::Error);
+        };
+        let EvalValue::Dimension {
+            base,
+            field,
+            value_type,
+            ..
+        } = receiver.value
+        else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                receiver.location,
+                "for() requires a dimension field",
+            );
+            return Err(EvalAbort::Error);
+        };
+        let Some(location) = base.location.as_ref() else {
+            return Ok(*base);
+        };
+        let record_id = location.storage.record;
+        let Some(overlay) = self
+            .model
+            .record(record_id)
+            .and_then(|record| record.dimension_field(field.as_str()))
+            .and_then(|values| values.variants.get(variant))
+        else {
+            return Ok(*base);
+        };
+        // 显式 None 同样是覆盖；仅缺失覆盖才返回基础值。
+        let storage = crate::eval::ModelCursor::dimension(record_id, field.as_str(), variant);
+        let location = ValueLocation {
+            storage: storage.clone(),
+            blame: storage,
+            references: location.references.clone(),
+        };
+        let value = EvalValue::from_cfd_value(
+            &overlay.value,
+            Some(&value_type),
+            location.clone(),
+            self.model,
+            &mut self.budget,
+            EvaluationCursor::root(),
+        );
+        match value {
+            Ok(value) => Ok(LocatedEvalValue::new(value, Some(location))),
+            Err(error) => {
+                self.diag_at(
+                    CfdErrorCode::CheckBudgetExceeded,
+                    *error.location,
+                    error.error.to_string(),
+                );
+                Err(EvalAbort::Error)
+            }
         }
     }
 
@@ -612,15 +618,6 @@ impl<'model> CheckEvaluator<'model> {
         }
     }
 
-    pub(super) fn eval_min_max(
-        &mut self,
-        builtin: Builtin,
-        args: &[CftSchemaCheckExpr],
-    ) -> EvalResult<LocatedEvalValue<'model>> {
-        let arg_value = self.eval_expr(&args[0])?;
-        self.eval_min_max_value(builtin, &arg_value)
-    }
-
     pub(super) fn eval_min_max_value(
         &mut self,
         builtin: Builtin,
@@ -629,14 +626,6 @@ impl<'model> CheckEvaluator<'model> {
         self.charge_collection_work(arg_value)?;
         let result = builtins::min_max_value(builtin, arg_value, self.model, &mut self.budget);
         self.eval_ops(result)
-    }
-
-    pub(super) fn eval_sum(
-        &mut self,
-        args: &[CftSchemaCheckExpr],
-    ) -> EvalResult<LocatedEvalValue<'model>> {
-        let arg_value = self.eval_expr(&args[0])?;
-        self.eval_sum_value(arg_value)
     }
 
     pub(super) fn eval_sum_value(
@@ -799,24 +788,35 @@ impl<'model> CheckEvaluator<'model> {
     ) {
         let location = location.or_else(|| self.check_origin.clone());
         let mut diagnostic = CfdDiagnostic::error(code, message.into());
+        let context_count = self.contexts.len();
         if let Some(location) = location {
-            diagnostic =
-                diagnostic.with_primary(Some(location.blame.record), location.blame.path.clone());
+            diagnostic.primary = Some(location.blame.diagnostic_label(self.model, None));
             for reference in &location.references {
-                diagnostic = diagnostic.with_related(
-                    Some(reference.record),
-                    reference.path.clone(),
-                    "referenced from here",
+                diagnostic.related.push(
+                    reference
+                        .diagnostic_label(self.model, Some("referenced from here".to_string())),
                 );
             }
             if location.storage != location.blame
                 && !location.references.contains(&location.storage)
             {
-                diagnostic = diagnostic.with_related(
-                    Some(location.storage.record),
-                    location.storage.path,
-                    "value stored here",
+                diagnostic.related.push(
+                    location
+                        .storage
+                        .diagnostic_label(self.model, Some("value stored here".to_string())),
                 );
+            }
+            if let Some(coordinate) = &location.blame.dimension {
+                if let Some(values) = self
+                    .model
+                    .record(location.blame.record)
+                    .and_then(|record| record.dimension_field(&coordinate.field))
+                {
+                    self.contexts.push(CheckDiagnosticContext::Dimension {
+                        dimension: values.dimension.to_string(),
+                        variant: coordinate.variant.clone(),
+                    });
+                }
             }
         }
         self.diagnostics.push(CheckDiagnostic {
@@ -825,6 +825,7 @@ impl<'model> CheckEvaluator<'model> {
             is_custom_message: false,
             schema_location: self.schema_location.clone(),
         });
+        self.contexts.truncate(context_count);
     }
 
     pub(super) fn diag_at_custom_message(

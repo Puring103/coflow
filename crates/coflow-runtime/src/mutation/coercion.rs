@@ -70,6 +70,23 @@ fn coerce_json_value(
             .as_str()
             .map(|text| CfdValue::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string")),
+        CftValueType::FormattedString => {
+            let source = value
+                .as_str()
+                .ok_or_else(|| one_value_error("expected fstring source"))?;
+            let (_, errors) =
+                coflow_language::cfd::parse_cfd(&format!("value: Value {{ field: {source} }}"));
+            if let Some(error) = errors.first() {
+                return Err(one_value_error(error.message.clone()));
+            }
+            if !source.starts_with("f\"") {
+                return Err(one_value_error("expected explicit fstring source"));
+            }
+            Ok(CfdValue::FormattedString(crate::CfdFormattedString {
+                source: source.to_string(),
+                rendered: String::new(),
+            }))
+        }
         CftValueType::Option(inner) => {
             let object = single_tag_object(value, "Option", &["$none", "$some"])?;
             if object.contains_key("$none") {
@@ -138,7 +155,7 @@ fn coerce_json_value(
                 },
             )
         }
-        CftValueType::Function(_, _) | CftValueType::Unit => Err(one_value_error(format!(
+        CftValueType::Unit => Err(one_value_error(format!(
             "JSON coercion for `{expected}` is not supported"
         ))),
     }

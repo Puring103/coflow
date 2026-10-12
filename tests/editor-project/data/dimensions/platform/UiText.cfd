@@ -1,5 +1,2 @@
-hint: __coflow_platform_UiText_hint {
-  default: "Press Enter",
-  desktop: "Press Enter",
-  mobile: "Tap to continue",
-}
+platform[desktop] { UiText: UiText { hint: "Press Enter" } }
+platform[mobile] { UiText: UiText { hint: "Tap to continue" } }

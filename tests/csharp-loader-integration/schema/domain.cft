@@ -1,0 +1,20 @@
+@flag enum Flags { Read = 1, Write = 2 }
+const BASE_PRICE: int = 3;
+@struct sealed type Empty { hp: int = 9; }
+@struct sealed type CfdField { settings: Empty = {}; }
+@struct sealed type Stats { hp: int = 10; extra: CfdField = CfdField { settings: {} }; }
+abstract type Entity {
+  @dimension("language")
+  name: string;
+}
+type Item: Entity {
+  stats: Stats;
+  price: int = BASE_PRICE;
+  next: Option<&Item> = None;
+  label: fstring = f"{{item}} {self.name}: {self.stats.hp}";
+  permissions: Flags = Flags::Read | Flags::Write;
+  enum_label: fstring = f"{self.permissions}";
+  nums: [int];
+  indexed: {string: int};
+}
+@singleton type Settings { start: &Item; }

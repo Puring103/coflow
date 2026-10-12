@@ -1,8 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use coflow_language::cft::{
-    build_schema, parse_modules, CftConstValue, CftDimensionInputs, CftFile, CftSchemaDefaultValue,
-    ModuleId,
+    build_schema, parse_modules, CftConstValue, CftFile, CftSchemaDefaultValue, ModuleId,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -10,11 +9,11 @@ fn compile(
     source: &str,
 ) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
+    build_schema(&modules)
 }
 
 #[test]
-fn supports_runtime_field_defaults() {
+fn supports_data_field_defaults() {
     let schema = compile(
         r#"
 @flag enum Permission { Read = 1, Write = 2 }
@@ -24,24 +23,23 @@ type Damage: Effect {}
 @description("literal {{braces}}")
 type Rule {
   name: string;
-  label: string = "rule {name}";
+  label: fstring = f"rule {self.name}";
   braces: string = "{{ready}}";
   permissions: Permission = Permission::Read | Permission::Write;
   effect: Effect = Damage { amount: 2 };
-  apply: fn(value: int) -> int = fn(input: int) -> int { input + 1 };
 }
 "#,
     )
-    .expect("runtime defaults compile");
+    .expect("data defaults compile");
     let rule = schema.resolve_type("Rule").expect("Rule");
 
     assert!(matches!(
         rule.field("label").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::FormattedString(source)) if source == "\"rule {name}\""
+        Some(CftSchemaDefaultValue::FormattedString(source)) if source == "f\"rule {self.name}\""
     ));
     assert!(matches!(
         rule.field("braces").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::String(value)) if value == "{ready}"
+        Some(CftSchemaDefaultValue::String(value)) if value == "{{ready}}"
     ));
     assert!(matches!(
         rule.field("permissions")
@@ -53,69 +51,44 @@ type Rule {
         Some(CftSchemaDefaultValue::Object { type_name, .. }) if type_name.as_str() == "Damage"
     ));
     assert!(matches!(
-        rule.field("apply").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::Function(source)) if source.contains("input + 1")
-    ));
-    assert!(matches!(
         schema.resolve_const("BRACES").map(|value| &value.value),
-        Some(CftConstValue::String(value)) if value == "{ready}"
+        Some(CftConstValue::String(value)) if value == "{{ready}}"
     ));
 }
 
 #[test]
-fn rejects_removed_formatted_string_prefix() {
+fn ordinary_string_braces_are_literal() {
+    let schema =
+        compile(r#"type Rule { label: string = "{self.name}"; }"#).expect("literal braces");
+    let rule = schema.resolve_type("Rule").expect("Rule");
+    assert!(
+        matches!(rule.field("label").and_then(|field| field.default.as_ref()), Some(CftSchemaDefaultValue::String(value)) if value == "{self.name}")
+    );
+}
+
+#[test]
+fn formatted_defaults_only_accept_field_paths() {
     for source in [
-        r#"type Rule { label: string = f"{id}"; }"#,
-        r#"type Rule { value: int; check { value > 0: f"invalid {value}"; } }"#,
+        r#"type Rule { name: string; label: fstring = f"{self.name()}"; }"#,
+        r#"type Rule { price: int; label: fstring = f"{self.price + 1}"; }"#,
+        r#"type Rule { price: int; label: fstring = f"{self.price:000}"; }"#,
     ] {
-        let diagnostics = compile(source).expect_err("the f prefix must be rejected");
-        assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == CftErrorCode::UnexpectedCharacter
-                && diagnostic.message.contains("ordinary quotes")
-        }));
+        let diagnostics = compile(source).expect_err("data interpolation must reject expressions");
+        assert!(diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == CftErrorCode::InvalidDefaultExpression));
     }
 }
 
 #[test]
-fn rejects_invalid_function_defaults() {
-    let diagnostics =
-        compile("type Rule { apply: fn(value: int) -> int = fn(value: string) -> int { 1 }; }")
-            .expect_err("a mismatched default signature must fail");
-    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == CftErrorCode::InvalidConstValue
-            && diagnostic
-                .message
-                .contains("expected `fn(value: int) -> int`")
-    }));
-
-    let diagnostics = compile(
-        "@Host @singleton type Services { apply: fn(value: int) -> int = fn(value: int) -> int { value }; }",
-    )
-    .expect_err("host functions cannot have default implementations");
-    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == CftErrorCode::InvalidDefaultExpression
-            && diagnostic.message.contains("@Host function fields")
-    }));
-
-    let diagnostics = compile(
-        "type ServiceBase { apply: fn(value: int) -> int = fn(value: int) -> int { value }; } @Host @singleton type Services: ServiceBase {}",
-    )
-    .expect_err("host functions cannot inherit default implementations");
-    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == CftErrorCode::InvalidDefaultExpression
-            && diagnostic
-                .message
-                .contains("inherited by @Host type `Services`")
-    }));
-
-    let diagnostics = compile(
-        "type Rule { callbacks: [fn(value: int) -> int] = [fn(value: int) -> int { value }]; }",
-    )
-    .expect_err("function defaults cannot be nested in collections");
-    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == CftErrorCode::InvalidDefaultExpression
-            && diagnostic.message.contains("directly on function fields")
-    }));
+fn function_types_and_defaults_are_rejected() {
+    for source in [
+        "type Rule { apply: fn(value: int) -> int; }",
+        "type Rule { apply: int = fn(value: int) -> int { value }; }",
+    ] {
+        assert!(compile(source).is_err(), "{source}");
+    }
 }
 
 #[test]
@@ -136,4 +109,22 @@ fn rejects_invalid_flag_default_expressions() {
         diagnostic.code == CftErrorCode::InvalidConstValue
             && diagnostic.message.contains("undeclared bits")
     }));
+}
+
+#[test]
+fn check_messages_only_interpolate_paths() {
+    compile(r#"type Rule { price: int; check { price >= 0 : f"bad {price}"; } }"#)
+        .expect("scalar field interpolation");
+    for expression in [
+        "price + 1",
+        "price.abs()",
+        "price:000",
+        "-price",
+        "len(price)",
+    ] {
+        let source = format!(
+            "type Rule {{ price: int; check {{ price >= 0 : f\"bad {{{expression}}}\"; }} }}"
+        );
+        assert!(compile(&source).is_err(), "{expression}");
+    }
 }

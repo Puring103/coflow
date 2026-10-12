@@ -113,16 +113,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             );
             return None;
         }
-        if expected_type.is_none() && actual_type_meta.is_host {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::HostRecordType,
-                    format!("@Host type `{actual_type}` cannot be declared by CFD"),
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        }
+
         if let Some(expected) = expected_type {
             if let Err(error) = crate::semantics::validate_object_type_assignable(
                 schema.cft(),
@@ -260,13 +251,8 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             (CftValueType::String, LoadedValueDraft::String(value)) => {
                 Some(ValueDraft::Value(CfdValue::String(value.clone())))
             }
-            (CftValueType::String, LoadedValueDraft::FormattedString(value)) => {
+            (CftValueType::FormattedString, LoadedValueDraft::FormattedString(value)) => {
                 Some(ValueDraft::FormattedString(value.clone()))
-            }
-            (CftValueType::Function(_, _), LoadedValueDraft::Function(value)) => {
-                Some(ValueDraft::Value(CfdValue::Function(crate::CfdFunction {
-                    source: value.source.clone(),
-                })))
             }
             (
                 CftValueType::Enum(expected),
@@ -546,7 +532,7 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
         LoadedValueDraft::Float(_) => "float",
         LoadedValueDraft::String(_) => "string",
         LoadedValueDraft::FormattedString(_) => "formatted string",
-        LoadedValueDraft::Function(_) => "function",
+
         LoadedValueDraft::EnumVariant { .. } | LoadedValueDraft::EnumValue { .. } => "enum",
         LoadedValueDraft::Object { .. } => "object",
         LoadedValueDraft::RecordRef(_) => "record ref",

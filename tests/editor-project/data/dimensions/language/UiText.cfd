@@ -1,5 +1,2 @@
-text: __coflow_language_UiText_text {
-  default: "Welcome",
-  en: "Welcome",
-  zh: "欢迎",
-}
+language[en] { UiText: UiText { text: "Welcome" } }
+language[zh] { UiText: UiText { text: "欢迎" } }

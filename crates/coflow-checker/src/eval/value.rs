@@ -1,8 +1,6 @@
 use crate::limits::{EvaluationBudget, EvaluationBudgetExceeded, EvaluationCursor, EvaluationKind};
 use coflow_language::cft::{CftConstValue, CftValueType, EnumName, FieldName};
-use coflow_model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdRecordId, CfdValue,
-};
+use coflow_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue};
 use std::collections::BTreeMap;
 
 use super::collections::{EvalEntries, EvalItems};
@@ -15,6 +13,13 @@ pub(crate) enum EvalValue<'a> {
     Temporary(TemporaryValue),
     Constant(CftConstValue),
     EnumNamespace(EnumName),
+    // 维度字段保持为选择器，显式 for() 后才读取业务值。
+    Dimension {
+        base: Box<LocatedEvalValue<'a>>,
+        field: FieldName,
+        dimension: coflow_language::cft::DimensionName,
+        value_type: CftValueType,
+    },
     Record(EvalRecordRef),
     Entry(Box<EvalEntry<'a>>),
     Array {
@@ -92,7 +97,6 @@ impl<'a> EvalValue<'a> {
             | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
-            | CfdValue::Function(_)
             | CfdValue::Enum(_) => Self::Model(value),
             CfdValue::Object(_) => Self::Record(EvalRecordRef::Resolved(location)),
             CfdValue::Ref(_key) => {
@@ -174,7 +178,8 @@ impl<'a> EvalValue<'a> {
                 CftConstValue::String(value) => Some(ScalarValue::String(value)),
                 _ => None,
             },
-            Self::EnumNamespace(_)
+            Self::Dimension { .. }
+            | Self::EnumNamespace(_)
             | Self::Record(_)
             | Self::Entry(_)
             | Self::Array { .. }
@@ -222,8 +227,7 @@ fn scalar_from_cfd(value: &CfdValue) -> Option<ScalarValue<'_>> {
         | CfdValue::Object(_)
         | CfdValue::Ref(_)
         | CfdValue::Array(_)
-        | CfdValue::Dict(_)
-        | CfdValue::Function(_) => None,
+        | CfdValue::Dict(_) => None,
     }
 }
 
@@ -341,18 +345,6 @@ impl EvalRecordRef {
         match self {
             Self::Resolved(location) | Self::RecordSet(location) => Some(location.clone()),
             Self::Unresolved => None,
-        }
-    }
-
-    pub(crate) fn top_record_id(&self) -> Option<CfdRecordId> {
-        match self {
-            Self::Resolved(location) | Self::RecordSet(location)
-                if location.storage.dimension.is_none()
-                    && location.storage.path.segments.is_empty() =>
-            {
-                Some(location.storage.record)
-            }
-            Self::Resolved(_) | Self::RecordSet(_) | Self::Unresolved => None,
         }
     }
 }
@@ -529,17 +521,6 @@ pub(crate) fn dict_key_from_check_value(value: &EvalValue<'_>) -> Option<Compara
             comparable_key(value)
         }
         _ => None,
-    }
-}
-
-pub(crate) fn dict_key_matches(key: &CfdDictKey, expected: &ComparableKey) -> bool {
-    match (key, expected) {
-        (CfdDictKey::String(key), ComparableKey::String(expected)) => key == expected,
-        (CfdDictKey::Int(key), ComparableKey::Int(expected)) => key == expected,
-        (CfdDictKey::Enum(key), ComparableKey::Enum(expected)) => {
-            key.enum_name == expected.enum_name && key.value == expected.value
-        }
-        _ => false,
     }
 }
 

@@ -61,9 +61,6 @@ impl Parser<'_> {
 
     fn parse_default_primary(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         let token = self.peek().clone();
-        if self.peek_ident_is("fn") {
-            return self.parse_function_default();
-        }
         match token.kind {
             TokenKind::Int(value) => {
                 self.bump();
@@ -156,62 +153,18 @@ impl Parser<'_> {
             .end;
         let span = Span::new(start, end);
         let source = self.source[start..end].to_string();
+        // 默认值与 CFD 共用基础插值语法，避免表达式和调用进入数据加载路径。
+        let (_, errors) = crate::cfd::parse_cfd(&format!("value: Value {{ text: {source} }}"));
+        if let Some(error) = errors.first() {
+            return self.err_at(
+                CftErrorCode::InvalidDefaultExpression,
+                span,
+                error.message.clone(),
+            );
+        }
         self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
             kind: DefaultExprKind::FormattedString(source),
             span,
-        })
-    }
-
-    fn parse_function_default(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
-        let start = self.peek().span.start;
-        let signature = self.parse_value_type()?;
-        if !matches!(
-            signature.value.kind,
-            crate::syntax::ast::TypeRefKind::Function(_, _)
-        ) {
-            return self.err(
-                CftErrorCode::InvalidDefaultExpression,
-                "expected function literal",
-            );
-        }
-        let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
-        let body_start = opener.end;
-        let mut depth = 1_usize;
-        let mut end = opener.end;
-        while depth > 0 {
-            let token = self.peek().clone();
-            match token.kind {
-                TokenKind::LBrace => depth += 1,
-                TokenKind::RBrace => depth -= 1,
-                TokenKind::Eof => {
-                    return self.err(CftErrorCode::UnexpectedEof, "unterminated function body");
-                }
-                _ => {}
-            }
-            end = self.bump().span.end;
-        }
-        let body_end = end.saturating_sub(1);
-        if let Err(error) = crate::cfd::validate_function_body(&self.source[body_start..body_end]) {
-            return self.err_at(
-                CftErrorCode::InvalidDefaultExpression,
-                Span::new(
-                    body_start + error.offset,
-                    (body_start + error.offset + 1).min(body_end),
-                ),
-                error.message,
-            );
-        }
-        let span = Span::new(start, end);
-        let source = self.source[start..end].to_string();
-        let signature_depth = signature.depth;
-        self.node(StructureKind::DefaultValue, span, [signature_depth], || {
-            DefaultExpr {
-                kind: DefaultExprKind::Function {
-                    signature: signature.value,
-                    source,
-                },
-                span,
-            }
         })
     }
 

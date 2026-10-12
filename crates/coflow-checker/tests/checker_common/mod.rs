@@ -2,22 +2,12 @@
 #![allow(clippy::redundant_pub_crate)]
 
 pub(crate) use coflow_checker::*;
-pub(crate) use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+pub(crate) use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 pub(crate) use coflow_model::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(
-        &modules,
-        &CftDimensionInputs::try_new([
-            ("language", vec!["zh".to_string(), "en".to_string()]),
-            ("platform", vec!["pc".to_string(), "mobile".to_string()]),
-        ])
-        .expect("valid dimension fixture"),
-    )
-    .expect("schema should compile")
+    build_schema(&modules).expect("schema should compile")
 }
 
 pub(crate) fn assert_has_code(diags: &CfdDiagnostics, code: CfdErrorCode) {
@@ -91,7 +81,6 @@ pub(crate) fn base_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckT
                 .map(|statement| CheckTask {
                     statement,
                     target: CheckTarget::Record(record),
-                    projection: CheckProjection::Base,
                 }),
         );
     }
@@ -107,7 +96,6 @@ pub(crate) fn base_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckT
             .map(|statement| CheckTask {
                 statement: statement.id,
                 target: CheckTarget::Project,
-                projection: CheckProjection::Base,
             }),
     );
     tasks.into_iter().collect()

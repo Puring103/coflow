@@ -71,7 +71,7 @@ fn run() -> Result<bool, DiagnosticSet> {
 
 fn project_diff(args: &DiffArgs) -> Result<bool, DiagnosticSet> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let session = coflow_runtime::Runtime::new().open_read_only_session(project)?;
+    let session = coflow_runtime::Runtime::new().open_data_session(project)?;
     let diff = session.queries().diff_against_head()?;
     if args.json {
         let output = serde_json::to_string_pretty(&diff)

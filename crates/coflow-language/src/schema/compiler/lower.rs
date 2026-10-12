@@ -12,7 +12,7 @@ use crate::syntax::ast::{
     Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment,
     CheckMessageKind, CheckStmt, CmpOp, DefaultExpr, FieldDef, TypePredicate, UnaryOp,
 };
-use crate::{BucketName, CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
+use crate::{CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -147,7 +147,6 @@ impl ValidatedSchema<'_> {
                 .map(|(index, field)| (field.name.clone(), index))
                 .collect();
             let is_singleton = has_annotation(&info.def.annotations, "singleton");
-            let is_host = has_annotation(&info.def.annotations, "Host");
             let id_as_enum = find_annotation(&info.def.annotations, "idAsEnum")
                 .and_then(|annotation| annotation.args.first())
                 .and_then(|arg| match arg {
@@ -166,7 +165,6 @@ impl ValidatedSchema<'_> {
                 is_sealed: info.def.is_sealed,
                 is_struct: has_annotation(&info.def.annotations, "struct"),
                 is_singleton,
-                is_host,
                 id_as_enum,
                 annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
@@ -191,12 +189,8 @@ impl ValidatedSchema<'_> {
         field: &FieldDef,
         owner_type: &TypeName,
     ) -> CftField {
-        let dimension = field_dimension_name(field).map(|dimension| CftFieldDimension {
-            bucket: (dimension.as_str() == "language")
-                .then(|| localized_bucket(field))
-                .flatten(),
-            dimension,
-        });
+        let dimension =
+            field_dimension_name(field).map(|dimension| CftFieldDimension { dimension });
         CftField {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
@@ -276,7 +270,7 @@ fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
         CftConstValue::FormattedString(source) => {
             CftSchemaDefaultValue::FormattedString(source.clone())
         }
-        CftConstValue::Function(source) => CftSchemaDefaultValue::Function(source.clone()),
+
         CftConstValue::Enum {
             enum_name,
             variant,
@@ -321,14 +315,6 @@ fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
                 key: key.clone(),
             }
         }
-    }
-}
-
-fn localized_bucket(field: &FieldDef) -> Option<BucketName> {
-    let annotation = find_annotation(&field.annotations, "localized")?;
-    match annotation.args.first() {
-        Some(AnnotationArg::String(bucket, _)) => Some(BucketName::from_validated(bucket.clone())),
-        _ => None,
     }
 }
 

@@ -5,10 +5,11 @@ use tauri::State;
 
 use super::run_host_command;
 use crate::editor::{
-    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft, DeleteRecordOutcome,
-    EditorError, EnumVariantOption, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
-    PluginSchemaType, ProjectSearchMode, ProjectSearchResults, RecordRow, RefTarget,
-    RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
+    DeleteRecordOutcome, EditorError, EnumVariantOption, FileRecords, GraphData, GraphQuery,
+    InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults, RecordRow,
+    RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome,
+    WriteFieldOutcome,
 };
 use coflow_runtime::{
     CfdPathSegment, CfdValue, DimensionValueCoordinate, DimensionValueView, RecordCoordinate,
@@ -209,11 +210,17 @@ pub(crate) async fn write_dimension_value(
     coordinate: DimensionValueCoordinate,
     expected_value: coflow_runtime::DimensionValueState,
     new_value: coflow_runtime::DimensionValueState,
+    destination_file: Option<String>,
     host: State<'_, EditorHost>,
 ) -> Result<WriteDimensionValueOutcome, EditorError> {
     run_host_command(host, move |host| {
-        host.sessions()
-            .write_dimension_value(session_id, &coordinate, &expected_value, &new_value)
+        host.sessions().write_dimension_value(
+            session_id,
+            &coordinate,
+            &expected_value,
+            &new_value,
+            destination_file.as_deref(),
+        )
     })
     .await
 }

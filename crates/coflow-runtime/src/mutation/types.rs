@@ -71,6 +71,8 @@ pub enum MutationOp {
         path: Vec<CfdPathSegment>,
     },
     SetDimensionValue {
+        #[serde(default)]
+        file: Option<String>,
         coordinate: DimensionValueCoordinate,
         #[serde(default)]
         expected: DimensionValueExpectation,

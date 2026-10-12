@@ -11,7 +11,6 @@ pub enum LoadedValueDraft {
     Float(f64),
     String(String),
     FormattedString(LoadedFormattedString),
-    Function(LoadedFunction),
     EnumVariant {
         enum_name: String,
         variant: String,
@@ -27,11 +26,6 @@ pub enum LoadedValueDraft {
     RecordRef(String),
     Array(Vec<LoadedValueDraft>),
     Dict(Vec<(LoadedDictKeyDraft, LoadedValueDraft)>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoadedFunction {
-    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

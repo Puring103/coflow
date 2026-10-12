@@ -67,7 +67,7 @@ struct PendingCodegen {
     files: Vec<crate::codegen::CodeArtifactFile>,
 }
 
-/// Checks the project's schema, data, and declared checks.
+/// Checks the project's declarations and selected CFD data.
 ///
 /// # Errors
 ///
@@ -78,7 +78,7 @@ pub fn check_project(project: &Project) -> Result<CommandOutcome<CheckReport>, D
     if !diagnostics.is_empty() {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let session = Runtime::new().open_read_only_session(project.clone())?;
+    let session = Runtime::new().open_data_session(project.clone())?;
     if session.queries().has_diagnostics() {
         Ok(CommandOutcome::Diagnostics(session.into_diagnostics()))
     } else {
@@ -151,7 +151,7 @@ fn prepare_project_code<T>(
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
 
-    let session = Runtime::new().open_read_only_session(project.clone())?;
+    let session = Runtime::new().open_data_session(project.clone())?;
     if session.queries().has_diagnostics() {
         return Ok(CommandOutcome::Diagnostics(session.into_diagnostics()));
     }

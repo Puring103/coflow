@@ -23,19 +23,6 @@ pub fn csharp_ident_error(value: &str) -> Option<String> {
     None
 }
 
-pub fn csharp_type_name(name: &str) -> String {
-    // 生成 API 保留源名称，不转换大小写或移除下划线。
-    name.to_string()
-}
-
-pub fn csharp_qualified_type_name(name: &str) -> String {
-    format!("global::{}", csharp_type_name(name))
-}
-
-pub fn csharp_relative_type_path(name: &str) -> String {
-    format!("{}.cs", csharp_type_name(name))
-}
-
 pub fn metadata_identifier(name: &str) -> String {
     let mut out = String::from("Cft_");
     for byte in name.as_bytes() {

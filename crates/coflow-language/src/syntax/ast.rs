@@ -171,20 +171,14 @@ pub enum TypeRefKind {
     Float,
     Bool,
     String,
+    FormattedString,
     Named(String),
     Ref(Box<TypeRef>),
     Array(Box<TypeRef>),
     Dict(Box<TypeRef>, Box<TypeRef>),
     Option(Box<TypeRef>),
     Result(Box<TypeRef>, Box<TypeRef>),
-    Function(Vec<FunctionParameterRef>, Box<TypeRef>),
     Unit,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionParameterRef {
-    pub name: Option<NameRef>,
-    pub value_type: TypeRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -210,10 +204,7 @@ pub enum DefaultExprKind {
     ResultErr(Box<DefaultExpr>),
     String(String),
     FormattedString(String),
-    Function {
-        signature: TypeRef,
-        source: String,
-    },
+
     BitExpr {
         op: DefaultBitOp,
         lhs: Box<DefaultExpr>,

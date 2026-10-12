@@ -28,7 +28,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
     let expanded = expand_structural_lines(&collapsed, language);
     let mut output = String::new();
     let mut delimiters = DelimiterIndent::default();
-    let mut function_bodies = FunctionScopes::default();
     let mut generic_continuation_depth = 0usize;
     let mut continuation = false;
     let mut pending_blank_line = false;
@@ -66,7 +65,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         if formatted == "{" && attach_opening_brace(&mut output) {
             pending_blank_line = false;
             delimiters.apply_line(&formatted);
-            function_bodies.apply_line(&formatted);
             continuation = false;
             if separate_after_annotation == Some(line_indent) {
                 separate_after_annotation = None;
@@ -76,8 +74,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         }
 
         if pending_blank_line {
-            let preserve_function_blank = function_bodies.is_inside();
-            if preserve_function_blank || (!is_closing && !last_output_line_opens_block(&output)) {
+            if !is_closing && !last_output_line_opens_block(&output) {
                 ensure_blank_line(&mut output);
             }
             pending_blank_line = false;
@@ -107,7 +104,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
         output.push_str(&formatted);
         output.push('\n');
         delimiters.apply_line(&formatted);
-        function_bodies.apply_line(&formatted);
         generic_continuation_depth =
             generic_depth_after_line(&formatted, generic_continuation_depth);
         if !is_comment {
@@ -128,63 +124,6 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
     }
 
     output
-}
-
-#[derive(Default)]
-struct FunctionScopes {
-    braces: Vec<bool>,
-    pending_signature: bool,
-    pending_arrow: bool,
-    return_type_started: bool,
-}
-
-impl FunctionScopes {
-    fn is_inside(&self) -> bool {
-        self.braces.iter().any(|is_function| *is_function)
-    }
-
-    fn apply_line(&mut self, line: &str) {
-        for token in tokenize_lossless(line)
-            .into_iter()
-            .filter(|token| !token.is_trivia())
-        {
-            match token.text(line) {
-                "fn" if token.kind == LosslessTokenKind::Identifier => {
-                    self.pending_signature = true;
-                    self.pending_arrow = false;
-                    self.return_type_started = false;
-                }
-                "->" if self.pending_signature => {
-                    self.pending_arrow = true;
-                    self.return_type_started = false;
-                }
-                "{" => {
-                    let is_function =
-                        self.pending_signature && self.pending_arrow && self.return_type_started;
-                    self.braces.push(is_function);
-                    if is_function {
-                        self.pending_signature = false;
-                        self.pending_arrow = false;
-                        self.return_type_started = false;
-                    } else if self.pending_arrow {
-                        self.return_type_started = true;
-                    }
-                }
-                "}" => {
-                    self.braces.pop();
-                }
-                ";" if self.pending_signature => {
-                    self.pending_signature = false;
-                    self.pending_arrow = false;
-                    self.return_type_started = false;
-                }
-                _ if self.pending_arrow => {
-                    self.return_type_started = true;
-                }
-                _ => {}
-            }
-        }
-    }
 }
 
 fn collapse_logical_lines(source: &str) -> String {
@@ -499,7 +438,6 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
                 || prefix.starts_with("if ")
                 || prefix == "else"
                 || prefix.ends_with(" else")
-                || (prefix.contains("fn") && prefix.contains("->"))
             {
                 BraceKind::Structural
             } else {
@@ -512,11 +450,11 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
                 |(_, type_name)| is_cfd_type_name(type_name.trim()),
             );
             if typed_record
+                || is_dimension_header(prefix)
                 || prefix.starts_with("if ")
                 || prefix == "else"
                 || prefix.ends_with(" else")
                 || prefix.starts_with("match ")
-                || (prefix.contains("fn") && prefix.contains("->"))
             {
                 BraceKind::Structural
             } else {
@@ -524,6 +462,19 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
             }
         }
     }
+}
+
+// 覆盖块按方括号头部识别，无须读取 schema 或推测标识符含义。
+fn is_dimension_header(prefix: &str) -> bool {
+    let tokens = tokenize_lossless(prefix)
+        .into_iter()
+        .filter(|token| !token.is_trivia())
+        .collect::<Vec<_>>();
+    matches!(tokens.as_slice(), [dimension, open, variant, close]
+        if dimension.kind == LosslessTokenKind::Identifier
+            && open.text(prefix) == "["
+            && variant.kind == LosslessTokenKind::Identifier
+            && close.text(prefix) == "]")
 }
 
 fn is_cfd_type_name(value: &str) -> bool {

@@ -54,7 +54,7 @@ pub use cfd_loader::{
 };
 pub use coflow_checker::{
     execute_checks, CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats, CheckLimits,
-    CheckOutput, CheckProjection, CheckSchemaLocation, CheckTarget, CheckTask, CheckTaskResult,
+    CheckOutput, CheckSchemaLocation, CheckTarget, CheckTask, CheckTaskResult,
 };
 pub use coflow_model as data_model;
 pub use coflow_model::cell_value;
@@ -62,14 +62,14 @@ pub use coflow_model::serde_i64;
 pub use coflow_model::{
     validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
     CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
-    CfdErrorCode, CfdFormattedString, CfdFunction, CfdLabel, CfdModelBuildOutput, CfdModelBuilder,
-    CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable,
-    CfdValue, CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
+    CfdErrorCode, CfdFormattedString, CfdLabel, CfdModelBuildOutput, CfdModelBuilder, CfdObject,
+    CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable, CfdValue,
+    CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
     LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
-    LoadedFunction, LoadedRecordDraft, LoadedValueDraft, MappedDiagnostic, MappedLabel,
-    PendingInsertRef, RecordCoordinate, RecordOrigin, RefEdge, RefSite, TextSpan,
-    ValueValidationMode, ValueValidationRequest,
+    LoadedRecordDraft, LoadedValueDraft, MappedDiagnostic, MappedLabel, PendingInsertRef,
+    RecordCoordinate, RecordOrigin, RefEdge, RefSite, TextSpan, ValueValidationMode,
+    ValueValidationRequest,
 };
 pub use diff::{
     ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,

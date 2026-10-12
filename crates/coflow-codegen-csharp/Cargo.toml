@@ -17,5 +17,7 @@ coflow-language = { path = "../coflow-language" }
 coflow-codegen = { path = "../coflow-codegen" }
 coflow-model = { path = "../coflow-model" }
 serde = { version = "1", features = ["derive"] }
-tera = "1"
 unicode-ident = "1"
+
+[dev-dependencies]
+serde_json = "1"

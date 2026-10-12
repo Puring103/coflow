@@ -10,7 +10,7 @@ mod stage;
 mod target;
 mod writer;
 
-use crate::api::{CfdSourceCatalog, DiagnosticSet, WriteFieldPathSegment};
+use crate::api::{DiagnosticSet, WriteFieldPathSegment};
 use crate::data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
 use coflow_language::cft::{FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,10 +68,6 @@ impl MutationImpact {
             }
         }
         impact
-    }
-
-    pub(crate) fn changed_records(&self) -> BTreeSet<RecordCoordinate> {
-        self.record_changes.keys().cloned().collect()
     }
 
     pub(crate) fn check_impact(&self, schema: &coflow_language::cft::CftSchema) -> CheckImpact {
@@ -216,16 +212,10 @@ pub(crate) fn effective_write_target_for_path(
 
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
-    catalog: &CfdSourceCatalog,
     impact: &MutationImpact,
     source_overrides: &[crate::DataSourceTextOverride],
 ) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
-    crate::session_build::rebuild_project_session_from_generation(
-        session,
-        catalog,
-        impact,
-        source_overrides,
-    )
+    crate::session_build::rebuild_project_session_from_generation(session, impact, source_overrides)
 }
 
 #[cfg(test)]

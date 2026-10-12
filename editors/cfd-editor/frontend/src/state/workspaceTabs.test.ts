@@ -172,7 +172,7 @@ describe('维度工作区', () => {
     const singleton = dimensionWorkspaceTab({ dimension: 'language', ownerFile: 'data/mixed.cfd', typeName: 'Settings', field: null, singleton: true })
     const wire = workspaceToWire([field, singleton], singleton.id)
     const restored = sanitizeProjectWorkspace(wire, types,
-      new Set(['data/mixed.cfd']), [{ name: 'language', display_name: '本地化', variants: ['en'], fields: [], out_dir: null }],
+      new Set(['data/mixed.cfd']), [{ name: 'language', display_name: '本地化', variants: ['en'], fields: [] }],
       new Set(['data/mixed.cfd']))
     expect(restored?.tabs.map(tab => tab.id)).toEqual([field.id, singleton.id])
     expect(restored?.activeTabId).toBe(singleton.id)

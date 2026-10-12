@@ -101,9 +101,6 @@ fn data_value(value: Value) -> Result<Vec<SourceConfig>, String> {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DimensionConfig {
-    #[serde(default)]
-    pub variants: Vec<String>,
-    pub out_dir: Option<PathBuf>,
     /// Human-readable label for this dimension. The editor falls back to a
     /// built-in mapping (e.g. `"language" → "本地化"`) when missing, and to
     /// the raw dimension name otherwise.

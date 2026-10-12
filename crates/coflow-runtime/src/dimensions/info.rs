@@ -1,15 +1,14 @@
 //! Resolved dimension metadata exposed to hosts.
 //!
-//! Combines the `DimensionConfig` declared in `coflow.yaml` with the schema
-//! dimension fields discovered during model build.
+//! Dimensions come from schema fields; variants come from selected CFD sources.
 
-use crate::project::{normalize_path, path_to_slash, DimensionConfig, Project};
+use crate::project::{DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
-use super::sources::DimensionField;
+use coflow_language::cft::CftSchema;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
@@ -18,15 +17,12 @@ use super::sources::DimensionField;
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct DimensionInfo {
-    /// Stable dimension name from `coflow.yaml` (e.g. `"language"`).
+    /// Stable dimension name declared on schema fields.
     pub name: String,
     /// Human-readable label resolved with the `display_name` fallback chain:
     /// `config.display_name` → built-in (`"language" → "本地化"`) → `name`.
     pub display_name: String,
     pub variants: Vec<String>,
-    /// File-tree path of the managed directory: project-relative inside the
-    /// project, otherwise an external display path; absent without `out_dir`.
-    pub out_dir: Option<String>,
     /// Schema fields belonging to this dimension. Wire only the source
     /// type and field; the schema view itself is not part of the editor surface.
     pub fields: Vec<DimensionFieldInfo>,
@@ -44,48 +40,38 @@ pub struct DimensionFieldInfo {
     pub is_singleton: bool,
 }
 
-/// Resolve all configured dimensions into `DimensionInfo`.
+/// Resolve schema dimensions and the variants declared by selected CFD sources.
 #[must_use]
 pub(crate) fn dimensions_for_project(
     project: &Project,
-    fields: &[DimensionField],
+    schema: &CftSchema,
+    model: &crate::CfdDataModel,
 ) -> Vec<DimensionInfo> {
-    let mut by_name: std::collections::BTreeMap<&str, Vec<&DimensionField>> =
-        std::collections::BTreeMap::new();
-    for field in fields {
-        by_name
-            .entry(field.dimension.as_str())
-            .or_default()
-            .push(field);
-    }
-
     let mut out = Vec::new();
-    for (name, config) in &project.config().dimensions {
-        let display_name = resolved_display_name(name, config);
-        let out_dir = config.out_dir.as_ref().map(|p| {
-            let absolute = normalize_path(&project.resolve_path(p));
-            let rel = absolute
-                .strip_prefix(project.root_dir())
-                .unwrap_or(&absolute);
-            // 与文件树共用路径标识，避免 Windows 扩展路径前缀使维度分组失配。
-            path_to_slash(rel)
-        });
-        let info_fields = by_name
-            .get(name.as_str())
-            .cloned()
-            .unwrap_or_default()
+    for dimension in schema.all_dimensions() {
+        let name = dimension.name.as_str();
+        let display_name = project.config().dimensions.get(name).map_or_else(
+            || builtin_display_name(name).unwrap_or(name).to_string(),
+            |config| resolved_display_name(name, config),
+        );
+        let info_fields = dimension
+            .fields
             .iter()
             .map(|field| DimensionFieldInfo {
-                source_type: field.source_type.to_string(),
-                source_field: field.source_field.to_string(),
-                is_singleton: field.is_singleton,
+                source_type: field.declaring_type.to_string(),
+                source_field: field.name.to_string(),
+                is_singleton: schema
+                    .resolve_type(field.declaring_type.as_str())
+                    .is_some_and(|ty| ty.is_singleton),
             })
             .collect();
         out.push(DimensionInfo {
-            name: name.clone(),
+            name: name.to_string(),
             display_name,
-            variants: config.variants.clone(),
-            out_dir,
+            variants: model
+                .dimension_variants(name)
+                .map(ToString::to_string)
+                .collect(),
             fields: info_fields,
         });
     }

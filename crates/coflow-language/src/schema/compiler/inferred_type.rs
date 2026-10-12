@@ -1,4 +1,4 @@
-use crate::schema::{CftFunctionParameter, CftValueType};
+use crate::schema::CftValueType;
 use crate::{EnumName, TypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6,6 +6,7 @@ pub(super) enum InferredType {
     OptionNone,
     Value(CftValueType),
     EnumNamespace(EnumName),
+    Dimension(Box<InferredType>),
     Entry(Box<InferredType>, Box<InferredType>),
     Unknown,
 }
@@ -74,39 +75,47 @@ impl InferredType {
         }
     }
 
-    pub(super) fn function(parameters: Vec<(Option<String>, Self)>, result: Self) -> Self {
-        let Some(parameters) = parameters
-            .into_iter()
-            .map(|(name, parameter)| {
-                parameter
-                    .value_type()
-                    .cloned()
-                    .map(|value_type| CftFunctionParameter { name, value_type })
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Self::Unknown;
-        };
-        match result {
-            Self::Value(result) => {
-                Self::Value(CftValueType::Function(parameters, Box::new(result)))
-            }
-            _ => Self::Unknown,
-        }
-    }
-
     pub(super) const fn unit() -> Self {
         Self::Value(CftValueType::Unit)
     }
 
+    // check 读取模板得到文本；集合与可选值中的模板也按读取类型参与检查。
+    pub(super) fn read_type(self) -> Self {
+        fn read_value_type(ty: CftValueType) -> CftValueType {
+            match ty {
+                CftValueType::FormattedString => CftValueType::String,
+                CftValueType::Array(inner) => {
+                    CftValueType::Array(Box::new(read_value_type(*inner)))
+                }
+                CftValueType::Option(inner) => {
+                    CftValueType::Option(Box::new(read_value_type(*inner)))
+                }
+                CftValueType::Dict(key, value) => {
+                    CftValueType::Dict(key, Box::new(read_value_type(*value)))
+                }
+                other => other,
+            }
+        }
+        match self {
+            Self::Value(ty) => Self::Value(read_value_type(ty)),
+            other => other,
+        }
+    }
+
     pub(super) fn from_const(value_type: Option<&CftValueType>) -> Self {
-        value_type.map_or(Self::Unknown, |value_type| Self::Value(value_type.clone()))
+        value_type.map_or(Self::Unknown, |value_type| {
+            Self::Value(value_type.clone()).read_type()
+        })
     }
 
     pub(super) const fn value_type(&self) -> Option<&CftValueType> {
         match self {
             Self::Value(value_type) => Some(value_type),
-            Self::OptionNone | Self::EnumNamespace(_) | Self::Entry(_, _) | Self::Unknown => None,
+            Self::OptionNone
+            | Self::EnumNamespace(_)
+            | Self::Dimension(_)
+            | Self::Entry(_, _)
+            | Self::Unknown => None,
         }
     }
 

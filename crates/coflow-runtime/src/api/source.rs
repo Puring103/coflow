@@ -1,5 +1,5 @@
-use crate::{data_model::LoadedRecordDraft, DiagnosticSet};
-use coflow_language::cft::CftSchema;
+use crate::{data_model::LoadedRecordDraft, DiagnosticSet, DimensionValueDraft};
+use coflow_language::cft::{CftSchema, DimensionName, VariantName};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,6 +37,8 @@ pub struct CfdLoadContext<'a> {
 #[derive(Debug, Clone)]
 pub struct LoadedCfdSource {
     pub records: Vec<LoadedRecordDraft>,
+    pub dimensions: Vec<DimensionValueDraft>,
+    pub dimension_variants: Vec<(DimensionName, VariantName)>,
     pub diagnostics: DiagnosticSet,
     pub source: Arc<str>,
 }

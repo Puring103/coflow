@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_model::{CfdDataModel, CfdRecordId};
-use coflow_checker::{CheckProjection, CheckTarget, CheckTask};
+use coflow_checker::{CheckTarget, CheckTask};
 use coflow_language::cft::{
     CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo,
 };
@@ -25,7 +25,7 @@ pub(super) fn plan_full_checks_with_limit(
         }
         for statement in schema.check_statements_for_actual_type(value.actual_type()) {
             if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
-                insert_task_projections(schema, info, CheckTarget::Record(record), &mut tasks);
+                insert_statement_task(schema, info, CheckTarget::Record(record), &mut tasks);
             }
         }
     }
@@ -36,7 +36,7 @@ pub(super) fn plan_full_checks_with_limit(
         if tasks.overflowed() {
             break;
         }
-        insert_task_projections(schema, info, CheckTarget::Project, &mut tasks);
+        insert_statement_task(schema, info, CheckTarget::Project, &mut tasks);
     }
     tasks.finish(schema)
 }
@@ -70,7 +70,7 @@ pub(super) fn plan_incremental_checks_with_limit(
             if is_structural {
                 for statement in schema.check_statements_for_actual_type(&coordinate.actual_type) {
                     if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
-                        insert_task_projections(
+                        insert_statement_task(
                             schema,
                             info,
                             CheckTarget::Record(record),
@@ -182,7 +182,7 @@ fn plan_field_change(
             schema.check_statements_for_nested_field(&coordinate.actual_type, &changed.field)
         {
             if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
-                insert_changed_projections(
+                insert_changed_statement_task(
                     schema,
                     info,
                     CheckTarget::Record(record),
@@ -223,7 +223,7 @@ fn plan_field_change(
         };
         if !is_cross_record && owner_fits_host(schema, &info.owner, &coordinate.actual_type) {
             if let Some(record) = record {
-                insert_changed_projections(
+                insert_changed_statement_task(
                     schema,
                     info,
                     CheckTarget::Record(record),
@@ -245,7 +245,7 @@ fn insert_owner_tasks(
 ) {
     match &info.owner {
         CheckOwner::Project(_) => {
-            insert_changed_projections(
+            insert_changed_statement_task(
                 schema,
                 info,
                 CheckTarget::Project,
@@ -265,7 +265,7 @@ fn insert_owner_tasks(
                 if tasks.overflowed() {
                     break;
                 }
-                insert_changed_projections(
+                insert_changed_statement_task(
                     schema,
                     info,
                     CheckTarget::Record(record),
@@ -277,33 +277,23 @@ fn insert_owner_tasks(
     }
 }
 
-fn insert_changed_projections(
+// 同一条声明式规则只执行一次，维度选择由表达式中的 for() 完成。
+fn insert_changed_statement_task(
     schema: &CftSchema,
     info: &CheckStatementInfo,
     target: CheckTarget,
     changed: &ChangedProjection,
     tasks: &mut CheckTaskBuilder,
 ) {
-    match changed {
-        ChangedProjection::Base => insert_task_projections(schema, info, target, tasks),
-        ChangedProjection::Dimension { dimension, variant }
-            if info.dimensions.contains(dimension) =>
-        {
-            tasks.insert(CheckTask {
-                statement: info.id,
-                target,
-                projection: CheckProjection::Dimension {
-                    dimension: dimension.clone(),
-                    variant: variant.clone(),
-                },
-            });
-        }
-        ChangedProjection::Dimension { .. } => {}
+    if matches!(changed, ChangedProjection::Base)
+        || matches!(changed, ChangedProjection::Dimension { dimension, .. } if info.dimensions.contains(dimension))
+    {
+        insert_statement_task(schema, info, target, tasks);
     }
 }
 
-fn insert_task_projections(
-    schema: &CftSchema,
+fn insert_statement_task(
+    _schema: &CftSchema,
     info: &CheckStatementInfo,
     target: CheckTarget,
     tasks: &mut CheckTaskBuilder,
@@ -311,22 +301,7 @@ fn insert_task_projections(
     tasks.insert(CheckTask {
         statement: info.id,
         target,
-        projection: CheckProjection::Base,
     });
-    for dimension in &info.dimensions {
-        if let Some(meta) = schema.resolve_dimension(dimension) {
-            for variant in &meta.variants {
-                tasks.insert(CheckTask {
-                    statement: info.id,
-                    target,
-                    projection: CheckProjection::Dimension {
-                        dimension: dimension.clone(),
-                        variant: variant.clone(),
-                    },
-                });
-            }
-        }
-    }
 }
 
 fn owner_fits_host(schema: &CftSchema, owner: &CheckOwner, actual_type: &str) -> bool {

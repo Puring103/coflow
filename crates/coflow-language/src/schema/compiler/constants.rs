@@ -53,10 +53,7 @@ impl ValueResolver<'_, '_> {
         let expected = declared_type
             .as_ref()
             .and_then(|ty| self.resolve_field_type(ty).value_type().cloned());
-        if matches!(
-            expected,
-            Some(CftValueType::Function(_, _) | CftValueType::Unit)
-        ) {
+        if matches!(expected, Some(CftValueType::Unit)) {
             self.push_diag(
                 CftErrorCode::InvalidConstValue,
                 &module,
@@ -106,13 +103,9 @@ impl ValueResolver<'_, '_> {
                 (CftValueType::String, CftConstValue::String(value.clone()))
             }
             DefaultExprKind::FormattedString(source) => (
-                CftValueType::String,
+                CftValueType::FormattedString,
                 CftConstValue::FormattedString(source.clone()),
             ),
-            DefaultExprKind::Function { signature, source } => {
-                let value_type = self.resolve_field_type(signature).value_type().cloned()?;
-                (value_type, CftConstValue::Function(source.clone()))
-            }
             DefaultExprKind::BitExpr { op, lhs, rhs } => {
                 let Some(CftValueType::Enum(enum_name)) = expected else {
                     return self.cannot_infer_const(module, expression, "flag expression");
@@ -646,7 +639,7 @@ impl ValueResolver<'_, '_> {
 
 fn contains_runtime_default(expression: &DefaultExpr) -> bool {
     match &expression.kind {
-        DefaultExprKind::FormattedString(_) | DefaultExprKind::Function { .. } => true,
+        DefaultExprKind::FormattedString(_) => true,
         DefaultExprKind::OptionSome(value)
         | DefaultExprKind::ResultOk(value)
         | DefaultExprKind::ResultErr(value) => contains_runtime_default(value),

@@ -108,12 +108,8 @@ export function dimensionForFile(
   filePath: string,
 ): DimensionInfo | undefined {
   const normalizedFile = filePath.replace(/\\/g, '/')
-  return dimensions.find(dimension => {
-    if (normalizedFile === `@dimension/${dimension.name}`) return true
-    if (!dimension.out_dir) return false
-    const directory = dimension.out_dir.replace(/\\/g, '/').replace(/\/+$/, '')
-    return normalizedFile.startsWith(`${directory}/`)
-  })
+  return dimensions.find(dimension => normalizedFile === `@dimension/${dimension.name}`)
+
 }
 
 export function onToolbarKeyDown(

@@ -215,6 +215,7 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
         SchemaTypeRefInfo::Float => "float".to_string(),
         SchemaTypeRefInfo::Bool => "bool".to_string(),
         SchemaTypeRefInfo::String => "string".to_string(),
+        SchemaTypeRefInfo::FormattedString => "fstring".to_string(),
         SchemaTypeRefInfo::Named { name, .. } => name.clone(),
         SchemaTypeRefInfo::Ref { target } => format!("&{target}"),
         SchemaTypeRefInfo::Array { item } => format!("{}[]", display_value_type(item)),
@@ -233,15 +234,7 @@ fn display_value_type(ty: &SchemaTypeRefInfo) -> String {
             display_value_type(value),
             display_value_type(error)
         ),
-        SchemaTypeRefInfo::Function { parameters, result } => format!(
-            "fn({}) -> {}",
-            parameters
-                .iter()
-                .map(display_value_type)
-                .collect::<Vec<_>>()
-                .join(", "),
-            display_value_type(result)
-        ),
+
         SchemaTypeRefInfo::Unit => "()".to_string(),
     }
 }

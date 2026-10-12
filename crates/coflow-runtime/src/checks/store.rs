@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::data_model::{CfdDataModel, CfdRecordId};
-use coflow_checker::{CheckDiagnostic, CheckOutput, CheckProjection, CheckTarget, CheckTask};
-use coflow_language::cft::CheckStatementId;
+use coflow_checker::{CheckDiagnostic, CheckOutput, CheckTarget, CheckTask};
+use coflow_language::cft::{CftSchema, CheckStatementId};
 
 use crate::RecordCoordinate;
 
@@ -16,7 +16,6 @@ enum StableCheckTarget {
 struct StableCheckTask {
     statement: CheckStatementId,
     target: StableCheckTarget,
-    projection: CheckProjection,
 }
 
 #[derive(Debug, Clone)]
@@ -29,10 +28,17 @@ struct StoredCheckDiagnostic {
 pub(crate) struct CheckDiagnosticStore {
     by_task: BTreeMap<StableCheckTask, Vec<StoredCheckDiagnostic>>,
     request_diagnostics: Vec<CheckDiagnostic>,
+    variants: BTreeMap<String, Vec<String>>,
 }
 
 impl CheckDiagnosticStore {
-    pub(super) fn replace_results(&mut self, model: &CfdDataModel, output: CheckOutput) {
+    pub(super) fn replace_results(
+        &mut self,
+        schema: &CftSchema,
+        model: &CfdDataModel,
+        output: CheckOutput,
+    ) {
+        self.variants = variant_catalog(schema, model);
         self.request_diagnostics = output.request_diagnostics;
         for result in output.results {
             let Some(task) = stable_task(model, &result.task) else {
@@ -48,6 +54,11 @@ impl CheckDiagnosticStore {
                 .collect();
             self.by_task.insert(task, diagnostics);
         }
+    }
+
+    // 新增或删除变体会改变所有字段的 variants()，必须重新检查整个数据集合。
+    pub(super) fn variant_catalog_changed(&self, schema: &CftSchema, model: &CfdDataModel) -> bool {
+        self.variants != variant_catalog(schema, model)
     }
 
     pub(super) fn remove_missing_records(&mut self, model: &CfdDataModel) {
@@ -82,7 +93,6 @@ fn stable_task(model: &CfdDataModel, task: &CheckTask) -> Option<StableCheckTask
             }
             CheckTarget::Project => StableCheckTarget::Project,
         },
-        projection: task.projection.clone(),
     })
 }
 
@@ -118,4 +128,19 @@ fn restore_diagnostic(
         label.record = Some(model.record_by_type_key(&coordinate.actual_type, &coordinate.key)?);
     }
     Some(diagnostic)
+}
+
+fn variant_catalog(schema: &CftSchema, model: &CfdDataModel) -> BTreeMap<String, Vec<String>> {
+    schema
+        .all_dimensions()
+        .map(|dimension| {
+            (
+                dimension.name.to_string(),
+                model
+                    .dimension_variants(dimension.name.as_str())
+                    .map(ToString::to_string)
+                    .collect(),
+            )
+        })
+        .collect()
 }

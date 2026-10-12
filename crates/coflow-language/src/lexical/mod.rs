@@ -1,10 +1,9 @@
-//! Shared lexical rules used by CFT, CFD, and embedded function syntax.
+//! Shared lexical rules used by CFT and CFD.
 
 mod trivia;
 
 pub(crate) use trivia::{
-    decode_simple_escape, scan_balanced_delimiter, scan_number_literal, scan_string_literal,
-    scan_trivia, validate_formatted_string_literal, validate_number_literal, DelimiterNesting,
+    decode_simple_escape, scan_number_literal, scan_string_literal, scan_trivia, DelimiterNesting,
     NumberLiteralError, StringLiteralError,
 };
 pub use trivia::{tokenize_lossless, LosslessToken, LosslessTokenKind};
@@ -99,6 +98,7 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
             | "float"
             | "bool"
             | "string"
+            | "fstring"
             | "len"
             | "contains"
             | "isUnique"
@@ -124,7 +124,6 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
             | "return"
             | "break"
             | "continue"
-            | "Host"
             | "None"
             | "Some"
             | "Ok"
@@ -154,7 +153,7 @@ mod tests {
     fn rejects_all_target_language_reserved_identifiers() {
         for name in [
             "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
-            "None", "Some", "Ok", "Err", "Option", "Result", "Host", "alert", "records",
+            "None", "Some", "Ok", "Err", "Option", "Result", "alert", "records",
         ] {
             assert!(!is_cft_identifier(name), "`{name}` must be reserved");
         }

@@ -3,7 +3,6 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::api::{Diagnostic, DiagnosticSet, FlatDiagnostic, Severity, WriterCapabilities};
-use crate::catalog::CfdSourceCatalog;
 use crate::checks::impact::CheckImpact;
 use crate::data_model::CfdDataModel;
 use crate::data_model::{CfdPathSegment, CfdValue};
@@ -19,8 +18,8 @@ use crate::project_schema::{
 };
 use crate::session::{ProjectSchemaSession, ProjectSession};
 use crate::session_build::{
-    open_project_session, open_project_session_from_schema,
-    open_project_session_with_source_overrides, SessionOpenOptions,
+    open_data_session, open_project_session, open_project_session_from_schema,
+    open_project_session_with_source_overrides,
 };
 use crate::{
     CreateRecordDraft, DataSourceTextOverride, DefaultMaterialization, DimensionValueCoordinate,
@@ -30,9 +29,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Runtime {
-    catalog: CfdSourceCatalog,
-}
+pub struct Runtime;
 
 /// Owns the published schema generation for one project.
 ///
@@ -90,7 +87,7 @@ impl ProjectRuntime {
             .map(|generation| generation.session)
     }
 
-    /// Refreshes the published schema only when CFT text or dimension variants change.
+    /// Refreshes the published schema only when CFT source inputs change.
     ///
     /// A failed rebuild leaves the last successful generation available for
     /// language tooling, while the returned diagnostics still prevent callers
@@ -339,19 +336,13 @@ fn schema_input_fingerprint(
         source_override.normalized_path.hash(&mut hasher);
         source_override.source.hash(&mut hasher);
     }
-    for (dimension, config) in &project.config().dimensions {
-        dimension.hash(&mut hasher);
-        config.variants.hash(&mut hasher);
-    }
     Ok(hasher.finish())
 }
 
 impl Runtime {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            catalog: fixed_cfd_catalog(),
-        }
+        Self
     }
 
     /// Builds a schema-only session without loading project data.
@@ -363,9 +354,7 @@ impl Runtime {
         open_project_schema_session(project)
     }
 
-    /// Opens data for editor, inspection, and background tasks that must not
-    /// write generated dimension sources.
-    ///
+    /// Opens immutable editor data and executes declared check rules.    ///
     /// # Errors
     ///
     /// Returns unrecoverable project/config/schema I/O diagnostics.
@@ -373,8 +362,19 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
-            .map(ReadOnlyProjectSession::new)
+        open_project_session(project).map(ReadOnlyProjectSession::new)
+    }
+
+    /// Loads selected CFD sources for data inspection and code generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns project/config/schema I/O diagnostics. Declared editor checks are not executed.
+    pub fn open_data_session(
+        &self,
+        project: Project,
+    ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
+        open_data_session(project).map(ReadOnlyProjectSession::new)
     }
 
     /// Opens read-only data using host-provided text for selected source files.
@@ -387,17 +387,11 @@ impl Runtime {
         project: Project,
         source_overrides: &[DataSourceTextOverride],
     ) -> Result<ReadOnlyProjectSession, DiagnosticSet> {
-        open_project_session_with_source_overrides(
-            project,
-            &self.catalog,
-            SessionOpenOptions::read_only(),
-            source_overrides,
-        )
-        .map(ReadOnlyProjectSession::new)
+        open_project_session_with_source_overrides(project, source_overrides)
+            .map(ReadOnlyProjectSession::new)
     }
 
-    /// Builds data for the normal build pipeline. This may write generated
-    /// dimension sources before the final reload.
+    /// Builds data from the project-selected CFD sources.
     ///
     /// # Errors
     ///
@@ -406,12 +400,11 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<BuildProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.catalog, SessionOpenOptions::build())
-            .map(BuildProjectSession::new)
+        open_data_session(project).map(BuildProjectSession::new)
     }
 
     /// Opens a mutation-capable session without generating dimension files.
-    /// The session owns the CFD catalog used by every command and rebuild.
+    /// The session owns the current project generation.
     ///
     /// # Errors
     ///
@@ -420,8 +413,7 @@ impl Runtime {
         &self,
         project: Project,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session(project, &self.catalog, SessionOpenOptions::read_only())
-            .map(WriteProjectSession::new)
+        open_project_session(project).map(WriteProjectSession::new)
     }
 
     /// Opens a write-capable data session from a runtime-built schema generation.
@@ -433,8 +425,7 @@ impl Runtime {
         &self,
         schema: ProjectSchemaSession,
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session_from_schema(schema, &self.catalog, SessionOpenOptions::read_only())
-            .map(WriteProjectSession::new)
+        open_project_session_from_schema(schema).map(WriteProjectSession::new)
     }
 
     /// Opens a mutation-capable candidate using host-provided text for
@@ -448,18 +439,9 @@ impl Runtime {
         project: Project,
         source_overrides: &[DataSourceTextOverride],
     ) -> Result<WriteProjectSession, DiagnosticSet> {
-        open_project_session_with_source_overrides(
-            project,
-            &self.catalog,
-            SessionOpenOptions::read_only(),
-            source_overrides,
-        )
-        .map(WriteProjectSession::new)
+        open_project_session_with_source_overrides(project, source_overrides)
+            .map(WriteProjectSession::new)
     }
-}
-
-fn fixed_cfd_catalog() -> CfdSourceCatalog {
-    CfdSourceCatalog::default()
 }
 
 /// Read capability for a built project.
@@ -554,9 +536,7 @@ pub struct WriteProjectSession {
 /// 编辑器对未保存草稿做项目级校验所需的只读快照。
 #[derive(Debug, Clone)]
 pub struct SourceValidationContext {
-    project: Project,
     schema: Arc<CftSchema>,
-    dimension_plan: Arc<crate::dimensions::DimensionRuntimePlan>,
     source_data: crate::load::SourceDataCache,
 }
 
@@ -573,22 +553,14 @@ impl SourceValidationContext {
             .collect::<BTreeSet<_>>();
         let reload_paths = self.source_data.display_paths_for_paths(&override_paths);
         let mut indexes = SessionIndexBuilder::default();
-        let catalog = CfdSourceCatalog::default();
         let check_impact = CheckImpact::default();
         let result = reload_project_data_from_cache(
-            &self.project,
             &self.schema,
-            &self.dimension_plan,
-            &catalog,
             &mut indexes,
             &self.source_data,
             &reload_paths,
             ReloadProjectDataOptions {
-                load: LoadProjectDataOptions {
-                    include_implicit_dimension_sources: !self.dimension_plan.is_empty(),
-                    run_checks: true,
-                },
-                refresh_implicit_dimension_sources: false,
+                load: LoadProjectDataOptions { run_checks: true },
                 previous_checks: None,
                 check_impact: &check_impact,
                 source_overrides: overrides,
@@ -680,9 +652,7 @@ impl WriteProjectSession {
     #[must_use]
     pub fn validation_context(&self) -> SourceValidationContext {
         SourceValidationContext {
-            project: self.session.project.clone(),
             schema: Arc::clone(&self.session.schema),
-            dimension_plan: Arc::clone(&self.session.dimension_plan),
             source_data: self.session.source_data.clone(),
         }
     }
@@ -819,8 +789,10 @@ impl WriteProjectSession {
         &mut self,
         coordinate: DimensionValueCoordinate,
         new_value: &CfdValue,
+        destination_file: Option<String>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::SetDimensionValue {
+            file: destination_file,
             coordinate,
             expected: DimensionValueExpectation::Any,
             value: MutationValue::Cfd(new_value.clone()),

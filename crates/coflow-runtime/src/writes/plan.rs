@@ -4,7 +4,6 @@ use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet, WriteFi
 use crate::cfd_loader::CfdWriter;
 use crate::data_model::{CfdValue, RecordOrigin};
 
-use crate::dimensions::DimensionField;
 use crate::indexes::{RecordRef, SourceId};
 use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate};
@@ -46,7 +45,7 @@ pub(crate) struct DimensionWritePlan {
 pub(crate) struct DimensionRecordAction {
     pub(super) source: CfdSource,
     pub(super) manager: Arc<CfdWriter>,
-    pub(super) field: DimensionField,
+    pub(super) actual_type: String,
 }
 
 pub(crate) enum RenamePlan {
@@ -575,30 +574,16 @@ fn dimension_record_actions(
     catalog: &CfdSourceCatalog,
     actual_type: &str,
 ) -> Vec<DimensionRecordAction> {
-    let schema = session.schema();
-    let mut actions = Vec::new();
-    for (entry, field) in session.source_data.dimension_sources() {
-        if field.is_singleton {
-            continue;
-        }
-        let applies = schema
-            .field(actual_type, &field.source_field)
-            .is_some_and(|schema_field| {
-                schema_field.declaring_type == field.source_type
-                    && schema_field
-                        .dimension
-                        .as_ref()
-                        .is_some_and(|binding| binding.dimension == field.dimension)
-            });
-        if !applies {
-            continue;
-        }
-        let manager = catalog.dimension_source_manager();
-        actions.push(DimensionRecordAction {
-            source: entry.source.clone(),
-            manager,
-            field: field.clone(),
-        });
-    }
-    actions
+    session
+        .source_data
+        .overlay_sources()
+        .map(|entry| DimensionRecordAction {
+            source: CfdSource {
+                location: entry.source.location.clone(),
+                display_name: entry.display_path.clone(),
+            },
+            manager: catalog.dimension_source_manager(),
+            actual_type: actual_type.to_string(),
+        })
+        .collect()
 }

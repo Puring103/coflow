@@ -1,5 +1,5 @@
 use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
-use coflow_language::cft::CftValueType;
+use coflow_language::cft::{CftValueType, FieldName, VariantName};
 use coflow_model::{CfdDataModel, CfdDictKey, CfdRecordId, CfdValue};
 
 use super::location::{ModelCursor, ValueLocation};
@@ -59,9 +59,9 @@ impl EvalItems {
                 )?;
                 Ok(Some(LocatedEvalValue::new(value, Some(location))))
             }
-            Self::DictKeys(entries) => Ok(entries.key_at(model, index).map(|key| {
-                LocatedEvalValue::new(EvalValue::from_dict_key(key), projected_location)
-            })),
+            Self::DictKeys(entries) => Ok(entries
+                .key_at(model, index)
+                .map(|key| LocatedEvalValue::new(key, projected_location))),
             Self::DictValues(entries) => {
                 entries.projected_value_at(index, element_type, projected_location, model, budget)
             }
@@ -90,6 +90,14 @@ pub(crate) struct EvalEntries {
     storage: ModelCursor,
     traversal: EvaluationCursor,
     len: usize,
+    dimension: Option<DimensionEntries>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct DimensionEntries {
+    base: ValueLocation,
+    field: FieldName,
+    variants: Vec<VariantName>,
 }
 
 impl EvalEntries {
@@ -98,6 +106,7 @@ impl EvalEntries {
             storage,
             traversal,
             len,
+            dimension: None,
         }
     }
 
@@ -105,8 +114,84 @@ impl EvalEntries {
         self.len
     }
 
-    fn key_at<'a>(&self, model: &'a CfdDataModel, index: usize) -> Option<&'a CfdDictKey> {
-        self.model_entry_at(model, index).map(|(key, _)| key)
+    pub(crate) fn dimension(
+        base: ValueLocation,
+        field: FieldName,
+        variants: Vec<VariantName>,
+    ) -> Self {
+        Self {
+            storage: base.storage.clone(),
+            traversal: EvaluationCursor::root(),
+            len: variants.len(),
+            dimension: Some(DimensionEntries {
+                base,
+                field,
+                variants,
+            }),
+        }
+    }
+
+    pub(crate) fn key_at<'a>(
+        &self,
+        model: &'a CfdDataModel,
+        index: usize,
+    ) -> Option<EvalValue<'a>> {
+        if let Some(dimension) = &self.dimension {
+            return dimension
+                .variants
+                .get(index)
+                .map(|variant| EvalValue::string(variant.as_str()));
+        }
+        model_dict(model, &self.storage)
+            .and_then(|items| items.get(index))
+            .map(|(key, _)| EvalValue::from_dict_key(key))
+    }
+
+    // 变体集合只保存选择坐标，读取时复用模型里的值，避免复制业务数据。
+    fn dimension_value_at<'a>(
+        &self,
+        index: usize,
+        value_type: Option<&CftValueType>,
+        model: &'a CfdDataModel,
+        budget: &mut EvaluationBudget,
+    ) -> Result<Option<LocatedEvalValue<'a>>, LocatedBudgetExceeded> {
+        let Some(dimension) = &self.dimension else {
+            return Ok(None);
+        };
+        let Some(variant) = dimension.variants.get(index) else {
+            return Ok(None);
+        };
+        let record = dimension.base.storage.record;
+        let overlay = model
+            .record(record)
+            .and_then(|record| record.dimension_field(dimension.field.as_str()))
+            .and_then(|values| values.variants.get(variant.as_str()));
+        let (value, location) = if let Some(overlay) = overlay {
+            let storage =
+                ModelCursor::dimension(record, dimension.field.as_str(), variant.as_str());
+            (
+                &overlay.value,
+                ValueLocation {
+                    storage: storage.clone(),
+                    blame: storage,
+                    references: dimension.base.references.clone(),
+                },
+            )
+        } else {
+            let Some(value) = model_value(model, &dimension.base.storage) else {
+                return Ok(None);
+            };
+            (value, dimension.base.clone())
+        };
+        let value = EvalValue::from_cfd_value(
+            value,
+            value_type,
+            location.clone(),
+            model,
+            budget,
+            self.traversal,
+        )?;
+        Ok(Some(LocatedEvalValue::new(value, Some(location))))
     }
 
     pub(crate) fn located_entry_at<'a>(
@@ -118,6 +203,21 @@ impl EvalEntries {
         model: &'a CfdDataModel,
         budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'a>>, LocatedBudgetExceeded> {
+        if self.dimension.is_some() {
+            let Some(value) = self.dimension_value_at(index, value_type, model, budget)? else {
+                return Ok(None);
+            };
+            let Some(key) = self.key_at(model, index) else {
+                return Ok(None);
+            };
+            return Ok(Some(LocatedEvalValue::new(
+                EvalValue::Entry(Box::new(EvalEntry {
+                    key: Box::new(key),
+                    value: value.value,
+                })),
+                value.location,
+            )));
+        }
         let Some((key, value)) =
             model_dict(model, &self.storage).and_then(|items| items.get(index))
         else {
@@ -161,6 +261,9 @@ impl EvalEntries {
         model: &'a CfdDataModel,
         budget: &mut EvaluationBudget,
     ) -> Result<Option<LocatedEvalValue<'a>>, LocatedBudgetExceeded> {
+        if self.dimension.is_some() {
+            return self.dimension_value_at(index, value_type, model, budget);
+        }
         let Some((key, value)) =
             model_dict(model, &self.storage).and_then(|items| items.get(index))
         else {
@@ -183,16 +286,6 @@ impl EvalEntries {
             self.traversal,
         )?;
         Ok(Some(LocatedEvalValue::new(value, Some(projected_location))))
-    }
-
-    pub(crate) fn model_entry_at<'a>(
-        &self,
-        model: &'a CfdDataModel,
-        index: usize,
-    ) -> Option<(&'a CfdDictKey, &'a CfdValue)> {
-        model_dict(model, &self.storage)
-            .and_then(|items| items.get(index))
-            .map(|(key, value)| (key, value))
     }
 }
 

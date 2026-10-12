@@ -197,13 +197,13 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
     (root, populated)
 }
 
-fn function_defaults_project() -> PathBuf {
+fn string_defaults_project() -> PathBuf {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-function-defaults-{id}"));
+    let root = std::env::temp_dir().join(format!("cfd-editor-string-defaults-{id}"));
     if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old function defaults project");
+        fs::remove_dir_all(&root).expect("remove old string defaults project");
     }
-    fs::create_dir_all(root.join("data")).expect("create function defaults data directory");
+    fs::create_dir_all(root.join("data")).expect("create string defaults data directory");
     fs::write(
         root.join("coflow.yaml"),
         concat!(
@@ -214,21 +214,17 @@ fn function_defaults_project() -> PathBuf {
             "    dir: generated/csharp\n",
         ),
     )
-    .expect("write function defaults config");
+    .expect("write string defaults config");
     fs::write(
         root.join("schema.cft"),
         concat!(
             "type Rule {\n",
             "  name: string = \"base\";\n",
-            "  label: string = \"rule {name}\";\n",
-            "  apply: fn(value: int) -> int = fn(input: int) -> int {\n",
-            "    var total = input + 1;\n",
-            "    total\n",
-            "  };\n",
+            "  label: fstring = f\"rule {self.name}\";\n",
             "}\n",
         ),
     )
-    .expect("write function defaults schema");
+    .expect("write string defaults schema");
     fs::write(root.join("data/empty.cfd"), "").expect("write empty data file");
     root
 }
@@ -416,10 +412,18 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
         .expect("load project");
     let positions = BTreeMap::from([("Item::one".to_string(), [-320.5, 480.25])]);
     store
-        .set_graph_positions(project.session_id, r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#.into(), positions.clone())
+        .set_graph_positions(
+            project.session_id,
+            r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#.into(),
+            positions.clone(),
+        )
         .expect("save positions");
     store
-        .set_graph_positions(project.session_id, r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#.into(), BTreeMap::new())
+        .set_graph_positions(
+            project.session_id,
+            r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#.into(),
+            BTreeMap::new(),
+        )
         .expect("save second view");
     assert!(store
         .set_graph_positions(
@@ -441,8 +445,14 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
     let settings = store
         .get_project_settings(reopened.session_id)
         .expect("read positions");
-    assert_eq!(settings.graph_positions[r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#], positions);
-    assert!(settings.graph_positions[r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#].is_empty());
+    assert_eq!(
+        settings.graph_positions[r#"["data/05-arrays.cfd","first-view","ArrayExample"]"#],
+        positions
+    );
+    assert!(
+        settings.graph_positions[r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#]
+            .is_empty()
+    );
     fs::remove_dir_all(root).expect("remove project");
 }
 
@@ -914,9 +924,13 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
     );
     // 外部修改与编辑基线不一致时禁止覆盖磁盘内容。
     fs::write(&data_file, format!("{original}\n")).expect("external source write");
-    store.write_source_text(session_id, file_path, invalid, &original)
+    store
+        .write_source_text(session_id, file_path, invalid, &original)
         .expect_err("stale source baseline must conflict");
-    assert_eq!(fs::read_to_string(&data_file).expect("read disk"), format!("{original}\n"));
+    assert_eq!(
+        fs::read_to_string(&data_file).expect("read disk"),
+        format!("{original}\n")
+    );
     fs::write(&data_file, &original).expect("restore source baseline");
     let bootstrap = store
         .write_source_text(session_id, file_path, invalid, &original)
@@ -1040,20 +1054,6 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         .insert_text
         .as_deref()
         .is_some_and(|text| text.contains("${1:key}")));
-
-    let function = store
-        .function_document(
-            snapshot.session_id,
-            "fn(value: int) -> int { value + 1 }",
-            None,
-        )
-        .expect("analyze function virtual document through embedded LSP");
-    assert_eq!(function.body, "value + 1");
-    assert!(function
-        .completions
-        .iter()
-        .any(|item| item.label == "value"));
-    assert!(!function.semantic_token_data.is_empty());
 
     let invalid = "broken: ArrayExample {";
     let first_invalid = store
@@ -1207,19 +1207,18 @@ fn new_record_can_be_created_with_a_missing_required_reference() {
 }
 
 #[test]
-fn cft_function_defaults_are_supported_through_the_editor_backend() {
-    let root = function_defaults_project();
+fn cft_string_defaults_are_supported_through_the_editor_backend() {
+    let root = string_defaults_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
         .load_project(&root.join("coflow.yaml"))
-        .expect("load function defaults project");
+        .expect("load defaults project");
     let source = store
         .read_source_text(snapshot.session_id, "schema.cft")
-        .expect("read function defaults schema");
-
+        .expect("read schema");
     let document = store
         .sync_language_document(snapshot.session_id, "schema.cft", &source, 1)
-        .expect("synchronize CFT defaults through embedded LSP");
+        .expect("synchronize defaults");
     assert!(
         document.diagnostics.is_empty(),
         "{:#?}",
@@ -1227,44 +1226,17 @@ fn cft_function_defaults_are_supported_through_the_editor_backend() {
     );
     assert!(document.syntax_valid);
     assert!(!document.semantic_token_data.is_empty());
-
-    let completions = store
-        .complete_language_document(
-            snapshot.session_id,
-            "schema.cft",
-            &source,
-            2,
-            &LanguagePosition {
-                line: 5,
-                character: 4,
-            },
-        )
-        .expect("complete inside CFT default function");
-    assert!(completions.iter().any(|item| item.label == "input"));
-    assert!(completions.iter().any(|item| item.label == "total"));
-    assert!(completions.iter().any(|item| item.label == "var"));
-
-    let unformatted = source.replace("    var total = input + 1;", "var total=input+1;");
-    let formatted = store
-        .format_language_document(snapshot.session_id, "schema.cft", &unformatted, 3)
-        .expect("format CFT default function");
-    assert!(formatted.text.contains("    var total = input + 1;"));
-    let idempotent = store
-        .format_language_document(snapshot.session_id, "schema.cft", &formatted.text, 4)
-        .expect("format canonical CFT default function");
-    assert!(idempotent.edits.is_empty());
-
     let value = store
         .make_default_object(snapshot.session_id, "Rule")
-        .expect("materialize CFT defaults");
+        .expect("materialize defaults");
     let CfdValue::Object(rule) = value else {
-        panic!("expected Rule object");
+        panic!("expected Rule object")
     };
+    assert!(matches!(rule.field("name"), Some(CfdValue::String(value)) if value == "base"));
     assert!(matches!(
         rule.field("label"),
         Some(CfdValue::FormattedString(_))
     ));
-    assert!(matches!(rule.field("apply"), Some(CfdValue::Function(_))));
 }
 
 #[test]
@@ -1300,7 +1272,12 @@ fn cft_source_is_visible_editable_and_validated() {
         formatted.text.trim_end()
     );
     let saved = store
-        .write_source_text(snapshot.session_id, file_path, &source_with_added_type, &source)
+        .write_source_text(
+            snapshot.session_id,
+            file_path,
+            &source_with_added_type,
+            &source,
+        )
         .expect("save valid CFT source");
     assert!(saved.revision > snapshot.revision);
     assert!(saved
@@ -1315,4 +1292,22 @@ fn cft_source_is_visible_editable_and_validated() {
         .expect("ignore formatting for invalid CFT");
     assert_eq!(invalid_formatting.text, invalid_syntax);
     assert!(invalid_formatting.edits.is_empty());
+}
+
+#[test]
+fn editor_check_command_runs_rules_while_build_only_generates_data_types() {
+    let (root, data_file) = array_project();
+    fs::write(
+        root.join("schema.cft"),
+        "type Item { name: string; check { false : \"editor business issue\"; } }",
+    )
+    .expect("schema");
+    fs::write(data_file, "item: Item { name: \"Item\" }").expect("data");
+    let sessions = SessionStore::new().expect("session store");
+    let bootstrap = sessions
+        .load_project(&root.join("coflow.yaml"))
+        .expect("editor session");
+    assert!(sessions.check_project(bootstrap.session_id).is_err());
+    assert!(sessions.build_project(bootstrap.session_id).is_ok());
+    fs::remove_dir_all(root).expect("remove project");
 }

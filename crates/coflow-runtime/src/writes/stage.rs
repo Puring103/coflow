@@ -532,25 +532,12 @@ fn rewrite_dimension_records(
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
     for action in actions {
-        let source_type = schema
-            .resolve_type(&action.field.source_type)
-            .ok_or_else(|| plan_mismatch("dimension source type disappeared before staging"))?;
-        let source_field = schema
-            .field(&action.field.source_type, &action.field.source_field)
-            .ok_or_else(|| plan_mismatch("dimension source field disappeared before staging"))?;
-        let dimension = schema
-            .resolve_dimension(&action.field.dimension)
-            .ok_or_else(|| plan_mismatch("dimension disappeared before staging"))?;
         let result = action
             .manager
             .rewrite_dimension_record(&RewriteDimensionRecordRequest {
                 source: &action.source,
-                schema: DimensionSourceSchema {
-                    schema,
-                    dimension,
-                    source_type,
-                    source_field,
-                },
+                schema,
+                actual_type: &action.actual_type,
                 old_key,
                 new_key,
             })?;

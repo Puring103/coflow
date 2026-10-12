@@ -1,11 +1,10 @@
 //! File-tree view for the project.
 //!
-//! Surfaces CFD files under the project root and groups managed dimension
-//! directories under a display-named virtual folder.
+//! Surfaces project files and selected external source roots.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::project::path_to_slash;
 
@@ -34,20 +33,10 @@ pub struct FileTreeNode {
 /// Internal options for building the project file tree.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FileTreeOptions {
-    pub(crate) dimension_groups: Vec<DimensionGroup>,
     /// In-source paths (project-relative, `/`-normalised).
     pub(crate) in_sources: BTreeSet<String>,
     pub(crate) schema_roots: BTreeSet<String>,
     pub(crate) data_roots: BTreeSet<String>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct DimensionGroup {
-    /// Display label shown at the top of the dimension's virtual subtree
-    /// (e.g. `"本地化"`).
-    pub(crate) display_name: String,
-    /// Absolute path of the dimension's output directory.
-    pub(crate) dir: PathBuf,
 }
 
 pub fn build_file_tree(
@@ -115,11 +104,7 @@ pub(crate) fn build_external_source_subtree(
     in_sources: &BTreeSet<String>,
     in_schema: bool,
     in_data: bool,
-    skip_dirs: &BTreeSet<String>,
 ) -> Option<FileTreeNode> {
-    if skip_dirs.contains(display_path) {
-        return None;
-    }
     let name = source_path.file_name()?.to_string_lossy().to_string();
     if source_path.is_file() {
         return Some(FileTreeNode {
@@ -142,8 +127,6 @@ pub(crate) fn build_external_source_subtree(
     for entry in walkdir::WalkDir::new(source_path)
         .min_depth(1)
         .into_iter()
-        // 维度目录已有独立分组，外部数据根不能再收录同一批文件。
-        .filter_entry(|entry| !skip_dirs.contains(&path_to_slash(entry.path())))
         .filter_map(Result::ok)
     {
         if !entry.file_type().is_file()
@@ -156,7 +139,7 @@ pub(crate) fn build_external_source_subtree(
             .components()
             .map(|component| component.as_os_str().to_string_lossy().to_string())
             .collect::<Vec<_>>();
-        insert_dimension_path(&mut children, &parts, 0, display_path, in_sources);
+        insert_source_path(&mut children, &parts, 0, display_path, in_sources);
     }
     set_membership(&mut children, in_schema, in_data);
     sort_tree(&mut children);
@@ -180,75 +163,6 @@ fn set_membership(nodes: &mut [FileTreeNode], in_schema: bool, in_data: bool) {
         node.in_sources = true;
         set_membership(&mut node.children, in_schema, in_data);
     }
-}
-
-pub fn build_dimension_subtree(
-    root: &Path,
-    group_name: String,
-    dir: &Path,
-    in_sources: &BTreeSet<String>,
-) -> Option<FileTreeNode> {
-    if !dir.is_dir() {
-        return None;
-    }
-    let mut files: Vec<Vec<String>> = Vec::new();
-    for entry in walkdir::WalkDir::new(dir)
-        .min_depth(1)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        let rel_for_check = path
-            .strip_prefix(root)
-            .map(path_to_slash)
-            .unwrap_or_default();
-        let by_extension = ext == "cfd";
-        if !by_extension && !in_sources.contains(&rel_for_check) {
-            continue;
-        }
-        let Ok(rel) = path.strip_prefix(dir) else {
-            continue;
-        };
-        let parts: Vec<String> = rel
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().to_string())
-            .collect();
-        if !parts.is_empty() {
-            files.push(parts);
-        }
-    }
-
-    if files.is_empty() {
-        return None;
-    }
-
-    let mut children = Vec::new();
-    for parts in files {
-        insert_dimension_path(
-            &mut children,
-            &parts,
-            0,
-            &path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
-            in_sources,
-        );
-    }
-    sort_tree(&mut children);
-    annotate_first_source_descendant(&mut children);
-
-    Some(FileTreeNode {
-        name: group_name,
-        path: path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
-        is_dir: true,
-        in_sources: true,
-        in_schema: false,
-        in_data: false,
-        first_source_descendant: first_source_descendant(&children),
-        children,
-    })
 }
 
 struct SourceSets<'a> {
@@ -316,7 +230,7 @@ fn insert_path(
     nodes.push(node);
 }
 
-fn insert_dimension_path(
+fn insert_source_path(
     nodes: &mut Vec<FileTreeNode>,
     parts: &[String],
     idx: usize,
@@ -338,7 +252,7 @@ fn insert_dimension_path(
     let existing = nodes.iter_mut().find(|n| n.name == *name);
     if let Some(node) = existing {
         if is_dir {
-            insert_dimension_path(&mut node.children, parts, idx + 1, display_root, in_sources);
+            insert_source_path(&mut node.children, parts, idx + 1, display_root, in_sources);
         }
         return;
     }
@@ -353,7 +267,7 @@ fn insert_dimension_path(
         children: Vec::new(),
     };
     if is_dir {
-        insert_dimension_path(&mut node.children, parts, idx + 1, display_root, in_sources);
+        insert_source_path(&mut node.children, parts, idx + 1, display_root, in_sources);
     }
     nodes.push(node);
 }

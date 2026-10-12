@@ -133,12 +133,14 @@ export async function writeDimensionValue(
   coordinate: DimensionValueCoordinate,
   expectedValue: DimensionValueState,
   newValue: DimensionValueState,
+  destinationFile: string | null,
 ): Promise<WriteDimensionValueOutcome> {
   return invokeCommand<WriteDimensionValueOutcome>('write_dimension_value', {
     sessionId,
     coordinate,
     expectedValue,
     newValue,
+    destinationFile,
   })
 }
 

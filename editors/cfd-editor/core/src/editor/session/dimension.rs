@@ -7,9 +7,9 @@ use crate::editor::types::{
     DimensionFileRecords, DimensionFileRow, EditorError, WriteDimensionValueOutcome,
 };
 
-use super::SessionStore;
-use super::mutation_apply::finalize_mutation;
 use super::errors::api_diagnostics_to_editor_error;
+use super::mutation_apply::finalize_mutation;
+use super::SessionStore;
 
 impl SessionStore {
     pub fn get_dimension_file_records(
@@ -21,16 +21,15 @@ impl SessionStore {
         let session = entry.state.read();
         let queries = session.queries();
         let normalized_path = file_path.replace('\\', "/");
-        // 虚拟导航聚合整个维度，物理辅助文件仍按其原有范围查询。
-        let (dimension, fields) = if let Some(name) = normalized_path.strip_prefix("@dimension/") {
-            let dimension = queries.dimensions().into_iter().find(|item| item.name == name)
-                .ok_or_else(|| EditorError::not_found("dimension not found"))?;
-            let fields = dimension.fields.clone();
-            (dimension, fields)
-        } else {
-            queries.dimension_fields_for_file(&normalized_path)
-                .ok_or_else(|| EditorError::not_found("managed dimension file not found"))?
-        };
+        let name = normalized_path
+            .strip_prefix("@dimension/")
+            .ok_or_else(|| EditorError::not_found("dimension view not found"))?;
+        let dimension = queries
+            .dimensions()
+            .into_iter()
+            .find(|item| item.name == name)
+            .ok_or_else(|| EditorError::not_found("dimension not found"))?;
+        let fields = dimension.fields.clone();
         let dimension_name = DimensionName::new(dimension.name.clone())
             .map_err(|error| EditorError::other(error.to_string()))?;
         let mut rows = Vec::new();
@@ -105,6 +104,7 @@ impl SessionStore {
         coordinate: &DimensionValueCoordinate,
         expected_value: &DimensionValueState,
         new_value: &DimensionValueState,
+        destination_file: Option<&str>,
     ) -> Result<WriteDimensionValueOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
@@ -120,6 +120,7 @@ impl SessionStore {
                 expected,
             },
             DimensionValueState::Value(value) => MutationOp::SetDimensionValue {
+                file: destination_file.map(str::to_string),
                 coordinate: coordinate.clone(),
                 expected,
                 value: MutationValue::Cfd(value.clone()),

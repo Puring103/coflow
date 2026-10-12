@@ -107,21 +107,13 @@ impl Validator<'_, '_> {
                 CfdValue::String(value.clone())
             }
             CftSchemaDefaultValue::FormattedString(source)
-                if type_accepts_default(ty, &CftValueType::String) =>
+                if type_accepts_default(ty, &CftValueType::FormattedString) =>
             {
-                let Ok(Some(parsed)) = crate::cell_value::parse_automatic_formatted_string(source)
-                else {
+                let Ok(parsed) = crate::cell_value::parse_formatted_string(source) else {
                     self.push_default_type_mismatch(record, path);
                     return None;
                 };
                 return Some(ValueDraft::FormattedString(parsed));
-            }
-            CftSchemaDefaultValue::Function(source)
-                if matches!(ty, CftValueType::Function(_, _)) =>
-            {
-                CfdValue::Function(crate::CfdFunction {
-                    source: source.clone(),
-                })
             }
             CftSchemaDefaultValue::Enum {
                 enum_name,

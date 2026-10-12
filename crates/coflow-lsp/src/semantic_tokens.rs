@@ -483,7 +483,11 @@ fn add_value_type_semantic(
     tokens: &mut Vec<ByteSpanToken>,
 ) {
     match &ty.kind {
-        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::Bool | TypeRefKind::String => {
+        TypeRefKind::Int
+        | TypeRefKind::Float
+        | TypeRefKind::Bool
+        | TypeRefKind::String
+        | TypeRefKind::FormattedString => {
             push_semantic_span(
                 &document.source,
                 ty.span,
@@ -517,21 +521,6 @@ fn add_value_type_semantic(
         TypeRefKind::Result(value, error) => {
             add_value_type_semantic(build, document, value, tokens);
             add_value_type_semantic(build, document, error, tokens);
-        }
-        TypeRefKind::Function(parameters, result) => {
-            for parameter in parameters {
-                if let Some(name) = &parameter.name {
-                    push_semantic_span(
-                        &document.source,
-                        name.span,
-                        SEM_PARAMETER,
-                        MOD_DECLARATION | MOD_SCHEMA,
-                        tokens,
-                    );
-                }
-                add_value_type_semantic(build, document, &parameter.value_type, tokens);
-            }
-            add_value_type_semantic(build, document, result, tokens);
         }
         TypeRefKind::Unit => {}
     }
@@ -567,27 +556,9 @@ fn add_default_expr_semantic(
             add_default_expr_semantic(document, value, tokens);
         }
         DefaultExprKind::String(_) | DefaultExprKind::FormattedString(_) => {
-            push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
+            push_multiline_semantic_span(&document.source, expr.span, SEM_STRING, 0, tokens);
         }
-        DefaultExprKind::Function { source, .. } => {
-            super::cfd::visit_function_semantic_tokens(
-                source,
-                expr.span.start,
-                |span, token_type, modifiers, multiline| {
-                    if multiline {
-                        push_multiline_semantic_span(
-                            &document.source,
-                            span,
-                            token_type,
-                            modifiers,
-                            tokens,
-                        );
-                    } else {
-                        push_semantic_span(&document.source, span, token_type, modifiers, tokens);
-                    }
-                },
-            );
-        }
+
         DefaultExprKind::BitExpr { lhs, rhs, .. } => {
             add_default_expr_semantic(document, lhs, tokens);
             add_default_expr_semantic(document, rhs, tokens);

@@ -97,13 +97,7 @@ fn cases() -> Vec<Case> {
             code: CfdErrorCode::AbstractRecordType,
             adjacent: adjacent_concrete_child_record_type,
         },
-        Case {
-            name: "host record type",
-            schema: "@Host @singleton type Services { environment: string; }",
-            phase: Phase::Build(build_host_record_type),
-            code: CfdErrorCode::HostRecordType,
-            adjacent: adjacent_host_type_without_cfd_record,
-        },
+
         Case {
             name: "missing polymorphic object actual type",
             schema: "abstract type Reward {} type CoinReward : Reward { amount: int; } type Drop { reward: Reward; }",
@@ -134,7 +128,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "data value dependency cycle",
-            schema: "type Item { first: string; second: string; }",
+            schema: "type Item { first: fstring; second: fstring; }",
             phase: Phase::Build(build_data_value_dependency_cycle),
             code: CfdErrorCode::ValueDependencyCycle,
             adjacent: adjacent_acyclic_data_value_dependency,
@@ -440,17 +434,6 @@ fn build_unknown_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics
 
 fn build_abstract_record_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("reward", "Reward", [])])
-}
-
-fn build_host_record_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
-    model_from_records(
-        schema,
-        [one_record(
-            "services",
-            "Services",
-            [("environment", LoadedValueDraft::from("invalid"))],
-        )],
-    )
 }
 
 fn build_missing_object_type(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
@@ -862,13 +845,6 @@ fn adjacent_concrete_child_record_type() {
     );
 }
 
-fn adjacent_host_type_without_cfd_record() {
-    assert_builds(
-        "@Host @singleton type Services { environment: string; }",
-        [],
-    );
-}
-
 fn adjacent_polymorphic_object_with_actual_type() {
     assert_builds(
         "abstract type Reward {} type CoinReward : Reward { amount: int; } type Drop { reward: Reward; }",
@@ -956,7 +932,7 @@ fn adjacent_data_structure_at_limit() {
 
 fn adjacent_acyclic_data_value_dependency() {
     assert_builds(
-        "type Item { first: string; second: string; }",
+        "type Item { first: string; second: fstring; }",
         [one_record(
             "item",
             "Item",

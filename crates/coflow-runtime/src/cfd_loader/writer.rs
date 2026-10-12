@@ -23,7 +23,6 @@ use crate::api::{
 };
 use crate::data_model::RecordOrigin;
 use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
-use coflow_language::source::Span;
 use coflow_staging::{StagedChange, StagedFile, StagedRemoval};
 use patch::{
     append_record_source, apply_patch, apply_unset_field_patch, delete_record_span, find_record,
@@ -210,45 +209,6 @@ impl CfdWriter {
         }
         drop(workspace);
         Ok(())
-    }
-
-    pub(crate) fn delete_source(&self, path: &Path) -> Result<bool, DiagnosticSet> {
-        let original = self.original_bytes(path)?;
-        let mut workspace = self.workspace.lock().map_err(|_| {
-            DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
-        })?;
-        if let Some(file) = workspace.files.get_mut(path) {
-            let changed = !file.deleted;
-            file.deleted = true;
-            drop(workspace);
-            return Ok(changed);
-        }
-        workspace.files.insert(
-            path.to_path_buf(),
-            WorkspaceFile {
-                original,
-                current: String::new(),
-                deleted: true,
-            },
-        );
-        drop(workspace);
-        Ok(true)
-    }
-
-    pub(crate) fn move_source(&self, from: &Path, to: &Path) -> Result<bool, DiagnosticSet> {
-        let source = self.read_source(from)?;
-        self.write_source(to, &source)?;
-        self.delete_source(from)
-    }
-
-    fn original_bytes(&self, path: &Path) -> Result<Option<Vec<u8>>, DiagnosticSet> {
-        let workspace = self.workspace.lock().map_err(|_| {
-            DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
-        })?;
-        Ok(workspace
-            .files
-            .get(path)
-            .and_then(|file| file.original.clone()))
     }
 }
 
@@ -672,14 +632,6 @@ fn ensure_cfd_origin_path(origin: &RecordOrigin, expected: &Path) -> Result<(), 
             "cfd reorder requires File origins",
         ))),
     }
-}
-
-pub(super) fn raw_span(source: &str, span: Span) -> String {
-    source
-        .get(span.start..span.end)
-        .map(str::trim)
-        .unwrap_or_default()
-        .to_string()
 }
 
 pub(super) fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {

@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

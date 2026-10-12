@@ -50,8 +50,8 @@ export const MOCK_PROJECT: ProjectBootstrap = {
     { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
-    { name: 'language', display_name: '本地化', out_dir: 'data/dimensions/language', variants: ['zh-CN', 'en-US'], fields: [{ source_type: 'Item', source_field: 'name', is_singleton: false }] },
-    { name: 'platform', display_name: '平台', out_dir: 'data/dimensions/platform', variants: ['mobile', 'desktop'], fields: [{ source_type: 'Item', source_field: 'icon', is_singleton: false }] },
+    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], fields: [{ source_type: 'Item', source_field: 'name', is_singleton: false }] },
+    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], fields: [{ source_type: 'Item', source_field: 'icon', is_singleton: false }] },
   ],
   file_types: {
     'data/item.cfd': [

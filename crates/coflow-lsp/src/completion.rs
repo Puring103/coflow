@@ -1,7 +1,7 @@
 // `${1:name}` 是 LSP snippet 占位符，不是 Rust 格式化参数。
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use coflow_language::cft::syntax::ast::{DefaultExprKind, Item, TypeRef, TypeRefKind};
+use coflow_language::cft::syntax::ast::{Item, TypeRef, TypeRefKind};
 use coflow_language::cft::syntax::lexer::{lex, TokenKind};
 use coflow_language::cft::{CftCheckBuiltin, CftConstValue, ModuleId};
 use serde_json::{json, Map, Value};
@@ -47,14 +47,6 @@ pub(crate) fn completion_items(
         return Vec::new();
     }
 
-    if let Some((source, relative_offset)) = default_function_source_at(document, offset) {
-        if let Some(items) =
-            super::cfd::function_source_completion_items_at(source, relative_offset)
-        {
-            return items;
-        }
-    }
-
     if let Some(items) = annotation_argument_completion_items(build, line_prefix) {
         return items;
     }
@@ -72,6 +64,26 @@ pub(crate) fn completion_items(
     }
 
     if let Some(chain) = receiver_chain_before_dot(line_prefix) {
+        if scope == CompletionScope::CheckBlock {
+            let field = if chain.len() == 1 {
+                current_type_at(build, document, offset).and_then(|ty| {
+                    ty.all_fields()
+                        .find(|field| field.name.as_str() == chain[0])
+                })
+            } else {
+                super::field_by_chain(build, document, offset, &chain).map(|(_, field)| field)
+            };
+            if field.is_some_and(|field| field.dimension.is_some()) {
+                return [
+                    CftCheckBuiltin::Default,
+                    CftCheckBuiltin::For,
+                    CftCheckBuiltin::Variants,
+                ]
+                .into_iter()
+                .map(builtin_completion_item)
+                .collect();
+            }
+        }
         let mut items = dot_completion_items(build, document, offset, &chain);
         if scope == CompletionScope::CheckBlock {
             items.extend(
@@ -297,6 +309,7 @@ fn builtin_supports_receiver(
     };
     let receiver = TypeRefLike::from(receiver);
     match builtin {
+        CftCheckBuiltin::Default | CftCheckBuiltin::Variants | CftCheckBuiltin::For => false,
         Len => matches!(
             receiver,
             TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict
@@ -409,7 +422,11 @@ fn field_default_completion_items(
 fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Vec<Value>) {
     match &ty.kind {
         TypeRefKind::Bool => items.extend(literal_completion_items()),
-        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String | TypeRefKind::Unit => {}
+        TypeRefKind::Int
+        | TypeRefKind::Float
+        | TypeRefKind::String
+        | TypeRefKind::FormattedString
+        | TypeRefKind::Unit => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .schema()
@@ -468,35 +485,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 "Err(${1:error})",
                 "CFT Result constructor",
                 "Failed Result value.",
-            ));
-        }
-        TypeRefKind::Function(parameters, result) => {
-            let mut next_tab = 1;
-            let arguments = parameters
-                .iter()
-                .enumerate()
-                .map(|(index, parameter)| {
-                    let name = parameter
-                        .name
-                        .as_ref()
-                        .map_or_else(|| format!("arg{}", index + 1), |name| name.name.clone());
-                    let tab = next_tab;
-                    next_tab += 1;
-                    format!(
-                        "${{{tab}:{name}}}: {}",
-                        type_ref_source(&parameter.value_type)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            items.push(snippet_completion_item(
-                "fn",
-                &format!(
-                    "fn({arguments}) -> {} {{\n\t${{{next_tab}}}\n}}",
-                    type_ref_source(result)
-                ),
-                "CFT function default",
-                "Define the default implementation for this function field.",
             ));
         }
         TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
@@ -561,7 +549,6 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
         let insert_text = match *label {
             "Option" => Some("Option<${1:string}>"),
             "Result" => Some("Result<${1:string}, ${2:string}>"),
-            "fn" => Some("fn(${1:value}: ${2:int}) -> ${3:int}"),
             _ => None,
         };
         let mut item = completion_item(
@@ -655,63 +642,6 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
     }
     append_type_alias_completion_items(build, &mut items);
     items
-}
-
-fn default_function_source_at(document: &LspDocument, offset: usize) -> Option<(&str, usize)> {
-    document.ast().and_then(|ast| {
-        ast.items.iter().find_map(|item| {
-            let default = match item {
-                Item::Const(constant) => Some(&constant.value),
-                Item::Type(definition) => definition.fields.iter().find_map(|field| {
-                    field.default.as_ref().filter(|default| {
-                        default.span.start <= offset && offset <= default.span.end
-                    })
-                }),
-                _ => None,
-            }?;
-            if default.span.start <= offset && offset <= default.span.end {
-                if let DefaultExprKind::Function { source, .. } = &default.kind {
-                    return Some((source.as_str(), offset.saturating_sub(default.span.start)));
-                }
-            }
-            None
-        })
-    })
-}
-
-fn type_ref_source(ty: &TypeRef) -> String {
-    match &ty.kind {
-        TypeRefKind::Int => "int".to_string(),
-        TypeRefKind::Float => "float".to_string(),
-        TypeRefKind::Bool => "bool".to_string(),
-        TypeRefKind::String => "string".to_string(),
-        TypeRefKind::Named(name) => name.clone(),
-        TypeRefKind::Ref(inner) => format!("&{}", type_ref_source(inner)),
-        TypeRefKind::Array(inner) => format!("[{}]", type_ref_source(inner)),
-        TypeRefKind::Dict(key, value) => {
-            format!("{{{}: {}}}", type_ref_source(key), type_ref_source(value))
-        }
-        TypeRefKind::Option(inner) => format!("Option<{}>", type_ref_source(inner)),
-        TypeRefKind::Result(ok, err) => {
-            format!("Result<{}, {}>", type_ref_source(ok), type_ref_source(err))
-        }
-        TypeRefKind::Function(parameters, result) => {
-            let parameters = parameters
-                .iter()
-                .enumerate()
-                .map(|(index, parameter)| {
-                    let name = parameter
-                        .name
-                        .as_ref()
-                        .map_or_else(|| format!("arg{}", index + 1), |name| name.name.clone());
-                    format!("{name}: {}", type_ref_source(&parameter.value_type))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("fn({parameters}) -> {}", type_ref_source(result))
-        }
-        TypeRefKind::Unit => "()".to_string(),
-    }
 }
 
 fn inheritable_type_completion_items(build: &LspBuild, line_prefix: &str) -> Vec<Value> {
@@ -943,7 +873,7 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match scope {
         CompletionScope::TopLevel => matches!(
             label,
-            "@struct" | "@flag" | "@idAsEnum" | "@singleton" | "@Host" | "@label" | "@description"
+            "@struct" | "@flag" | "@idAsEnum" | "@singleton" | "@label" | "@description"
         ),
         CompletionScope::TypeBody => matches!(
             label,

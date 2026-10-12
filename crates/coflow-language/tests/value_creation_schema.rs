@@ -1,17 +1,17 @@
 #![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 
-use coflow_language::cft::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+use coflow_language::cft::{build_schema, parse_modules, CftFile, ModuleId};
 use coflow_language::diagnostics::CftErrorCode;
 
 fn compile(
     source: &str,
 ) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
+    build_schema(&modules)
 }
 
 #[test]
-fn result_is_supported_in_all_data_field_shapes_and_function_signatures() {
+fn result_is_supported_in_data_field_shapes() {
     for source in [
         "type Item { value: Result<int, string>; }",
         "@struct sealed type Item { value: Result<int, string>; }",
@@ -19,9 +19,8 @@ fn result_is_supported_in_all_data_field_shapes_and_function_signatures() {
         "type Item { value: [Result<int, string>]; }",
         "type Item { value: {string: Result<int, string>}; }",
         "type Outcome = Result<int, string>; type Item { value: Outcome; }",
-        "type Item { run: fn(int) -> Result<int, string>; }",
     ] {
-        compile(source).expect("Result is a first-class field and function type");
+        compile(source).expect("Result is a data field type");
     }
 }
 

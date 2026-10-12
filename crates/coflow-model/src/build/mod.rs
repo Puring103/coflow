@@ -17,7 +17,7 @@ use crate::model::{
 use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
 };
-use coflow_language::cft::{CftSchema, CftValueType, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{CftSchema, DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use coflow_language::limits::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,6 +28,7 @@ pub struct CfdModelBuilder<'a> {
     schema: &'a CftSchema,
     records: Vec<LoadedRecordDraft>,
     dimension_values: Vec<DimensionValueDraft>,
+    dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     structural_limits: StructuralLimits,
 }
 
@@ -44,6 +45,7 @@ impl<'a> CfdModelBuilder<'a> {
             schema,
             records: Vec::new(),
             dimension_values: Vec::new(),
+            dimension_variants: BTreeMap::new(),
             structural_limits: StructuralLimits::default(),
         }
     }
@@ -67,6 +69,18 @@ impl<'a> CfdModelBuilder<'a> {
 
     pub fn add_loaded_record(&mut self, record: LoadedRecordDraft) -> &mut Self {
         self.records.push(record);
+        self
+    }
+
+    pub fn add_dimension_variant(
+        &mut self,
+        dimension: DimensionName,
+        variant: VariantName,
+    ) -> &mut Self {
+        self.dimension_variants
+            .entry(dimension)
+            .or_default()
+            .insert(variant);
         self
     }
 
@@ -105,14 +119,23 @@ impl<'a> CfdModelBuilder<'a> {
     ///
     /// Returns diagnostics when invalid input cannot be represented without
     /// dropping records or values.
-    pub fn build_partial(self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
-        ModelCompiler::new(
+    pub fn build_partial(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+        // 变体来自已选 CFD，空覆盖块同样声明可供选择的变体。
+        for value in &self.dimension_values {
+            self.dimension_variants
+                .entry(value.dimension.clone())
+                .or_default()
+                .insert(value.variant.clone());
+        }
+        let mut output = ModelCompiler::new(
             self.schema,
             self.records,
             self.dimension_values,
             self.structural_limits,
         )
-        .build()
+        .build()?;
+        output.model.dimension_variants = self.dimension_variants;
+        Ok(output)
     }
 }
 
@@ -200,6 +223,7 @@ impl<'a> ModelCompiler<'a> {
                 record_by_domain_key: indexes.record_by_domain_key,
                 records,
                 refs: ref_indexes,
+                dimension_variants: BTreeMap::new(),
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
         })
@@ -311,7 +335,16 @@ impl<'a> ModelCompiler<'a> {
             .and_then(|records| records.get(input.source_key.as_str()))
             .copied()
         else {
-            // 主体删除后残留的维度值不参与模型，后续维度生成负责清理持久化记录。
+            self.diagnostics.push(dimension_diagnostic(
+                &input,
+                None,
+                path,
+                crate::CfdErrorCode::RefTargetNotFound,
+                format!(
+                    "dimension target `{}::{}` does not exist",
+                    input.source_type, input.source_key
+                ),
+            ));
             return None;
         };
         let record = records.get(record_id.index())?;
@@ -380,25 +413,6 @@ impl<'a> ModelCompiler<'a> {
             ));
             return None;
         }
-        if self
-            .schema
-            .cft()
-            .resolve_dimension(input.dimension.as_str())
-            .and_then(|dimension| dimension.variant(input.variant.as_str()))
-            .is_none()
-        {
-            self.diagnostics.push(dimension_diagnostic(
-                &input,
-                Some(record_id),
-                path,
-                crate::CfdErrorCode::TypeMismatch,
-                format!(
-                    "unknown variant `{}` for dimension `{}`",
-                    input.variant, input.dimension
-                ),
-            ));
-            return None;
-        }
         if !seen.insert((record_id, input.field.clone(), input.variant.clone())) {
             self.diagnostics.push(dimension_diagnostic(
                 &input,
@@ -412,12 +426,12 @@ impl<'a> ModelCompiler<'a> {
             ));
             return None;
         }
-        let optional_ty = CftValueType::Option(Box::new(field.value_type.clone()));
+        let field_ty = field.value_type.clone();
         let path = CfdPath::root().field(input.field.as_str());
         let diagnostic_start = self.diagnostics.len();
         let draft = Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits)
             .validate_value(
-                &optional_ty,
+                &field_ty,
                 &input.value,
                 Some(record_id),
                 path.clone(),
@@ -451,10 +465,6 @@ impl<'a> ModelCompiler<'a> {
             for (record_id, input, draft, path) in validated {
                 let start = resolver.diagnostic_count();
                 if let Some(value) = resolver.resolve_dimension_value(record_id, &draft, &path) {
-                    let value = match value {
-                        CfdValue::OptionSome(value) => *value,
-                        value => value,
-                    };
                     values.push((record_id, input.clone(), value));
                 }
                 origins.push((

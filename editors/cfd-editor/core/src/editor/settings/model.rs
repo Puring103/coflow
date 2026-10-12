@@ -43,23 +43,42 @@ pub(crate) struct SharedViewConfig {
     id: String,
     name: String,
     kind: crate::editor::types::ViewKind,
-    #[serde(default)] group_filter: Option<String>,
-    #[serde(default)] columns: Vec<String>,
-    #[serde(default)] relations: Vec<String>,
-    #[serde(default)] fields: Vec<String>,
+    #[serde(default)]
+    group_filter: Option<String>,
+    #[serde(default)]
+    columns: Vec<String>,
+    #[serde(default)]
+    relations: Vec<String>,
+    #[serde(default)]
+    fields: Vec<String>,
 }
 
 impl From<ViewConfig> for SharedViewConfig {
     fn from(view: ViewConfig) -> Self {
-        Self { id: view.id, name: view.name, kind: view.kind, group_filter: view.group_filter,
-            columns: view.columns, relations: view.relations, fields: view.fields }
+        Self {
+            id: view.id,
+            name: view.name,
+            kind: view.kind,
+            group_filter: view.group_filter,
+            columns: view.columns,
+            relations: view.relations,
+            fields: view.fields,
+        }
     }
 }
 
 impl From<SharedViewConfig> for ViewConfig {
     fn from(view: SharedViewConfig) -> Self {
-        Self { id: view.id, name: view.name, kind: view.kind, group_filter: view.group_filter,
-            columns: view.columns, column_widths: BTreeMap::new(), relations: view.relations, fields: view.fields }
+        Self {
+            id: view.id,
+            name: view.name,
+            kind: view.kind,
+            group_filter: view.group_filter,
+            columns: view.columns,
+            column_widths: BTreeMap::new(),
+            relations: view.relations,
+            fields: view.fields,
+        }
     }
 }
 
@@ -82,13 +101,33 @@ pub(crate) struct LocalSettingsFile {
 }
 
 impl SettingsFile {
-    pub(crate) fn from_runtime(project_root: &Path, settings: &EditorProjectSettings) -> Result<Self, EditorError> {
+    pub(crate) fn from_runtime(
+        project_root: &Path,
+        settings: &EditorProjectSettings,
+    ) -> Result<Self, EditorError> {
         // 列宽是个人偏好，不得混入 Git 跟踪的视图定义。
-        let views = settings.views.iter().map(|(path, by_type)| {
-            (path.clone(), by_type.iter().map(|(ty, entries)| {
-                (ty.clone(), entries.iter().cloned().map(SharedViewConfig::from).collect())
-            }).collect())
-        }).collect();
+        let views = settings
+            .views
+            .iter()
+            .map(|(path, by_type)| {
+                (
+                    path.clone(),
+                    by_type
+                        .iter()
+                        .map(|(ty, entries)| {
+                            (
+                                ty.clone(),
+                                entries
+                                    .iter()
+                                    .cloned()
+                                    .map(SharedViewConfig::from)
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
         let mut file = Self {
             version: SETTINGS_VERSION,
             graph_positions: settings.graph_positions.clone(),
@@ -97,23 +136,46 @@ impl SettingsFile {
             record_groups: settings.record_groups.clone(),
         };
         file.views = map_outer_keys(file.views, &mut |path| stored_file_path(project_root, path))?;
-        file.record_groups = map_outer_keys(file.record_groups, &mut |path| stored_file_path(project_root, path))?;
-        file.graph_positions = map_graph_keys(file.graph_positions, &mut |path| stored_file_path(project_root, path))?;
+        file.record_groups = map_outer_keys(file.record_groups, &mut |path| {
+            stored_file_path(project_root, path)
+        })?;
+        file.graph_positions = map_graph_keys(file.graph_positions, &mut |path| {
+            stored_file_path(project_root, path)
+        })?;
         Ok(file)
     }
 
-    pub(crate) fn into_runtime(mut self, project_root: &Path) -> Result<EditorProjectSettings, EditorError> {
-        self.views = map_outer_keys(self.views, &mut |path| Ok(runtime_file_path(project_root, path)))?;
-        self.record_groups = map_outer_keys(self.record_groups, &mut |path| Ok(runtime_file_path(project_root, path)))?;
-        self.graph_positions = map_graph_keys(self.graph_positions, &mut |path| Ok(runtime_file_path(project_root, path)))?;
+    pub(crate) fn into_runtime(
+        mut self,
+        project_root: &Path,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        self.views = map_outer_keys(self.views, &mut |path| {
+            Ok(runtime_file_path(project_root, path))
+        })?;
+        self.record_groups = map_outer_keys(self.record_groups, &mut |path| {
+            Ok(runtime_file_path(project_root, path))
+        })?;
+        self.graph_positions = map_graph_keys(self.graph_positions, &mut |path| {
+            Ok(runtime_file_path(project_root, path))
+        })?;
         Ok(EditorProjectSettings {
             graph_positions: self.graph_positions,
             short_name_fields: self.short_name_fields,
-            views: self.views.into_iter().map(|(path, by_type)| {
-                (path, by_type.into_iter().map(|(ty, entries)| {
-                    (ty, entries.into_iter().map(ViewConfig::from).collect())
-                }).collect())
-            }).collect(),
+            views: self
+                .views
+                .into_iter()
+                .map(|(path, by_type)| {
+                    (
+                        path,
+                        by_type
+                            .into_iter()
+                            .map(|(ty, entries)| {
+                                (ty, entries.into_iter().map(ViewConfig::from).collect())
+                            })
+                            .collect(),
+                    )
+                })
+                .collect(),
             record_groups: self.record_groups,
             ..EditorProjectSettings::default()
         })
@@ -121,27 +183,44 @@ impl SettingsFile {
 }
 
 impl LocalSettingsFile {
-    pub(crate) fn from_runtime(project_root: &Path, settings: &EditorProjectSettings) -> Result<Self, EditorError> {
+    pub(crate) fn from_runtime(
+        project_root: &Path,
+        settings: &EditorProjectSettings,
+    ) -> Result<Self, EditorError> {
         let mut file = Self {
             version: LOCAL_SETTINGS_VERSION,
             graph_compact_modes: settings.graph_compact_modes.clone(),
             view_order: settings.view_order.clone(),
             default_table_column_widths: settings.default_table_column_widths.clone(),
-            view_column_widths: settings.views.iter().filter_map(|(path, by_type)| {
-                let widths = by_type.iter().filter_map(|(ty, views)| {
-                    let widths = views.iter().filter(|view| !view.column_widths.is_empty())
-                        .map(|view| (view.id.clone(), view.column_widths.clone())).collect::<BTreeMap<_, _>>();
-                    (!widths.is_empty()).then_some((ty.clone(), widths))
-                }).collect::<BTreeMap<_, _>>();
-                (!widths.is_empty()).then_some((path.clone(), widths))
-            }).collect(),
+            view_column_widths: settings
+                .views
+                .iter()
+                .filter_map(|(path, by_type)| {
+                    let widths = by_type
+                        .iter()
+                        .filter_map(|(ty, views)| {
+                            let widths = views
+                                .iter()
+                                .filter(|view| !view.column_widths.is_empty())
+                                .map(|view| (view.id.clone(), view.column_widths.clone()))
+                                .collect::<BTreeMap<_, _>>();
+                            (!widths.is_empty()).then_some((ty.clone(), widths))
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    (!widths.is_empty()).then_some((path.clone(), widths))
+                })
+                .collect(),
             workspace: settings.workspace.clone(),
         };
         file.map_file_paths(|path| stored_file_path(project_root, path))?;
         Ok(file)
     }
 
-    pub(crate) fn apply(mut self, project_root: &Path, settings: &mut EditorProjectSettings) -> Result<(), EditorError> {
+    pub(crate) fn apply(
+        mut self,
+        project_root: &Path,
+        settings: &mut EditorProjectSettings,
+    ) -> Result<(), EditorError> {
         self.map_file_paths(|path| Ok(runtime_file_path(project_root, path)))?;
         settings.graph_compact_modes = self.graph_compact_modes;
         settings.view_order = self.view_order;
@@ -153,7 +232,8 @@ impl LocalSettingsFile {
                     if let Some(views) = views_by_type.get_mut(&ty) {
                         for view in views {
                             if let Some(widths) = widths_by_id.get(&view.id) {
-                                view.column_widths = super::sanitize::sanitized_column_widths(widths.clone());
+                                view.column_widths =
+                                    super::sanitize::sanitized_column_widths(widths.clone());
                             }
                         }
                     }
@@ -163,24 +243,40 @@ impl LocalSettingsFile {
         Ok(())
     }
 
-    fn map_file_paths(&mut self, mut map: impl FnMut(&str) -> Result<String, EditorError>) -> Result<(), EditorError> {
+    fn map_file_paths(
+        &mut self,
+        mut map: impl FnMut(&str) -> Result<String, EditorError>,
+    ) -> Result<(), EditorError> {
         self.view_order = map_outer_keys(std::mem::take(&mut self.view_order), &mut map)?;
-        self.default_table_column_widths = map_outer_keys(std::mem::take(&mut self.default_table_column_widths), &mut map)?;
-        self.view_column_widths = map_outer_keys(std::mem::take(&mut self.view_column_widths), &mut map)?;
-        self.graph_compact_modes = map_graph_keys(std::mem::take(&mut self.graph_compact_modes), &mut map)?;
+        self.default_table_column_widths = map_outer_keys(
+            std::mem::take(&mut self.default_table_column_widths),
+            &mut map,
+        )?;
+        self.view_column_widths =
+            map_outer_keys(std::mem::take(&mut self.view_column_widths), &mut map)?;
+        self.graph_compact_modes =
+            map_graph_keys(std::mem::take(&mut self.graph_compact_modes), &mut map)?;
         // 维度标签的文件路径是虚拟入口，迁移时只转换其业务文件并同步当前标签 ID。
         for tab in &mut self.workspace.tabs {
             if let Some(target) = &mut tab.dimension_target {
                 let previous = serde_json::to_string(&[
-                    &target.dimension, &target.owner_file, &target.type_name,
+                    &target.dimension,
+                    &target.owner_file,
+                    &target.type_name,
                     target.field.as_deref().unwrap_or(""),
-                ]).map_err(|error| EditorError::other(error.to_string()))?;
+                ])
+                .map_err(|error| EditorError::other(error.to_string()))?;
                 target.owner_file = map(&target.owner_file)?;
                 if self.workspace.active_tab_id.as_deref() == Some(&previous) {
-                    self.workspace.active_tab_id = Some(serde_json::to_string(&[
-                        &target.dimension, &target.owner_file, &target.type_name,
-                        target.field.as_deref().unwrap_or(""),
-                    ]).map_err(|error| EditorError::other(error.to_string()))?);
+                    self.workspace.active_tab_id = Some(
+                        serde_json::to_string(&[
+                            &target.dimension,
+                            &target.owner_file,
+                            &target.type_name,
+                            target.field.as_deref().unwrap_or(""),
+                        ])
+                        .map_err(|error| EditorError::other(error.to_string()))?,
+                    );
                 }
             } else {
                 tab.file_path = map(&tab.file_path)?;

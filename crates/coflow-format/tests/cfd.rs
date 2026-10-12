@@ -9,13 +9,6 @@ fn cfd_formatter_expands_records_and_separates_top_level_entries() {
     );
     assert_eq!(format_cfd(&format_cfd(source)), format_cfd(source));
 }
-#[test]
-fn cfd_formatter_rejoins_split_function_headers() {
-    let source = "default_calculator: Calculator {\n  classify:\n\n    fn(value: int) ->\n\n    string {\n      if value >= 10 {\n        \"large\"\n      } else {\n        \"small\"\n      }\n    },\n}\n";
-    let expected = "default_calculator: Calculator {\n  classify: fn(value: int) -> string {\n    if value >= 10 {\n      \"large\"\n    } else {\n      \"small\"\n    }\n  },\n}\n";
-    assert_eq!(format_cfd(source), expected);
-    assert_eq!(format_cfd(expected), expected);
-}
 
 #[test]
 fn cfd_formatter_separates_array_close_after_structural_object() {
@@ -31,17 +24,11 @@ fn cfd_formatter_separates_array_close_after_structural_object() {
 }
 
 #[test]
-fn cfd_formatter_recovers_multiline_fields_functions_else_and_comments() {
-    let source = "item: Example {\nname:\n\"Widget\",\ncallback:\nfn(\nvalue: int,\nfallback: fn(int) ->\nint\n)\n->\nResult<\nint,\nstring\n>\n{\nif value > 0 {\n\"ok\"\n}\nelse {\n\"bad\"\n}\n},\n# callback: fn(value: int) ->\nlabel: \"kept\",\n}\n";
-    let expected = "item: Example {\n  name: \"Widget\",\n  callback: fn(\n    value: int,\n    fallback: fn(int) -> int\n  ) -> Result<\n    int,\n    string\n  > {\n    if value > 0 {\n      \"ok\"\n    } else {\n      \"bad\"\n    }\n  },\n  # callback: fn(value: int) ->\n  label: \"kept\",\n}\n";
+fn cfd_formatter_expands_dimension_blocks_and_keeps_templates_intact() {
+    let source = "language[ja]{sword:Item{name:\"剣\",label:f\"{{text}} {self.name}\"}}";
+    let expected = "language[ja] {\n  sword: Item {\n    name: \"剣\",\n    label: f\"{{text}} {self.name}\"\n  }\n}\n";
     assert_eq!(format_cfd(source), expected);
     assert_eq!(format_cfd(expected), expected);
-}
-
-#[test]
-fn cfd_formatter_preserves_manual_blank_lines_inside_function_bodies() {
-    let source = "calculator: Calculator {\n  classify: fn(\n    value: int\n  ) -> string\n  {\n\n\n    var label = \"small\"\n\n    if value >= 10 {\n\n      label = \"large\"\n\n    }\n\n    label\n\n  },\n}\n";
-    let expected = "calculator: Calculator {\n  classify: fn(\n    value: int\n  ) -> string {\n\n    var label = \"small\"\n\n    if value >= 10 {\n\n      label = \"large\"\n\n    }\n\n    label\n\n  },\n}\n";
-    assert_eq!(format_cfd(source), expected);
-    assert_eq!(format_cfd(expected), expected);
+    let (_, errors) = coflow_language::cfd::parse_cfd(expected);
+    assert!(errors.is_empty(), "{errors:?}");
 }

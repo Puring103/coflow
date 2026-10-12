@@ -46,124 +46,41 @@ pub(super) fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
     Ok(out)
 }
 
-pub(crate) fn parse_automatic_formatted_string(
+// 单元格、默认值和 CFD 共用同一插值解析器，禁止隐式插值和宽松表达式回退。
+pub(crate) fn parse_formatted_string(
     text: &str,
-) -> Result<Option<LoadedFormattedString>, CellValueDiagnostics> {
-    let text = text.trim();
-    let (source, value) = if text.starts_with('"') {
-        (text.to_string(), parse_string(text)?)
-    } else {
-        (format!("{text:?}"), text.to_string())
+) -> Result<LoadedFormattedString, CellValueDiagnostics> {
+    let source = text.trim().to_string();
+    let (ast, errors) =
+        coflow_language::cfd::parse_cfd(&format!("cell: Value {{ field: {source} }}"));
+    if let Some(error) = errors.first() {
+        return Err(syntax(error.message.clone()));
+    }
+    let Some(coflow_language::cfd::CfdValue::FormattedString(value)) = ast
+        .records
+        .first()
+        .and_then(|record| record.fields.first())
+        .map(|field| &field.value)
+    else {
+        return Err(syntax("expected an explicit f\"...\" template"));
     };
-    if !value.contains('{') {
-        return Ok(None);
-    }
-
-    let mut segments = Vec::new();
-    let mut literal = String::new();
-    let mut pos = 0;
-    let mut has_reference = false;
-    while pos < value.len() {
-        let rest = &value[pos..];
-        if rest.starts_with("{{") {
-            literal.push('{');
-            pos += 2;
-            continue;
-        }
-        if rest.starts_with("}}") {
-            literal.push('}');
-            pos += 2;
-            continue;
-        }
-        if rest.starts_with('{') {
-            let Some(relative_end) = rest.find('}') else {
-                break;
-            };
-            let expression = rest[1..relative_end].trim();
-            let reference = match parse_reference(expression) {
-                Ok(reference) => reference,
-                Err(error) if expression.starts_with('&') => return Err(error),
-                Err(_) => {
-                    let Some(ch) = rest.chars().next() else {
-                        break;
-                    };
-                    literal.push(ch);
-                    pos += ch.len_utf8();
-                    continue;
-                }
-            };
-            if !literal.is_empty() {
-                segments.push(LoadedFormatSegment::Text(std::mem::take(&mut literal)));
+    let segments = value
+        .segments
+        .iter()
+        .map(|segment| match segment {
+            coflow_language::cfd::CfdFormatSegment::Text(text) => {
+                LoadedFormatSegment::Text(text.clone())
             }
-            segments.push(LoadedFormatSegment::Reference(reference));
-            has_reference = true;
-            pos += relative_end + 1;
-            continue;
-        }
-        let Some(ch) = rest.chars().next() else {
-            break;
-        };
-        literal.push(ch);
-        pos += ch.len_utf8();
-    }
-    if !literal.is_empty() {
-        segments.push(LoadedFormatSegment::Text(literal));
-    }
-
-    Ok(has_reference.then_some(LoadedFormattedString { source, segments }))
-}
-
-fn parse_reference(expression: &str) -> Result<LoadedFieldReference, CellValueDiagnostics> {
-    let (type_name, key, path) = expression.strip_prefix('&').map_or_else(
-        || {
-            (
-                None,
-                None,
-                expression
-                    .split('.')
-                    .map(str::to_string)
-                    .collect::<Vec<_>>(),
-            )
-        },
-        |reference| {
-            let (type_name, record) = reference
-                .split_once("::")
-                .map_or((None, reference), |(type_name, record)| {
-                    (Some(type_name.to_string()), record)
-                });
-            let mut parts = record.split('.');
-            let key = parts.next().unwrap_or_default();
-            let path = parts.map(str::to_string).collect::<Vec<_>>();
-            (type_name, Some(key.to_string()), path)
-        },
-    );
-    if path.is_empty()
-        || type_name.as_deref().is_some_and(str::is_empty)
-        || key.as_deref().is_some_and(str::is_empty)
-        || type_name
-            .as_deref()
-            .is_some_and(|name| !is_reference_name(name))
-        || key.as_deref().is_some_and(|name| !is_reference_name(name))
-        || path.iter().any(|name| !is_reference_name(name))
-        || expression.chars().any(char::is_whitespace)
-    {
-        return Err(syntax(
-            "formatted string reference must use `field`, `&key.field`, or `&Type::key.field`",
-        ));
-    }
-    Ok(LoadedFieldReference {
-        type_name,
-        key,
-        path,
-    })
-}
-
-fn is_reference_name(value: &str) -> bool {
-    let mut chars = value.chars();
-    chars
-        .next()
-        .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
+            coflow_language::cfd::CfdFormatSegment::Reference(reference) => {
+                LoadedFormatSegment::Reference(LoadedFieldReference {
+                    type_name: reference.type_name.clone(),
+                    key: reference.key.clone(),
+                    path: reference.path.clone(),
+                })
+            }
+        })
+        .collect();
+    Ok(LoadedFormattedString { source, segments })
 }
 
 pub(super) fn string_needs_quotes(text: &str) -> bool {

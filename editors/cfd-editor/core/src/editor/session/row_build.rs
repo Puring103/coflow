@@ -10,8 +10,7 @@ use super::build::{session_capabilities_for_file, SessionSnapshotParts};
 use super::{ColumnStats, EditorSession};
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
-    EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
-    DeletedRecordSnapshot,
+    DeletedRecordSnapshot, EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
 };
 
 /// 删除前快照：落盘前捕获 `(CfdRecord, display_path)`，undo 为尽力而为。
@@ -191,14 +190,19 @@ pub(crate) fn project_bootstrap(
 fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileTypeOption>> {
     let queries = session.queries();
     // 维度导航使用基础记录的业务来源，不让维度辅助记录进入可编辑类型列表。
-    let mut fields_by_file = BTreeMap::<String, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>::new();
+    let mut fields_by_file =
+        BTreeMap::<String, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>::new();
     for dimension in queries.dimensions() {
         {
             for field in &dimension.fields {
                 for target in queries.ref_targets(&field.source_type) {
-                    fields_by_file.entry(target.file_path).or_default()
-                        .entry(target.coordinate.actual_type.to_string()).or_default()
-                        .entry(dimension.name.clone()).or_default()
+                    fields_by_file
+                        .entry(target.file_path)
+                        .or_default()
+                        .entry(target.coordinate.actual_type.to_string())
+                        .or_default()
+                        .entry(dimension.name.clone())
+                        .or_default()
                         .insert(field.source_field.clone());
                 }
             }
@@ -227,10 +231,17 @@ fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileType
                         .copied()
                         .unwrap_or_default(),
                     is_singleton: session.queries().type_is_singleton(&name),
-                    dimension_fields: fields_by_file.get(file_path)
+                    dimension_fields: fields_by_file
+                        .get(file_path)
                         .and_then(|types| types.get(&name))
-                        .map(|dimensions| dimensions.iter().map(|(dimension, fields)|
-                            (dimension.clone(), fields.iter().cloned().collect())).collect())
+                        .map(|dimensions| {
+                            dimensions
+                                .iter()
+                                .map(|(dimension, fields)| {
+                                    (dimension.clone(), fields.iter().cloned().collect())
+                                })
+                                .collect()
+                        })
                         .unwrap_or_default(),
                     name,
                 })

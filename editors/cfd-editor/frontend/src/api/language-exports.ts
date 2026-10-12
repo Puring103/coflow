@@ -1,4 +1,3 @@
-export type { FunctionDocumentState } from '../bindings/FunctionDocumentState'
 export type { LanguageCompletion } from '../bindings/LanguageCompletion'
 export type { LanguageDiagnostic } from '../bindings/LanguageDiagnostic'
 export type { LanguageDocumentState } from '../bindings/LanguageDocumentState'

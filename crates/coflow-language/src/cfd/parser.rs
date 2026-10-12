@@ -1,12 +1,12 @@
 mod tokens;
 
 use super::ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdRecord, CfdRef, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdDimensionBlock, CfdField,
+    CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::lexical::{
-    is_identifier_continue, is_identifier_start, scan_balanced_delimiter, tokenize_lossless,
+    decode_simple_escape, is_identifier_continue, is_identifier_start, tokenize_lossless,
     DelimiterNesting, LosslessTokenKind,
 };
 use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
@@ -17,6 +17,11 @@ pub(crate) fn parse(source: &str, options: CfdParseOptions) -> (CfdAst, Vec<CfdS
     let mut p = Parser::new(source, options);
     let ast = p.parse_root();
     (ast, p.diagnostics)
+}
+
+enum TopLevel {
+    Records(Vec<CfdRecord>),
+    Dimension(CfdDimensionBlock),
 }
 
 struct Parser<'a> {
@@ -40,11 +45,13 @@ impl<'a> Parser<'a> {
 
     fn parse_root(&mut self) -> CfdAst {
         let mut records = Vec::new();
+        let mut dimensions = Vec::new();
         self.skip_ws_and_comments();
 
         while !self.is_eof() {
             match self.parse_top_level() {
-                Ok(new) => records.extend(new),
+                Ok(TopLevel::Records(new)) => records.extend(new),
+                Ok(TopLevel::Dimension(block)) => dimensions.push(block),
                 Err(diag) => {
                     self.diagnostics.push(diag);
                     self.recover_to_next_record();
@@ -52,7 +59,10 @@ impl<'a> Parser<'a> {
             }
             self.skip_ws_and_comments();
         }
-        CfdAst { records }
+        CfdAst {
+            records,
+            dimensions,
+        }
     }
 
     /// Skip to a record candidate only after malformed nested syntax has
@@ -82,7 +92,7 @@ impl<'a> Parser<'a> {
         self.pos = self.source.len();
     }
 
-    fn parse_top_level(&mut self) -> Result<Vec<CfdRecord>, CfdSyntaxDiagnostic> {
+    fn parse_top_level(&mut self) -> Result<TopLevel, CfdSyntaxDiagnostic> {
         let first = self.parse_key("record key or group type")?;
         self.skip_ws_and_comments();
 
@@ -104,13 +114,86 @@ impl<'a> Parser<'a> {
                 span,
             };
             self.charge_node(span)?;
-            Ok(vec![record])
+            Ok(TopLevel::Records(vec![record]))
         } else if self.peek_char() == Some('{') {
             // `GroupType { ... }`
-            self.parse_group(&first)
+            self.parse_group(&first).map(TopLevel::Records)
+        } else if self.peek_char() == Some('[') {
+            self.parse_dimension_block(first).map(TopLevel::Dimension)
         } else {
-            Err(self.error("expected `:` or `{`"))
+            Err(self.error("expected `:`, `[` or `{`"))
         }
+    }
+
+    fn parse_dimension_block(
+        &mut self,
+        dimension: Token,
+    ) -> Result<CfdDimensionBlock, CfdSyntaxDiagnostic> {
+        // `[` 与 `:` 在词法上区分覆盖和基础记录，不查询任何声明。
+        let valid_identifier = |value: &str| {
+            let mut chars = value.chars();
+            chars.next().is_some_and(is_identifier_start) && chars.all(is_identifier_continue)
+        };
+        if self.source[dimension.span.start..].starts_with('"')
+            || !valid_identifier(&dimension.text)
+        {
+            return Err(self.error("dimension must be an unquoted identifier"));
+        }
+        self.expect_char('[', "dimension variant `[`")?;
+        let variant = self.parse_name_token("dimension variant")?;
+        if !valid_identifier(&variant.text) {
+            return Err(self.error("variant must be an identifier"));
+        }
+        self.skip_ws_and_comments();
+        self.expect_char(']', "dimension variant `]`")?;
+        self.skip_ws_and_comments();
+        self.expect_char('{', "dimension body `{`")?;
+        self.enter_nesting()?;
+        let result = (|| {
+            let mut records = Vec::new();
+            loop {
+                self.skip_ws_and_comments();
+                if self.eat_char('}') {
+                    break;
+                }
+                if self.is_eof() {
+                    return Err(self.error("unterminated dimension block"));
+                }
+                let key = self.parse_key("override record key")?;
+                self.skip_ws_and_comments();
+                self.expect_char(':', "override record separator `:`")?;
+                self.skip_ws_and_comments();
+                let type_start = self.pos;
+                let type_name = self.parse_type_name("override record type")?;
+                let type_span = Span::new(type_start, self.pos);
+                let block = self.parse_block()?;
+                let span = Span::new(key.span.start, block.span.end);
+                self.charge_node(span)?;
+                records.push(CfdRecord {
+                    key: key.text,
+                    key_span: key.span,
+                    group_type: None,
+                    type_name,
+                    type_span,
+                    fields: block.fields,
+                    span,
+                });
+                self.skip_ws_and_comments();
+                let _ = self.eat_char(',');
+            }
+            let span = Span::new(dimension.span.start, self.pos);
+            self.charge_node(span)?;
+            Ok(CfdDimensionBlock {
+                dimension: dimension.text,
+                dimension_span: dimension.span,
+                variant: variant.text,
+                variant_span: variant.span,
+                records,
+                span,
+            })
+        })();
+        self.open_nesting = self.open_nesting.saturating_sub(1);
+        result
     }
 
     fn parse_group(&mut self, group_token: &Token) -> Result<Vec<CfdRecord>, CfdSyntaxDiagnostic> {
@@ -251,28 +334,23 @@ impl<'a> Parser<'a> {
     fn parse_value_inner(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         if self.source[self.pos..].starts_with("f\"") {
-            return Err(CfdSyntaxDiagnostic {
-                message: "formatted strings use ordinary quotes; remove the `f` prefix".to_string(),
-                span: Span::new(self.pos, self.pos + 1),
-            });
-        }
-        if self.peek_keyword("fn") {
-            return self.parse_function();
+            let start = self.pos;
+            self.pos += 1;
+            self.parse_quoted_string()?;
+            let span = Span::new(start, self.pos);
+            let segments = parse_format_segments(&self.source[start + 2..self.pos - 1], span)?;
+            return Ok(CfdValue::FormattedString(CfdFormattedString {
+                source: self.source[start..self.pos].to_string(),
+                segments,
+                span,
+            }));
         }
         match self.peek_char() {
             Some('"') => {
                 let start = self.pos;
-                let s = self.parse_quoted_string()?;
-                let span = Span::new(start, self.pos);
-                if let Some(segments) = parse_automatic_format_segments(&s, span)? {
-                    Ok(CfdValue::FormattedString(CfdFormattedString {
-                        source: self.source[start..self.pos].to_string(),
-                        segments,
-                        span,
-                    }))
-                } else {
-                    Ok(CfdValue::QuotedString(s, span))
-                }
+                let value = self.parse_quoted_string()?;
+                // 普通字符串不解释花括号；插值必须由 f 前缀显式引入。
+                Ok(CfdValue::QuotedString(value, Span::new(start, self.pos)))
             }
             Some('[') => self.parse_array(),
             Some('@') => Err(self.error("invalid record reference")),
@@ -328,89 +406,6 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-    }
-
-    fn parse_function(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        if !self.eat_keyword("fn") {
-            return Err(self.error("expected `fn`"));
-        }
-        self.skip_ws_and_comments();
-        self.expect_char('(', "function parameter list `(`")?;
-        self.pos = scan_balanced_delimiter(self.source, self.pos - 1, '(', ')')
-            .ok_or_else(|| self.error("unterminated function parameter list"))?;
-        self.skip_ws_and_comments();
-        if !self.source[self.pos..].starts_with("->") {
-            return Err(self.error("expected `->` after function parameters"));
-        }
-        self.pos += 2;
-        self.skip_ws_and_comments();
-        self.scan_function_return_type()?;
-        self.skip_ws_and_comments();
-        self.expect_char('{', "function body `{`")?;
-        let body_start = self.pos;
-        self.pos = scan_balanced_delimiter(self.source, body_start - 1, '{', '}')
-            .ok_or_else(|| self.error("unterminated function body"))?;
-        let body_end = self.pos.saturating_sub(1);
-        if let Err(error) = super::function::validate_function_value(&self.source[start..self.pos])
-        {
-            return Err(CfdSyntaxDiagnostic {
-                message: error.message,
-                span: Span::new(start + error.offset, start + error.offset + 1),
-            });
-        }
-        let span = Span::new(start, self.pos);
-        Ok(CfdValue::Function(CfdFunction {
-            source: self.source[start..self.pos].to_string(),
-            span,
-            body_span: Span::new(body_start, body_end),
-        }))
-    }
-
-    fn scan_function_return_type(&mut self) -> Result<(), CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        let mut started = false;
-        let mut parens = 0_usize;
-        let mut brackets = 0_usize;
-        let mut angles = 0_usize;
-        let mut braces = 0_usize;
-        let fragment = &self.source[start..];
-        for token in tokenize_lossless(fragment) {
-            if token.is_trivia() {
-                continue;
-            }
-            if token.kind != LosslessTokenKind::Symbol {
-                started = true;
-                continue;
-            }
-            if token.text(fragment) != "{" {
-                started = true;
-            }
-            for ch in token.text(fragment).chars() {
-                if ch == '{' && parens == 0 && brackets == 0 && angles == 0 && braces == 0 {
-                    if started {
-                        self.pos = start + token.span.start;
-                        return Ok(());
-                    }
-                    started = true;
-                    braces = 1;
-                    continue;
-                }
-                match ch {
-                    '(' => parens += 1,
-                    ')' => parens = parens.saturating_sub(1),
-                    '[' => brackets += 1,
-                    ']' => brackets = brackets.saturating_sub(1),
-                    '<' => angles += 1,
-                    '>' => angles = angles.saturating_sub(1),
-                    '{' => braces += 1,
-                    '}' => braces = braces.saturating_sub(1),
-                    _ => {}
-                }
-            }
-        }
-        self.pos = self.source.len();
-        Err(self.error("expected function body"))
     }
 
     fn parse_bit_or_expr(&mut self) -> Result<(CfdBitExpr, bool), CfdSyntaxDiagnostic> {
@@ -574,18 +569,13 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn parse_automatic_format_segments(
+fn parse_format_segments(
     value: &str,
     span: Span,
-) -> Result<Option<Vec<CfdFormatSegment>>, CfdSyntaxDiagnostic> {
-    if !value.contains('{') {
-        return Ok(None);
-    }
-
+) -> Result<Vec<CfdFormatSegment>, CfdSyntaxDiagnostic> {
     let mut segments = Vec::new();
     let mut text = String::new();
     let mut pos = 0;
-    let mut has_reference = false;
     while pos < value.len() {
         let rest = &value[pos..];
         if rest.starts_with("{{") {
@@ -599,47 +589,58 @@ fn parse_automatic_format_segments(
             continue;
         }
         if rest.starts_with('{') {
-            let Some(relative_end) = rest.find('}') else {
-                break;
-            };
-            let expression = rest[1..relative_end].trim();
-            let reference_span = Span::new(
-                span.start.saturating_add(1).saturating_add(pos),
-                span.start
-                    .saturating_add(1)
-                    .saturating_add(pos)
-                    .saturating_add(relative_end + 1),
-            );
-            let reference = match parse_field_reference_text(expression, reference_span) {
-                Ok(reference) => reference,
-                Err(error) if expression.starts_with('&') => return Err(error),
-                Err(_) => {
-                    let Some(ch) = rest.chars().next() else {
-                        break;
-                    };
-                    text.push(ch);
-                    pos += ch.len_utf8();
-                    continue;
+            let end = rest.find('}').ok_or_else(|| CfdSyntaxDiagnostic {
+                message: "unterminated interpolation".to_string(),
+                span,
+            })?;
+            // 在原始字面量上解析路径，转义与 Unicode 都不改变语义高亮和诊断坐标。
+            let reference_span = Span::new(span.start + 2 + pos, span.start + 2 + pos + end + 1);
+            let mut reference = parse_field_reference_text(rest[1..end].trim(), reference_span)?;
+            if reference.key.is_none() {
+                if reference.path.len() < 2 || reference.path[0] != "self" {
+                    return Err(CfdSyntaxDiagnostic {
+                        message: "interpolation requires `self.field` or `&Type::key.field`"
+                            .to_string(),
+                        span,
+                    });
                 }
-            };
+                reference.path.remove(0);
+            }
             if !text.is_empty() {
                 segments.push(CfdFormatSegment::Text(std::mem::take(&mut text)));
             }
             segments.push(CfdFormatSegment::Reference(reference));
-            has_reference = true;
-            pos += relative_end + 1;
+            pos += end + 1;
             continue;
         }
-        let Some(ch) = rest.chars().next() else {
-            break;
-        };
-        text.push(ch);
-        pos += ch.len_utf8();
+        if rest.starts_with('}') {
+            return Err(CfdSyntaxDiagnostic {
+                message: "unescaped closing brace".to_string(),
+                span,
+            });
+        }
+        if let Some(ch) = rest.chars().next() {
+            if ch == '\\' {
+                let escaped = rest[1..]
+                    .chars()
+                    .next()
+                    .and_then(decode_simple_escape)
+                    .ok_or_else(|| CfdSyntaxDiagnostic {
+                        message: "invalid template escape".to_string(),
+                        span,
+                    })?;
+                text.push(escaped);
+                pos += 2;
+            } else {
+                text.push(ch);
+                pos += ch.len_utf8();
+            }
+        }
     }
     if !text.is_empty() {
         segments.push(CfdFormatSegment::Text(text));
     }
-    Ok(has_reference.then_some(segments))
+    Ok(segments)
 }
 
 fn parse_field_reference_text(
@@ -670,6 +671,8 @@ fn parse_field_reference_text(
         },
     );
     if path.is_empty()
+        || path.len() > 128
+        || (key.is_some() && type_name.is_none())
         || type_name.as_deref().is_some_and(str::is_empty)
         || key.as_deref().is_some_and(str::is_empty)
         || type_name
@@ -680,9 +683,7 @@ fn parse_field_reference_text(
         || expression.chars().any(char::is_whitespace)
     {
         return Err(CfdSyntaxDiagnostic {
-            message:
-                "formatted string reference must use `field`, `&key.field`, or `&Type::key.field`"
-                    .to_string(),
+            message: "interpolation requires `self.field` or `&Type::key.field`".to_string(),
             span,
         });
     }

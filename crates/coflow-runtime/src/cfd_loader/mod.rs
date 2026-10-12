@@ -24,7 +24,7 @@ mod lower;
 mod writer;
 use crate::data_model::{CfdDataModel, LoadedRecordDraft, RecordOrigin};
 use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
-use coflow_language::cft::CftSchema;
+use coflow_language::cft::{CftSchema, DimensionName, VariantName};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
@@ -79,7 +79,22 @@ fn parse_cfd_input_records_with_spans(
 /// Returns text diagnostics for CFD syntax/conversion errors or data-model
 /// diagnostics for schema/data/reference errors.
 pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
-    let records = parse_cfd_input_records_with_spans(schema, source)?;
+    let (ast, errors) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: crate::limits::RuntimeLimits::default().structural,
+        },
+    );
+    if !errors.is_empty() {
+        return Err(CfdTextLoadError::Text(syntax_diagnostics(errors)));
+    }
+    let records = lower_records(schema, &ast).map_err(CfdTextLoadError::Text)?;
+    let (overlays, errors) = lower::lower_dimensions(schema, &ast);
+    if !errors.is_empty() {
+        return Err(CfdTextLoadError::Text(CfdTextDiagnostics {
+            diagnostics: errors,
+        }));
+    }
     let mut builder = CfdDataModel::builder(schema)
         .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
     let line_index = LineIndex::new(source);
@@ -91,6 +106,21 @@ pub fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, 
         };
         origins.push(origin.clone());
         builder.add_loaded_record(record.record.with_origin(origin));
+    }
+    for block in &ast.dimensions {
+        if let (Ok(dimension), Ok(variant)) = (
+            DimensionName::new(block.dimension.clone()),
+            VariantName::new(block.variant.clone()),
+        ) {
+            builder.add_dimension_variant(dimension, variant);
+        }
+    }
+    for (mut value, span) in overlays {
+        value.origin = RecordOrigin::File {
+            path: PathBuf::new(),
+            span: Some(text_span(&line_index, source, span)),
+        };
+        builder.add_dimension_value_draft(value);
     }
     builder
         .build()
@@ -153,9 +183,21 @@ impl CfdLoader {
                 structural_limits: crate::limits::RuntimeLimits::default().structural,
             },
         );
-        let (lowered, lower_errors) = lower_records_partial(ctx.schema, &ast);
+        let (lowered, mut lower_errors) = lower_records_partial(ctx.schema, &ast);
+        let (overlays, overlay_errors) = lower::lower_dimensions(ctx.schema, &ast);
+        lower_errors.extend(overlay_errors);
         // 行首索引只构建一次，避免逐条记录从文件头重新扫描（二次复杂度）。
         let line_index = LineIndex::new(&contents);
+        let dimensions = overlays
+            .into_iter()
+            .map(|(mut value, span)| {
+                value.origin = RecordOrigin::File {
+                    path: file.clone(),
+                    span: Some(text_span(&line_index, &contents, span)),
+                };
+                value
+            })
+            .collect();
         let records = lowered
             .into_iter()
             .map(|record| {
@@ -178,8 +220,20 @@ impl CfdLoader {
                 diagnostics: lower_errors,
             }),
         ));
+        let dimension_variants = ast
+            .dimensions
+            .iter()
+            .filter_map(|block| {
+                let dimension = DimensionName::new(block.dimension.clone()).ok()?;
+                let variant = VariantName::new(block.variant.clone()).ok()?;
+                ctx.schema.resolve_dimension(dimension.as_str())?;
+                Some((dimension, variant))
+            })
+            .collect();
         Ok(LoadedCfdSource {
             records,
+            dimensions,
+            dimension_variants,
             diagnostics,
             source: Arc::from(contents.as_ref()),
         })
@@ -196,9 +250,7 @@ mod tests {
 
     use std::fs;
 
-    use coflow_language::cft::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
-    };
+    use coflow_language::cft::{build_schema, parse_modules, CftFile, ModuleId};
 
     use super::CfdLoader;
     use crate::api::{CfdLoadContext, CfdSource, CfdSourcePath};
@@ -209,7 +261,7 @@ mod tests {
             ModuleId::from("main"),
             "type Item { value: int; }",
         )]);
-        build_schema(&modules, &CftDimensionInputs::default()).expect("schema")
+        build_schema(&modules).expect("schema")
     }
 
     #[test]

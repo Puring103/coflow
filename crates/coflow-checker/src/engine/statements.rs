@@ -20,19 +20,12 @@ pub(super) fn eval_root_statement(
 }
 
 fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {
-    let mut skipped = false;
     for stmt in stmts {
-        match eval_stmt(evaluator, stmt) {
-            EvalFlow::Continue => {}
-            EvalFlow::Skipped => skipped = true,
-            EvalFlow::HardStop => return EvalFlow::HardStop,
+        if eval_stmt(evaluator, stmt) == EvalFlow::HardStop {
+            return EvalFlow::HardStop;
         }
     }
-    if skipped {
-        EvalFlow::Skipped
-    } else {
-        EvalFlow::Continue
-    }
+    EvalFlow::Continue
 }
 
 fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> EvalFlow {
@@ -89,7 +82,6 @@ fn eval_expr_stmt(
                     ..
                 }) => match super::expressions::eval_formatted_segments(evaluator, segments) {
                     Ok(message) => message,
-                    Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
                     Err(EvalAbort::Error) => return EvalFlow::HardStop,
                 },
                 None => explanation.message(),
@@ -109,7 +101,6 @@ fn eval_expr_stmt(
             );
             EvalFlow::HardStop
         }
-        Err(EvalAbort::Skipped) => EvalFlow::Skipped,
         Err(EvalAbort::Error) => EvalFlow::HardStop,
     }
 }
@@ -141,7 +132,6 @@ fn eval_when_stmt(
             );
             EvalFlow::HardStop
         }
-        Err(EvalAbort::Skipped) => EvalFlow::Skipped,
         Err(EvalAbort::Error) => EvalFlow::HardStop,
     }
 }
@@ -156,7 +146,6 @@ fn eval_quantifier_stmt(
 ) -> EvalFlow {
     let collection_value = match evaluator.eval_expr(collection) {
         Ok(value) => value,
-        Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
         Err(EvalAbort::Error) => return EvalFlow::HardStop,
     };
     if evaluator.charge_collection_work(&collection_value).is_err() {
@@ -164,7 +153,6 @@ fn eval_quantifier_stmt(
     }
     let item_count = match evaluator.eval_ops(quantifiers::quantifier_len(&collection_value)) {
         Ok(item_count) => item_count,
-        Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
         Err(EvalAbort::Error) => return EvalFlow::HardStop,
     };
     eval_quantifier(
@@ -213,7 +201,6 @@ fn eval_quantifier<'model>(
         let item = match evaluator.quantifier_item(collection_value, index) {
             Ok(Some(item)) => item,
             Ok(None) => return EvalFlow::HardStop,
-            Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
             Err(EvalAbort::Error) => return EvalFlow::HardStop,
         };
         if first_item_location.is_none() {
@@ -252,10 +239,7 @@ fn eval_quantifier<'model>(
 
         match flow {
             EvalFlow::Continue => {}
-            EvalFlow::Skipped => {
-                evaluator.diagnostics.truncate(diagnostic_start);
-                continue;
-            }
+
             EvalFlow::HardStop => return EvalFlow::HardStop,
         }
 

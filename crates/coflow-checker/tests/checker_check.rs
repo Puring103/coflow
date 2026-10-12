@@ -2,7 +2,7 @@
 
 #[path = "checker_common/mod.rs"]
 mod common;
-use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, CheckTask};
+use coflow_checker::{execute_checks, CheckLimits, CheckTarget, CheckTask};
 use coflow_language::cft::{CheckOwner, CheckStatementId, TypeName};
 use common::*;
 
@@ -39,7 +39,6 @@ fn explicit_task_executes_only_the_selected_root_statement() {
         [CheckTask {
             statement: statements[1],
             target: CheckTarget::Record(record),
-            projection: CheckProjection::Base,
         }],
         CheckLimits::default(),
     );
@@ -69,7 +68,6 @@ fn project_statement_runs_for_an_empty_model() {
         [CheckTask {
             statement,
             target: CheckTarget::Project,
-            projection: CheckProjection::Base,
         }],
         CheckLimits::default(),
     );
@@ -110,7 +108,6 @@ fn nested_owner_statement_walks_every_instance_in_the_target_record() {
         [CheckTask {
             statement: type_statements(&schema, "Reward")[0],
             target: CheckTarget::Record(record_id_at(&model, 0)),
-            projection: CheckProjection::Base,
         }],
         CheckLimits::default(),
     );
@@ -152,7 +149,6 @@ fn nested_owner_statement_reads_objects_inside_option_values() {
         [CheckTask {
             statement: type_statements(&schema, "Reward")[0],
             target: CheckTarget::Record(record_id_at(&model, 0)),
-            projection: CheckProjection::Base,
         }],
         CheckLimits::default(),
     );
@@ -174,7 +170,7 @@ fn when_quantifier_and_formatted_message_stay_inside_one_task() {
                 enabled: bool;
                 nums: [int];
                 check {
-                    when enabled { all value in nums { value > 0: "bad {value}"; } }
+                    when enabled { all value in nums { value > 0: f"bad {value}"; } }
                 }
             }
         "#,
@@ -198,7 +194,6 @@ fn when_quantifier_and_formatted_message_stay_inside_one_task() {
         [CheckTask {
             statement: type_statements(&schema, "Item")[0],
             target: CheckTarget::Record(record_id_at(&model, 0)),
-            projection: CheckProjection::Base,
         }],
         CheckLimits::default(),
     );
@@ -222,7 +217,6 @@ fn duplicate_tasks_are_stably_deduplicated() {
     let task = CheckTask {
         statement: type_statements(&schema, "Item")[0],
         target: CheckTarget::Record(record_id_at(&model, 0)),
-        projection: CheckProjection::Base,
     };
     let output = execute_checks(
         &schema,
@@ -244,7 +238,6 @@ fn mismatched_statement_target_returns_an_internal_diagnostic() {
         [CheckTask {
             statement: type_statements(&schema, "Item")[0],
             target: CheckTarget::Project,
-            projection: CheckProjection::Base,
         }],
         CheckLimits::default(),
     );
@@ -268,7 +261,6 @@ fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
         .map(|(record, _)| CheckTask {
             statement,
             target: CheckTarget::Record(record),
-            projection: CheckProjection::Base,
         })
         .collect::<Vec<_>>();
 

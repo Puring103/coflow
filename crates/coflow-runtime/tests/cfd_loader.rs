@@ -8,9 +8,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_runtime::SourceLocation;
 use coflow_runtime::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_runtime::{CfdValue, LoadedValueDraft};
@@ -30,7 +28,7 @@ fn runtime_parity_fixture(name: &str) -> String {
 
 fn compile_schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
+    build_schema(&modules).expect("schema should compile")
 }
 
 fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
@@ -39,7 +37,7 @@ fn compile_schema_files(files: &[(&str, &str)]) -> CftSchema {
             .iter()
             .map(|(name, source)| CftFile::from_source(ModuleId::from(*name), *source)),
     );
-    build_schema(&modules, &CftDimensionInputs::default()).expect("schema should compile")
+    build_schema(&modules).expect("schema should compile")
 }
 
 #[test]
@@ -200,7 +198,7 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
             }
             type Holder {
                 item: &Item;
-                message: string;
+                message: fstring;
             }
         "#,
     );
@@ -215,7 +213,7 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
         }
         holder: Holder {
             item: &sword,
-            message: "<b>{&Item::sword.name}</b> {&Item::sword.enabled} {&Item::sword.price} {&Item::sword.rarity} {&Item::sword.stats} {&Item::sword.tags}",
+            message: f"<b>{&Item::sword.name}</b> {&Item::sword.enabled} {&Item::sword.price} {&Item::sword.rarity} {&Item::sword.stats.hp}",
         }
     "#;
 
@@ -230,23 +228,21 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
     let CfdValue::FormattedString(message) = holder.field("message").expect("message") else {
         panic!("expected formatted string");
     };
-    assert!(message.source.starts_with("\"<b>"));
-    assert_eq!(
-        message.rendered,
-        "<b>Iron Sword</b> true 12.5 Rare Stats{hp: 30} [\"weapon\", \"melee\"]"
-    );
+    assert!(message.source.starts_with("f\"<b>"));
+    assert_eq!(message.rendered, "<b>Iron Sword</b> true 12.5 Rare 30");
     Ok(())
 }
 
 #[test]
 fn formatted_strings_follow_record_reference_fields() -> TestResult {
-    let schema =
-        compile_schema("type Item { name: string; } type Holder { item: &Item; message: string; }");
+    let schema = compile_schema(
+        "type Item { name: string; } type Holder { item: &Item; message: fstring; }",
+    );
     let model = load_cfd_model(
         &schema,
         r#"
             sword: Item { name: "Iron Sword" }
-            holder: Holder { item: &sword, message: "{item.name}" }
+            holder: Holder { item: &sword, message: f"{self.item.name}" }
         "#,
     )?;
     let holder = model
@@ -265,12 +261,12 @@ fn formatted_strings_follow_record_reference_fields() -> TestResult {
 
 #[test]
 fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> TestResult {
-    let schema = compile_schema("type Item { name: string; message: string; }");
+    let schema = compile_schema("type Item { name: string; message: fstring; }");
     let model = load_cfd_model(
         &schema,
         r#"
-            sword: Item { name: "Iron Sword", message: "source" }
-            shield: Item { name: "Iron Shield", message: "{&sword.name}" }
+            sword: Item { name: "Iron Sword", message: f"source" }
+            shield: Item { name: "Iron Shield", message: f"{&Item::sword.name}" }
         "#,
     )?;
     let shield = model
@@ -956,7 +952,6 @@ fn showcase_files_load_together() -> TestResult {
         "schema/10-checks.cft",
         "schema/11-conditional-checks.cft",
         "schema/12-quantifiers.cft",
-        "schema/13-functions.cft",
     ]
     .into_iter()
     .map(|path| fs::read_to_string(examples_dir.join(path)))
@@ -976,7 +971,6 @@ fn showcase_files_load_together() -> TestResult {
         "data/10-checks.cfd",
         "data/11-conditional-checks.cfd",
         "data/12-quantifiers.cfd",
-        "data/13-functions.cfd",
     ]
     .into_iter()
     .map(|path| fs::read_to_string(examples_dir.join(path)))
@@ -1007,56 +1001,12 @@ fn showcase_files_load_together() -> TestResult {
 }
 
 #[test]
-fn function_values_are_retained_and_signature_checked() -> TestResult {
-    let schema = compile_schema(
-        r#"
-type Rule {
-  apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string>;
-  factories: [fn(int) -> int];
-}
-"#,
-    );
-    let source = r#"
-item: Rule {
-  apply: fn(value: int, callback: fn(int) -> int) -> Result<int, string> {
-    Ok(callback(value))
-  },
-  factories: [fn(value: int) -> int { value + 1 }],
-}
-"#;
-    let model = load_cfd_model(&schema, source)?;
-    let record_id = model
-        .record_by_type_key("Rule", "item")
-        .expect("function record");
-    let record = model.record(record_id).expect("function record value");
-    let Some(CfdValue::Function(function)) = record.field("apply") else {
-        panic!("expected retained function");
-    };
-    assert!(function.source.contains("Ok(callback(value))"));
-    let Some(CfdValue::Array(factories)) = record.field("factories") else {
-        panic!("expected function array");
-    };
-    assert!(matches!(factories.as_slice(), [CfdValue::Function(_)]));
-
-    for invalid in [
-        "item: Rule { apply: fn(value: float, callback: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
-        "item: Rule { apply: fn(value: int, callback: fn(int) -> int) -> int { 1 }, factories: [] }",
-        "item: Rule { apply: fn(value: int, value: fn(int) -> int) -> Result<int, string> { Ok(1) }, factories: [] }",
-    ] {
-        let error = load_cfd_model(&schema, invalid).expect_err("invalid function signature");
-        assert_has_text_code(&error, CfdTextErrorCode::TypeMismatch);
-    }
-    Ok(())
-}
-
-#[test]
-fn cft_formatted_string_and_function_defaults_materialize_as_cfd_values() -> TestResult {
+fn cft_data_defaults_materialize_as_cfd_values() -> TestResult {
     let schema = compile_schema(
         r#"
 type Rule {
   name: string;
-  label: string = "rule {name}";
-  apply: fn(value: int) -> int = fn(value: int) -> int { value + 1 };
+  label: fstring = f"rule {self.name}";
   effect: Effect = Damage { amount: 2 };
   permissions: Permission = Permission::Read | Permission::Write;
 }
@@ -1068,15 +1018,11 @@ type Damage: Effect {}
     let model = load_cfd_model(&schema, "item: Rule { name: \"primary\" }")?;
     let record_id = model
         .record_by_type_key("Rule", "item")
-        .expect("defaulted function record");
-    let record = model.record(record_id).expect("defaulted function value");
+        .expect("defaulted data record");
+    let record = model.record(record_id).expect("defaulted data value");
     assert!(matches!(
         record.field("label"),
         Some(CfdValue::FormattedString(value)) if value.rendered == "rule primary"
-    ));
-    assert!(matches!(
-        record.field("apply"),
-        Some(CfdValue::Function(value)) if value.source.contains("value + 1")
     ));
     assert!(matches!(
         record.field("effect"),
@@ -1106,4 +1052,73 @@ fn assert_has_text_code(err: &CfdTextLoadError, code: CfdTextErrorCode) {
             .map(|diagnostic| diagnostic.code)
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn dimension_blocks_replace_selected_fields_without_configured_variants() -> TestResult {
+    let schema = compile_schema(
+        r#"
+        type Item {
+            @dimension("language") name: string;
+            @dimension("language") note: Option<string>;
+            price: int;
+        }
+    "#,
+    );
+    let model = load_cfd_model(
+        &schema,
+        r#"
+        sword: Item { name: "Sword", note: Some("note"), price: 10 }
+        language[ja] { sword: Item { name: "剣", note: None } }
+        language[en] {}
+    "#,
+    )?;
+    let id = model.record_by_type_key("Item", "sword").expect("sword");
+    assert!(
+        matches!(model.dimension_field_value(&schema, id, "name", "language", "ja"),
+        Ok(coflow_runtime::DimensionValueLookup::Value { value: CfdValue::String(value), .. }) if value == "剣")
+    );
+    assert!(matches!(
+        model.dimension_field_value(&schema, id, "note", "language", "ja"),
+        Ok(coflow_runtime::DimensionValueLookup::ExplicitNone { .. })
+    ));
+    assert!(matches!(
+        model.dimension_field_value(&schema, id, "name", "language", "unknown"),
+        Ok(coflow_runtime::DimensionValueLookup::Missing)
+    ));
+    assert_eq!(
+        model.record(id).expect("record").field("price"),
+        Some(&CfdValue::Int(10))
+    );
+    assert_eq!(
+        model
+            .dimension_variants("language")
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["en", "ja"]
+    );
+    for overlay in [
+        "language[ja] { missing: Item { name: \"剣\" } }",
+        "language[ja] { sword: Item { price: 20 } }",
+        "language[ja] { sword: Item { name: None } }",
+        "language[ja] { sword: Item { name: \"剣\" } } language[ja] { sword: Item { name: \"刀\" } }",
+    ] {
+        let source = format!("sword: Item {{ name: \"Sword\", note: None, price: 10 }} {overlay}");
+        assert!(load_cfd_model(&schema, &source).is_err(), "{overlay}");
+    }
+    Ok(())
+}
+
+#[test]
+fn formatted_string_terminals_reject_composite_and_optional_numbers() {
+    let schema = compile_schema("type Stats { hp: int; } type Item { numbers: [int]; stats: Stats; optional: Option<int>; target: &Item; message: fstring; }");
+    for terminal in ["numbers", "stats", "optional", "target"] {
+        let source = format!("item: Item {{ numbers: [1], stats: {{ hp: 1 }}, optional: 1, target: &item, message: f\"{{self.{terminal}}}\" }}");
+        let diagnostics =
+            load_cfd_model(&schema, &source).expect_err("interpolation must end at a scalar");
+        assert!(
+            diagnostics.to_string().contains("interpolation must end"),
+            "{diagnostics:?}"
+        );
+    }
 }

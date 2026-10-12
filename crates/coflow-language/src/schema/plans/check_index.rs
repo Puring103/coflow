@@ -367,8 +367,8 @@ fn nested_type_target(ty: &CftValueType) -> Option<&TypeName> {
         | CftValueType::Float
         | CftValueType::Bool
         | CftValueType::String
+        | CftValueType::FormattedString
         | CftValueType::Enum(_)
-        | CftValueType::Function(_, _)
         | CftValueType::Unit
         | CftValueType::RecordRef(_) => None,
     }
@@ -399,7 +399,7 @@ mod tests {
 
     use super::*;
     use crate::limits::StructuralLimits;
-    use crate::{build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId};
+    use crate::{build_schema, parse_modules, CftFile, ModuleId};
 
     #[test]
     fn dependency_index_compilation_obeys_the_schema_budget() {
@@ -407,7 +407,7 @@ mod tests {
             ModuleId::from("main"),
             "type Part { value: int; check { value > 0; } } type Item { part: Part; }",
         )]);
-        let schema = build_schema(&modules, &CftDimensionInputs::default()).expect("schema");
+        let schema = build_schema(&modules).expect("schema");
         let mut budget = AnalysisBudget::new(StructuralLimits::new(1, 1, 1));
 
         assert!(

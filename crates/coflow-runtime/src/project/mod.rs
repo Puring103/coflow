@@ -195,13 +195,6 @@ impl Project {
                     .iter()
                     .map(|source| self.resolve_path(source.path())),
             )
-            .chain(
-                self.config
-                    .dimensions
-                    .values()
-                    .filter_map(|dimension| dimension.out_dir.as_deref())
-                    .map(|path| self.resolve_path(path)),
-            )
             .map(|path| normalize_path(&path))
             .collect::<Vec<_>>();
         roots.sort();

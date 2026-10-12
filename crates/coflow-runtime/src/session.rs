@@ -10,8 +10,8 @@ use crate::project::{normalize_path, path_is_same_or_descendant, path_to_slash, 
 use coflow_language::cft::{CftModuleSet, CftSchema};
 
 use crate::checks::CheckDiagnosticStore;
-use crate::dimensions::{dimensions_for_project, DimensionInfo, DimensionRuntimePlan};
-use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
+use crate::dimensions::{dimensions_for_project, DimensionInfo};
+use crate::files::{self, FileTreeNode, FileTreeOptions};
 use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::SourceDataCache;
 use crate::records::{EffectiveFieldWrite, RecordView, RefTargetInfo};
@@ -23,7 +23,6 @@ pub(crate) struct ProjectSession {
     pub(crate) project: Project,
     pub(crate) modules: Arc<CftModuleSet>,
     pub(crate) schema: Arc<CftSchema>,
-    pub(crate) dimension_plan: Arc<DimensionRuntimePlan>,
     pub(crate) model: CfdDataModel,
     pub(crate) diagnostics: DiagnosticsStore,
     pub(crate) sources: SourceIndex,
@@ -116,7 +115,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub(crate) fn dimensions(&self) -> Vec<DimensionInfo> {
-        dimensions_for_project(&self.project, self.dimension_plan.fields())
+        dimensions_for_project(&self.project, &self.schema, &self.model)
     }
 
     /// Compose a read-only [`RecordView`] for a coordinate. Returns `None`
@@ -224,12 +223,10 @@ impl ProjectSession {
         })
     }
 
-    /// File-tree view of the project. All `.cfd` files are visible, while
-    /// dimension `out_dirs` become virtual subtrees.
+    /// File-tree view of the project and its selected source roots.
     #[must_use]
     pub(crate) fn file_tree(&self) -> Vec<FileTreeNode> {
         let mut options = FileTreeOptions {
-            dimension_groups: Vec::new(),
             in_sources: BTreeSet::new(),
             schema_roots: BTreeSet::new(),
             data_roots: BTreeSet::new(),
@@ -256,47 +253,18 @@ impl ProjectSession {
                 }
             }
         }
-        for info in self.dimensions() {
-            if let Some(out_dir) = self
-                .project
-                .config()
-                .dimensions
-                .get(&info.name)
-                .and_then(|config| config.out_dir.as_ref())
-            {
-                let absolute = normalize_path(&self.project.resolve_path(out_dir));
-                options.dimension_groups.push(DimensionGroup {
-                    display_name: info.display_name.clone(),
-                    dir: absolute,
-                });
-            }
-        }
         self.file_tree_with(&options)
     }
 
-    /// File-tree view using caller-supplied dimension groups and source paths.
+    /// File-tree view using source paths and schema/data membership.
     #[must_use]
     pub(crate) fn file_tree_with(&self, options: &FileTreeOptions) -> Vec<FileTreeNode> {
-        let dimension_paths = options
-            .dimension_groups
-            .iter()
-            .map(|group| path_to_slash(&group.dir))
-            .collect::<BTreeSet<_>>();
-        let mut skip: BTreeSet<String> = BTreeSet::new();
-        for group in &options.dimension_groups {
-            if let Ok(rel) = group.dir.strip_prefix(self.project.root_dir()) {
-                let slash = path_to_slash(rel);
-                if !slash.is_empty() {
-                    skip.insert(slash);
-                }
-            }
-        }
         let mut tree = files::build_file_tree(
             self.project.root_dir(),
             &options.in_sources,
             &options.schema_roots,
             &options.data_roots,
-            &skip,
+            &BTreeSet::new(),
         );
         let project_root = normalize_path(self.project.root_dir());
         for (configured, in_schema, in_data) in self
@@ -324,22 +292,12 @@ impl ProjectSession {
                 &options.in_sources,
                 in_schema,
                 in_data,
-                &dimension_paths,
             ) {
                 tree.push(node);
             }
         }
         files::sort_file_tree(&mut tree);
-        for group in options.dimension_groups.iter().rev() {
-            if let Some(node) = files::build_dimension_subtree(
-                self.project.root_dir(),
-                group.display_name.clone(),
-                &group.dir,
-                &options.in_sources,
-            ) {
-                tree.insert(0, node);
-            }
-        }
+
         tree
     }
 }

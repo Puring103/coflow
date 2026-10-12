@@ -1,4 +1,4 @@
-# Feature: fields can vary across configured dimensions.
+# Feature: fields can vary across dimensions.
 
 type UiText {
 

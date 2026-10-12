@@ -111,20 +111,3 @@ pub struct LanguageCompletion {
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub text_edit: Option<LanguageTextEdit>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct FunctionDocumentState {
-    pub source: String,
-    pub signature: String,
-    pub body: String,
-    pub body_range: LanguageRange,
-    pub diagnostics: Vec<LanguageDiagnostic>,
-    pub semantic_token_data: Vec<u32>,
-    pub semantic_token_types: Vec<String>,
-    pub completions: Vec<LanguageCompletion>,
-}

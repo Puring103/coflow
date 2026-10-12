@@ -153,12 +153,5 @@ cft_name!(EnumVariantName, "enum variant name", standard_name, trusted);
 cft_name!(ConstName, "const name", standard_name, trusted);
 cft_name!(CheckName, "check name", standard_name, trusted);
 cft_name!(DimensionName, "dimension name", standard_name, trusted);
-cft_name!(BucketName, "dimension bucket", standard_name, trusted);
 cft_name!(RecordKey, "record key", standard_name);
 cft_name!(VariantName, "dimension variant", variant_name);
-
-impl From<TypeName> for BucketName {
-    fn from(value: TypeName) -> Self {
-        Self(value.0)
-    }
-}

@@ -6,6 +6,7 @@ use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::source::Span;
 use crate::syntax::ast::{TypeRef, TypeRefKind};
+use crate::CftValueType;
 use std::collections::BTreeMap;
 
 impl ResolvedTypes<'_> {
@@ -57,6 +58,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
+            TypeRefKind::FormattedString => InferredType::Value(CftValueType::FormattedString),
             TypeRefKind::Named(name) => {
                 let resolved_name = name.clone();
                 match self.symbols.get(&resolved_name).map(|symbol| symbol.kind) {
@@ -148,18 +150,7 @@ impl ResolvedTypes<'_> {
                 self.resolve_alias_target(module, value, visiting),
                 self.resolve_alias_target(module, error, visiting),
             ),
-            TypeRefKind::Function(parameters, result) => InferredType::function(
-                parameters
-                    .iter()
-                    .map(|parameter| {
-                        (
-                            parameter.name.as_ref().map(|name| name.name.clone()),
-                            self.resolve_alias_target(module, &parameter.value_type, visiting),
-                        )
-                    })
-                    .collect(),
-                self.resolve_alias_target(module, result, visiting),
-            ),
+
             TypeRefKind::Unit => InferredType::unit(),
         }
     }
@@ -291,7 +282,7 @@ impl ResolvedTypes<'_> {
                 let edges = fields
                     .iter()
                     .filter_map(|(name, field)| match &field.inferred_type {
-                        InferredType::Value(crate::CftValueType::Object(target)) => Some(Edge {
+                        InferredType::Value(CftValueType::Object(target)) => Some(Edge {
                             field: name.clone(),
                             target: target.to_string(),
                             declaring_type: field.declaring_type.to_string(),
@@ -373,6 +364,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
+            TypeRefKind::FormattedString => InferredType::Value(CftValueType::FormattedString),
             TypeRefKind::Named(name) => {
                 let name = name.clone();
                 match self.symbols.get(&name) {
@@ -400,18 +392,7 @@ impl ResolvedTypes<'_> {
                 self.resolve_field_type(value),
                 self.resolve_field_type(error),
             ),
-            TypeRefKind::Function(parameters, result) => InferredType::function(
-                parameters
-                    .iter()
-                    .map(|parameter| {
-                        (
-                            parameter.name.as_ref().map(|name| name.name.clone()),
-                            self.resolve_field_type(&parameter.value_type),
-                        )
-                    })
-                    .collect(),
-                self.resolve_field_type(result),
-            ),
+
             TypeRefKind::Unit => InferredType::unit(),
         }
     }
@@ -432,6 +413,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
+            TypeRefKind::FormattedString => InferredType::Value(CftValueType::FormattedString),
             TypeRefKind::Named(name) => {
                 let resolved_name = name.clone();
                 match self.symbols.get(&resolved_name) {
@@ -517,18 +499,7 @@ impl ResolvedTypes<'_> {
                 self.validate_field_type(module, value, diagnostics),
                 self.validate_field_type(module, error, diagnostics),
             ),
-            TypeRefKind::Function(parameters, result) => InferredType::function(
-                parameters
-                    .iter()
-                    .map(|parameter| {
-                        (
-                            parameter.name.as_ref().map(|name| name.name.clone()),
-                            self.validate_field_type(module, &parameter.value_type, diagnostics),
-                        )
-                    })
-                    .collect(),
-                self.validate_field_type(module, result, diagnostics),
-            ),
+
             TypeRefKind::Unit => InferredType::unit(),
         }
     }

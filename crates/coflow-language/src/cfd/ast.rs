@@ -3,6 +3,18 @@ use crate::Span;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdAst {
     pub records: Vec<CfdRecord>,
+    pub dimensions: Vec<CfdDimensionBlock>,
+}
+
+/// 独立维度覆盖块；语法层只记录目标，不创建基础记录。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdDimensionBlock {
+    pub dimension: String,
+    pub dimension_span: Span,
+    pub variant: String,
+    pub variant_span: Span,
+    pub records: Vec<CfdRecord>,
+    pub span: Span,
 }
 
 /// A top-level record or a record inside a group.
@@ -43,7 +55,6 @@ pub enum CfdValue {
     OptionSome(Box<CfdValue>, Span),
     ResultOk(Box<CfdValue>, Span),
     ResultErr(Box<CfdValue>, Span),
-    Function(CfdFunction),
     /// Object `{ ... }` or dict `{ ... }` — schema needed to distinguish.
     Block(CfdBlock),
     Array(Vec<CfdValue>, Span),
@@ -61,20 +72,12 @@ impl CfdValue {
             | Self::ResultOk(_, s)
             | Self::ResultErr(_, s)
             | Self::Array(_, s) => *s,
-            Self::Function(value) => value.span,
             Self::BitExpr(expr) => expr.span,
             Self::FormattedString(value) => value.span,
             Self::Block(b) => b.span,
             Self::Ref(r) => r.span,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CfdFunction {
-    pub source: String,
-    pub span: Span,
-    pub body_span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

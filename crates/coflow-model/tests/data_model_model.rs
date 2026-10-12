@@ -8,7 +8,6 @@
 
 #[path = "data_model_common/mod.rs"]
 mod common;
-use coflow_language::cft::CftDimensionInputs;
 use common::*;
 use std::path::PathBuf;
 
@@ -63,15 +62,13 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
 
 #[test]
 fn invalid_dimension_values_preserve_the_overlay_origin() {
-    let schema = compile_schema_with_dimensions(
+    let schema = compile_schema(
         r#"
             type Item {
                 @dimension("platform")
                 value: int;
             }
         "#,
-        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
-            .expect("valid dimension fixture"),
     );
     let origin = RecordOrigin::File {
         path: PathBuf::from("dimensions/platform.cfd"),
@@ -140,15 +137,13 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
 
 #[test]
 fn dimension_field_lookup_reads_record_owned_overlay() {
-    let schema = compile_schema_with_dimensions(
+    let schema = compile_schema(
         r#"
             type Item {
                 @dimension("platform")
                 name: string;
             }
         "#,
-        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
-            .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -186,7 +181,7 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
 
 #[test]
 fn dimension_refs_are_precomputed_with_typed_coordinates() {
-    let schema = compile_schema_with_dimensions(
+    let schema = compile_schema(
         r#"
             type Item { name: string; }
             type Offer {
@@ -194,8 +189,6 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
                 item: &Item;
             }
         "#,
-        CftDimensionInputs::try_new([("platform", vec!["pc".to_string()])])
-            .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -243,7 +236,7 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
 
 #[test]
 fn dimension_field_lookup_uses_singleton_owner_record() {
-    let schema = compile_schema_with_dimensions(
+    let schema = compile_schema(
         r#"
             @singleton
             type UiText {
@@ -251,8 +244,6 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
                 welcome: string;
             }
         "#,
-        CftDimensionInputs::try_new([("language", vec!["zh".to_string()])])
-            .expect("valid dimension fixture"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(

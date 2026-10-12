@@ -100,22 +100,22 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace
 
-      - name: Build all C# runtime targets
+      - name: Build all C# loader targets
         if: steps.gate.outputs.full == 'true'
-        run: dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
+        run: dotnet build runtimes/csharp/Coflow.Loader/Coflow.Loader.csproj --configuration Release
 
-      - name: Consume the netstandard2.1 C# runtime
+      - name: Consume the netstandard2.1 C# loader
         if: steps.gate.outputs.full == 'true'
-        run: dotnet run --project runtimes/csharp/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
+        run: dotnet run --project runtimes/csharp/Coflow.Loader.NetStandardSmoke/Coflow.Loader.NetStandardSmoke.csproj --configuration Release
 
-      - name: Test C# runtime with coverage
+      - name: Test C# loader with coverage
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: >-
-          dotnet test runtimes/csharp/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj
+          dotnet test runtimes/csharp/Coflow.Loader.Tests/Coflow.Loader.Tests.csproj
           --configuration Release
           /p:CollectCoverage=true
-          /p:CoverletOutput="$env:RUNNER_TEMP/csharp-runtime-coverage/"
+          /p:CoverletOutput="$env:RUNNER_TEMP/csharp-loader-coverage/"
           /p:CoverletOutputFormat=cobertura
           /p:Threshold=40
           /p:ThresholdType=line%2cbranch
@@ -125,9 +125,8 @@ jobs:
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
-          cargo run -- codegen tests/csharp-runtime-integration
-          dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
-          dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
+          cargo run -- codegen tests/csharp-loader-integration
+          dotnet run --project tests/csharp-loader-integration/app/Coflow.Loader.Example.csproj --configuration Release
 
       - name: Check TypeScript bindings
         if: steps.gate.outputs.full == 'true'

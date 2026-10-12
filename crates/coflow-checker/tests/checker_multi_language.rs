@@ -2,167 +2,142 @@
 
 #[path = "checker_common/mod.rs"]
 mod common;
-use coflow_checker::{execute_checks, CheckLimits, CheckProjection, CheckTarget, CheckTask};
-use coflow_language::cft::{
-    CheckOwner, DimensionName, FieldName, RecordKey, TypeName, VariantName,
-};
+use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
 use common::*;
 
-fn schema() -> CftSchema {
-    compile_schema(
-        r#"
-            type Item {
-                @localized
-                name: string;
-                check { name != "": "empty {id}"; }
-            }
-        "#,
-    )
-}
-
-fn model(schema: &CftSchema) -> CfdDataModel {
-    let mut builder = CfdDataModel::builder(schema);
-    builder.add_record("item", "Item", [("name", LoadedValueDraft::from("base"))]);
+fn add_overlay(
+    builder: &mut CfdModelBuilder<'_>,
+    field: &str,
+    variant: &str,
+    value: LoadedValueDraft,
+) {
     builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new("Item").unwrap(),
         source_key: RecordKey::new("item").unwrap(),
-        field: FieldName::new("name").unwrap(),
+        field: FieldName::new(field).unwrap(),
         dimension: DimensionName::new("language").unwrap(),
-        variant: VariantName::new("zh").unwrap(),
-        value: LoadedValueDraft::from(""),
-        origin: RecordOrigin::None,
+        variant: VariantName::new(variant).unwrap(),
+        value,
+        origin: RecordOrigin::File {
+            path: "ja.cfd".into(),
+            span: None,
+        },
     });
-    builder.build().expect("model")
-}
-
-fn item_statement(schema: &CftSchema) -> coflow_language::cft::CheckStatementId {
-    let owner = CheckOwner::Type(TypeName::new("Item").unwrap());
-    schema
-        .all_check_statements()
-        .find(|statement| statement.owner == owner)
-        .expect("item statement")
-        .id
 }
 
 #[test]
-fn dimension_projection_reads_the_requested_variant_and_attaches_context() {
-    let schema = schema();
-    let model = model(&schema);
-    let statement = item_statement(&schema);
+fn explicit_variant_selection_reads_overlay_and_locates_its_source() {
+    let schema = compile_schema(
+        r#"type Item { @localized name: string; check { name.for("ja") != "" : "empty translation"; name.for("unknown") == "base"; } }"#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("name", "base".into())]);
+    add_overlay(&mut builder, "name", "ja", "".into());
+    let model = builder.build().expect("model");
     let output = execute_checks(
         &schema,
         &model,
-        [CheckTask {
-            statement,
-            target: CheckTarget::Record(record_id_at(&model, 0)),
-            projection: CheckProjection::Dimension {
-                dimension: DimensionName::new("language").unwrap(),
-                variant: VariantName::new("zh").unwrap(),
-            },
-        }],
+        base_tasks(&schema, &model),
         CheckLimits::default(),
     );
-
-    assert_eq!(output.results[0].diagnostics.len(), 1);
+    assert_eq!(output.results.len(), 2);
+    let diagnostics = output.diagnostics().collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 1);
+    let diagnostic = diagnostics[0];
+    assert_eq!(diagnostic.diagnostic.message, "empty translation");
+    let label = diagnostic.diagnostic.primary.as_ref().unwrap();
+    assert_eq!(label.path, CfdPath::root().field("name"));
     assert_eq!(
-        output.results[0].diagnostics[0].diagnostic.message,
-        "empty item"
+        label
+            .origin
+            .as_ref()
+            .unwrap()
+            .local_path()
+            .unwrap()
+            .to_str(),
+        Some("ja.cfd")
     );
-    assert!(matches!(
-        output.results[0].diagnostics[0].contexts.first(),
-        Some(CheckDiagnosticContext::Dimension { dimension, variant })
-            if dimension == "language" && variant == "zh"
-    ));
+    assert!(diagnostic.contexts.iter().any(|context| matches!(context, CheckDiagnosticContext::Dimension { dimension, variant } if dimension == "language" && variant == "ja")));
 }
 
 #[test]
-fn absent_and_none_variants_validate_the_base_value() {
-    let schema = schema();
-    for base in ["base", ""] {
-        // 覆盖整个维度字段缺失、仅目标变体缺失，以及显式 None。
-        for overlay in [
-            None,
-            Some(("en", LoadedValueDraft::from("other"))),
-            Some(("zh", LoadedValueDraft::OptionNone)),
-        ] {
-            let mut builder = CfdDataModel::builder(&schema);
-            builder.add_record("item", "Item", [("name", LoadedValueDraft::from(base))]);
-            if let Some((variant, value)) = overlay {
-                builder.add_dimension_value_draft(DimensionValueDraft {
-                    source_type: TypeName::new("Item").unwrap(),
-                    source_key: RecordKey::new("item").unwrap(),
-                    field: FieldName::new("name").unwrap(),
-                    dimension: DimensionName::new("language").unwrap(),
-                    variant: VariantName::new(variant).unwrap(),
-                    value,
-                    origin: RecordOrigin::None,
-                });
-            }
-            let model = builder.build().expect("model");
-            let output = execute_checks(
-                &schema,
-                &model,
-                [CheckTask {
-                    statement: item_statement(&schema),
-                    target: CheckTarget::Record(record_id_at(&model, 0)),
-                    projection: CheckProjection::Dimension {
-                        dimension: DimensionName::new("language").unwrap(),
-                        variant: VariantName::new("zh").unwrap(),
-                    },
-                }],
-                CheckLimits::default(),
-            );
-            if base.is_empty() {
-                assert_eq!(output.results[0].diagnostics.len(), 1);
-                assert_eq!(
-                    output.results[0].diagnostics[0].diagnostic.message,
-                    "empty item"
-                );
-            } else {
-                assert!(output.is_success(), "{output:?}");
-            }
+fn missing_or_unknown_variant_uses_base_value() {
+    let schema = compile_schema(
+        r#"type Item { @localized name: string; check { name.for("ja") == "base"; name.for("unknown") == "base"; } }"#,
+    );
+    for overlay in [false, true] {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("item", "Item", [("name", "base".into())]);
+        if overlay {
+            add_overlay(&mut builder, "name", "fr", "autre".into());
         }
+        let model = builder.build().expect("model");
+        assert!(run_model_checks(&model, &schema).is_ok());
     }
 }
 
 #[test]
-fn base_projection_does_not_read_dimension_overlay() {
-    let schema = schema();
-    let model = model(&schema);
-    let statement = item_statement(&schema);
-    let output = execute_checks(
-        &schema,
-        &model,
-        [CheckTask {
-            statement,
-            target: CheckTarget::Record(record_id_at(&model, 0)),
-            projection: CheckProjection::Base,
-        }],
-        CheckLimits::default(),
+fn explicit_none_does_not_fall_back_to_optional_base() {
+    let schema = compile_schema(
+        r#"type Item { @localized name: Option<string>; check { name.for("ja") == None; name.for("unknown") is Some(value) && value == "base"; } }"#,
     );
-    assert!(output.is_success());
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item",
+        "Item",
+        [(
+            "name",
+            LoadedValueDraft::OptionSome(Box::new("base".into())),
+        )],
+    );
+    add_overlay(&mut builder, "name", "ja", LoadedValueDraft::OptionNone);
+    let model = builder.build().expect("model");
+    assert!(run_model_checks(&model, &schema).is_ok());
 }
 
 #[test]
-fn unrelated_dimension_projection_is_rejected() {
-    let schema = schema();
-    let model = model(&schema);
-    let statement = item_statement(&schema);
+fn for_requires_a_dimension_field_and_a_string_variant() {
+    for source in [
+        r#"type Item { name: string; check { name.for("ja") == "x"; } }"#,
+        r#"type Item { @localized name: string; check { name.for(1) == "x"; } }"#,
+        r#"type Item { @localized name: string; check { name == "x"; } }"#,
+    ] {
+        let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
+        assert!(build_schema(&modules).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn variants_include_empty_headers_and_effective_fallback_values() {
+    let schema = compile_schema(
+        r#"type Item {
+        @localized name: string;
+        check {
+            name.default() == "base";
+            name.variants().len() == 2;
+            name.variants()["ja"] == "翻訳";
+            name.variants()["fr"] == "base";
+            name.variants().containsKey("fr");
+            name.variants().containsValue("base");
+            name.variants().keys().contains("ja");
+            name.variants().values().contains("base");
+            all variant, text in name.variants() { text != ""; }
+        }
+    }"#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("name", "base".into())]);
+    add_overlay(&mut builder, "name", "ja", "翻訳".into());
+    builder.add_dimension_variant(
+        DimensionName::new("language").unwrap(),
+        VariantName::new("fr").unwrap(),
+    );
+    let model = builder.build().expect("model");
     let output = execute_checks(
         &schema,
         &model,
-        [CheckTask {
-            statement,
-            target: CheckTarget::Record(record_id_at(&model, 0)),
-            projection: CheckProjection::Dimension {
-                dimension: DimensionName::new("platform").unwrap(),
-                variant: VariantName::new("pc").unwrap(),
-            },
-        }],
+        base_tasks(&schema, &model),
         CheckLimits::default(),
     );
-    assert!(output.results[0].diagnostics[0]
-        .diagnostic
-        .message
-        .contains("does not match"));
+    assert!(output.is_success(), "{output:?}");
 }

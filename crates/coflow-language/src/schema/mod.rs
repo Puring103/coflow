@@ -10,9 +10,7 @@ mod value_type;
 pub use check_builtins::CftCheckBuiltin;
 pub use compiler::{build_schema, build_schema_with_limits};
 pub use declarations::*;
-pub use dimensions::{
-    dimension_record_type, CftDimensionInput, CftDimensionInputError, CftDimensionInputs,
-};
+
 pub use names::*;
 use plans::CheckIndex;
 pub use plans::{
@@ -20,7 +18,7 @@ pub use plans::{
     ValueDependencyStep,
 };
 pub use queries::CftEnumValue;
-pub use value_type::{CftFunctionParameter, CftValueType};
+pub use value_type::CftValueType;
 
 use self::compiler::SchemaDeclarations;
 use crate::limits::{
@@ -95,7 +93,6 @@ pub struct CftSchema {
 impl CftSchema {
     pub(in crate::schema) fn from_declarations(
         declarations: SchemaDeclarations,
-        dimension_inputs: &CftDimensionInputs,
         budget: &mut AnalysisBudget,
     ) -> Result<Self, CftDiagnostics> {
         let consts = declarations.consts;
@@ -141,7 +138,7 @@ impl CftSchema {
             return Err(CftDiagnostics::new(default_diagnostics));
         }
 
-        let dimensions = dimensions::build_dimensions(&types, dimension_inputs)?;
+        let dimensions = dimensions::build_dimensions(&types);
         let type_by_id_as_enum = types
             .values()
             .filter_map(|ty| {

@@ -13,13 +13,15 @@ impl SessionStore {
         let yaml_path = self.project_action_context(id)?;
         let project = coflow_runtime::Project::open_schema_only(Some(&yaml_path))
             .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
-        match coflow_runtime::commands::check_project(&project)
-            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?
-        {
-            coflow_runtime::commands::CommandOutcome::Success(_) => Ok("Check passed".to_string()),
-            coflow_runtime::commands::CommandOutcome::Diagnostics(diagnostics) => {
-                Err(project_diagnostics_to_editor_error(&diagnostics))
-            }
+        let session = coflow_runtime::Runtime::new()
+            .open_read_only_session(project)
+            .map_err(|diagnostics| project_diagnostics_to_editor_error(&diagnostics))?;
+        if session.queries().has_diagnostics() {
+            Err(project_diagnostics_to_editor_error(
+                &session.into_diagnostics(),
+            ))
+        } else {
+            Ok("Check passed".to_string())
         }
     }
 

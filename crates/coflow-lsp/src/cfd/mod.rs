@@ -10,19 +10,18 @@ mod definition;
 pub use definition::{definition_field_name, definition_ref_target, definition_type_name};
 
 use coflow_language::cfd::{
-    parse_cfd, tokenize_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdFormatSegment, CfdFunction,
-    CfdRecord, CfdSyntaxDiagnostic, CfdValue, CFD_FUNCTION_BUILTINS, CFD_FUNCTION_KEYWORDS,
-    CFD_FUNCTION_TYPES,
+    tokenize_cfd, CfdAst, CfdBitExpr, CfdBitExprKind, CfdFormatSegment, CfdRecord,
+    CfdSyntaxDiagnostic, CfdValue,
 };
 use coflow_language::cft::{CftSchema, CftValueType};
-use coflow_language::lexical::{is_identifier_continue, LosslessTokenKind};
+use coflow_language::lexical::LosslessTokenKind;
 use coflow_language::source::Span;
 use serde_json::{json, Value};
 
 use super::semantic_tokens::{
     MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_COMMENT, SEM_ENUM_MEMBER,
-    SEM_FUNCTION, SEM_KEYWORD, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER, SEM_PROPERTY,
-    SEM_RECORD_KEY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    SEM_KEYWORD, SEM_NUMBER, SEM_OPERATOR, SEM_PROPERTY, SEM_RECORD_KEY, SEM_STRING, SEM_TYPE,
+    SEM_VARIABLE,
 };
 use super::LspBuild;
 
@@ -111,232 +110,6 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
     collector.into_lsp_data()
 }
 
-/// Handles the editor's function-body virtual document request.
-pub fn function_document(params: &Value) -> Value {
-    let Some(original) = params.get("source").and_then(Value::as_str) else {
-        return Value::Null;
-    };
-    let Some(parts) = function_parts(original) else {
-        return json!({
-            "source": original,
-            "signature": "fn",
-            "body": original,
-            "bodyRange": byte_range(original, 0, original.len()),
-            "diagnostics": [{
-                "range": byte_range(original, 0, original.len().min(1)),
-                "severity": 1,
-                "source": "coflow-language",
-                "message": "invalid function source",
-            }],
-            "semanticTokens": { "data": [] },
-            "completions": [],
-        });
-    };
-    let requested_body = params
-        .get("body")
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| parts.body.trim());
-    let body = if parts.multiline {
-        requested_body.trim_matches('\n')
-    } else {
-        requested_body.trim()
-    };
-    let replacement = if parts.multiline {
-        format!("\n{body}\n")
-    } else {
-        format!(" {body} ")
-    };
-    let source = format!("{}{}{}", parts.prefix, replacement, parts.suffix);
-    let body_start = parts.prefix.len() + 1;
-    let body_end = body_start + body.len();
-    let mut collector = TokenCollector::new(&source);
-    collect_function_tokens(Span::new(0, source.len()), &source, &mut collector);
-    let diagnostics = function_body_diagnostics(&source, body_start, body);
-    json!({
-        "source": source,
-        "signature": parts.signature,
-        "body": body,
-        "bodyRange": byte_range(&source, body_start, body_end),
-        "diagnostics": diagnostics,
-        "semanticTokens": collector.into_lsp_data(),
-        "completions": function_completion_items_with_locals(parts.signature, &source),
-    })
-}
-
-struct FunctionParts<'a> {
-    prefix: &'a str,
-    body: &'a str,
-    suffix: &'a str,
-    signature: &'a str,
-    multiline: bool,
-}
-
-fn function_parts(source: &str) -> Option<FunctionParts<'_>> {
-    const PREFIX: &str = "__function: __EditorFunction { value: ";
-    const SUFFIX: &str = "\n}";
-    let document = format!("{PREFIX}{source}{SUFFIX}");
-    let (ast, diagnostics) = parse_cfd(&document);
-    if !diagnostics.is_empty() {
-        return None;
-    }
-    let function = ast
-        .records
-        .first()?
-        .fields
-        .first()
-        .and_then(|field| match &field.value {
-            CfdValue::Function(function) => Some(function),
-            _ => None,
-        })?;
-    let start = function.body_span.start.checked_sub(PREFIX.len())?;
-    let end = function.body_span.end.checked_sub(PREFIX.len())?;
-    let open = start.checked_sub(1)?;
-    Some(FunctionParts {
-        prefix: source.get(..start)?,
-        body: source.get(start..end)?,
-        suffix: source.get(end..)?,
-        signature: source.get(..open)?.trim(),
-        multiline: source.get(start..end)?.contains('\n') || source.contains('\n'),
-    })
-}
-
-fn function_body_diagnostics(function_source: &str, body_start: usize, body: &str) -> Vec<Value> {
-    const PREFIX: &str = "__function: __EditorFunction { value: ";
-    let document = format!("{PREFIX}{function_source}\n}}");
-    let (_, diagnostics) = parse_cfd(&document);
-    let body_document_start = PREFIX.len() + body_start;
-    diagnostics
-        .into_iter()
-        .map(|diagnostic| {
-            let relative = diagnostic.span.start.saturating_sub(body_document_start);
-            let start = relative.min(body.len().saturating_sub(1));
-            let end = (start
-                + diagnostic
-                    .span
-                    .end
-                    .saturating_sub(diagnostic.span.start)
-                    .max(1))
-            .min(body.len());
-            json!({
-                "range": byte_range(body, start, end),
-                "severity": 1,
-                "source": "coflow-language",
-                "message": diagnostic.message,
-            })
-        })
-        .collect()
-}
-
-fn function_completion_items(signature: &str) -> Vec<Value> {
-    let mut items = CFD_FUNCTION_KEYWORDS
-        .iter()
-        .map(|label| json!({ "label": label, "kind": 14 }))
-        .chain(
-            CFD_FUNCTION_TYPES
-                .iter()
-                .map(|label| json!({ "label": label, "kind": 7 })),
-        )
-        .collect::<Vec<_>>();
-    items.extend(CFD_FUNCTION_BUILTINS.iter().map(|label| {
-        json!({
-            "label": label,
-            "kind": 2,
-            "insertText": format!("{label}(${{1}})"),
-            "insertTextFormat": 2,
-        })
-    }));
-    items.extend(
-        function_parameter_names(signature)
-            .into_iter()
-            .map(|label| json!({ "label": label, "kind": 6, "detail": "function parameter" })),
-    );
-    items
-}
-
-fn function_completion_items_with_locals(signature: &str, source: &str) -> Vec<Value> {
-    let mut items = function_completion_items(signature);
-    items.extend(
-        function_local_names(source)
-            .into_iter()
-            .map(|label| json!({ "label": label, "kind": 6, "detail": "local variable" })),
-    );
-    items
-}
-
-pub(crate) fn function_source_completion_items_at(
-    source: &str,
-    relative_offset: usize,
-) -> Option<Vec<Value>> {
-    let parts = function_parts(source)?;
-    (relative_offset > parts.prefix.len())
-        .then(|| function_completion_items_with_locals(parts.signature, source))
-}
-
-fn function_local_names(source: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut tokens = source
-        .split(|character: char| !(character == '_' || character.is_alphanumeric()))
-        .filter(|token| !token.is_empty());
-    while let Some(token) = tokens.next() {
-        if token == "var" {
-            if let Some(name) = tokens.next() {
-                if !names.iter().any(|existing| existing == name) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-    names
-}
-
-fn function_parameter_names(signature: &str) -> Vec<&str> {
-    let Some(open) = signature.find('(') else {
-        return Vec::new();
-    };
-    let mut depth = 0_usize;
-    let mut close = None;
-    for (relative, character) in signature[open..].char_indices() {
-        match character {
-            '(' => depth = depth.saturating_add(1),
-            ')' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    close = Some(open + relative);
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let Some(parameters) = close.and_then(|close| signature.get(open + 1..close)) else {
-        return Vec::new();
-    };
-    let mut names = Vec::new();
-    let mut parameter_start = 0;
-    depth = 0;
-    for (index, character) in parameters
-        .char_indices()
-        .chain(std::iter::once((parameters.len(), ',')))
-    {
-        match character {
-            '(' | '[' | '{' | '<' => depth = depth.saturating_add(1),
-            ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                if let Some(name) = parameters[parameter_start..index]
-                    .split_once(':')
-                    .map(|(name, _)| name.trim())
-                    .filter(|name| !name.is_empty())
-                {
-                    names.push(name);
-                }
-                parameter_start = index + character.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    names
-}
-
 fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
     match value {
         CfdValue::Scalar(text, span) => {
@@ -345,7 +118,7 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
         CfdValue::BitExpr(expr) => collect_bit_expr_tokens(expr, c),
         CfdValue::QuotedString(_, span) => c.add_multiline_plain(*span, SEM_STRING),
         CfdValue::FormattedString(value) => collect_formatted_string_tokens(value, c),
-        CfdValue::Function(value) => collect_function_tokens(value.span, &value.source, c),
+
         CfdValue::OptionNone(span) => c.add_plain(*span, SEM_KEYWORD),
         CfdValue::OptionSome(value, span) => {
             c.add_plain(Span::new(span.start, span.start + 4), SEM_KEYWORD);
@@ -434,175 +207,6 @@ fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
 }
 
 #[allow(clippy::too_many_lines)]
-fn collect_function_tokens(span: Span, function_source: &str, c: &mut TokenCollector<'_>) {
-    visit_function_semantic_tokens(
-        function_source,
-        span.start,
-        |span, token_type, modifiers, multiline| {
-            if multiline {
-                c.add_multiline(span, token_type, modifiers);
-            } else {
-                c.add(span, token_type, modifiers);
-            }
-        },
-    );
-}
-
-pub(crate) fn visit_function_semantic_tokens(
-    function_source: &str,
-    base: usize,
-    mut visit: impl FnMut(Span, u32, u32, bool),
-) {
-    for token in tokenize_cfd(function_source) {
-        let text = token.text(function_source);
-        let span = offset_span(base, token.span.start, token.span.end);
-        match token.kind {
-            LosslessTokenKind::Comment => visit(span, SEM_COMMENT, 0, false),
-            LosslessTokenKind::String => visit(span, SEM_STRING, 0, true),
-            LosslessTokenKind::Number => visit(span, SEM_NUMBER, 0, false),
-            LosslessTokenKind::Identifier => {
-                // `$field` 在共享 token 流中是一个整体；语义高亮只标记字段名部分。
-                if let Some(field) = text.strip_prefix('$') {
-                    let field_start = token.span.end - field.len();
-                    visit(
-                        offset_span(base, field_start, token.span.end),
-                        SEM_PROPERTY,
-                        MOD_REFERENCE | MOD_SCHEMA,
-                        false,
-                    );
-                    continue;
-                }
-                let previous = previous_non_whitespace(function_source, token.span.start);
-                let following = next_non_whitespace(function_source, token.span.end);
-                let (token_type, modifiers) = if CFD_FUNCTION_KEYWORDS.contains(&text) {
-                    (SEM_KEYWORD, 0)
-                } else if CFD_FUNCTION_TYPES.contains(&text) {
-                    (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
-                } else if previous == Some('&') {
-                    if function_source[token.span.end..].starts_with("::") {
-                        (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
-                    } else {
-                        (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
-                    }
-                } else if previous == Some('.') {
-                    if following == Some('(') {
-                        (SEM_FUNCTION, MOD_REFERENCE)
-                    } else {
-                        (SEM_PROPERTY, MOD_REFERENCE | MOD_SCHEMA)
-                    }
-                } else if previous_ends_double_colon(function_source, token.span.start) {
-                    if type_key_chain_is_reference(function_source, token.span.start) {
-                        (SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD)
-                    } else {
-                        (SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA)
-                    }
-                } else if following == Some(':') {
-                    (SEM_PARAMETER, MOD_DECLARATION)
-                } else if previous_function_ident(function_source, token.span.start) == Some("var")
-                {
-                    (SEM_VARIABLE, MOD_DECLARATION)
-                } else if following == Some('(') {
-                    (SEM_FUNCTION, MOD_REFERENCE)
-                } else if text.chars().next().is_some_and(char::is_uppercase) {
-                    (SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA)
-                } else {
-                    (SEM_VARIABLE, MOD_REFERENCE)
-                };
-                visit(span, token_type, modifiers, false);
-            }
-            LosslessTokenKind::Symbol if is_function_operator(text) => {
-                visit(span, SEM_OPERATOR, 0, false);
-            }
-            LosslessTokenKind::Whitespace
-            | LosslessTokenKind::Newline
-            | LosslessTokenKind::Symbol
-            | LosslessTokenKind::Unknown => {}
-        }
-    }
-}
-
-fn is_function_operator(text: &str) -> bool {
-    matches!(
-        text,
-        "..="
-            | "->"
-            | "::"
-            | "//"
-            | "=="
-            | "!="
-            | "<="
-            | ">="
-            | "&&"
-            | "||"
-            | "=>"
-            | "**"
-            | "<<"
-            | ">>"
-            | ".."
-            | "+="
-            | "-="
-            | "*="
-            | "/="
-            | "+"
-            | "-"
-            | "*"
-            | "/"
-            | "%"
-            | "<"
-            | ">"
-            | "="
-            | "!"
-            | "~"
-            | "&"
-            | "|"
-            | "^"
-            | "?"
-            | "."
-            | ":"
-            | "$"
-    )
-}
-
-const fn offset_span(base: usize, start: usize, end: usize) -> Span {
-    Span::new(base + start, base + end)
-}
-
-fn previous_non_whitespace(source: &str, offset: usize) -> Option<char> {
-    source[..offset]
-        .chars()
-        .rev()
-        .find(|ch| !ch.is_whitespace())
-}
-
-fn previous_function_ident(source: &str, offset: usize) -> Option<&str> {
-    let prefix = source[..offset].trim_end();
-    let start = prefix
-        .char_indices()
-        .rev()
-        .find_map(|(index, ch)| (!is_identifier_continue(ch)).then_some(index + ch.len_utf8()))
-        .unwrap_or(0);
-    prefix.get(start..).filter(|ident| !ident.is_empty())
-}
-
-fn next_non_whitespace(source: &str, offset: usize) -> Option<char> {
-    source[offset..].chars().find(|ch| !ch.is_whitespace())
-}
-
-fn previous_ends_double_colon(source: &str, offset: usize) -> bool {
-    source[..offset].trim_end().ends_with("::")
-}
-
-fn type_key_chain_is_reference(source: &str, offset: usize) -> bool {
-    let prefix = source[..offset].trim_end_matches(':');
-    let chain_start = prefix
-        .char_indices()
-        .rev()
-        .find_map(|(index, ch)| {
-            (!is_identifier_continue(ch) && ch != ':' && ch != '&').then_some(index + ch.len_utf8())
-        })
-        .unwrap_or(0);
-    prefix[chain_start..].starts_with('&')
-}
 
 fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
     for token in tokenize_cfd(source) {
@@ -671,18 +275,6 @@ pub(crate) fn completion_with_build(
     build: Option<&LspBuild>,
     offset: usize,
 ) -> Value {
-    if let Some(function) = function_at(ast, offset) {
-        let body_start = function.body_span.start.saturating_sub(function.span.start);
-        let signature_end = body_start.saturating_sub(1);
-        let signature = function
-            .source
-            .get(..signature_end)
-            .unwrap_or(&function.source);
-        return json!(function_completion_items_with_locals(
-            signature,
-            &function.source
-        ));
-    }
     let Some(schema) = schema else {
         return json!([]);
     };
@@ -796,7 +388,6 @@ fn formatted_string_completion(
         .or_else(|| record_context_at(source, schema, offset).map(|(name, _)| name))?;
     let schema_type = schema.resolve_type(&type_name)?;
     let (_, prefix) = formatted_reference_prefix_at(source, offset)?;
-    let parts = prefix.split('.').collect::<Vec<_>>();
     let mut paths = Vec::new();
 
     if let Some(reference) = prefix.strip_prefix('&') {
@@ -807,7 +398,14 @@ fn formatted_string_completion(
             .rsplit_once("::")
             .map_or((None, record), |(type_name, key)| (Some(type_name), key));
         let owner_type = explicit_type.unwrap_or(schema_type.name.as_str());
-        if let Some(field_path) = field_path {
+        if explicit_type.is_none() {
+            paths.extend(
+                schema
+                    .all_types()
+                    .filter(|ty| !ty.is_struct)
+                    .map(|ty| (format!("&{}::", ty.name), "record type".to_string())),
+            );
+        } else if let Some(field_path) = field_path {
             let field_parts = field_path.split('.').collect::<Vec<_>>();
             let completed = &field_parts[..field_parts.len().saturating_sub(1)];
             let mut nested_owner = owner_type;
@@ -841,44 +439,40 @@ fn formatted_string_completion(
                     }),
             );
         }
-    } else if parts.len() >= 2 && schema.resolve_type(parts[0]).is_some() {
-        let type_name = parts[0];
-        if parts.len() == 2 {
-            if let Some(build) = build {
-                paths.extend(
-                    build
-                        .cfd_definitions
-                        .keys(schema, type_name)
-                        .into_iter()
-                        .map(|key| (format!("{type_name}.{key}"), format!("{type_name} record"))),
-                );
-            }
-        } else {
-            let path_prefix = parts[..parts.len() - 1].join(".");
+    } else if let Some(local) = prefix.strip_prefix("self.") {
+        let parts = local.split('.').collect::<Vec<_>>();
+        if let Some((owner, path_prefix)) =
+            formatted_path_owner(schema, schema_type.name.as_str(), &parts)
+        {
             collect_formatted_field_paths(
                 schema,
-                type_name,
-                &path_prefix,
+                owner,
+                &format!("self.{path_prefix}"),
+                FORMATTED_PATH_DEPTH,
+                &mut paths,
+            );
+        } else {
+            collect_formatted_field_paths(
+                schema,
+                schema_type.name.as_str(),
+                "self",
                 FORMATTED_PATH_DEPTH,
                 &mut paths,
             );
         }
-    } else if let Some((owner, path_prefix)) =
-        formatted_path_owner(schema, schema_type.name.as_str(), &parts)
-    {
-        collect_formatted_field_paths(schema, owner, &path_prefix, 2, &mut paths);
     } else {
         collect_formatted_field_paths(
             schema,
             schema_type.name.as_str(),
-            "",
+            "self",
             FORMATTED_PATH_DEPTH,
             &mut paths,
         );
         paths.extend(
             schema
                 .all_types()
-                .map(|ty| (ty.name.to_string(), "record type".to_string())),
+                .filter(|ty| !ty.is_struct)
+                .map(|ty| (format!("&{}::", ty.name), "record type".to_string())),
         );
     }
 
@@ -904,9 +498,15 @@ fn formatted_string_completion(
 fn formatted_reference_prefix_at(source: &str, offset: usize) -> Option<(usize, &str)> {
     let end = offset.min(source.len());
     let mut in_string = false;
+    let mut formatted = false;
     let mut escaped = false;
+    let mut skip_brace = false;
     let mut reference_start = None;
     for (index, character) in source[..end].char_indices() {
+        if skip_brace {
+            skip_brace = false;
+            continue;
+        }
         if escaped {
             escaped = false;
             continue;
@@ -916,11 +516,21 @@ fn formatted_reference_prefix_at(source: &str, offset: usize) -> Option<(usize, 
             continue;
         }
         if character == '"' {
+            if !in_string {
+                formatted = source[..index].ends_with('f');
+            }
             in_string = !in_string;
             reference_start = None;
             continue;
         }
-        if !in_string {
+        if !in_string || !formatted {
+            continue;
+        }
+        // 双花括号是文本，不启动路径补全。
+        if matches!(character, '{' | '}')
+            && source[index..end].starts_with(if character == '{' { "{{" } else { "}}" })
+        {
+            skip_brace = true;
             continue;
         }
         match character {
@@ -1196,30 +806,6 @@ fn value_completion_items(
                 "insertTextFormat": 2,
             }),
         ],
-        CftValueType::Function(parameters, result) => {
-            let parameters = parameters
-                .iter()
-                .enumerate()
-                .map(|(index, parameter)| {
-                    format!(
-                        "{}: {}",
-                        parameter
-                            .name
-                            .as_deref()
-                            .map_or_else(|| format!("arg{index}"), str::to_string),
-                        parameter.value_type.display_label(),
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            vec![json!({
-                "label": "fn",
-                "kind": 3,
-                "detail": value_type.display_label(),
-                "insertText": format!("fn({parameters}) -> {} {{\n    ${{1}}\n}}", result.display_label()),
-                "insertTextFormat": 2,
-            })]
-        }
         CftValueType::Array(_) => {
             vec![json!({ "label": "[]", "kind": 21, "detail": value_type.display_label() })]
         }
@@ -1236,7 +822,10 @@ fn value_completion_items(
         CftValueType::Unit => {
             vec![json!({ "label": "()", "kind": 21, "detail": "unit" })]
         }
-        CftValueType::Int | CftValueType::Float | CftValueType::String => Vec::new(),
+        CftValueType::Int
+        | CftValueType::Float
+        | CftValueType::String
+        | CftValueType::FormattedString => Vec::new(),
         CftValueType::RecordRef(name) => {
             record_reference_completion_items(schema, name, build, true)
         }
@@ -1446,13 +1035,14 @@ fn value_placeholder(value_type: &CftValueType) -> String {
         CftValueType::Float => "0.0".to_string(),
         CftValueType::Bool => "true".to_string(),
         CftValueType::String => "\"value\"".to_string(),
+        CftValueType::FormattedString => "f\"value\"".to_string(),
         CftValueType::Enum(name) => name.to_string(),
         CftValueType::RecordRef(_) => "&key".to_string(),
         CftValueType::Array(_) => "[]".to_string(),
         CftValueType::Dict(_, _) | CftValueType::Object(_) => "{}".to_string(),
         CftValueType::Option(_) => "None".to_string(),
         CftValueType::Result(_, _) => "Ok(value)".to_string(),
-        CftValueType::Function(_, _) => "fn() {}".to_string(),
+
         CftValueType::Unit => "()".to_string(),
     }
 }
@@ -1754,30 +1344,6 @@ fn recovered_field_context(
         }
     }
     (names, current_field)
-}
-
-fn function_at(ast: &CfdAst, offset: usize) -> Option<&CfdFunction> {
-    ast.records
-        .iter()
-        .flat_map(|record| record.fields.iter())
-        .find_map(|field| function_in_value(&field.value, offset))
-}
-
-fn function_in_value(value: &CfdValue, offset: usize) -> Option<&CfdFunction> {
-    match value {
-        CfdValue::Function(function) if span_contains(function.span, offset) => Some(function),
-        CfdValue::Block(block) => block
-            .fields
-            .iter()
-            .find_map(|field| function_in_value(&field.value, offset)),
-        CfdValue::Array(values, _) => values
-            .iter()
-            .find_map(|value| function_in_value(value, offset)),
-        CfdValue::OptionSome(value, _)
-        | CfdValue::ResultOk(value, _)
-        | CfdValue::ResultErr(value, _) => function_in_value(value, offset),
-        _ => None,
-    }
 }
 
 fn span_contains(span: Span, offset: usize) -> bool {

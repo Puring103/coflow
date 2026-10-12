@@ -1,5 +1,4 @@
 import type { FlatDiagnostic } from '../bindings/FlatDiagnostic'
-import type { FunctionDocumentState } from '../bindings/FunctionDocumentState'
 import type { LanguageCompletion } from '../bindings/LanguageCompletion'
 import type { LanguageDocumentState } from '../bindings/LanguageDocumentState'
 import type { LanguageFormattingResult } from '../bindings/LanguageFormattingResult'
@@ -69,14 +68,6 @@ export async function completeLanguageDocument(
 
 export async function closeLanguageDocument(sessionId: number, filePath: string): Promise<void> {
   return invokeCommand('close_language_document', { sessionId, filePath })
-}
-
-export async function functionDocument(
-  sessionId: number,
-  source: string,
-  body?: string,
-): Promise<FunctionDocumentState> {
-  return invokeCommand<FunctionDocumentState>('function_document', { sessionId, source, body })
 }
 
 export async function writeSourceText(

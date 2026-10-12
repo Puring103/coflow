@@ -49,6 +49,7 @@ export interface EditorMutationBackend {
     coordinate: DimensionValueCoordinate,
     expectedValue: DimensionValueState,
     newValue: DimensionValueState,
+    destinationFile: string | null,
   ) => Promise<WriteDimensionValueOutcome>
   editCollection: (
     sessionId: number,
@@ -658,6 +659,7 @@ export class EditorMutationController {
         coordinate,
         expectedValue,
         newValue,
+        filePath.startsWith('@dimension/') ? null : filePath,
       ),
       undefined,
       outcome => {
@@ -665,7 +667,7 @@ export class EditorMutationController {
           this.history.record({
             kind: 'dimension',
             revision: outcome.revision,
-            filePath,
+            filePath: outcome.affected_files[0] ?? filePath,
             coordinate: outcome.coordinate,
             oldValue: cloneDimensionState(outcome.old_value),
             newValue: cloneDimensionState(outcome.new_value),

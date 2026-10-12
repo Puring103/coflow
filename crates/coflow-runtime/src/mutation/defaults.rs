@@ -274,11 +274,6 @@ impl<'a> DefaultValueMaterializer<'a> {
                     rendered: source.clone(),
                 },
             )),
-            CftSchemaDefaultValue::Function(source) => {
-                Ok(CfdValue::Function(crate::data_model::CfdFunction {
-                    source: source.clone(),
-                }))
-            }
             CftSchemaDefaultValue::Enum {
                 enum_name,
                 variant,
@@ -390,6 +385,12 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Float => Ok(CfdValue::Float(0.0)),
             CftValueType::Bool => Ok(CfdValue::Bool(false)),
             CftValueType::String => Ok(CfdValue::String(String::new())),
+            CftValueType::FormattedString => {
+                Ok(CfdValue::FormattedString(crate::CfdFormattedString {
+                    source: "f\"\"".to_string(),
+                    rendered: String::new(),
+                }))
+            }
             CftValueType::Option(_) => Ok(CfdValue::OptionNone),
             CftValueType::RecordRef(_) => Err(one_mutation_error(
                 "MUTATION-DEFAULT",
@@ -425,12 +426,10 @@ impl<'a> DefaultValueMaterializer<'a> {
                     fields,
                 ))))
             }
-            CftValueType::Result(_, _) | CftValueType::Function(_, _) | CftValueType::Unit => {
-                Err(one_mutation_error(
-                    "MUTATION-DEFAULT",
-                    format!("no implicit editable default exists for `{ty}`"),
-                ))
-            }
+            CftValueType::Result(_, _) | CftValueType::Unit => Err(one_mutation_error(
+                "MUTATION-DEFAULT",
+                format!("no implicit editable default exists for `{ty}`"),
+            )),
         }
     }
 }
@@ -516,13 +515,11 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::*;
-    use coflow_language::cft::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, ModuleId,
-    };
+    use coflow_language::cft::{build_schema, parse_modules, CftFile, ModuleId};
 
     fn schema(source: &str) -> CftSchema {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-        build_schema(&modules, &CftDimensionInputs::default()).expect("schema")
+        build_schema(&modules).expect("schema")
     }
 
     #[test]

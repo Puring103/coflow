@@ -31,6 +31,16 @@ export function TextInputDialog({ initialValue = '', placeholder, suffix, ...pro
   )} />
 }
 
+export function SelectFileDialog({ files, ...props }: BaseProps & { files: readonly string[] }) {
+  const [value, setValue] = useState(files[0] ?? '')
+  return <ActionDialog {...props} value={value} input={(
+    <select className="action-dialog-input" aria-label="目标 CFD 文件" value={value}
+      onChange={event => setValue(event.target.value)}>
+      {files.map(file => <option key={file} value={file}>{file}</option>)}
+    </select>
+  )} />
+}
+
 export function ConfirmDialog(props: BaseProps) {
   return <ActionDialog {...props} value="" />
 }
@@ -41,7 +51,7 @@ function ActionDialog({ title, message, confirmLabel, danger, busy, onConfirm, o
 }) {
   const dialogRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    dialogRef.current?.querySelector<HTMLElement>('input, button')?.focus()
+    dialogRef.current?.querySelector<HTMLElement>('input, select, button')?.focus()
   }, [])
   return (
     <div className="create-record-backdrop" role="presentation" onMouseDown={event => {

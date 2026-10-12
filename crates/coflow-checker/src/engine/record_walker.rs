@@ -1,6 +1,5 @@
 use super::context::ExecutionContext;
 use super::value::ValueLocation;
-use crate::dimensions::DimensionVariantAbort;
 use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
 use crate::CheckDiagnostic;
 use coflow_language::cft::{CftSchemaCheckStmt, CftType};
@@ -61,7 +60,6 @@ impl<'a> RecordCheckWalker<'a> {
             record.fields(),
             location,
             statement,
-            true,
             EvaluationCursor::root(),
         );
         (
@@ -76,7 +74,6 @@ impl<'a> RecordCheckWalker<'a> {
         fields: &std::collections::BTreeMap<coflow_language::cft::FieldName, CfdValue>,
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
-        project_dimension: bool,
         cursor: EvaluationCursor,
     ) {
         let cursor = match self.budget.enter(cursor, EvaluationKind::DataValue, 1) {
@@ -95,12 +92,9 @@ impl<'a> RecordCheckWalker<'a> {
             .schema
             .check_owner_applies_to_actual(&self.owner.name, actual_type)
         {
-            let (diagnostics, work) = self.context.execute_record(
-                self.owner,
-                location.clone(),
-                statement,
-                project_dimension,
-            );
+            let (diagnostics, work) =
+                self.context
+                    .execute_record(self.owner, location.clone(), statement);
             self.diagnostics.extend(diagnostics);
             self.work = self.work.saturating_add(work);
         }
@@ -113,46 +107,8 @@ impl<'a> RecordCheckWalker<'a> {
                 continue;
             }
             let field_location = location.field(field.as_str());
-            if project_dimension {
-                if let Some(view) =
-                    crate::dimensions::CheckProjectionView::new(self.context.projection)
-                {
-                    match view.materialize(
-                        self.context.schema,
-                        self.context.model,
-                        self.root,
-                        field,
-                        &field_location,
-                    ) {
-                        Ok(Some(materialized)) => {
-                            self.visit_value(
-                                materialized.value,
-                                materialized.location,
-                                statement,
-                                false,
-                                cursor,
-                            );
-                            continue;
-                        }
-                        Ok(None) => {}
-                        Err(DimensionVariantAbort::Skipped) => continue,
-                        Err(DimensionVariantAbort::Error {
-                            code,
-                            location,
-                            message,
-                        }) => {
-                            let location = (*location).unwrap_or(field_location);
-                            self.diagnostics.push(
-                                CfdDiagnostic::error(code, message)
-                                    .with_primary(Some(self.root), location.blame.path)
-                                    .into(),
-                            );
-                            continue;
-                        }
-                    }
-                }
-            }
-            self.visit_value(value, field_location, statement, false, cursor);
+
+            self.visit_value(value, field_location, statement, cursor);
         }
     }
 
@@ -161,7 +117,6 @@ impl<'a> RecordCheckWalker<'a> {
         value: &CfdValue,
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
-        project_dimension: bool,
         cursor: EvaluationCursor,
     ) {
         match value {
@@ -170,35 +125,22 @@ impl<'a> RecordCheckWalker<'a> {
                 object.fields(),
                 location,
                 statement,
-                project_dimension,
                 cursor,
             ),
             CfdValue::Array(items) => {
                 for (index, item) in items.iter().enumerate() {
-                    self.visit_value(
-                        item,
-                        location.index(index),
-                        statement,
-                        project_dimension,
-                        cursor,
-                    );
+                    self.visit_value(item, location.index(index), statement, cursor);
                 }
             }
             CfdValue::Dict(entries) => {
                 for (key, item) in entries {
-                    self.visit_value(
-                        item,
-                        location.dict_key_value(key),
-                        statement,
-                        project_dimension,
-                        cursor,
-                    );
+                    self.visit_value(item, location.dict_key_value(key), statement, cursor);
                 }
             }
             CfdValue::OptionSome(value)
             | CfdValue::ResultOk(value)
             | CfdValue::ResultErr(value) => {
-                self.visit_value(value, location, statement, project_dimension, cursor);
+                self.visit_value(value, location, statement, cursor);
             }
             CfdValue::Ref(_)
             | CfdValue::OptionNone
@@ -207,7 +149,6 @@ impl<'a> RecordCheckWalker<'a> {
             | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
-            | CfdValue::Function(_)
             | CfdValue::Enum(_) => {}
         }
     }

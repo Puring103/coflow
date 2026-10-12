@@ -42,7 +42,7 @@ describe('FieldValue authoring', () => {
     const value = {
       kind: 'formatted_string' as const,
       value: {
-        source: '"<b>{&Item::sword.name}</b>"',
+        source: 'f"<b>{&Item::sword.name}</b>"',
         rendered: '<b>Iron Sword</b>',
       },
     }
@@ -50,20 +50,14 @@ describe('FieldValue authoring', () => {
     expect(plainFieldValueText(value)).toBe('<b>{&Item::sword.name}</b>')
   })
 
-  it('automatically recognizes record field references in ordinary string input', () => {
-    expect(parseFieldValueText(
-      { kind: 'string', value: '' },
-      '当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}',
-    )).toEqual({
-      kind: 'formatted_string',
-      value: {
-        source: '"当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}"',
-        rendered: '当前 {name}，同类 {&shield.name}，跨类型 {&Item::sword.name}',
-      },
+  it('keeps ordinary strings literal and preserves the declared template kind', () => {
+    const text = '当前 {self.name}，跨类型 {&Item::sword.name}'
+    expect(parseFieldValueText({ kind: 'string', value: '' }, text)).toEqual({ kind: 'string', value: text })
+    expect(parseFieldValueText({ kind: 'formatted_string', value: { source: 'f"old"', rendered: 'old' } }, text)).toEqual({
+      kind: 'formatted_string', value: { source: `f${JSON.stringify(text)}`, rendered: 'old' },
     })
-    expect(parseFieldValueText({ kind: 'string', value: '' }, '样式 {color:red}')).toEqual({
-      kind: 'string',
-      value: '样式 {color:red}',
+    expect(parseFieldValueText({ kind: 'formatted_string', value: { source: 'f"old"', rendered: 'old' } }, 'plain text')).toEqual({
+      kind: 'formatted_string', value: { source: 'f"plain text"', rendered: 'old' },
     })
   })
 

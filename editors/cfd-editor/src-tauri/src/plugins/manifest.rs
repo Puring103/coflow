@@ -81,8 +81,9 @@ pub struct ProjectFrontendPlugins {
     pub(crate) errors: Vec<String>,
 }
 
-
-pub(crate) fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<FrontendPluginBundle, EditorError> {
+pub(crate) fn load_frontend_plugin_bundle(
+    manifest_path: &Path,
+) -> Result<FrontendPluginBundle, EditorError> {
     if manifest_path
         .extension()
         .is_none_or(|extension| extension != "json")
@@ -145,7 +146,6 @@ pub(crate) fn load_frontend_plugin_bundle(manifest_path: &Path) -> Result<Fronte
         enabled: true,
     })
 }
-
 
 pub(crate) fn valid_plugin_id(id: &str) -> bool {
     !id.is_empty()

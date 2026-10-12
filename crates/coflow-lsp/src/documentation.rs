@@ -20,6 +20,7 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
     ("float", "64-bit floating point number."),
     ("bool", "Boolean value."),
     ("string", "String value."),
+    ("fstring", "Explicit field-path interpolation template."),
     (
         "Option",
         "Optional value written as `None` or `Some(value)`.",
@@ -28,7 +29,6 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
         "Result",
         "Success or error value written as `Ok(value)` or `Err(error)`.",
     ),
-    ("fn", "Function type written as `fn(parameters) -> result`."),
 ];
 
 pub(crate) const LITERALS: &[(&str, &str)] =
@@ -76,12 +76,6 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         insert_text: "@singleton",
         detail: "type annotation",
         documentation: "Declare a type with one singleton record.",
-    },
-    AnnotationCompletion {
-        label: "@Host",
-        insert_text: "@Host",
-        detail: "type annotation",
-        documentation: "Mark a singleton type as a host-provided function interface.",
     },
     AnnotationCompletion {
         label: "@label",

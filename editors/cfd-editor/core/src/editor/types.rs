@@ -18,8 +18,8 @@ mod settings;
 pub use error::{EditorError, EditorErrorKind};
 pub use graph::{GraphData, GraphEdge, GraphNode, GraphQuery, RefTarget};
 pub use language::{
-    FunctionDocumentState, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
-    LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit,
+    LanguageCompletion, LanguageDiagnostic, LanguageDocumentState, LanguageFormattingResult,
+    LanguagePosition, LanguageRange, LanguageTextEdit,
 };
 pub use project::{
     FileTypeOption, PluginSchemaField, PluginSchemaType, ProjectBootstrap, ProjectSearchHit,
@@ -34,6 +34,6 @@ pub use records::{
 };
 pub use records::{CreateFieldSource, CreateRequiredInput};
 pub use settings::{
-    EditorDimensionTarget, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, EditorWorkspaceTab, ViewConfig,
-    ViewKind, WorkspaceViewKind,
+    EditorDimensionTarget, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState,
+    EditorWorkspaceTab, ViewConfig, ViewKind, WorkspaceViewKind,
 };

@@ -2,8 +2,8 @@
 
 use coflow_language::cft::syntax::parser::parse_module;
 use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftValueType, CheckName, ConstName,
-    EnumName, ModuleId, TypeName,
+    build_schema, parse_modules, CftFile, CftValueType, CheckName, ConstName, EnumName, ModuleId,
+    TypeName,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -35,8 +35,7 @@ fn declarations_are_project_global_across_files() {
             "type Item { position: Position; quality: Quality = Quality::Good; }",
         ),
     ]);
-    let schema = build_schema(&modules, &CftDimensionInputs::default())
-        .expect("short names should resolve across files");
+    let schema = build_schema(&modules).expect("short names should resolve across files");
     assert_eq!(
         schema
             .resolve_type("Item")
@@ -54,8 +53,7 @@ fn project_global_declarations_must_be_unique() {
         CftFile::from_source(ModuleId::from("one.cft"), "type Item {}"),
         CftFile::from_source(ModuleId::from("two.cft"), "type Item {}"),
     ]);
-    let diagnostics = build_schema(&modules, &CftDimensionInputs::default())
-        .expect_err("duplicate global name must fail");
+    let diagnostics = build_schema(&modules).expect_err("duplicate global name must fail");
     assert!(diagnostics
         .diagnostics
         .iter()

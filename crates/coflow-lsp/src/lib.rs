@@ -258,7 +258,6 @@ enum RequestMethod {
     DocumentSymbol,
     Formatting,
     SemanticTokens,
-    FunctionDocument,
     Shutdown,
 }
 
@@ -272,17 +271,13 @@ impl RequestMethod {
             "textDocument/documentSymbol" => Some(Self::DocumentSymbol),
             "textDocument/formatting" => Some(Self::Formatting),
             "textDocument/semanticTokens/full" => Some(Self::SemanticTokens),
-            "coflow/functionDocument" => Some(Self::FunctionDocument),
             "shutdown" => Some(Self::Shutdown),
             _ => None,
         }
     }
 
     const fn requires_snapshot(self) -> bool {
-        !matches!(
-            self,
-            Self::Initialize | Self::FunctionDocument | Self::Shutdown
-        )
+        !matches!(self, Self::Initialize | Self::Shutdown)
     }
 }
 
@@ -521,9 +516,7 @@ impl<W: Write> LspServer<W> {
             (Some(id), Some(RequestMethod::DocumentSymbol), _) => self.document_symbol(&id, params),
             (Some(id), Some(RequestMethod::Formatting), _) => self.formatting(&id, params),
             (Some(id), Some(RequestMethod::SemanticTokens), _) => self.semantic_tokens(&id, params),
-            (Some(id), Some(RequestMethod::FunctionDocument), _) => {
-                self.write_response(&id, &cfd::function_document(params))
-            }
+
             (Some(id), Some(RequestMethod::Shutdown), _) => {
                 self.shutdown_requested = true;
                 self.write_response(&id, &Value::Null)

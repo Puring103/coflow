@@ -1,8 +1,7 @@
 #![allow(clippy::expect_used, clippy::needless_raw_string_hashes)]
 
 use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftFunctionParameter, CftValueType,
-    EnumName, ModuleId,
+    build_schema, parse_modules, CftFile, CftValueType, EnumName, ModuleId,
 };
 use coflow_language::diagnostics::CftErrorCode;
 
@@ -10,22 +9,21 @@ fn compile(
     source: &str,
 ) -> Result<coflow_language::cft::CftSchema, coflow_language::diagnostics::CftDiagnostics> {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main.cft"), source)]);
-    build_schema(&modules, &CftDimensionInputs::default())
+    build_schema(&modules)
 }
 
 #[test]
-fn aliases_expand_in_fields_constants_and_nested_function_results() {
+fn aliases_expand_in_fields_constants_and_nested_collections() {
     let schema = compile(
         r#"
             enum Kind { First }
             type Key = Kind;
-            type Predicate = fn(value: int) -> bool;
-            type RuleFactory = fn(seed: int) -> Predicate;
+            type ScoreGroups = [Scores];
             type Scores = {Key: int};
             const EMPTY: Scores = {};
 
             type Rule {
-                create: RuleFactory;
+                groups: ScoreGroups;
                 scores: Scores = EMPTY;
             }
         "#,
@@ -34,14 +32,13 @@ fn aliases_expand_in_fields_constants_and_nested_function_results() {
 
     let rule = schema.resolve_type("Rule").expect("Rule");
     assert_eq!(
-        rule.field("create").expect("create").value_type,
-        CftValueType::Function(
-            vec![CftFunctionParameter::named("seed", CftValueType::Int)],
-            Box::new(CftValueType::Function(
-                vec![CftFunctionParameter::named("value", CftValueType::Int)],
-                Box::new(CftValueType::Bool),
+        rule.field("groups").expect("groups").value_type,
+        CftValueType::Array(Box::new(CftValueType::Dict(
+            Box::new(CftValueType::Enum(
+                EnumName::new("Kind").expect("enum name")
             )),
-        )
+            Box::new(CftValueType::Int),
+        )))
     );
     assert_eq!(
         rule.field("scores").expect("scores").value_type,
@@ -52,8 +49,8 @@ fn aliases_expand_in_fields_constants_and_nested_function_results() {
             Box::new(CftValueType::Int),
         )
     );
-    assert!(schema.resolve_type("Predicate").is_none());
-    assert!(schema.resolve_type("RuleFactory").is_none());
+    assert!(schema.resolve_type("Scores").is_none());
+    assert!(schema.resolve_type("ScoreGroups").is_none());
 }
 
 #[test]
@@ -74,8 +71,7 @@ fn aliases_resolve_by_project_global_short_name_across_files() {
             "#,
         ),
     ]);
-    let schema = build_schema(&modules, &CftDimensionInputs::default())
-        .expect("project-global aliases should resolve");
+    let schema = build_schema(&modules).expect("project-global aliases should resolve");
     assert_eq!(
         schema
             .resolve_type("Item")

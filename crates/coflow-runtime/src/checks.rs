@@ -54,7 +54,7 @@ pub(crate) fn run_full_project_checks(
     );
     let statistics = output.statistics;
     let mut state = CheckDiagnosticStore::default();
-    state.replace_results(model, output);
+    state.replace_results(schema, model, output);
     render_check_store(schema, model, origins, state, statistics)
 }
 
@@ -65,6 +65,9 @@ pub(crate) fn run_incremental_project_checks(
     previous: &CheckDiagnosticStore,
     impact: &CheckImpact,
 ) -> ProjectCheckOutput {
+    if previous.variant_catalog_changed(schema, model) {
+        return run_full_project_checks(schema, model, origins);
+    }
     let limits = CheckLimits {
         evaluation: crate::limits::RuntimeLimits::default().evaluation,
         ..CheckLimits::default()
@@ -78,7 +81,7 @@ pub(crate) fn run_incremental_project_checks(
     let statistics = output.statistics;
     let mut state = previous.clone();
     state.remove_missing_records(model);
-    state.replace_results(model, output);
+    state.replace_results(schema, model, output);
     render_check_store(schema, model, origins, state, statistics)
 }
 
@@ -115,21 +118,16 @@ mod tests {
     };
     use crate::data_model::{CfdDataModel, DimensionValueDraft, LoadedValueDraft, RecordOrigin};
     use crate::RecordCoordinate;
-    use coflow_checker::{CheckProjection, CheckTarget};
+    use coflow_checker::CheckTarget;
     use coflow_language::cft::{
-        build_schema, parse_modules, CftDimensionInputs, CftFile, CheckOwner, DimensionName,
-        FieldName, ModuleId, RecordKey, TypeName, VariantName,
+        build_schema, parse_modules, CftFile, CheckOwner, DimensionName, FieldName, ModuleId,
+        RecordKey, TypeName, VariantName,
     };
     use std::collections::BTreeSet;
 
     fn schema(source: &str) -> CftSchema {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-        build_schema(
-            &modules,
-            &CftDimensionInputs::try_new([("language", vec!["zh".to_string(), "en".to_string()])])
-                .expect("dimensions"),
-        )
-        .expect("schema")
+        build_schema(&modules).expect("schema")
     }
 
     fn coordinate(actual_type: &str, key: &str) -> RecordCoordinate {
@@ -293,16 +291,16 @@ mod tests {
     }
 
     #[test]
-    fn dimension_variant_and_base_changes_plan_the_required_projections() {
+    fn dimension_variant_and_base_changes_invalidate_the_same_statement() {
         let schema = schema(
-            r"
+            r#"
                 type Item {
                     @localized
                     name: string;
                     price: int;
-                    check { name.len() <= price; }
+                    check { name.for("zh").len() <= price; }
                 }
-            ",
+            "#,
         );
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("name", "a".into()), ("price", 2_i64.into())]);
@@ -322,11 +320,6 @@ mod tests {
         };
         let variant_tasks = plan_incremental_checks(&schema, &model, &variant_impact);
         assert_eq!(variant_tasks.len(), 1);
-        assert!(matches!(
-            &variant_tasks[0].projection,
-            CheckProjection::Dimension { dimension, variant }
-                if dimension.as_str() == "language" && variant.as_str() == "zh"
-        ));
 
         let base_impact = CheckImpact {
             records: BTreeMap::from([(
@@ -336,18 +329,8 @@ mod tests {
             record_sets: BTreeSet::new(),
         };
         let base_tasks = plan_incremental_checks(&schema, &model, &base_impact);
-        assert_eq!(base_tasks.len(), 3);
-        assert_eq!(base_tasks[0].projection, CheckProjection::Base);
-        assert!(matches!(
-            &base_tasks[1].projection,
-            CheckProjection::Dimension { dimension, variant }
-                if dimension.as_str() == "language" && variant.as_str() == "zh"
-        ));
-        assert!(matches!(
-            &base_tasks[2].projection,
-            CheckProjection::Dimension { dimension, variant }
-                if dimension.as_str() == "language" && variant.as_str() == "en"
-        ));
+        assert_eq!(base_tasks.len(), 1);
+        assert_eq!(base_tasks, variant_tasks);
     }
 
     #[test]
@@ -403,7 +386,7 @@ mod tests {
             limits,
         );
         let mut store = previous;
-        store.replace_results(&model, output);
+        store.replace_results(&schema, &model, output);
         let diagnostics = store.diagnostics(&model);
 
         assert_eq!(diagnostics.len(), 3);
@@ -427,7 +410,7 @@ mod tests {
             CheckLimits::default(),
         );
         let mut state = CheckDiagnosticStore::default();
-        state.replace_results(model, output);
+        state.replace_results(schema, model, output);
         state
     }
 
@@ -445,7 +428,7 @@ mod tests {
         );
         let mut state = previous.clone();
         state.remove_missing_records(model);
-        state.replace_results(model, output);
+        state.replace_results(schema, model, output);
         state
     }
 
@@ -585,7 +568,7 @@ mod tests {
                 type Item {
                     @localized
                     name: string;
-                    check { name != ""; }
+                    check { name.for("zh") != ""; }
                 }
             "#,
         );
@@ -598,7 +581,7 @@ mod tests {
                 field: FieldName::new("name").unwrap(),
                 dimension: DimensionName::new("language").unwrap(),
                 variant: VariantName::new("zh").unwrap(),
-                value: LoadedValueDraft::OptionSome(Box::new(zh.into())),
+                value: zh.into(),
                 origin: RecordOrigin::None,
             });
             builder.build().expect("model")
@@ -644,5 +627,47 @@ mod tests {
             incremental.diagnostics(&after),
             full_store(&schema, &after).diagnostics(&after)
         );
+    }
+    #[test]
+    fn adding_a_variant_invalidates_other_records_variant_collections() {
+        let schema = schema(
+            r#"type Item { @localized name: string; check { name.variants().len() <= 1; } }"#,
+        );
+        let build = |extra: bool| {
+            let mut builder = CfdDataModel::builder(&schema);
+            builder.add_record("a", "Item", [("name", "a".into())]);
+            builder.add_record("b", "Item", [("name", "b".into())]);
+            builder.add_dimension_variant(
+                DimensionName::new("language").unwrap(),
+                VariantName::new("ja").unwrap(),
+            );
+            if extra {
+                builder.add_dimension_variant(
+                    DimensionName::new("language").unwrap(),
+                    VariantName::new("fr").unwrap(),
+                );
+            }
+            builder.build().expect("model")
+        };
+        let before = build(false);
+        let previous = run_full_project_checks(&schema, &before, &[]);
+        assert!(previous.state.diagnostics(&before).is_empty());
+        let after = build(true);
+        let impact = CheckImpact {
+            records: BTreeMap::from([(
+                coordinate("Item", "a"),
+                field(
+                    "name",
+                    ChangedProjection::Dimension {
+                        dimension: DimensionName::new("language").unwrap(),
+                        variant: VariantName::new("fr").unwrap(),
+                    },
+                ),
+            )]),
+            record_sets: BTreeSet::new(),
+        };
+        let output = run_incremental_project_checks(&schema, &after, &[], &previous.state, &impact);
+        assert_eq!(output.statistics.executed_tasks, 2);
+        assert_eq!(output.state.diagnostics(&after).len(), 2);
     }
 }

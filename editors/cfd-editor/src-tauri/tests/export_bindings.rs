@@ -34,7 +34,6 @@ fn export_bindings() {
     export_with_retry::<t::LanguageDiagnostic>("LanguageDiagnostic");
     export_with_retry::<t::LanguageDocumentState>("LanguageDocumentState");
     export_with_retry::<t::LanguageCompletion>("LanguageCompletion");
-    export_with_retry::<t::FunctionDocumentState>("FunctionDocumentState");
     export_with_retry::<t::EditorProjectSettings>("EditorProjectSettings");
     export_with_retry::<t::DimensionFileRecords>("DimensionFileRecords");
     export_with_retry::<t::DimensionFileRow>("DimensionFileRow");

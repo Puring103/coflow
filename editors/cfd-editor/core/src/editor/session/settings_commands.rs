@@ -138,16 +138,25 @@ impl SessionStore {
             .and_then(|by_type| by_type.get(&actual_type))
             .map(|groups| groups.iter().map(|group| group.id.clone()).collect())
             .unwrap_or_default();
-        let previous = settings.views.get(&file_path).and_then(|by_type| by_type.get(&actual_type));
+        let previous = settings
+            .views
+            .get(&file_path)
+            .and_then(|by_type| by_type.get(&actual_type));
         let mut next = sanitized_views(views, &valid_group_ids);
         for view in &mut next {
             if view.column_widths.is_empty() {
-                if let Some(old) = previous.and_then(|entries| entries.iter().find(|old| old.id == view.id)) {
+                if let Some(old) =
+                    previous.and_then(|entries| entries.iter().find(|old| old.id == view.id))
+                {
                     view.column_widths = old.column_widths.clone();
                 }
             }
         }
-        settings.views.entry(file_path).or_default().insert(actual_type, next);
+        settings
+            .views
+            .entry(file_path)
+            .or_default()
+            .insert(actual_type, next);
         write_project_settings(&project_root, &settings)?;
         Ok(settings)
     }

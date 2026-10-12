@@ -54,6 +54,7 @@ fn is_formattable(ty: &InferredType) -> bool {
             | CftValueType::Float
             | CftValueType::Bool
             | CftValueType::String
+            | CftValueType::FormattedString
             | CftValueType::Enum(_),
         ) => true,
         InferredType::Value(
@@ -61,13 +62,13 @@ fn is_formattable(ty: &InferredType) -> bool {
             | CftValueType::Dict(_, _)
             | CftValueType::Option(_)
             | CftValueType::Result(_, _)
-            | CftValueType::Function(_, _)
             | CftValueType::Unit
             | CftValueType::Object(_)
             | CftValueType::RecordRef(_),
         )
         | InferredType::OptionNone
         | InferredType::EnumNamespace(_)
+        | InferredType::Dimension(_)
         | InferredType::Entry(_, _) => false,
     }
 }
@@ -411,8 +412,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 );
                 if let Some(dimension) = field.dimension {
                     self.dimensions.insert(dimension);
+                    return InferredType::Dimension(Box::new(field.inferred_type.read_type()));
                 }
-                return field.inferred_type;
+                return field.inferred_type.read_type();
             }
             if name == "id" {
                 self.dependencies.insert(
@@ -565,8 +567,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 if let Some(field) = field {
                     if let Some(dimension) = field.dimension {
                         self.dimensions.insert(dimension);
+                        return InferredType::Dimension(Box::new(field.inferred_type.read_type()));
                     }
-                    return field.inferred_type;
+                    return field.inferred_type.read_type();
                 }
                 if type_known {
                     self.diag(

@@ -260,41 +260,6 @@ impl Parser<'_> {
                 kind: TypeRefKind::Result(Box::new(value.value), Box::new(error.value)),
             });
         }
-        if self.peek_ident_is("fn") {
-            use crate::syntax::ast::FunctionParameterRef;
-
-            let start = self.expect_ident()?.span;
-            self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
-            let mut parameters = Vec::new();
-            let mut depths = Vec::new();
-            while !self.at(&TokenKind::RParen) {
-                let name = if self.next_at(&TokenKind::Colon) {
-                    let name = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
-                    self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
-                    Some(name)
-                } else {
-                    None
-                };
-                let value_type = self.parse_value_type()?;
-                depths.push(value_type.depth);
-                parameters.push(FunctionParameterRef {
-                    name,
-                    value_type: value_type.value,
-                });
-                if self.eat(&TokenKind::Comma).is_none() {
-                    break;
-                }
-            }
-            self.expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?;
-            self.expect_simple(&TokenKind::Arrow, CftErrorCode::ExpectedToken)?;
-            let result = self.parse_value_type()?;
-            let end = result.value.span.end;
-            depths.push(result.depth);
-            return self.node(StructureKind::TypeRef, start, depths, || TypeRef {
-                span: Span::new(start.start, end),
-                kind: TypeRefKind::Function(parameters, Box::new(result.value)),
-            });
-        }
         if let Some(start) = self.eat(&TokenKind::Amp) {
             let inner = self.nested(StructureKind::TypeRef, start, |parser| {
                 parser.parse_value_type_primary()
@@ -342,6 +307,7 @@ impl Parser<'_> {
                 "float" => TypeRefKind::Float,
                 "bool" => TypeRefKind::Bool,
                 "string" => TypeRefKind::String,
+                "fstring" => TypeRefKind::FormattedString,
                 _ => TypeRefKind::Named(name.name),
             };
             self.node(StructureKind::TypeRef, name.span, [], || TypeRef {

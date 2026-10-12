@@ -46,7 +46,6 @@ pub struct SchemaFieldInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaFieldDimensionInfo {
     pub name: String,
-    pub bucket: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,7 +66,6 @@ pub struct SchemaEnumVariantInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaDimensionInfo {
     pub name: String,
-    pub variants: Vec<String>,
     pub fields: Vec<SchemaDimensionFieldInfo>,
 }
 
@@ -84,31 +82,14 @@ pub enum SchemaTypeRefInfo {
     Float,
     Bool,
     String,
-    Named {
-        name: String,
-        target_kind: String,
-    },
-    Ref {
-        target: String,
-    },
-    Array {
-        item: Box<Self>,
-    },
-    Dict {
-        key: Box<Self>,
-        value: Box<Self>,
-    },
-    Option {
-        inner: Box<Self>,
-    },
-    Result {
-        value: Box<Self>,
-        error: Box<Self>,
-    },
-    Function {
-        parameters: Vec<Self>,
-        result: Box<Self>,
-    },
+    FormattedString,
+    Named { name: String, target_kind: String },
+    Ref { target: String },
+    Array { item: Box<Self> },
+    Dict { key: Box<Self>, value: Box<Self> },
+    Option { inner: Box<Self> },
+    Result { value: Box<Self>, error: Box<Self> },
+
     Unit,
 }
 
@@ -124,7 +105,6 @@ pub enum SchemaDefaultValueInfo {
     Bool(bool),
     String(String),
     FormattedString(String),
-    Function(String),
     Enum {
         enum_name: String,
         variant: String,
@@ -160,7 +140,6 @@ pub enum SchemaConstValueInfo {
     Bool(bool),
     String(String),
     FormattedString(String),
-    Function(String),
     Enum {
         enum_name: String,
         variant: String,
@@ -242,7 +221,6 @@ pub fn inspect_schema(
                         .as_ref()
                         .map(|dimension| SchemaFieldDimensionInfo {
                             name: dimension.dimension.to_string(),
-                            bucket: dimension.bucket.as_ref().map(ToString::to_string),
                         }),
                 })
                 .collect(),
@@ -275,7 +253,6 @@ pub fn inspect_schema(
             .all_dimensions()
             .map(|dimension| SchemaDimensionInfo {
                 name: dimension.name.to_string(),
-                variants: dimension.variants.iter().map(ToString::to_string).collect(),
                 fields: dimension
                     .fields
                     .iter()
@@ -325,6 +302,7 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
         CftValueType::Float => SchemaTypeRefInfo::Float,
         CftValueType::Bool => SchemaTypeRefInfo::Bool,
         CftValueType::String => SchemaTypeRefInfo::String,
+        CftValueType::FormattedString => SchemaTypeRefInfo::FormattedString,
         CftValueType::Object(name) => SchemaTypeRefInfo::Named {
             name: name.to_string(),
             target_kind: "type".to_string(),
@@ -350,13 +328,7 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
             value: Box::new(value_type_info(value)),
             error: Box::new(value_type_info(error)),
         },
-        CftValueType::Function(parameters, result) => SchemaTypeRefInfo::Function {
-            parameters: parameters
-                .iter()
-                .map(|parameter| value_type_info(&parameter.value_type))
-                .collect(),
-            result: Box::new(value_type_info(result)),
-        },
+
         CftValueType::Unit => SchemaTypeRefInfo::Unit,
     }
 }
@@ -380,7 +352,7 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         CftSchemaDefaultValue::FormattedString(source) => {
             SchemaDefaultValueInfo::FormattedString(source.clone())
         }
-        CftSchemaDefaultValue::Function(source) => SchemaDefaultValueInfo::Function(source.clone()),
+
         CftSchemaDefaultValue::Enum {
             enum_name,
             variant,
@@ -426,7 +398,7 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::FormattedString(source) => {
             SchemaConstValueInfo::FormattedString(source.clone())
         }
-        CftConstValue::Function(source) => SchemaConstValueInfo::Function(source.clone()),
+
         CftConstValue::Enum {
             enum_name,
             variant,

@@ -1,8 +1,6 @@
 #![allow(dead_code, clippy::expect_used, clippy::panic)]
 
-use coflow_language::cft::{
-    build_schema, parse_modules, CftDimensionInputs, CftFile, CftSchema, ModuleId,
-};
+use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 use coflow_runtime::check_benchmark_support::{
     plan_full, plan_incremental, BenchmarkFieldChange, BenchmarkProjection,
 };
@@ -90,7 +88,7 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
         }
         check ProjectIntegrity { records(Item).len() > 0; }
     "#;
-    let schema = compile(source, CftDimensionInputs::default());
+    let schema = compile(source::default());
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..100 {
         builder.add_record(
@@ -134,10 +132,8 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
 }
 
 pub(crate) fn nested_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
-    let schema = compile(
-        "type Part { value: int; check { value >= 0; } } type Item { parts: [Part]; }",
-        CftDimensionInputs::default(),
-    );
+    let schema =
+        compile("type Part { value: int; check { value >= 0; } } type Item { parts: [Part]; }");
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
         builder.add_record(
@@ -170,13 +166,6 @@ pub(crate) fn dimension_fixture(
                 check { name != "" && price > 0; }
             }
         "#,
-        CftDimensionInputs::try_new([(
-            "language",
-            (0..variant_count)
-                .map(|index| format!("v{index}"))
-                .collect(),
-        )])
-        .expect("dimensions"),
     );
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
@@ -205,7 +194,6 @@ pub(crate) fn inheritance_fixture(record_count: usize) -> (CftSchema, CfdDataMod
             }
             type Item : Base {}
         "#,
-        CftDimensionInputs::default(),
     );
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
@@ -227,7 +215,6 @@ pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataMode
                 }
             }
         "#,
-        CftDimensionInputs::default(),
     );
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
@@ -242,10 +229,7 @@ pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataMode
 }
 
 pub(crate) fn limit_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
-    let schema = compile(
-        "type Item { value: int; check { value >= 0; } }",
-        CftDimensionInputs::default(),
-    );
+    let schema = compile("type Item { value: int; check { value >= 0; } }");
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
         builder.add_record(item_key(index), "Item", [("value", 1_i64.into())]);
@@ -261,7 +245,7 @@ pub(crate) fn worst_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let source = format!(
         "type Character {{ level: int; }} type Item {{ owner: &Character; check {{ {checks} }} }}"
     );
-    let schema = compile(&source, CftDimensionInputs::default());
+    let schema = compile(&source::default());
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..100 {
         builder.add_record(
@@ -281,9 +265,9 @@ pub(crate) fn worst_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     (schema, model)
 }
 
-fn compile(source: &str, dimensions: CftDimensionInputs) -> CftSchema {
+fn compile(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("bench"), source)]);
-    build_schema(&modules, &dimensions).expect("schema")
+    build_schema(&modules).expect("schema")
 }
 
 pub(crate) fn full_tasks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {

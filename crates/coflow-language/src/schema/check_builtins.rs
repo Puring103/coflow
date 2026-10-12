@@ -1,5 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CftCheckBuiltin {
+    Default,
+    Variants,
+    For,
     Len,
     Contains,
     Unique,
@@ -26,7 +29,10 @@ pub enum CftCheckBuiltin {
 }
 
 impl CftCheckBuiltin {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 26] = [
+        Self::Default,
+        Self::Variants,
+        Self::For,
         Self::Len,
         Self::Contains,
         Self::Unique,
@@ -63,6 +69,9 @@ impl CftCheckBuiltin {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Default => "default",
+            Self::Variants => "variants",
+            Self::For => "for",
             Self::Len => "len",
             Self::Contains => "contains",
             Self::Unique => "isUnique",
@@ -93,7 +102,8 @@ impl CftCheckBuiltin {
     #[must_use]
     pub const fn arity(self) -> usize {
         match self {
-            Self::Contains
+            Self::For
+            | Self::Contains
             | Self::Matches
             | Self::StartsWith
             | Self::EndsWith
@@ -104,7 +114,9 @@ impl CftCheckBuiltin {
             | Self::IsSubsetOf
             | Self::IsSupersetOf => 2,
             Self::ApproxEqual => 3,
-            Self::Len
+            Self::Default
+            | Self::Variants
+            | Self::Len
             | Self::Unique
             | Self::Min
             | Self::Max
@@ -127,6 +139,13 @@ impl CftCheckBuiltin {
     #[must_use]
     pub const fn documentation(self) -> &'static str {
         match self {
+            Self::Default => "value.default(): read the dimension field base value.",
+            Self::Variants => {
+                "value.variants(): return all effective dimension values keyed by variant."
+            }
+            Self::For => {
+                "value.for(variant): select a dimension variant, falling back to its default value."
+            }
             Self::Len => "value.len(): return the number of string characters or collection items.",
             Self::Contains => {
                 "value.contains(val): test string substring, array element, or dict key presence."
@@ -177,6 +196,9 @@ mod tests {
         assert_eq!(
             entries,
             vec![
+                ("default", 1),
+                ("variants", 1),
+                ("for", 2),
                 ("len", 1),
                 ("contains", 2),
                 ("isUnique", 1),

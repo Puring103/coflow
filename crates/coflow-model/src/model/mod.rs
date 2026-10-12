@@ -11,13 +11,13 @@ pub use ids::{CfdRecordId, RecordCoordinate};
 pub use tables::CfdTable;
 pub use value::{
     CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdFormattedString,
-    CfdFunction, CfdObject, CfdRecord, CfdValue,
+    CfdObject, CfdRecord, CfdValue,
 };
 
 use crate::build::CfdModelBuilder;
 use crate::indexes::RefIndexes;
-use coflow_language::cft::{CftSchema, RecordKey, TypeName};
-use std::collections::BTreeMap;
+use coflow_language::cft::{CftSchema, DimensionName, RecordKey, TypeName, VariantName};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
@@ -25,9 +25,17 @@ pub struct CfdDataModel {
     pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
     pub(crate) records: Vec<CfdRecord>,
     pub(crate) refs: RefIndexes,
+    pub(crate) dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
 }
 
 impl CfdDataModel {
+    pub fn dimension_variants(&self, dimension: &str) -> impl Iterator<Item = &VariantName> {
+        self.dimension_variants
+            .get(dimension)
+            .into_iter()
+            .flat_map(|variants| variants.iter())
+    }
+
     #[must_use]
     pub fn builder(schema: &CftSchema) -> CfdModelBuilder<'_> {
         CfdModelBuilder::new(schema)

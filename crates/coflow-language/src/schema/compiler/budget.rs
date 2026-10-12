@@ -156,19 +156,11 @@ fn walk_value_type(
                 pending.push((value, cursor));
                 pending.push((key, cursor));
             }
-            TypeRefKind::Function(parameters, result) => {
-                pending.push((result, cursor));
-                pending.extend(
-                    parameters
-                        .iter()
-                        .rev()
-                        .map(|parameter| (&parameter.value_type, cursor)),
-                );
-            }
             TypeRefKind::Int
             | TypeRefKind::Float
             | TypeRefKind::Bool
             | TypeRefKind::String
+            | TypeRefKind::FormattedString
             | TypeRefKind::Unit
             | TypeRefKind::Named(_) => {}
         }
@@ -216,7 +208,6 @@ fn walk_default(
             | DefaultExprKind::OptionNone
             | DefaultExprKind::String(_)
             | DefaultExprKind::FormattedString(_)
-            | DefaultExprKind::Function { .. }
             | DefaultExprKind::StaticPath(_)
             | DefaultExprKind::RecordReference(_) => {}
             DefaultExprKind::OptionSome(value)

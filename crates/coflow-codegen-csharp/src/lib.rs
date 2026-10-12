@@ -1,40 +1,15 @@
-//! C# code generator for Coflow declarations and direct CFD bindings.
-
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::dbg_macro,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::panic_in_result_fn,
-        clippy::todo,
-        clippy::unimplemented,
-        clippy::unreachable,
-        clippy::unwrap_used
-    )
-)]
+//! Lightweight C# business types and typed descriptors for direct CFD loading.
 
 mod emit;
-mod ir;
-mod lowering;
-mod model;
 mod names;
-mod render;
-
-use coflow_language::cft::CftSchema;
-use coflow_model::CfdDataModel;
-use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
-use std::path::PathBuf;
 
 use coflow_codegen::{
-    CodeArtifactFile, CodeArtifactSet, CodeGenerator as CfdCodeGeneratorTrait,
-    CodegenDescriptor as CfdCodegenDescriptor, CodegenError, CodegenInput as CfdCodegenInput,
-    IdAsEnumValues,
+    CodeArtifactFile, CodeArtifactSet, CodeGenerator, CodegenDescriptor, CodegenError,
+    CodegenInput, IdAsEnumValues,
 };
-
-pub use ir::CsharpIdAsEnumVariant;
+use coflow_language::cft::CftSchema;
+use serde::Deserialize;
+use std::{fmt, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
@@ -43,146 +18,74 @@ pub struct GeneratedFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CsharpCodegenError {
-    messages: Vec<String>,
-}
-
+pub struct CsharpCodegenError(String);
 impl CsharpCodegenError {
-    #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            messages: vec![message.into()],
-        }
-    }
-
-    fn from_messages(messages: impl IntoIterator<Item = String>) -> Self {
-        Self {
-            messages: messages.into_iter().collect(),
-        }
+        Self(message.into())
     }
 }
-
 impl fmt::Display for CsharpCodegenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.messages.join("\n").fmt(f)
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
     }
 }
-
 impl std::error::Error for CsharpCodegenError {}
 
-fn build_csharp_project(
-    schema: &CftSchema,
-    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&BTreeSet<String>>,
-    namespace: &str,
-) -> Result<model::CsharpProject, CsharpCodegenError> {
-    let unsupported = schema
-        .all_types()
-        .flat_map(|schema_type| {
-            schema_type
-                .own_fields()
-                .map(move |field| (schema_type, field))
-        })
-        .find_map(|(schema_type, field)| match &field.value_type {
-            coflow_language::cft::CftValueType::Function(parameters, _) if parameters.len() > 8 => {
-                Some(format!(
-                    "C# runtime functions support at most 8 parameters; `{}.{}` declares {}",
-                    schema_type.name,
-                    field.name,
-                    parameters.len()
-                ))
-            }
-            _ => None,
-        });
-    if let Some(message) = unsupported {
-        return Err(CsharpCodegenError::new(message));
-    }
-    for segment in namespace.split('.').filter(|_| !namespace.is_empty()) {
-        if let Some(error) = names::csharp_ident_error(segment) {
-            return Err(CsharpCodegenError::new(format!(
-                "invalid C# namespace `{namespace}`: {error}"
-            )));
-        }
-    }
-    ir::build_project(schema, id_as_enum_variants, non_empty_tables, namespace)
-}
-
-/// Generates format-independent C# declarations.
+/// Generates business declarations and a typed CFD loading entry point.
 ///
 /// # Errors
-///
-/// Returns an error when the schema cannot be mapped to C# runtime code or a
-/// template fails to render.
+/// Returns an error for names or data types that cannot be emitted as C#.
 pub fn generate_csharp(schema: &CftSchema) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_common_with_id_as_enum_variants(schema, BTreeMap::new(), None)
+    emit::generate(schema, "", &IdAsEnumValues::new())
 }
 
-/// Generates C# declarations plus a direct CFD source loader. The loader
-/// consumes the logical paths in `sources` through `Coflow.Runtime`.
-///
-/// # Errors
-///
-/// Returns an error when the schema cannot be mapped to C# runtime metadata or
-/// a generated template cannot be rendered.
-pub fn generate_csharp_cfd(
-    schema: &CftSchema,
-    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&BTreeSet<String>>,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_cfd_with_variants(schema, id_as_enum_variants, non_empty_tables, "")
-}
-
-fn generate_csharp_cfd_with_variants(
-    schema: &CftSchema,
-    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&BTreeSet<String>>,
-    namespace: &str,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables, namespace)?;
-    let mut files = render::render_common_project(&project)?;
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from("Coflow.Metadata.cs"),
-        contents: render::render_cfd_metadata_template(&project)?,
-    });
-    Ok(files)
-}
-
-pub const CSHARP_CFD_CODEGEN_DESCRIPTOR: CfdCodegenDescriptor = CfdCodegenDescriptor {
+pub const CSHARP_CFD_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     id: "csharp",
     language: "csharp",
     file_extensions: &["cs"],
-    runtime_package: "Coflow.Runtime",
-    runtime_version: "0.9.1",
+    runtime_package: "Coflow.Loader",
+    runtime_version: "0.11.0",
     needs_model: true,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CsharpCfdCodeGenerator;
-
-impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
-    fn descriptor(&self) -> &'static CfdCodegenDescriptor {
+impl CodeGenerator for CsharpCfdCodeGenerator {
+    fn descriptor(&self) -> &'static CodegenDescriptor {
         &CSHARP_CFD_CODEGEN_DESCRIPTOR
     }
-
-    fn generate(&self, input: CfdCodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError> {
-        let raw = input.target.options.clone();
-        let options = CsharpOutputOptionsConfig::deserialize(raw).map_err(|error| {
-            CodegenError::Message(format!("invalid C# output options: {error}"))
-        })?;
-        let model = input.model.ok_or_else(|| {
-            CodegenError::Message(
-                "C# code generation requires a validated CFD data model".to_string(),
-            )
-        })?;
-        let id_as_enum_variants = id_as_enum_variants(input.schema, model, input.id_as_enum_values)
-            .map_err(CodegenError::Message)?;
-        let files = generate_csharp_cfd_with_variants(
-            input.schema,
-            id_as_enum_variants,
-            None,
-            &options.namespace,
-        )
-        .map_err(|error| CodegenError::Message(error.to_string()))?;
+    fn generate(&self, input: CodegenInput<'_>) -> Result<CodeArtifactSet, CodegenError> {
+        let options =
+            CsharpOptions::deserialize(input.target.options.clone()).map_err(|error| {
+                CodegenError::Message(format!("invalid C# output options: {error}"))
+            })?;
+        // 锁文件保留已删除 key 的编号；输出仅包含本次数据中的有效记录 key。
+        let mut active_values = input.id_as_enum_values.clone();
+        for en in input.schema.all_enums() {
+            let Some(record_type) = input.schema.type_for_id_as_enum(&en.name) else {
+                continue;
+            };
+            let model = input.model.ok_or_else(|| {
+                CodegenError::Message("@idAsEnum code generation requires CFD data".to_string())
+            })?;
+            let keys = model
+                .records_assignable_to(input.schema, &record_type.name)
+                .map(|(_, record)| record.key().to_string())
+                .collect::<std::collections::BTreeSet<_>>();
+            if let Some(entries) = active_values.get_mut(en.name.as_str()) {
+                entries.retain(|key, _| keys.contains(key));
+                for key in &keys {
+                    if !entries.contains_key(key) {
+                        return Err(CodegenError::Message(format!(
+                            "missing stable value for `{en_name}::{key}`",
+                            en_name = en.name
+                        )));
+                    }
+                }
+            }
+        }
+        let files = emit::generate(input.schema, &options.namespace, &active_values)
+            .map_err(|error| CodegenError::Message(error.to_string()))?;
         CodeArtifactSet::new(
             files
                 .into_iter()
@@ -195,59 +98,9 @@ impl CfdCodeGeneratorTrait for CsharpCfdCodeGenerator {
     }
 }
 
-fn id_as_enum_variants(
-    schema: &CftSchema,
-    model: &CfdDataModel,
-    values: &IdAsEnumValues,
-) -> Result<BTreeMap<String, Vec<CsharpIdAsEnumVariant>>, String> {
-    let mut result = BTreeMap::new();
-    for schema_enum in schema.all_enums() {
-        let Some(record_type) = schema.type_for_id_as_enum(&schema_enum.name) else {
-            continue;
-        };
-        let keys = model
-            .records_assignable_to(schema, &record_type.name)
-            .map(|(_, record)| record.key().to_string())
-            .collect::<BTreeSet<_>>();
-        let enum_values = values.get(schema_enum.name.as_str()).ok_or_else(|| {
-            format!(
-                "missing stable values for @idAsEnum enum `{}`",
-                schema_enum.name
-            )
-        })?;
-        let variants = keys
-            .into_iter()
-            .map(|source_name| {
-                let value = enum_values.get(&source_name).copied().ok_or_else(|| {
-                    format!(
-                        "missing stable value for @idAsEnum key `{}::{source_name}`",
-                        schema_enum.name
-                    )
-                })?;
-                Ok(CsharpIdAsEnumVariant {
-                    name: source_name.clone(),
-                    source_name,
-                    value,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        result.insert(schema_enum.name.to_string(), variants);
-    }
-    Ok(result)
-}
-
-fn generate_common_with_id_as_enum_variants(
-    schema: &CftSchema,
-    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
-    non_empty_tables: Option<&BTreeSet<String>>,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = build_csharp_project(schema, id_as_enum_variants, non_empty_tables, "")?;
-    render::render_common_project(&project)
-}
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct CsharpOutputOptionsConfig {
+struct CsharpOptions {
     namespace: String,
 }
 

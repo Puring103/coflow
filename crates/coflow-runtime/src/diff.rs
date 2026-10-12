@@ -176,7 +176,7 @@ pub(crate) fn diff_against_head(
                     head_paths.rebase_head_inputs(&mut project, head.temp.path())?;
                     Ok(project)
                 })
-                .and_then(|project| Runtime::new().open_read_only_session(project));
+                .and_then(|project| Runtime::new().open_data_session(project));
             match head_session {
                 Ok(head_session) => {
                     let session_set = head_session.queries().diagnostics().as_set();
@@ -369,9 +369,6 @@ fn record_states(
 
 fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
     match value {
-        CfdValue::Function(function) => CfdValue::Function(crate::CfdFunction {
-            source: normalized_line_endings(&function.source),
-        }),
         CfdValue::FormattedString(value) => CfdValue::FormattedString(crate::CfdFormattedString {
             source: normalized_line_endings(&value.source),
             rendered: normalized_line_endings(&value.rendered),
@@ -670,13 +667,7 @@ impl GitProject {
                     .schema
                     .paths()
                     .iter()
-                    .chain(config.data.iter().map(crate::SourceConfig::path))
-                    .chain(
-                        config
-                            .dimensions
-                            .values()
-                            .filter_map(|dimension| dimension.out_dir.as_ref()),
-                    );
+                    .chain(config.data.iter().map(crate::SourceConfig::path));
                 for input in inputs {
                     let absolute = crate::normalize_path(
                         &self.repo_root.join(&self.project_relative).join(input),
@@ -823,11 +814,7 @@ impl GitDiffPaths {
         for source in &mut project.config.data {
             *source = crate::SourceConfig::from_path(rebase(source.path())?);
         }
-        for dimension in project.config.dimensions.values_mut() {
-            if let Some(path) = &mut dimension.out_dir {
-                *path = rebase(path)?;
-            }
-        }
+
         Ok(())
     }
 }

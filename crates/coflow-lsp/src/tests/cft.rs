@@ -2,9 +2,7 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 
 use super::super::completion::{function_completion_items_for_type, receiver_chain_before_dot};
-use super::super::semantic_tokens::{
-    semantic_raw_tokens, MOD_DECLARATION, SEM_PARAMETER, SEM_VARIABLE,
-};
+
 use super::common::*;
 use super::*;
 use coflow_language::cft::syntax::ast::Item;
@@ -332,7 +330,7 @@ type Item {\n\
     let top_labels = completion_labels(annotation_completion_items(CompletionScope::TopLevel));
     assert!(top_labels.contains(&"@struct".to_string()));
     assert!(top_labels.contains(&"@idAsEnum".to_string()));
-    assert!(top_labels.contains(&"@Host".to_string()));
+    assert!(!top_labels.contains(&"@Host".to_string()));
     assert!(top_labels.contains(&"@singleton".to_string()));
     assert!(top_labels.contains(&"@label".to_string()));
     assert!(!top_labels.contains(&"@id".to_string()));
@@ -664,68 +662,6 @@ fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
 }
 
 #[test]
-fn function_defaults_have_snippets_body_completions_and_semantic_tokens() {
-    let source = "type Rule {\n\
-  apply: fn(value: int) -> int = fn(input: int) -> int {\n\
-    var total = input + 1;\n\
-    total\n\
-  };\n\
-}\n";
-    let (_cleanup, build) = test_lsp_build("lsp-cft-function-defaults", source);
-    let document = first_document(&build);
-
-    let default_offset = source.find("fn(input").expect("function default");
-    let default_items = completion_items(
-        &build,
-        document,
-        &position_from_byte(source, default_offset),
-    );
-    let function_item = default_items
-        .iter()
-        .find(|item| item["label"] == "fn")
-        .expect("function default completion");
-    assert_eq!(function_item["insertTextFormat"], 2);
-    assert_eq!(
-        function_item["insertText"],
-        "fn(${1:value}: int) -> int {\n\t${2}\n}"
-    );
-
-    let body_offset = source.find("total\n").expect("body expression");
-    let body_labels = completion_labels(completion_items(
-        &build,
-        document,
-        &position_from_byte(source, body_offset),
-    ));
-    assert!(
-        body_labels.contains(&"input".to_string()),
-        "{body_labels:?}"
-    );
-    assert!(
-        body_labels.contains(&"total".to_string()),
-        "{body_labels:?}"
-    );
-    assert!(body_labels.contains(&"var".to_string()), "{body_labels:?}");
-
-    let raw_tokens = semantic_raw_tokens(&build, document);
-    assert!(has_semantic_token(
-        source,
-        &raw_tokens,
-        "fn(input: int)",
-        "input",
-        SEM_PARAMETER,
-        MOD_DECLARATION,
-    ));
-    assert!(has_semantic_token(
-        source,
-        &raw_tokens,
-        "var total",
-        "total",
-        SEM_VARIABLE,
-        MOD_DECLARATION,
-    ));
-}
-
-#[test]
 fn formatter_returns_independent_local_text_edits() {
     let source = "type Item {\nname:string;\n  unchanged: string;\nvalue:int;\n}\n";
     let formatted = format_cft(source);
@@ -737,4 +673,26 @@ fn formatter_returns_independent_local_text_edits() {
         let end = &edit["range"]["end"];
         start["line"] == end["line"]
     }));
+}
+
+#[test]
+fn dimension_completion_offers_selection_methods_before_business_operations() {
+    let source = r#"type Item { @localized name: string; title: string; check { name.for("ja") != ""; title.len() > 0; } }"#;
+    let (_cleanup, build) = test_lsp_build("lsp-dimension-selection", source);
+    let document = first_document(&build);
+    let offset = source.find("name.for").expect("dimension receiver") + "name.".len();
+    let labels = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, offset),
+    ));
+    assert_eq!(labels, vec!["default", "for", "variants"]);
+    let offset = source.find("title.len").expect("ordinary receiver") + "title.".len();
+    let labels = completion_labels(completion_items(
+        &build,
+        document,
+        &position_from_byte(source, offset),
+    ));
+    assert!(labels.contains(&"len".to_string()));
+    assert!(!labels.contains(&"for".to_string()));
 }

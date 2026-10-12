@@ -1,6 +1,5 @@
 use crate::api::{
-    map_diagnostics_with_origins, CfdLoadContext, CfdSource, CfdSourceCatalog, Diagnostic,
-    DiagnosticSet, DimensionSourceLoadRequest, DimensionSourceSchema,
+    map_diagnostics_with_origins, CfdLoadContext, CfdSource, Diagnostic, DiagnosticSet,
 };
 use crate::cfd_loader::CfdLoader;
 use crate::data_model::{
@@ -8,7 +7,7 @@ use crate::data_model::{
     LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
-use coflow_language::cft::{CftSchema, RecordKey};
+use coflow_language::cft::{CftSchema, DimensionName, VariantName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -19,12 +18,11 @@ use crate::checks::{
     run_full_project_checks, run_incremental_project_checks, CheckDiagnosticStore,
     ProjectCheckOutput,
 };
-use crate::dimensions;
 use crate::indexes::{
     CfdSourceEntry, DiagnosticLogicalLocation, PendingRecordRef, RecordIndexBuilder,
     SessionIndexBuilder, SourceId,
 };
-use crate::source_resolution::{ResolvedDimensionSource, ResolvedLoaderSource, SourceResolver};
+use crate::source_resolution::{ResolvedLoaderSource, SourceResolver};
 use crate::{ProjectExecutionStats, RecordCoordinate};
 
 #[derive(Debug, Clone)]
@@ -55,7 +53,7 @@ struct CachedSourceBatch {
     source: Arc<str>,
     records: Arc<[LoadedRecordDraft]>,
     dimension_values: Arc<[DimensionValueDraft]>,
-    dimension_field: Option<dimensions::DimensionField>,
+    dimension_variants: Arc<[(DimensionName, VariantName)]>,
 }
 
 impl SourceDataCache {
@@ -65,48 +63,34 @@ impl SourceDataCache {
             .map(|batch| (batch.entry.display_path.as_str(), batch.source.as_ref()))
     }
 
-    pub(crate) fn dimension_sources(
-        &self,
-    ) -> impl Iterator<Item = (&CfdSourceEntry, &dimensions::DimensionField)> {
-        self.batches.iter().filter_map(|batch| {
-            batch
-                .dimension_field
-                .as_ref()
-                .map(|field| (&batch.entry, field))
-        })
-    }
-
-    pub(crate) fn base_with_previous_dimensions(&self, previous: &Self) -> Self {
-        let mut batches = self.batches.clone();
-        batches.extend(
-            previous
-                .batches
-                .iter()
-                .filter(|batch| batch.dimension_field.is_some())
-                .cloned(),
-        );
-        Self { batches }
-    }
-
-    pub(crate) fn implicit_display_paths(&self) -> BTreeSet<String> {
+    pub(crate) fn overlay_sources(&self) -> impl Iterator<Item = &CfdSourceEntry> {
         self.batches
             .iter()
-            .filter(|batch| batch.dimension_field.is_some())
-            .map(|batch| batch.entry.display_path.clone())
-            .collect()
+            .filter(|batch| !batch.dimension_variants.is_empty())
+            .map(|batch| &batch.entry)
     }
 
     pub(crate) fn dimension_source(
         &self,
-        declaring_type: &str,
+        schema: &CftSchema,
+        actual_type: &str,
+        key: &str,
         field: &str,
         dimension: &str,
+        variant: &str,
     ) -> Option<&CfdSourceEntry> {
         self.batches.iter().find_map(|batch| {
-            let binding = batch.dimension_field.as_ref()?;
-            (binding.source_type.as_str() == declaring_type
-                && binding.source_field.as_str() == field
-                && binding.dimension.as_str() == dimension)
+            batch
+                .dimension_values
+                .iter()
+                .any(|value| {
+                    value.source_key.as_str() == key
+                        && value.field.as_str() == field
+                        && value.dimension.as_str() == dimension
+                        && value.variant.as_str() == variant
+                        && schema.inheritance_root(value.source_type.as_str())
+                            == schema.inheritance_root(actual_type)
+                })
                 .then_some(&batch.entry)
         })
     }
@@ -120,14 +104,12 @@ pub(crate) struct LoadDiagnostics {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LoadProjectDataOptions {
-    pub(crate) include_implicit_dimension_sources: bool,
     pub(crate) run_checks: bool,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct ReloadProjectDataOptions<'a> {
     pub(crate) load: LoadProjectDataOptions,
-    pub(crate) refresh_implicit_dimension_sources: bool,
     pub(crate) previous_checks: Option<&'a CheckDiagnosticStore>,
     pub(crate) check_impact: &'a CheckImpact,
     pub(crate) source_overrides: &'a [DataSourceTextOverride],
@@ -161,8 +143,6 @@ pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput,
 pub(crate) fn load_project_data(
     project: &Project,
     schema: &CftSchema,
-    dimension_plan: &dimensions::DimensionRuntimePlan,
-    catalog: &CfdSourceCatalog,
     indexes: &mut SessionIndexBuilder,
     options: LoadProjectDataOptions,
     source_overrides: &[DataSourceTextOverride],
@@ -195,30 +175,6 @@ pub(crate) fn load_project_data(
             resolved_sources,
             source_overrides,
         ));
-    }
-
-    if options.include_implicit_dimension_sources {
-        match resolver.resolve_dimension_sources(dimension_plan) {
-            Ok(resolved_sources) => {
-                statistics.sources_resolved = statistics
-                    .sources_resolved
-                    .saturating_add(resolved_sources.len());
-                for resolved_source in resolved_sources {
-                    if is_deleted_override(resolved_source.source.location.path(), source_overrides)
-                    {
-                        continue;
-                    }
-                    diagnostics.extend(load_resolved_dimension_source(
-                        project,
-                        schema,
-                        catalog,
-                        &mut state,
-                        resolved_source,
-                    ));
-                }
-            }
-            Err(err) => diagnostics.extend(err),
-        }
     }
 
     let draft_record_count = state.records.len();
@@ -265,10 +221,7 @@ pub(crate) fn load_project_data(
 // 缓存重载需要统一维护来源批次、诊断与统计，保持单一事务流程便于验证状态一致性。
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn reload_project_data_from_cache(
-    project: &Project,
     schema: &CftSchema,
-    dimension_plan: &dimensions::DimensionRuntimePlan,
-    catalog: &CfdSourceCatalog,
     indexes: &mut SessionIndexBuilder,
     previous: &SourceDataCache,
     reload_paths: &BTreeSet<String>,
@@ -280,76 +233,28 @@ pub(crate) fn reload_project_data_from_cache(
             .batches
             .iter()
             .filter(|batch| {
-                (options.load.include_implicit_dimension_sources || batch.dimension_field.is_none())
-                    && !is_deleted_override(
-                        batch.entry.source.location.path(),
-                        options.source_overrides,
-                    )
+                !is_deleted_override(batch.entry.source.location.path(), options.source_overrides)
             })
             .cloned()
             .collect(),
     };
-    if options.load.include_implicit_dimension_sources && options.refresh_implicit_dimension_sources
-    {
-        statistics.sources_resolved =
-            refresh_dimension_source_plans(project, dimension_plan, previous, &mut source_data)?;
-    }
 
     let mut diagnostics = DiagnosticSet::empty();
-    let ordinary_records = source_data
-        .batches
-        .iter()
-        .flat_map(|batch| batch.records.iter().cloned())
-        .collect::<Vec<_>>();
     let reload_indexes = source_data
         .batches
         .iter()
         .enumerate()
         .filter_map(|(index, batch)| {
             (reload_paths.contains(&batch.entry.display_path)
-                || !previous.contains_source(&batch.entry, batch.dimension_field.as_ref()))
+                || !previous.contains_source(&batch.entry))
             .then_some(index)
         })
         .collect::<Vec<_>>();
     statistics.sources_reloaded = reload_indexes.len();
 
-    let mut validated_dimension_sources = BTreeSet::new();
     for index in reload_indexes {
         let batch = &mut source_data.batches[index];
-        if let Some(field) = &batch.dimension_field {
-            let source_fields = if field.is_singleton {
-                dimension_plan
-                    .fields()
-                    .iter()
-                    .filter(|candidate| {
-                        candidate.is_singleton
-                            && candidate.dimension == field.dimension
-                            && candidate.source_type == field.source_type
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
-            } else {
-                vec![field.clone()]
-            };
-            let validate_singleton_shape =
-                validated_dimension_sources.insert(batch.entry.display_path.clone());
-            match load_dimension_batch(
-                schema,
-                catalog,
-                &batch.entry.source,
-                field,
-                &source_fields,
-                validate_singleton_shape,
-                &ordinary_records,
-            ) {
-                Ok(loaded) => {
-                    batch.source = loaded.source;
-                    batch.dimension_values = loaded.values.into();
-                }
-                Err(err) => diagnostics.extend(err),
-            }
-            continue;
-        }
+
         match CfdLoader::load_partial(
             CfdLoadContext {
                 schema,
@@ -361,9 +266,13 @@ pub(crate) fn reload_project_data_from_cache(
                 diagnostics.extend(loaded.diagnostics);
                 batch.source = loaded.source;
                 batch.records = loaded.records.into();
+                batch.dimension_values = loaded.dimensions.into();
+                batch.dimension_variants = loaded.dimension_variants.into();
             }
             Err(err) => {
                 batch.records = Arc::default();
+                batch.dimension_values = Arc::default();
+                batch.dimension_variants = Arc::default();
                 diagnostics.extend(err);
             }
         }
@@ -424,8 +333,8 @@ fn load_resolved_sources(
                     entry,
                     source: batch.source,
                     records: cached_records,
-                    dimension_values: Arc::default(),
-                    dimension_field: None,
+                    dimension_values: batch.dimensions.into(),
+                    dimension_variants: batch.dimension_variants.into(),
                 });
             }
             Err(err) => diagnostics.extend(err),
@@ -453,112 +362,6 @@ fn is_deleted_override(path: &std::path::Path, overrides: &[DataSourceTextOverri
     })
 }
 
-fn load_resolved_dimension_source(
-    project: &Project,
-    schema: &CftSchema,
-    catalog: &CfdSourceCatalog,
-    state: &mut LoadState<'_>,
-    resolved: ResolvedDimensionSource,
-) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
-    let source = resolved.source;
-    let display_path = display_path_for(project, &source);
-    let entry = CfdSourceEntry {
-        source: source.clone(),
-        display_path,
-    };
-    let source_id = state.indexes.sources.get_or_insert_dimension(entry.clone());
-    state
-        .indexes
-        .files
-        .add_source_file(entry.display_path.clone(), source_id);
-    let fields = resolved.fields;
-    for (index, field) in fields.iter().enumerate() {
-        match load_dimension_batch(
-            schema,
-            catalog,
-            &source,
-            field,
-            &fields,
-            index == 0,
-            &state.records,
-        ) {
-            Ok(loaded) => state.source_data.batches.push(CachedSourceBatch {
-                entry: entry.clone(),
-                source: loaded.source,
-                records: Arc::default(),
-                dimension_values: loaded.values.into(),
-                dimension_field: Some(field.clone()),
-            }),
-            Err(err) => diagnostics.extend(err),
-        }
-    }
-    diagnostics
-}
-
-fn load_dimension_batch(
-    schema: &CftSchema,
-    catalog: &CfdSourceCatalog,
-    source: &CfdSource,
-    field: &dimensions::DimensionField,
-    source_fields: &[dimensions::DimensionField],
-    validate_singleton_shape: bool,
-    records: &[LoadedRecordDraft],
-) -> Result<crate::api::DimensionSourceLoadResult, DiagnosticSet> {
-    let manager = catalog.dimension_source_manager();
-    let source_type = schema.resolve_type(&field.source_type).ok_or_else(|| {
-        runtime_invariant(format!(
-            "dimension source type `{}` disappeared before loading",
-            field.source_type
-        ))
-    })?;
-    let source_field = schema
-        .field(&field.source_type, &field.source_field)
-        .ok_or_else(|| {
-            runtime_invariant(format!(
-                "dimension source field `{}.{}` disappeared before loading",
-                field.source_type, field.source_field
-            ))
-        })?;
-    let dimension = schema.resolve_dimension(&field.dimension).ok_or_else(|| {
-        runtime_invariant(format!(
-            "dimension `{}` disappeared before loading",
-            field.dimension
-        ))
-    })?;
-    let singleton_source_fields = source_fields
-        .iter()
-        .filter(|field| field.is_singleton)
-        .map(|field| field.source_field.clone())
-        .collect::<Vec<_>>();
-    let mut loaded = manager.load_dimension_source(&DimensionSourceLoadRequest {
-        source,
-        schema: DimensionSourceSchema {
-            schema,
-            dimension,
-            source_type,
-            source_field,
-        },
-        singleton_source_fields: &singleton_source_fields,
-        validate_singleton_shape,
-    })?;
-    if field.is_singleton {
-        let Some(key) = records
-            .iter()
-            .find(|record| schema.is_assignable(&record.actual_type, &field.source_type))
-            .and_then(|record| RecordKey::new(record.key.clone()).ok())
-        else {
-            // singleton 主体缺失时，其维度残留与普通记录一样静默忽略。
-            loaded.values.clear();
-            return Ok(loaded);
-        };
-        for value in &mut loaded.values {
-            value.source_key = key.clone();
-        }
-    }
-    Ok(loaded)
-}
-
 fn push_loaded_records(
     records: &mut Vec<LoadedRecordDraft>,
     records_index: &mut RecordIndexBuilder,
@@ -579,15 +382,10 @@ fn push_loaded_records(
 }
 
 impl SourceDataCache {
-    fn contains_source(
-        &self,
-        entry: &CfdSourceEntry,
-        dimension_field: Option<&dimensions::DimensionField>,
-    ) -> bool {
-        self.batches.iter().any(|batch| {
-            batch.dimension_field.as_ref() == dimension_field
-                && batch.entry.source.location == entry.source.location
-        })
+    fn contains_source(&self, entry: &CfdSourceEntry) -> bool {
+        self.batches
+            .iter()
+            .any(|batch| batch.entry.source.location == entry.source.location)
     }
 
     /// 返回与给定规范化路径匹配的批次 display path。
@@ -609,63 +407,6 @@ impl SourceDataCache {
     }
 }
 
-fn refresh_dimension_source_plans(
-    project: &Project,
-    dimension_plan: &dimensions::DimensionRuntimePlan,
-    previous: &SourceDataCache,
-    source_data: &mut SourceDataCache,
-) -> Result<usize, LoadDiagnostics> {
-    source_data
-        .batches
-        .retain(|batch| batch.dimension_field.is_none());
-    let resolver = SourceResolver::new(project);
-    let mut diagnostics = DiagnosticSet::empty();
-    let mut resolved_count = 0;
-    match resolver.resolve_dimension_sources(dimension_plan) {
-        Ok(resolved_sources) => {
-            resolved_count = resolved_sources.len();
-            for resolved in resolved_sources {
-                let source = resolved.source;
-                let display_path = display_path_for(project, &source);
-                let entry = CfdSourceEntry {
-                    source,
-                    display_path,
-                };
-                for field in resolved.fields {
-                    let dimension_values = previous
-                        .batches
-                        .iter()
-                        .find(|batch| {
-                            batch.dimension_field.as_ref() == Some(&field)
-                                && batch.entry.source.location == entry.source.location
-                        })
-                        .map_or_else(Arc::default, |batch| Arc::clone(&batch.dimension_values));
-                    source_data.batches.push(CachedSourceBatch {
-                        entry: entry.clone(),
-                        source: previous
-                            .batches
-                            .iter()
-                            .find(|batch| batch.entry.source.location == entry.source.location)
-                            .map_or_else(Arc::default, |batch| Arc::clone(&batch.source)),
-                        records: Arc::default(),
-                        dimension_values,
-                        dimension_field: Some(field),
-                    });
-                }
-            }
-        }
-        Err(err) => diagnostics.extend(err),
-    }
-    if diagnostics.is_empty() {
-        Ok(resolved_count)
-    } else {
-        Err(LoadDiagnostics {
-            diagnostics,
-            logical_locations: BTreeMap::new(),
-        })
-    }
-}
-
 fn build_output_from_cache(
     schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
@@ -676,25 +417,19 @@ fn build_output_from_cache(
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records = Vec::new();
     for batch in &source_data.batches {
-        let source_id = if batch.dimension_field.is_some() {
-            indexes.sources.get_or_insert_dimension(batch.entry.clone())
-        } else {
-            let source_id = SourceId(indexes.sources.entries.len());
-            indexes.sources.push(batch.entry.clone());
-            source_id
-        };
+        let source_id = SourceId(indexes.sources.entries.len());
+        indexes.sources.push(batch.entry.clone());
         indexes
             .files
             .add_source_file(batch.entry.display_path.clone(), source_id);
-        if batch.dimension_field.is_none() {
-            push_loaded_records(
-                &mut records,
-                &mut indexes.records,
-                source_id,
-                &batch.entry.display_path,
-                &batch.records,
-            );
-        }
+
+        push_loaded_records(
+            &mut records,
+            &mut indexes.records,
+            source_id,
+            &batch.entry.display_path,
+            &batch.records,
+        );
     }
     let draft_record_count = records.len();
     let partial = build_partial_model(schema, &records, &source_data)?;
@@ -773,6 +508,9 @@ fn build_partial_model(
         }
         for batch in &source_data.batches {
             builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
+            for (dimension, variant) in batch.dimension_variants.iter() {
+                builder.add_dimension_variant(dimension.clone(), variant.clone());
+            }
         }
         match builder.build_partial() {
             Ok(output) => {
@@ -881,9 +619,6 @@ fn record_model_work(
     statistics.check_roots_executed = statistics
         .check_roots_executed
         .saturating_add(check.statistics.executed_tasks);
-    statistics.dimension_records_projected = statistics
-        .dimension_records_projected
-        .saturating_add(check.statistics.dimension_projected_records);
 }
 
 fn runtime_invariant(message: impl Into<String>) -> DiagnosticSet {

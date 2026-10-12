@@ -248,6 +248,13 @@ impl Parser<'_> {
                     let expr = self.nested(StructureKind::CheckAst, opener, |parser| {
                         parser.parse_or_expr()
                     })?;
+                    // 消息插值只读取路径，不能借由检查表达式引入计算或调用。
+                    if !is_interpolation_path(&expr.value) {
+                        return self.err(
+                            CftErrorCode::InvalidCheckStatement,
+                            "formatted string interpolation requires a field path",
+                        );
+                    }
                     self.expect_simple(
                         &TokenKind::FormattedStringExprEnd,
                         CftErrorCode::ExpectedToken,
@@ -291,5 +298,13 @@ impl Parser<'_> {
         } else {
             Ok(TypePredicate::Type(name))
         }
+    }
+}
+
+fn is_interpolation_path(expr: &CheckExpr) -> bool {
+    match &expr.kind {
+        CheckExprKind::Name(_) | CheckExprKind::StaticPath(_) => true,
+        CheckExprKind::Field { expr, .. } => is_interpolation_path(expr),
+        _ => false,
     }
 }

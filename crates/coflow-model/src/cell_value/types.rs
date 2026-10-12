@@ -10,6 +10,7 @@ pub(super) enum CellType {
     Float,
     Bool,
     String,
+    FormattedString,
     Type(String),
     Ref(String),
     Enum(String),
@@ -27,6 +28,7 @@ impl CellType {
             CftValueType::Float => Self::Float,
             CftValueType::Bool => Self::Bool,
             CftValueType::String => Self::String,
+            CftValueType::FormattedString => Self::FormattedString,
             CftValueType::Object(name) => Self::Type(name.to_string()),
             CftValueType::Enum(name) => Self::Enum(name.to_string()),
             CftValueType::RecordRef(name) => Self::Ref(name.to_string()),
@@ -40,7 +42,7 @@ impl CellType {
                 Box::new(Self::from_schema_type(ok)),
                 Box::new(Self::from_schema_type(error)),
             ),
-            CftValueType::Function(_, _) | CftValueType::Unit => Self::Unsupported(ty.to_string()),
+            CftValueType::Unit => Self::Unsupported(ty.to_string()),
         }
     }
 
@@ -61,6 +63,7 @@ impl CellType {
             Self::Float => "float".to_string(),
             Self::Bool => "bool".to_string(),
             Self::String => "string".to_string(),
+            Self::FormattedString => "fstring".to_string(),
             Self::Type(name) | Self::Enum(name) => name.clone(),
             Self::Ref(name) => format!("&{name}"),
             Self::Array(inner) => format!("[{}]", inner.display()),
@@ -162,6 +165,7 @@ impl<'a> TypeParser<'a> {
             "float" => CellType::Float,
             "bool" => CellType::Bool,
             "string" => CellType::String,
+            "fstring" => CellType::FormattedString,
             other if self.schema.resolve_enum(other).is_some() => CellType::Enum(other.to_string()),
             other => CellType::Type(other.to_string()),
         })

@@ -57,6 +57,52 @@ impl CheckTypeAnalyzer<'_, '_> {
     ) -> InferredType {
         let receiver_ty = self.check_expr_value(receiver);
         match CftCheckBuiltin::by_name(&name.name) {
+            Some(builtin @ (CftCheckBuiltin::Default | CftCheckBuiltin::Variants)) => {
+                let _ = self.expect_arity(args, 0, span);
+                for arg in args {
+                    self.check_expr_value(arg);
+                }
+                match receiver_ty {
+                    InferredType::Dimension(inner) if builtin == CftCheckBuiltin::Default => *inner,
+                    InferredType::Dimension(inner) => {
+                        InferredType::dict(InferredType::string(), *inner)
+                    }
+                    InferredType::Unknown => InferredType::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            receiver.span,
+                            "dimension method requires a dimension field",
+                        );
+                        InferredType::Unknown
+                    }
+                }
+            }
+            Some(CftCheckBuiltin::For) => {
+                let _ = self.expect_arity(args, 1, span);
+                for arg in args {
+                    let ty = self.check_expr_value(arg);
+                    if !types_comparable(&ty, &InferredType::string()) && !ty.is_unknown() {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            arg.span,
+                            "dimension variant must be string",
+                        );
+                    }
+                }
+                match receiver_ty {
+                    InferredType::Dimension(inner) => *inner,
+                    InferredType::Unknown => InferredType::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            receiver.span,
+                            "for() requires a dimension field",
+                        );
+                        InferredType::Unknown
+                    }
+                }
+            }
             Some(CftCheckBuiltin::Len) => self.check_len_method(receiver, args, span, &receiver_ty),
             Some(CftCheckBuiltin::Contains) => {
                 self.check_contains_method(receiver, args, span, &receiver_ty)

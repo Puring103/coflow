@@ -102,7 +102,6 @@ import {
 } from '../state/clipboard'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 import { RecordContextMenu } from './RecordContextMenu'
-import { FunctionEditorButton } from './FunctionBodyDialog'
 
 import { isNativeEditorTarget } from '../utils/dom'
 import {
@@ -1710,7 +1709,7 @@ function EditableCellBuiltIn({
     : undefined
   const isScalar = shownValue.kind === 'bool' || shownValue.kind === 'int' || shownValue.kind === 'float'
                 || shownValue.kind === 'string' || shownValue.kind === 'formatted_string'
-                || shownValue.kind === 'enum' || shownValue.kind === 'ref' || shownValue.kind === 'function'
+                || shownValue.kind === 'enum' || shownValue.kind === 'ref'
   // null cells become editable when the schema tells us they hold an enum/ref/bool
   const isNullDropdown = shownValue.kind === 'option_none' && !!(enumType || refTargetType)
   const canEdit = editable && (isScalar || isNullDropdown) && !!commitValue
@@ -1764,13 +1763,7 @@ function EditableCellBuiltIn({
     )
   }
 
-  if (canEdit && shownValue.kind === 'function') {
-    return (
-      <div className="cell-edit-wrap">
-        <FunctionEditorButton value={shownValue} onCommit={commitAndRestoreFocus} />
-      </div>
-    )
-  }
+
 
   // String / int / float: click-to-edit
   if (editing && canEdit) {

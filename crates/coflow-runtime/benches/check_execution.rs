@@ -11,7 +11,7 @@ use std::hint::black_box;
 
 fn main() {
     println!(
-        "scenario,records,variants,changes,full_plan_ms,full_execute_ms,incremental_plan_ms,incremental_execute_ms,full_tasks,incremental_tasks,full_diagnostics,incremental_diagnostics,full_work,incremental_work,full_projected_records,incremental_projected_records,full_records_per_s,incremental_records_per_s,speedup,incremental_planning_pct"
+        "scenario,records,variants,changes,full_plan_ms,full_execute_ms,incremental_plan_ms,incremental_execute_ms,full_tasks,incremental_tasks,full_diagnostics,incremental_diagnostics,full_work,incremental_work,full_records_per_s,incremental_records_per_s,speedup,incremental_planning_pct"
     );
     for records in [1_000, 5_000, 20_000] {
         let (schema, model) = fixture(records);
@@ -119,7 +119,7 @@ fn bench_case(
     let incremental_throughput =
         records as f64 / incremental_execute.as_secs_f64().max(f64::EPSILON);
     println!(
-        "{},{records},{variants},{changes},{:.3},{:.3},{:.3},{:.3},{},{},{full_diagnostics},{incremental_diagnostics},{},{},{},{},{full_throughput:.0},{incremental_throughput:.0},{speedup:.2},{planning_pct:.1}",
+        "{},{records},{variants},{changes},{:.3},{:.3},{:.3},{:.3},{},{},{full_diagnostics},{incremental_diagnostics},{},{},{full_throughput:.0},{incremental_throughput:.0},{speedup:.2},{planning_pct:.1}",
         scenario.name(),
         ms(full_plan),
         ms(full_execute),
@@ -129,8 +129,6 @@ fn bench_case(
         incremental.len(),
         full_output.statistics.work_used,
         incremental_output.statistics.work_used,
-        full_output.statistics.dimension_projected_records,
-        incremental_output.statistics.dimension_projected_records,
     );
 }
 

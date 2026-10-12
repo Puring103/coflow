@@ -5,19 +5,16 @@ mod record_walker;
 mod statements;
 
 use crate::{
-    CheckDiagnostic, CheckExecutionStats, CheckLimits, CheckOutput, CheckProjection, CheckTarget,
-    CheckTask, CheckTaskResult,
+    CheckDiagnostic, CheckExecutionStats, CheckLimits, CheckOutput, CheckTarget, CheckTask,
+    CheckTaskResult,
 };
-use coflow_language::cft::{
-    CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType, CheckOwner, CheckStatementInfo,
-};
+use coflow_language::cft::{CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType, CheckOwner};
 use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostics;
 use crate::diagnostics::{explanations, trace as evaluation_trace};
-use crate::dimensions;
 use crate::eval as value;
 use crate::operations::{
     access, builtins, comparison as ops, predicates as type_predicates, quantifiers,
@@ -63,7 +60,6 @@ pub(crate) fn execute_tasks(
             Some((
                 task,
                 PreparedStatement {
-                    info: statement.info,
                     statement: statement.statement,
                     owner,
                 },
@@ -76,7 +72,6 @@ pub(crate) fn execute_tasks(
     };
     let regex_cache = RefCell::new(builtins::RegexCache::new());
     let mut results = Vec::with_capacity(tasks.len());
-    let mut projected_records = BTreeSet::new();
 
     for task in tasks {
         if statistics.work_used >= limits.max_request_work {
@@ -97,7 +92,7 @@ pub(crate) fn execute_tasks(
             .saturating_sub(1);
         let mut task_limits = limits.evaluation;
         task_limits.max_work = task_limits.max_work.min(remaining_work);
-        let (mut diagnostics, work) = execute_task(
+        let (diagnostics, work) = execute_task(
             schema,
             model,
             &task,
@@ -105,26 +100,10 @@ pub(crate) fn execute_tasks(
             task_limits,
             &regex_cache,
         );
-        if matches!(task.projection, CheckProjection::Dimension { .. }) {
-            for diagnostic in &mut diagnostics {
-                dimensions::attach_dimension_origins(
-                    model,
-                    &task.projection,
-                    &mut diagnostic.diagnostic,
-                );
-            }
-        }
         statistics.executed_tasks += 1;
-        if let (CheckTarget::Record(record), CheckProjection::Dimension { .. }) =
-            (task.target, &task.projection)
-        {
-            projected_records.insert((record, task.projection.clone()));
-        }
         statistics.work_used = statistics.work_used.saturating_add(work).saturating_add(1);
         results.push(CheckTaskResult { task, diagnostics });
     }
-
-    statistics.dimension_projected_records = projected_records.len();
 
     CheckOutput {
         results,
@@ -134,7 +113,6 @@ pub(crate) fn execute_tasks(
 }
 
 struct PreparedStatement<'schema> {
-    info: &'schema CheckStatementInfo,
     statement: &'schema CftSchemaCheckStmt,
     owner: PreparedOwner<'schema>,
 }
@@ -155,28 +133,7 @@ fn execute_task(
     let Some(prepared) = prepared else {
         return (vec![internal_diagnostic("unknown check statement")], 0);
     };
-    if let CheckProjection::Dimension { dimension, variant } = &task.projection {
-        let valid = prepared.info.dimensions.contains(dimension)
-            && schema
-                .resolve_dimension(dimension)
-                .is_some_and(|meta| meta.variant(variant).is_some());
-        if !valid {
-            return (
-                vec![internal_diagnostic(
-                    "check projection does not match the statement",
-                )],
-                0,
-            );
-        }
-    }
-
-    let context = context::ExecutionContext::new(
-        schema,
-        model,
-        &task.projection,
-        evaluation_limits,
-        regex_cache,
-    );
+    let context = context::ExecutionContext::new(schema, model, evaluation_limits, regex_cache);
     match (&prepared.owner, task.target) {
         (PreparedOwner::Project(check), CheckTarget::Project) => {
             context.execute_project(check, prepared.statement)
@@ -195,7 +152,6 @@ fn execute_task(
                     owner,
                     value::ValueLocation::root(record),
                     prepared.statement,
-                    true,
                 )
             } else {
                 record_walker::RecordCheckWalker::new(context, record, owner)

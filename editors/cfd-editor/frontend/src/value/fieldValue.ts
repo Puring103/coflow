@@ -1,12 +1,6 @@
 import type { DictKey, FieldValue } from '../wire'
 import type { RecordRow } from '../bindings/RecordRow'
 
-const REFERENCE_NAME = String.raw`[_\p{L}][_\p{L}\p{N}]*`
-const FIELD_REFERENCE_PATTERN = new RegExp(
-  String.raw`\{(?:${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*|&${REFERENCE_NAME}\.${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*|&${REFERENCE_NAME}::${REFERENCE_NAME}\.${REFERENCE_NAME}(?:\.${REFERENCE_NAME})*)\}`,
-  'u',
-)
-
 export function parseFieldValueText(original: FieldValue, raw: string): FieldValue | null {
   if (original.kind === 'option_some' || original.kind === 'result_ok' || original.kind === 'result_err') {
     const parsed = parseFieldValueText(original.value, raw)
@@ -31,13 +25,10 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
       return Number.isFinite(value) ? { kind: 'float', value } : null
     }
     case 'string':
-      return hasFieldReference(raw)
-        ? { kind: 'formatted_string', value: { source: JSON.stringify(raw), rendered: raw } }
-        : { kind: 'string', value: raw }
+      return { kind: 'string', value: raw }
     case 'formatted_string':
-      return hasFieldReference(raw)
-        ? { kind: 'formatted_string', value: { ...original.value, source: JSON.stringify(raw) } }
-        : { kind: 'string', value: raw }
+      // 模板类型由声明决定，普通字符串不根据花括号自动转成模板。
+      return { kind: 'formatted_string', value: { ...original.value, source: `f${JSON.stringify(raw)}` } }
     case 'enum':
       return { kind: 'enum', value: { ...original.value, variant: raw } }
     case 'ref':
@@ -52,12 +43,8 @@ export function plainFieldValueText(value: FieldValue): string {
   return scalarText(value) ?? ''
 }
 
-function hasFieldReference(value: string): boolean {
-  return FIELD_REFERENCE_PATTERN.test(value)
-}
-
 function formattedSourceText(source: string): string {
-  const quoted = source
+  const quoted = source.slice(1)
   try {
     const value: unknown = JSON.parse(quoted)
     return typeof value === 'string' ? value : source
@@ -76,7 +63,6 @@ function scalarText(value: FieldValue): string | null {
     case 'float': return String(value.value)
     case 'string': return value.value
     case 'formatted_string': return value.value.rendered
-    case 'function': return value.value.source
     case 'enum': return enumVariantText(value)
     case 'ref': return referenceKeyText(value.value)
     default: return null
@@ -94,6 +80,7 @@ export function scalarDefaultForDeclaredType(declaredType?: string): FieldValue 
   const stripped = stripNullableType(declaredType)
   switch (stripped) {
     case 'string': return { kind: 'string', value: '' }
+    case 'fstring': return { kind: 'formatted_string', value: { source: 'f""', rendered: '' } }
     case 'int': return { kind: 'int', value: 0n }
     case 'float': return { kind: 'float', value: 0 }
     case 'bool': return { kind: 'bool', value: false }
@@ -225,7 +212,6 @@ function valueKindLabel(value: FieldValue): string {
     case 'float': return 'float'
     case 'string': return 'string'
     case 'formatted_string': return 'string'
-    case 'function': return 'fn'
     case 'enum': return value.value.enum_name
     case 'object': return value.value.actual_type
     case 'ref': return '&'

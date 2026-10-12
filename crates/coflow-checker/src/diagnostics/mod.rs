@@ -4,7 +4,7 @@ use coflow_language::cft::{
     CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
     CftSchemaTypePredicate, CftSchemaUnaryOp, CftValueType,
 };
-use coflow_model::{CfdPath, CfdPathSegment, DimensionFieldLookupError};
+use coflow_model::{CfdPath, CfdPathSegment};
 
 use crate::eval::{EvalValue, ValueLocation};
 
@@ -100,28 +100,6 @@ impl CheckExplanation {
             out.push_str(expected);
         }
         out
-    }
-}
-
-pub(crate) fn dimension_lookup_error_message(
-    actual_type: &str,
-    field_name: &str,
-    variant: &str,
-    err: DimensionFieldLookupError,
-) -> String {
-    match err {
-        DimensionFieldLookupError::UnknownRecord => {
-            format!("维度字段 `{actual_type}.{field_name}` 的所属记录不存在")
-        }
-        DimensionFieldLookupError::NotDimensional => {
-            format!("字段 `{actual_type}.{field_name}` 不是维度字段")
-        }
-        DimensionFieldLookupError::DimensionMismatch => {
-            format!("字段 `{actual_type}.{field_name}` 不属于当前维度")
-        }
-        DimensionFieldLookupError::UnknownVariant => {
-            format!("维度字段 `{actual_type}.{field_name}` 缺少 variant `{variant}`")
-        }
     }
 }
 
@@ -367,6 +345,7 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
             format!("<entry key={}>", format_value_for_message(&entry.key))
         }
         EvalValue::Array { items, .. } => format!("<array len={}>", items.len()),
+        EvalValue::Dimension { .. } => "<dimension>".to_string(),
         EvalValue::Dict { entries, .. } => format!("<dict len={}>", entries.len()),
     }
 }

@@ -24,50 +24,15 @@ values: [string] = [\n\
     );
 }
 #[test]
-fn formatter_covers_all_new_default_forms_and_is_idempotent() {
-    let source = "type Rule {\n\
-label:string=\"rule {name} {{literal}}\";\n\
-mask:int=READ|WRITE;\n\
-effect:Effect=HealEffect { amount:1,label:\"heal {amount}\",};\n\
-apply:fn(value:int)->int=fn(input:int)->int {\n\
-var total=input+1;\n\
-total\n\
-};\n\
-}\n";
-    let expected = concat!(
-        "type Rule {\n",
-        "  label: string = \"rule {name} {{literal}}\";\n",
-        "  mask: int = READ | WRITE;\n",
-        "  effect: Effect = HealEffect { amount: 1, label: \"heal {amount}\", };\n",
-        "  apply: fn(value: int) -> int = fn(input: int) -> int {\n",
-        "    var total = input + 1;\n",
-        "    total\n",
-        "  };\n",
-        "}\n",
-    );
+fn formatter_covers_data_defaults_and_is_idempotent() {
+    let source = "type Rule {\nlabel:fstring=f\"rule {self.name} {{literal}}\";\nmask:int=READ|WRITE;\neffect:Effect=HealEffect { amount:1,label:\"{literal}\",};\n}\n";
+    let expected = "type Rule {\n  label: fstring = f\"rule {self.name} {{literal}}\";\n  mask: int = READ | WRITE;\n  effect: Effect = HealEffect { amount: 1, label: \"{literal}\", };\n}\n";
     assert_eq!(format_cft(source), expected);
     assert_eq!(format_cft(expected), expected);
 }
 
 #[test]
-fn formatter_preserves_depth_across_close_then_open_lines() {
-    let functions = "default_calculator: Calculator {\n\
-add: fn(left: int, right: int) -> int {\n\
-left + right\n\
-},\n\
-classify: fn(value: int) -> string {\n\
-if value >= 10 {\n\
-\"large\"\n\
-} else {\n\
-\"small\"\n\
-}\n\
-},\n\
-}\n";
-    assert_eq!(
-        format_cft(functions),
-        "default_calculator: Calculator {\n  add: fn(left: int, right: int) -> int {\n    left + right\n  },\n  classify: fn(value: int) -> string {\n    if value >= 10 {\n      \"large\"\n    } else {\n      \"small\"\n    }\n  },\n}\n"
-    );
-
+fn formatter_preserves_depth_in_nested_objects() {
     let polymorphic_array = "starter_effects: EffectBundle {\n\
 primary: HealEffect {\n\
 amount: 0,\n\
@@ -90,13 +55,13 @@ label: \"Recovery\",\n\
 #[test]
 fn formatter_normalizes_blank_lines_and_safe_inline_spacing() {
     let source = "\n\n  type   Calculator   {   \n\n\n\
-add :fn ( left : int,right:  int )->int ;   \n\
+add : int ;   \n\
 label: string = \"a  #  b\"; # keep  comment   \n\n\n\
 }  \n\n";
 
     assert_eq!(
         format_cft(source),
-        "type Calculator {\n  add: fn(left: int, right: int) -> int;\n  label: string = \"a  #  b\"; # keep  comment\n}\n"
+        "type Calculator {\n  add: int;\n  label: string = \"a  #  b\"; # keep  comment\n}\n"
     );
 
     assert_eq!(
@@ -149,18 +114,9 @@ check Rules {\nLIMIT>0;\n}\n";
 }
 
 #[test]
-fn formatter_rejoins_split_function_type_headers() {
-    let source = "type Calculator {\nclassify:\n  fn(value: int) ->\n  string;\n}\n";
-    assert_eq!(
-        format_cft(source),
-        "type Calculator {\n  classify: fn(value: int) -> string;\n}\n"
-    );
-}
-
-#[test]
 fn formatter_recovers_fields_and_indents_expression_continuations() {
-    let source = "type Calculator {\nname:\nstring;\napply:\nfn(\nvalue: int\n)\n->\nResult<\nint,\nstring\n>;\n}\ncheck Rules {\nenabled && # continue after this comment\ncount >\n0;\nmatches(\nvalue,\n\"x\"\n);\n}\n";
-    let expected = "type Calculator {\n  name: string;\n  apply: fn(\n    value: int\n  ) -> Result<\n    int,\n    string\n  >;\n}\n\ncheck Rules {\n  enabled && # continue after this comment\n    count >\n    0;\n  matches(\n    value,\n    \"x\"\n  );\n}\n";
+    let source = "type Calculator {\nname:\nstring;\n}\ncheck Rules {\nenabled && # continue after this comment\ncount >\n0;\nmatches(\nvalue,\n\"x\"\n);\n}\n";
+    let expected = "type Calculator {\n  name: string;\n}\n\ncheck Rules {\n  enabled && # continue after this comment\n    count >\n    0;\n  matches(\n    value,\n    \"x\"\n  );\n}\n";
     assert_eq!(format_cft(source), expected);
     assert_eq!(format_cft(expected), expected);
 }
@@ -176,14 +132,14 @@ lookup : { string :int};\n\n\n\
 @description(\"Shown in editor\")\n\n\
 name :string;\n\
 enabled:bool;\n\n\n\
-calculate :fn (value:int)->int;\n\n\
+calculate :int;\n\n\
 check{\n\
-enabled&&calculate ( 10 )>=10;\n\
-calculate(- 1)!=- 1;    # keep  comment\n\
+enabled&&calculate>=10;\n\
+calculate - 1!=- 1;    # keep  comment\n\
 }\n\
 }\n\n";
 
-    let expected = "type Item : Base {\n  idRef: &Item;\n  tags: [string];\n  lookup: {string: int};\n\n  @label(\"Display Name\")\n  @description(\"Shown in editor\")\n  name: string;\n\n  enabled: bool;\n\n  calculate: fn(value: int) -> int;\n\n  check {\n    enabled && calculate(10) >= 10;\n    calculate(-1) != -1; # keep  comment\n  }\n}\n";
+    let expected = "type Item : Base {\n  idRef: &Item;\n  tags: [string];\n  lookup: {string: int};\n\n  @label(\"Display Name\")\n  @description(\"Shown in editor\")\n  name: string;\n\n  enabled: bool;\n\n  calculate: int;\n\n  check {\n    enabled && calculate >= 10;\n    calculate - 1 != -1; # keep  comment\n  }\n}\n";
     assert_eq!(format_cft(source), expected);
     assert_eq!(format_cft(expected), expected);
 
@@ -191,10 +147,7 @@ calculate(- 1)!=- 1;    # keep  comment\n\
         format_cft("type Box {\nvalue:Result<Option<int>,string>;\ncheck { a>b; c<d; }\n}"),
         "type Box {\n  value: Result<Option<int>, string>;\n\n  check {\n    a > b;\n    c < d;\n  }\n}\n"
     );
-    assert_eq!(
-        format_cft("type Callback=fn(value:int)->Result<int,string>;"),
-        "type Callback = fn(value: int) -> Result<int, string>;\n"
-    );
+    assert_eq!(format_cft("type Scores=[int];"), "type Scores = [int];\n");
 }
 
 #[test]

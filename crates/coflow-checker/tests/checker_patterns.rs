@@ -129,10 +129,7 @@ fn option_comparison_and_pattern_scopes_reject_invalid_access() {
     ] {
         let source = format!("abstract type Reward {{}} type Coins : Reward {{ amount: int; }} type Item {{ amount: Option<int>; reward: Reward; check {{ {check} }} }}");
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
-        assert!(
-            build_schema(&modules, &CftDimensionInputs::default()).is_err(),
-            "accepted {check}"
-        );
+        assert!(build_schema(&modules).is_err(), "accepted {check}");
     }
 }
 

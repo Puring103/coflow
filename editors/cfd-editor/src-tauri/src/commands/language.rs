@@ -5,8 +5,8 @@ use tauri::State;
 
 use super::run_host_command;
 use crate::editor::{
-    EditorError, FunctionDocumentState, LanguageCompletion, LanguageDocumentState,
-    LanguageFormattingResult, LanguagePosition, ProjectBootstrap,
+    EditorError, LanguageCompletion, LanguageDocumentState, LanguageFormattingResult,
+    LanguagePosition, ProjectBootstrap,
 };
 use coflow_runtime::FlatDiagnostic;
 #[tauri::command]
@@ -104,20 +104,6 @@ pub(crate) async fn close_language_document(
     run_host_command(host, move |host| {
         host.sessions()
             .close_language_document(session_id, &file_path)
-    })
-    .await
-}
-
-#[tauri::command]
-pub(crate) async fn function_document(
-    session_id: u32,
-    source: String,
-    body: Option<String>,
-    host: State<'_, EditorHost>,
-) -> Result<FunctionDocumentState, EditorError> {
-    run_host_command(host, move |host| {
-        host.sessions()
-            .function_document(session_id, &source, body.as_deref())
     })
     .await
 }

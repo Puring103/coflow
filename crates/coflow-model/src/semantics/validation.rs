@@ -215,7 +215,7 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             _ => Err(type_mismatch("bool", value, path)),
         },
         CftValueType::String => match value {
-            CfdValue::String(_) | CfdValue::FormattedString(_) => Ok(()),
+            CfdValue::String(_) => Ok(()),
             _ => Err(type_mismatch("string", value, path)),
         },
         CftValueType::Array(inner) => {
@@ -240,6 +240,10 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             mode,
             path,
         ),
+        CftValueType::FormattedString => match value {
+            CfdValue::FormattedString(_) => Ok(()),
+            _ => Err(type_mismatch("fstring", value, path)),
+        },
         CftValueType::Object(name) => {
             validate_object_value(schema, context, name, value, pending_insert, mode, path)
         }
@@ -263,10 +267,7 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             }
             _ => Err(type_mismatch(&expected.to_string(), value, path)),
         },
-        CftValueType::Function(_, _) => match value {
-            CfdValue::Function(_) => Ok(()),
-            _ => Err(type_mismatch(&expected.to_string(), value, path)),
-        },
+
         CftValueType::Unit => Err(type_mismatch(&expected.to_string(), value, path)),
     }
 }
@@ -611,7 +612,7 @@ const fn value_kind(value: &CfdValue) -> &'static str {
         CfdValue::Int(_) => "int",
         CfdValue::Float(_) => "float",
         CfdValue::String(_) | CfdValue::FormattedString(_) => "string",
-        CfdValue::Function(_) => "function",
+
         CfdValue::Enum(_) => "enum",
         CfdValue::Object(_) => "object",
         CfdValue::Ref(_) => "record ref",

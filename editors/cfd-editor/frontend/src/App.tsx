@@ -2,7 +2,7 @@ import { afterSourceSave, deferSourceNavigation, flushSourceChanges } from './st
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
 import { CreateRecordDialog } from './components/CreateRecordDialog'
-import { ConfirmDialog, TextInputDialog } from './components/ActionDialog'
+import { ConfirmDialog, TextInputDialog, SelectFileDialog } from './components/ActionDialog'
 import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
@@ -215,6 +215,9 @@ export default function App() {
     | { kind: 'delete'; path: string }
     | null
   >(null)
+  const [dimensionDestination, setDimensionDestination] = useState<{
+    files: string[]; resolve: (file: string | null) => void
+  } | null>(null)
   const [fileActionBusy, setFileActionBusy] = useState(false)
   const [recoverySession, setRecoverySession] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -1287,15 +1290,35 @@ export default function App() {
       updateCache(next, data.revision)
       return
     }
+    let writeFile = data.file_path
+    if (expected.kind === 'missing' && next.kind !== 'missing') {
+      const identity = generation.currentIdentity()
+      if (!identity || !project) return
+      const files: string[] = []
+      const visit = (nodes: typeof project.file_tree) => {
+        for (const node of nodes) {
+          if (!node.is_dir && node.in_data && node.path.endsWith('.cfd')) files.push(node.path)
+          visit(node.children)
+        }
+      }
+      visit(project.file_tree)
+      if (files.length === 0) { setErrorMsg('请先添加可写入覆盖的 CFD 文件'); return }
+      // 新覆盖的来源由用户明确选择，撤销与重做保留该文件。
+      const selected = await new Promise<string | null>(resolve => {
+        setDimensionDestination({ files, resolve })
+      })
+      if (!selected || generation.currentIdentity()?.sessionId !== identity.sessionId) return
+      writeFile = selected
+    }
     const result = await mutations.writeDimensionValue(
-      data.file_path,
+      writeFile,
       coordinate,
       expected,
       next,
     )
     if (!result) return
     updateCache(result, generation.currentIdentity()?.revision ?? data.revision)
-  }, [generation, mutations])
+  }, [generation, mutations, project])
 
   const writeField = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
@@ -3310,6 +3333,12 @@ export default function App() {
           }}
           onClose={() => setTreeRecordDraft(null)}
         />
+      )}
+      {dimensionDestination && (
+        <SelectFileDialog title="选择覆盖文件" message="选择保存此维度覆盖的 CFD 文件" confirmLabel="写入"
+          files={dimensionDestination.files}
+          onClose={() => { dimensionDestination.resolve(null); setDimensionDestination(null) }}
+          onConfirm={file => { dimensionDestination.resolve(file); setDimensionDestination(null) }} />
       )}
       {fileActionDialog?.kind === 'create' && (
         <TextInputDialog

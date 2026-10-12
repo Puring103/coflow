@@ -329,6 +329,7 @@ describe('EditorMutationController', () => {
       dimensionCoordinate,
       missing,
       { kind: 'value', value: { kind: 'string', value: '最终值' } },
+      'data/dimensions/language/Item_name.cfd',
     )
     expect(history.getSnapshot().undo).toHaveLength(1)
 
@@ -339,6 +340,7 @@ describe('EditorMutationController', () => {
       dimensionCoordinate,
       { kind: 'value', value: { kind: 'string', value: '最终值' } },
       missing,
+      'data/dimensions/language/Item_name.cfd',
     )
     await mutations.redo()
     expect(writeDimensionValue).toHaveBeenNthCalledWith(
@@ -347,7 +349,42 @@ describe('EditorMutationController', () => {
       dimensionCoordinate,
       missing,
       { kind: 'value', value: { kind: 'string', value: '最终值' } },
+      'data/dimensions/language/Item_name.cfd',
     )
+  })
+
+  it('replays dimension edits into the authoritative source instead of the virtual view', async () => {
+    const sourceFile = 'localization/ja.cfd'
+    const outcome = (revision: number, before: string | null, after: string | null) => ({
+      ...dimensionOutcome(revision, before, after),
+      affected_files: [sourceFile],
+    })
+    const writeDimensionValue = vi.fn()
+      .mockResolvedValueOnce(outcome(2, '旧译文', '新译文'))
+      .mockResolvedValueOnce(outcome(3, '新译文', '旧译文'))
+      .mockResolvedValueOnce(outcome(4, '旧译文', '新译文'))
+    const port: EditorMutationPort = {
+      currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+      publish: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(backend(vi.fn(), writeDimensionValue), port, history)
+    const state = (text: string) => ({ kind: 'value' as const, value: { kind: 'string' as const, value: text } })
+
+    await mutations.writeDimensionValue('@dimension/language/Item/name', dimensionCoordinate,
+      state('旧译文'), state('新译文'))
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(1, 1, dimensionCoordinate,
+      state('旧译文'), state('新译文'), null)
+    expect(history.getSnapshot().undo[0]).toMatchObject({ kind: 'dimension', filePath: sourceFile })
+
+    await mutations.undo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(2, 1, dimensionCoordinate,
+      state('新译文'), state('旧译文'), sourceFile)
+    await mutations.redo()
+    expect(writeDimensionValue).toHaveBeenNthCalledWith(3, 1, dimensionCoordinate,
+      state('旧译文'), state('新译文'), sourceFile)
+    expect(port.reportError).not.toHaveBeenCalled()
   })
 
   it('skips backend writes for deep value no-ops', async () => {

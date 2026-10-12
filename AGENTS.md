@@ -41,12 +41,11 @@ npm --prefix editors/cfd-editor/frontend ci
 npm --prefix editors/cfd-editor/frontend test
 npm --prefix editors/cfd-editor/frontend run build
 node editors/vscode-coflow/test/extension-unit.test.js
-dotnet build runtimes/csharp/Coflow.Runtime/Coflow.Runtime.csproj --configuration Release
-dotnet run --project runtimes/csharp/Coflow.Runtime.NetStandardSmoke/Coflow.Runtime.NetStandardSmoke.csproj --configuration Release
-dotnet test runtimes/csharp/Coflow.Runtime.Tests/Coflow.Runtime.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
-cargo run -- codegen tests/csharp-runtime-integration
-dotnet run --project tests/csharp-runtime-integration/app/Coflow.Runtime.Example.csproj --configuration Release
-dotnet build runtimes/csharp/Coflow.Runtime.Benchmarks/Coflow.Runtime.Benchmarks.csproj --configuration Release
+dotnet build runtimes/csharp/Coflow.Loader/Coflow.Loader.csproj --configuration Release
+dotnet run --project runtimes/csharp/Coflow.Loader.NetStandardSmoke/Coflow.Loader.NetStandardSmoke.csproj --configuration Release
+dotnet test runtimes/csharp/Coflow.Loader.Tests/Coflow.Loader.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
+cargo run -- codegen tests/csharp-loader-integration
+dotnet run --project tests/csharp-loader-integration/app/Coflow.Loader.Example.csproj --configuration Release
 ```
 
 Major and minor releases must not be packaged or released while any full-gate command fails.
@@ -91,11 +90,10 @@ Keep README focused on user-facing installation, features, configuration, and us
 internal architecture notes, development workflow, repository checks, and specification indexes
 in this file or in `docs/`.
 
-Internal language and C# Runtime design lives under `docs/language-design/` and is split by responsibility:
+Internal language and C# Loader design lives under `docs/language-design/` and is split by responsibility:
 
 - `01-language-design.zh-CN.md`: base language semantics.
-- `02-api-runtime-design.zh-CN.md`: generated API, loading, modules, tables, and Host boundaries.
-- `03-vm-design.zh-CN.md`: register VM, calls, closures, validation, limits, and performance.
+- `02-api-runtime-design.zh-CN.md`: generated business types, typed descriptors, CFD loading, references, dimensions, and interpolation.
 - `04-source-formatting.zh-CN.md`: shared CFT/CFD source formatting contract and host integration.
 
 Keep public C# syntax and API guidance concise in

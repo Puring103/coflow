@@ -204,9 +204,12 @@ pub(super) fn reference_update_actions(
             let source_entry = session
                 .source_data
                 .dimension_source(
-                    field.declaring_type.as_str(),
+                    session.schema(),
+                    host_record.actual_type(),
+                    host_record.key(),
                     field.name.as_str(),
                     dimension.dimension.as_str(),
+                    dimension.variant.as_str(),
                 )
                 .ok_or_else(|| {
                     transaction_invariant(format!(

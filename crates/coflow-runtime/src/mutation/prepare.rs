@@ -194,6 +194,7 @@ pub(super) fn prepare_one(
             })
         }
         MutationOp::SetDimensionValue {
+            file,
             coordinate,
             expected,
             value,
@@ -202,6 +203,7 @@ pub(super) fn prepare_one(
             coordinate,
             expected,
             Some(value),
+            file.as_deref(),
             pending_records,
         ),
         MutationOp::ClearDimensionValue {
@@ -211,6 +213,7 @@ pub(super) fn prepare_one(
             session,
             coordinate,
             expected,
+            None,
             None,
             pending_records,
         ),

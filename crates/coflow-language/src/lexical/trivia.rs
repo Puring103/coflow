@@ -163,12 +163,6 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
     tokens
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LiteralError {
-    pub(crate) message: String,
-    pub(crate) offset: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NumberLiteralError {
     FractionDigitsMissing,
@@ -321,97 +315,6 @@ pub(crate) const fn decode_simple_escape(escaped: char) -> Option<char> {
     }
 }
 
-/// 在无损 token 流上匹配分隔符，字符串和注释中的符号不会影响深度。
-pub(crate) fn scan_balanced_delimiter(
-    source: &str,
-    open_offset: usize,
-    open: char,
-    close: char,
-) -> Option<usize> {
-    let fragment = &source[open_offset..];
-    let mut depth = 0_usize;
-    for token in tokenize_lossless(fragment) {
-        if token.kind != LosslessTokenKind::Symbol {
-            continue;
-        }
-        for symbol in token.text(fragment).chars() {
-            if symbol == open {
-                depth += 1;
-            } else if symbol == close {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(open_offset + token.span.end);
-                }
-            }
-        }
-    }
-    None
-}
-
-pub(crate) fn validate_number_literal(source: &str) -> Result<(), LiteralError> {
-    let scan = scan_number_literal(source, 0, source.len());
-    if let Some((_, offset)) = scan.error {
-        Err(LiteralError {
-            message: "expected exponent digits".into(),
-            offset,
-        })
-    } else {
-        Ok(())
-    }
-}
-
-/// 校验函数语言使用的格式化字符串转义与插值括号。
-pub(crate) fn validate_formatted_string_literal(source: &str) -> Result<(), LiteralError> {
-    let mut offset = 1;
-    let mut interpolation = 0usize;
-    let mut closed = false;
-    while offset < source.len() {
-        let ch = next_char(source, offset);
-        offset += ch.len_utf8();
-        match ch {
-            '\\' => {
-                let escaped = (offset < source.len()).then(|| next_char(source, offset));
-                let Some(escaped) = escaped else {
-                    return Err(LiteralError {
-                        message: "unterminated string escape".into(),
-                        offset: 0,
-                    });
-                };
-                if !matches!(escaped, '"' | '\\' | 'n' | 'r' | 't') {
-                    return Err(LiteralError {
-                        message: format!("unsupported string escape `\\{escaped}`"),
-                        offset: offset - 1,
-                    });
-                }
-                offset += escaped.len_utf8();
-            }
-            '{' if source[offset..].starts_with('{') => offset += 1,
-            '{' => interpolation += 1,
-            '}' if source[offset..].starts_with('}') => offset += 1,
-            '}' if interpolation > 0 => interpolation -= 1,
-            '}' => {
-                return Err(LiteralError {
-                    message: "unmatched `}` in string".into(),
-                    offset: offset - 1,
-                });
-            }
-            '"' if interpolation == 0 => {
-                closed = true;
-                break;
-            }
-            _ => {}
-        }
-    }
-    if closed && interpolation == 0 {
-        Ok(())
-    } else {
-        Err(LiteralError {
-            message: "unterminated string literal or interpolation".into(),
-            offset: 0,
-        })
-    }
-}
-
 fn next_char(source: &str, offset: usize) -> char {
     source[offset..].chars().next().unwrap_or('\0')
 }
@@ -440,8 +343,7 @@ fn scan_identifier(source: &str, start: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        scan_balanced_delimiter, scan_number_literal, scan_trivia, tokenize_lossless,
-        DelimiterNesting, LosslessTokenKind,
+        scan_number_literal, scan_trivia, tokenize_lossless, DelimiterNesting, LosslessTokenKind,
     };
 
     #[test]
@@ -469,11 +371,6 @@ mod tests {
         let number = scan_number_literal(number_source, 0, number_source.len());
         assert_eq!(number.end, 8);
         assert!(number.is_float);
-        let delimited = "(\" ) \", (# )\n value))";
-        assert_eq!(
-            scan_balanced_delimiter(delimited, 0, '(', ')'),
-            Some(delimited.len())
-        );
     }
 
     #[test]

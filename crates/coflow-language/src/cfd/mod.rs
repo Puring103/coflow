@@ -1,15 +1,11 @@
 //! Schema-free CFD syntax parser.
 
 pub mod ast;
-mod function;
 mod parser;
 
-pub(crate) use function::validate_function_body;
-pub use function::{CFD_FUNCTION_BUILTINS, CFD_FUNCTION_KEYWORDS, CFD_FUNCTION_TYPES};
-
 pub use ast::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdField, CfdFieldReference,
-    CfdFormatSegment, CfdFormattedString, CfdFunction, CfdRecord, CfdRef, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdDimensionBlock, CfdField,
+    CfdFieldReference, CfdFormatSegment, CfdFormattedString, CfdRecord, CfdRef, CfdValue,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
