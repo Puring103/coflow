@@ -1,23 +1,23 @@
-abstract type Effect {
+abstract data Effect {
   label: string;
   duration: Option<float> = None;
 }
 
-sealed type DamageEffect : Effect {
+sealed data DamageEffect : Effect {
   element: Element;
   amount: int;
 }
 
-sealed type HealEffect : Effect {
+sealed data HealEffect : Effect {
   amount: int;
 }
 
-sealed type CompositeEffect : Effect {
+sealed data CompositeEffect : Effect {
   effects: [Effect];
 }
 
 @idAsEnum(EntityId)
-type Entity {
+table Entity {
   @label("显示名称")
   name: string;
 
@@ -43,19 +43,19 @@ type Entity {
   }
 }
 
-type RewardEntry {
+data RewardEntry {
   reward: &Entity;
   count: int;
 }
 
-type QuestStep {
+data QuestStep {
   title: string;
   targets: [&Entity];
   rewards: [RewardEntry];
   next: Option<&Quest> = None;
 }
 
-type Quest {
+table Quest {
   displayId: Identifier;
   title: string;
   prerequisite: Option<&Quest> = None;

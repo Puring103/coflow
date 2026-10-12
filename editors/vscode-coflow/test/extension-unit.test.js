@@ -177,6 +177,22 @@ async function main() {
       `CFT TextMate grammar should include migrated syntax: ${syntax}`
     );
   }
+  const declarationPattern = cftGrammar.repository.declarations.patterns.find(
+    (pattern) => pattern.name === "meta.declaration.type.cft"
+  );
+  const declarationRegex = new RegExp(declarationPattern.match, "u");
+  for (const [source, keyword, name] of [
+    ["abstract table Entity {}", "table", "Entity"],
+    ["sealed data Stats {}", "data", "Stats"],
+    ["singleton Settings {}", "singleton", "Settings"],
+    ["type Link = Option<&Entity>;", "type", "Link"],
+  ]) {
+    const match = declarationRegex.exec(source);
+    assert(match, `declaration must be highlighted: ${source}`);
+    assert.strictEqual(match[2], keyword);
+    assert.strictEqual(match[3], name);
+  }
+  assert(!annotationPattern.includes("singleton"), "singleton is a declaration keyword");
   assert(!JSON.stringify(cftGrammar).includes("module-declarations"));
   assert(!JSON.stringify(cftGrammar).includes("keyword.control.namespace"));
   assert(!JSON.stringify(cftGrammar).includes("keyword.control.import"));
@@ -216,7 +232,7 @@ async function main() {
   const cfdSnippets = JSON.parse(
     fs.readFileSync(path.join(__dirname, "..", "snippets", "cfd.json"), "utf8")
   );
-  for (const snippet of ["optional field"]) {
+  for (const snippet of ["table", "data", "singleton", "optional field"]) {
     assert(cftSnippets[snippet], `CFT snippets should include ${snippet}`);
   }
   for (const snippet of ["Some"]) {

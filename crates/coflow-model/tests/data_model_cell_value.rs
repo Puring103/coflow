@@ -101,7 +101,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::UnknownType,
-            schema_source: "type Item { name: string; }",
+            schema_source: "data Item { name: string; }",
             declared_type: "Missing",
             invalid_text: "{}",
             adjacent_valid_declared_type: "Item",
@@ -109,7 +109,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::UnknownField,
-            schema_source: "type Item { name: string; }",
+            schema_source: "data Item { name: string; }",
             declared_type: "Item",
             invalid_text: "missing: Sword",
             adjacent_valid_declared_type: "Item",
@@ -117,7 +117,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::DuplicateField,
-            schema_source: "type Item { name: string; }",
+            schema_source: "data Item { name: string; }",
             declared_type: "Item",
             invalid_text: "name: Sword, name: Blade",
             adjacent_valid_declared_type: "Item",
@@ -125,7 +125,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::MissingBoundary,
-            schema_source: "type Stats { hp: int; } type Zone { stats: Stats; }",
+            schema_source: "data Stats { hp: int; } data Zone { stats: Stats; }",
             declared_type: "Zone",
             invalid_text: "stats: hp: 10",
             adjacent_valid_declared_type: "Zone",
@@ -142,7 +142,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         ErrorCodeCase {
             code: CellValueErrorCode::ObjectTypeMismatch,
             schema_source:
-                "abstract type Reward {} type CoinReward : Reward { amount: int; } type Item { name: string; }",
+                "abstract data Reward {} data CoinReward : Reward { amount: int; } table Item { name: string; }",
             declared_type: "Reward",
             invalid_text: "Item{name: Sword}",
             adjacent_valid_declared_type: "Reward",
@@ -150,7 +150,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::AbstractObjectType,
-            schema_source: "abstract type Reward {} type CoinReward : Reward { amount: int; }",
+            schema_source: "abstract data Reward {} data CoinReward : Reward { amount: int; }",
             declared_type: "Reward",
             invalid_text: "Reward{}",
             adjacent_valid_declared_type: "Reward",
@@ -166,7 +166,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::MixedObjectStyle,
-            schema_source: "type Stats { hp: int; attack: int; }",
+            schema_source: "data Stats { hp: int; attack: int; }",
             declared_type: "Stats",
             invalid_text: "hp: 1, 2",
             adjacent_valid_declared_type: "Stats",
@@ -182,7 +182,7 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         },
         ErrorCodeCase {
             code: CellValueErrorCode::ReferenceNeedsMarker,
-            schema_source: "type Item { name: string; }",
+            schema_source: "table Item { name: string; }",
             declared_type: "&Item",
             invalid_text: "item_1",
             adjacent_valid_declared_type: "&Item",
@@ -301,7 +301,7 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
 
 #[test]
 fn parses_formatted_string_cell_references() -> TestResult {
-    let schema = compile_schema("type Item { name: string; }")?;
+    let schema = compile_schema("table Item { name: string; }")?;
     assert_eq!(
         parse_value(&schema, "string", r#""{self.name}""#)?,
         LoadedValueDraft::String("{self.name}".to_string())
@@ -347,7 +347,7 @@ fn flag_enum_cells_use_integer_masks() -> TestResult {
     let schema = compile_schema(
         r#"
             @flag enum Permission { Empty = 0, Read = 1, Write = 2, Execute = 4 }
-            type Role { permissions: Permission; }
+            table Role { permissions: Permission; }
         "#,
     )?;
     assert_eq!(
@@ -388,7 +388,7 @@ fn flag_enum_dict_keys_keep_single_variant_identity() -> TestResult {
     let schema = compile_schema(
         r#"
             @flag enum Permission { Read = 1, Write = 2 }
-            type Role { limits: {Permission: int}; }
+            table Role { limits: {Permission: int}; }
         "#,
     )?;
     let mut builder = CfdDataModel::builder(&schema);
@@ -414,12 +414,12 @@ fn flag_enum_dict_keys_keep_single_variant_identity() -> TestResult {
 fn parses_positional_object_cells_using_field_order() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
                 speed: float = 1.0;
             }
-            type Monster {
+            table Monster {
                 stats: Stats;
             }
         "#,
@@ -446,12 +446,12 @@ fn parses_positional_object_cells_using_field_order() -> TestResult {
 fn parses_named_object_cells_and_omits_skipped_fields() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int = 50;
                 speed: float = 1.0;
             }
-            type Monster {
+            table Monster {
                 stats: Stats;
             }
         "#,
@@ -478,12 +478,12 @@ fn parses_named_object_cells_and_omits_skipped_fields() -> TestResult {
 fn named_and_positional_object_cells_skip_explicit_underscore_values() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int = 10;
                 attack: int = 50;
                 speed: float = 1.0;
             }
-            type Monster {
+            table Monster {
                 stats: Stats;
             }
         "#,
@@ -513,7 +513,7 @@ fn named_and_positional_object_cells_skip_explicit_underscore_values() -> TestRe
 fn rejects_duplicate_named_object_fields() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
             }
@@ -529,7 +529,7 @@ fn rejects_duplicate_named_object_fields() -> TestResult {
 fn rejects_mixed_unknown_and_excess_object_fields() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
             }
@@ -551,7 +551,7 @@ fn rejects_mixed_unknown_and_excess_object_fields() -> TestResult {
 fn rejects_empty_object_field_values() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
                 speed: int = 1;
@@ -613,11 +613,11 @@ fn parses_array_cells_with_pipe_delimiters() -> TestResult {
 fn parses_nested_objects_inside_array_cells() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
             }
-            type Monster {
+            data Monster {
                 key: string;
                 level: int;
                 stats: Stats;
@@ -663,7 +663,7 @@ fn parses_nested_objects_inside_array_cells() -> TestResult {
 fn rejects_object_array_elements_without_object_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
             }
@@ -679,11 +679,11 @@ fn rejects_object_array_elements_without_object_boundaries() -> TestResult {
 fn rejects_nested_composite_values_without_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int;
                 attack: int;
             }
-            type Zone {
+            data Zone {
                 name: string;
                 weights: [int];
                 stats: Stats;
@@ -731,7 +731,7 @@ fn rejects_invalid_dict_entries_and_key_types() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common, Rare, }
-            type Stats { hp: int; }
+            data Stats { hp: int; }
         "#,
     )?;
 
@@ -762,7 +762,7 @@ fn rejects_invalid_dict_entries_and_key_types() -> TestResult {
 fn unknown_declared_enum_names_are_treated_as_object_types() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { key: string; }
+            table Item { key: string; }
         "#,
     )?;
 
@@ -775,7 +775,7 @@ fn unknown_declared_enum_names_are_treated_as_object_types() -> TestResult {
 fn parses_empty_arrays_dicts_and_objects_with_explicit_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Stats {
+            data Stats {
                 hp: int = 10;
             }
         "#,
@@ -802,7 +802,7 @@ fn parses_empty_arrays_dicts_and_objects_with_explicit_boundaries() -> TestResul
 fn keeps_delimiters_inside_quotes_and_nested_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Payload {
+            data Payload {
                 name: string;
                 notes: [string];
                 attrs: {string: string};
@@ -847,13 +847,13 @@ fn keeps_delimiters_inside_quotes_and_nested_boundaries() -> TestResult {
 fn validates_polymorphic_type_markers_are_assignable_and_concrete() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward {
+            abstract data Reward {
                 key: string;
             }
-            type CurrencyReward : Reward {
+            data CurrencyReward : Reward {
                 amount: int;
             }
-            type Item {
+            table Item {
                 key: string;
             }
         "#,
@@ -965,8 +965,8 @@ fn rejects_declared_type_and_nested_scan_edge_cases() -> TestResult {
 fn object_type_markers_require_identifier_names_and_closed_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward { key: string; }
-            type CurrencyReward : Reward { amount: int; }
+            abstract data Reward { key: string; }
+            data CurrencyReward : Reward { amount: int; }
         "#,
     )?;
 
@@ -1031,17 +1031,17 @@ fn string_values_accept_standard_escapes_and_reject_bare_boundaries() -> TestRes
 fn parses_full_nested_root_object_example() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward {
+            abstract data Reward {
                 key: string;
             }
-            type CurrencyReward : Reward {
+            data CurrencyReward : Reward {
                 amount: int;
             }
-            type ItemReward : Reward {
+            data ItemReward : Reward {
                 item_id: string;
                 count: int = 1;
             }
-            type DropTable {
+            data DropTable {
                 rewards: [Reward];
                 weights: [int];
             }
@@ -1089,9 +1089,9 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common = 0, Rare = 10, }
-            type Item { name: string; }
-            type Stats { hp: int; attack: int; }
-            type Drop {
+            table Item { name: string; }
+            data Stats { hp: int; attack: int; }
+            table Drop {
                 names: [string] = [];
                 item: Option<&Item> = None;
                 stats: Stats;
@@ -1207,10 +1207,10 @@ fn renders_polymorphic_object_values_with_type_marker() -> TestResult {
 fn parses_polymorphic_object_type_markers() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward {
+            abstract data Reward {
                 key: string;
             }
-            type CurrencyReward : Reward {
+            data CurrencyReward : Reward {
                 amount: int;
             }
         "#,
@@ -1233,10 +1233,10 @@ fn parses_polymorphic_object_type_markers() -> TestResult {
 fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type 奖励 {
+            abstract data 奖励 {
                 key: string;
             }
-            type 金币奖励 : 奖励 {
+            data 金币奖励 : 奖励 {
                 数量: int;
             }
         "#,
@@ -1259,21 +1259,21 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
 fn object_cells_reject_invalid_record_reference_forms() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item {
+            data Item {
                 name: string;
             }
-            type DropTable {
+            data DropTable {
                 rewards: [Item];
             }
         "#,
     )?;
 
     assert_has_code(
-        &parse_err(&schema, "&Item", "@Item.item_1")?,
+        &parse_err(&schema, "Item", "@Item.item_1")?,
         CellValueErrorCode::Syntax,
     );
     assert_has_code(
-        &parse_err(&schema, "&Item", "@DropTable.drop_table.rewards[0]")?,
+        &parse_err(&schema, "Item", "@DropTable.drop_table.rewards[0]")?,
         CellValueErrorCode::Syntax,
     );
     Ok(())
@@ -1283,11 +1283,11 @@ fn object_cells_reject_invalid_record_reference_forms() -> TestResult {
 fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward {}
-            type Item {
+            abstract data Reward {}
+            table Item {
                 name: string;
             }
-            type ItemReward : Reward {
+            data ItemReward : Reward {
                 item: &Item;
             }
         "#,
@@ -1316,10 +1316,6 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
         )])
     );
     assert_eq!(
-        parse_value(&schema, "&Reward", "&reward_1")?,
-        LoadedValueDraft::record_ref("reward_1")
-    );
-    assert_eq!(
         parse_value(&schema, "ItemReward", "item: &item_1")?,
         LoadedValueDraft::object_with_declared_type([(
             "item",
@@ -1327,7 +1323,7 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
         )])
     );
     assert_has_code(
-        &parse_err(&schema, "Item", "&item_1")?,
+        &parse_err(&schema, "ItemReward", "&item_1")?,
         CellValueErrorCode::TypeMismatch,
     );
     Ok(())
@@ -1337,7 +1333,7 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
 fn direct_record_refs_reject_invalid_forms_and_keys() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
             }
         "#,
@@ -1384,13 +1380,13 @@ fn string_cells_keep_at_prefixed_text_as_plain_strings() -> TestResult {
 fn object_cells_reject_bare_reference_keys_with_marker_hint() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
             }
         "#,
     )?;
 
-    let err = parse_err(&schema, "Item", "item_1")?;
+    let err = parse_err(&schema, "&Item", "item_1")?;
     assert_has_code(&err, CellValueErrorCode::ReferenceNeedsMarker);
     assert!(
         err.diagnostics
@@ -1405,8 +1401,8 @@ fn object_cells_reject_bare_reference_keys_with_marker_hint() -> TestResult {
 fn object_cells_reject_invalid_at_references() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { name: string; }
-            type DropTable { rewards: [Item]; }
+            data Item { name: string; }
+            data DropTable { rewards: [Item]; }
         "#,
     )?;
 
@@ -1433,10 +1429,10 @@ fn object_cells_reject_invalid_at_references() -> TestResult {
 fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 name: string;
             }
-            type Drop {
+            table Drop {
                 item: &Item;
             }
         "#,
@@ -1470,11 +1466,11 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
 fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward {}
-            type ItemReward : Reward {
+            abstract table Reward {}
+            table ItemReward : Reward {
                 count: int;
             }
-            type Drop {
+            table Drop {
                 reward: &Reward;
             }
         "#,

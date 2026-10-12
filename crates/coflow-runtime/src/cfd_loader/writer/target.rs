@@ -15,9 +15,11 @@ pub(super) enum WriteTarget {
         ty: CftValueType,
     },
     InsertTopLevel {
+        previous_value_end: Option<usize>,
         ty: CftValueType,
     },
     InsertNested {
+        previous_value_end: Option<usize>,
         block_span: Span,
         depth: usize,
         field_name: String,
@@ -49,7 +51,13 @@ pub(super) fn locate_target(
                 format!("field `{name}` not found on type `{actual_type}`"),
             )));
         };
-        return Ok(WriteTarget::InsertTopLevel { ty });
+        return Ok(WriteTarget::InsertTopLevel {
+            previous_value_end: record
+                .fields
+                .last()
+                .map(|field| full_value_span(&field.value).end),
+            ty,
+        });
     };
     let Some(next_type) = type_after_field_segment(schema, actual_type, name) else {
         return Err(DiagnosticSet::one(diag(
@@ -147,6 +155,10 @@ fn locate_field_target(
             locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
         }
         None if path.len() == 1 => Ok(WriteTarget::InsertNested {
+            previous_value_end: block
+                .fields
+                .last()
+                .map(|field| full_value_span(&field.value).end),
             block_span: block.span,
             depth,
             field_name: name.to_string(),

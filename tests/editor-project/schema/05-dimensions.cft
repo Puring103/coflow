@@ -1,5 +1,4 @@
-@singleton
-type UiText {
+singleton UiText {
   key: string;
 
   @localized

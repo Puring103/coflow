@@ -8,9 +8,9 @@ use common::*;
 fn option_patterns_bind_scalars_objects_collections_and_nested_options() {
     let schema = compile_schema(
         r#"
-        abstract type Reward {}
-        type Coins : Reward { amount: int; }
-        type Item {
+        abstract data Reward {}
+        data Coins : Reward { amount: int; }
+        table Item {
             missing: Option<int> = None;
             amount: Option<int> = Some(3);
             nested: Option<Option<int>> = Some(Some(4));
@@ -56,9 +56,9 @@ fn option_patterns_bind_scalars_objects_collections_and_nested_options() {
 fn pattern_binding_preserves_reference_dependencies_and_diagnostic_paths() {
     let schema = compile_schema(
         r"
-        abstract type Reward {}
-        type Coins : Reward { amount: int; }
-        type Item {
+        abstract table Reward {}
+        table Coins : Reward { amount: int; }
+        table Item {
             reward: Option<&Reward>;
             check { when (reward is Some(r) && r is Coins) { r.amount > 0; } }
         }
@@ -94,10 +94,10 @@ fn pattern_binding_preserves_reference_dependencies_and_diagnostic_paths() {
 fn polymorphic_fields_narrow_in_when_and_short_circuit_conjunctions() {
     let schema = compile_schema(
         r#"
-        abstract type Reward {}
-        type Coins : Reward { amount: int; }
-        type Gem : Reward { color: string; }
-        type Item {
+        abstract data Reward {}
+        data Coins : Reward { amount: int; }
+        data Gem : Reward { color: string; }
+        table Item {
             reward: Reward = Coins { amount: 3 };
             check {
                 reward is Coins && reward.amount == 3;
@@ -127,7 +127,7 @@ fn option_comparison_and_pattern_scopes_reject_invalid_access() {
         "reward is Coins || reward.amount > 0;",
         "1 is Some(v);",
     ] {
-        let source = format!("abstract type Reward {{}} type Coins : Reward {{ amount: int; }} type Item {{ amount: Option<int>; reward: Reward; check {{ {check} }} }}");
+        let source = format!("abstract data Reward {{}} data Coins : Reward {{ amount: int; }} table Item {{ amount: Option<int>; reward: Reward; check {{ {check} }} }}");
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
         assert!(build_schema(&modules).is_err(), "accepted {check}");
     }
@@ -137,10 +137,10 @@ fn option_comparison_and_pattern_scopes_reject_invalid_access() {
 fn narrowing_respects_aliases_ancestor_predicates_and_shadowing() {
     let schema = compile_schema(
         r"
-        abstract type Reward {}
-        type Coins : Reward { amount: int; }
+        abstract data Reward {}
+        data Coins : Reward { amount: int; }
         type Currency = Coins;
-        type Item {
+        table Item {
             reward: Reward = Coins { amount: 3 };
             optional: Option<int> = Some(5);
             amounts: [int] = [1, 2];
@@ -163,7 +163,7 @@ fn narrowing_respects_aliases_ancestor_predicates_and_shadowing() {
 
 #[test]
 fn missing_option_reports_pattern_failure_without_evaluating_the_bound_operand() {
-    let schema = compile_schema("type Item { amount: Option<int> = None; check { amount is Some(v); amount is Some(v) && 10 // v > 0; } }");
+    let schema = compile_schema("table Item { amount: Option<int> = None; check { amount is Some(v); amount is Some(v) && 10 // v > 0; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [] as [(&str, LoadedValueDraft); 0]);
     let model = builder.build().expect("model");

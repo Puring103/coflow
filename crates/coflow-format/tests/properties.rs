@@ -25,8 +25,8 @@ fn comments(source: &str) -> Vec<&str> {
 fn formatting_preserves_non_trivia_tokens_and_comments() {
     for (source, formatted) in [
         (
-            "type 变量 { value: Option<Option<int>>; # CFT 注释\n}",
-            format_cft("type 变量 { value: Option<Option<int>>; # CFT 注释\n}"),
+            "table 变量 { value: Option<Option<int>>; # CFT 注释\n}",
+            format_cft("table 变量 { value: Option<Option<int>>; # CFT 注释\n}"),
         ),
         (
             "记录: Item { label: \"# not a comment\", # CFD 注释\n values: [1, 2], }",
@@ -41,7 +41,7 @@ fn formatting_preserves_non_trivia_tokens_and_comments() {
 #[test]
 fn malformed_sources_format_stably() {
     for source in [
-        "type Item { value: Option<\nint\n",
+        "table Item { value: Option<\nint\n",
         "check Rules { all item in records(Item) { item.value >",
         "item: Item { values: [Other { value: \"unterminated",
         "language[ja] { item: Item { name:",
@@ -55,7 +55,7 @@ fn malformed_sources_format_stably() {
 
 #[test]
 fn valid_sources_parse_before_and_after_formatting() {
-    let cft = "type Item { name: string; items: [int]; count: int; check { count > 0; } }";
+    let cft = "table Item { name: string; items: [int]; count: int; check { count > 0; } }";
     let before_modules = parse_modules([CftFile::from_source(ModuleId::from("main"), cft)]);
     let before = build_schema(&before_modules).expect("schema");
     let formatted_cft = format_cft(cft);

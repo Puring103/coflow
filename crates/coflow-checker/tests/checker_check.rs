@@ -18,7 +18,7 @@ fn type_statements(schema: &CftSchema, owner: &str) -> Vec<CheckStatementId> {
 #[test]
 fn explicit_task_executes_only_the_selected_root_statement() {
     let schema = compile_schema(
-        "type Item { price: int; enabled: bool; check { price > 0: \"price\"; enabled: \"enabled\"; } }",
+        "table Item { price: int; enabled: bool; check { price > 0: \"price\"; enabled: \"enabled\"; } }",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -54,7 +54,7 @@ fn explicit_task_executes_only_the_selected_root_statement() {
 #[test]
 fn project_statement_runs_for_an_empty_model() {
     let schema = compile_schema(
-        "type Item {} check Required { records(Item).len() > 0: \"missing item\"; }",
+        "table Item {} check Required { records(Item).len() > 0: \"missing item\"; }",
     );
     let model = CfdDataModel::builder(&schema).build().expect("model");
     let statement = schema
@@ -82,11 +82,11 @@ fn project_statement_runs_for_an_empty_model() {
 }
 
 #[test]
-fn nested_owner_statement_walks_every_instance_in_the_target_record() {
+fn table_check_walks_inline_collection_elements() {
     let schema = compile_schema(
         r#"
-            type Reward { count: int; check { count > 0: "bad reward"; } }
-            type Item { rewards: [Reward]; }
+            data Reward { count: int; }
+            table Item { rewards: [Reward]; check { all reward in rewards { reward.count > 0: "bad reward"; } } }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -106,7 +106,7 @@ fn nested_owner_statement_walks_every_instance_in_the_target_record() {
         &schema,
         &model,
         [CheckTask {
-            statement: type_statements(&schema, "Reward")[0],
+            statement: type_statements(&schema, "Item")[0],
             target: CheckTarget::Record(record_id_at(&model, 0)),
         }],
         CheckLimits::default(),
@@ -124,11 +124,11 @@ fn nested_owner_statement_walks_every_instance_in_the_target_record() {
 }
 
 #[test]
-fn nested_owner_statement_reads_objects_inside_option_values() {
+fn table_check_reads_optional_inline_values() {
     let schema = compile_schema(
         r#"
-            type Reward { count: int; check { count > 0: "bad reward"; } }
-            type Item { reward: Option<Reward> = None; }
+            data Reward { count: int; }
+            table Item { reward: Option<Reward> = None; check { when reward is Some(value) { value.count > 0: "bad reward"; } } }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -147,7 +147,7 @@ fn nested_owner_statement_reads_objects_inside_option_values() {
         &schema,
         &model,
         [CheckTask {
-            statement: type_statements(&schema, "Reward")[0],
+            statement: type_statements(&schema, "Item")[0],
             target: CheckTarget::Record(record_id_at(&model, 0)),
         }],
         CheckLimits::default(),
@@ -166,7 +166,7 @@ fn nested_owner_statement_reads_objects_inside_option_values() {
 fn when_quantifier_and_formatted_message_stay_inside_one_task() {
     let schema = compile_schema(
         r#"
-            type Item {
+            table Item {
                 enabled: bool;
                 nums: [int];
                 check {
@@ -206,7 +206,7 @@ fn when_quantifier_and_formatted_message_stay_inside_one_task() {
 
 #[test]
 fn duplicate_tasks_are_stably_deduplicated() {
-    let schema = compile_schema("type Item { check { false; } }");
+    let schema = compile_schema("table Item { check { false; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
@@ -230,7 +230,7 @@ fn duplicate_tasks_are_stably_deduplicated() {
 
 #[test]
 fn mismatched_statement_target_returns_an_internal_diagnostic() {
-    let schema = compile_schema("type Item { check { true; } }");
+    let schema = compile_schema("table Item { check { true; } }");
     let model = CfdDataModel::builder(&schema).build().expect("model");
     let output = execute_checks(
         &schema,
@@ -250,7 +250,7 @@ fn mismatched_statement_target_returns_an_internal_diagnostic() {
 
 #[test]
 fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
-    let schema = compile_schema("type Item { check { true; } }");
+    let schema = compile_schema("table Item { check { true; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("a", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
     builder.add_record("b", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());

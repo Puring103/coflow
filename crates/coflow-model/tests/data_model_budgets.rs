@@ -25,7 +25,7 @@ fn build_nested_array(
 
 #[test]
 fn nested_value_depth_accepts_boundary_and_rejects_first_deeper_value() {
-    let schema = compile_schema("type Item { value: [[[int]]]; }");
+    let schema = compile_schema("table Item { value: [[[int]]]; }");
 
     build_nested_array(&schema, limits(5, 100, 100))
         .expect("record root, three arrays, and scalar fit depth five");
@@ -44,7 +44,7 @@ fn nested_value_depth_accepts_boundary_and_rejects_first_deeper_value() {
 
 #[test]
 fn materialized_node_limit_reports_the_first_rejected_array_item() {
-    let schema = compile_schema("type Item { nums: [int]; }");
+    let schema = compile_schema("table Item { nums: [int]; }");
     let build = |max_nodes| {
         let mut builder =
             CfdDataModel::builder(&schema).with_structural_limits(limits(10, max_nodes, 100));
@@ -70,7 +70,7 @@ fn materialized_node_limit_reports_the_first_rejected_array_item() {
 
 #[test]
 fn structural_budget_is_independent_for_each_top_level_record() {
-    let schema = compile_schema("type Item { value: int; }");
+    let schema = compile_schema("table Item { value: int; }");
     let mut builder = CfdDataModel::builder(&schema).with_structural_limits(limits(2, 2, 4));
     builder.add_record("first", "Item", [("value", LoadedValueDraft::from(1_i64))]);
     builder.add_record("second", "Item", [("value", LoadedValueDraft::from(2_i64))]);
@@ -84,7 +84,7 @@ fn structural_budget_is_independent_for_each_top_level_record() {
 #[test]
 fn cached_default_subtree_is_charged_before_it_is_cloned() {
     let schema = compile_schema(
-        "type Leaf { a: int = 1; b: int = 2; } type Root { left: Leaf = {}; right: Leaf = {}; }",
+        "data Leaf { a: int = 1; b: int = 2; } table Root { left: Leaf = {}; right: Leaf = {}; }",
     );
     let build = |max_nodes| {
         let mut builder =

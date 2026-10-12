@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn direct_field_change_plans_only_the_changed_record_statement() {
         let schema =
-            schema("type Item { price: int; name: string; check { price > 0; name != \"\"; } }");
+            schema("table Item { price: int; name: string; check { price > 0; name != \"\"; } }");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("price", 1_i64.into()), ("name", "a".into())]);
         builder.add_record("b", "Item", [("price", 2_i64.into()), ("name", "b".into())]);
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn cross_type_field_change_fans_out_to_every_owner_record() {
         let schema = schema(
-            "type Character { level: int; } type Item { owner: &Character; check { owner.level > 0; } }",
+            "table Character { level: int; } table Item { owner: &Character; check { owner.level > 0; } }",
         );
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("hero", "Character", [("level", 1_i64.into())]);
@@ -218,8 +218,8 @@ mod tests {
     fn nested_field_change_plans_the_nested_statement_on_only_its_host() {
         let schema = schema(
             r"
-                type Part { value: int; check { value > 0; } }
-                type Item { part: Part; }
+                data Part { value: int; }
+                table Item { part: Part; check { part.value > 0; } }
             ",
         );
         let build = |a_value: i64| {
@@ -266,7 +266,7 @@ mod tests {
                 .unwrap()
                 .info
                 .owner,
-            CheckOwner::Type(TypeName::new("Part").unwrap())
+            CheckOwner::Type(TypeName::new("Item").unwrap())
         );
         assert_eq!(
             incremental_store(&schema, &after, &previous, &impact).diagnostics(&after),
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn record_set_change_runs_project_statement_once() {
         let schema =
-            schema("type Item { price: int; } check Required { records(Item).len() > 0; }");
+            schema("table Item { price: int; } check Required { records(Item).len() > 0; }");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("price", 1_i64.into())]);
         let model = builder.build().expect("model");
@@ -294,7 +294,7 @@ mod tests {
     fn dimension_variant_and_base_changes_invalidate_the_same_statement() {
         let schema = schema(
             r#"
-                type Item {
+                table Item {
                     @localized
                     name: string;
                     price: int;
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn full_plan_runs_project_checks_even_when_the_model_is_empty() {
-        let schema = schema("type Item {} check Required { records(Item).len() > 0; }");
+        let schema = schema("table Item {} check Required { records(Item).len() > 0; }");
         let model = CfdDataModel::builder(&schema).build().expect("model");
         let first = plan_full_checks(&schema, &model);
         let second = plan_full_checks(&schema, &model);
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn planning_limit_accepts_the_exact_boundary_and_rejects_partial_plans() {
-        let schema = schema("type Item { value: int; check { value > 0; } }");
+        let schema = schema("table Item { value: int; check { value > 0; } }");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("value", 1_i64.into())]);
         builder.add_record("b", "Item", [("value", 1_i64.into())]);
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn planning_failure_preserves_scoped_diagnostics_and_adds_request_diagnostic() {
-        let schema = schema("type Item { value: int; check { value > 0; } }");
+        let schema = schema("table Item { value: int; check { value > 0; } }");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("value", (-1_i64).into())]);
         builder.add_record("b", "Item", [("value", (-1_i64).into())]);
@@ -436,7 +436,7 @@ mod tests {
     fn incremental_scope_replacement_matches_full_and_preserves_unaffected_statements() {
         let schema = schema(
             r#"
-                type Item {
+                table Item {
                     price: int;
                     name: string;
                     check { price > 0: "price"; name != "": "name"; }
@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn cross_type_incremental_replacement_matches_full_without_runtime_read_edges() {
         let schema = schema(
-            "type Character { level: int; } type Item { owner: &Character; check { owner.level > 0; } }",
+            "table Character { level: int; } table Item { owner: &Character; check { owner.level > 0; } }",
         );
         let build = |level: i64| {
             let mut builder = CfdDataModel::builder(&schema);
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn inherited_statement_incremental_replacement_matches_full() {
         let schema =
-            schema("abstract type Base { value: int; check { value > 0; } } type Item : Base {}");
+            schema("abstract table Base { value: int; check { value > 0; } } table Item : Base {}");
         let build = |value: i64| {
             let mut builder = CfdDataModel::builder(&schema);
             builder.add_record("a", "Item", [("value", value.into())]);
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn project_collection_field_change_incremental_replacement_matches_full() {
         let schema = schema(
-            "type Item { value: int; } check Positive { all item in records(Item) { item.value > 0; } }",
+            "table Item { value: int; } check Positive { all item in records(Item) { item.value > 0; } }",
         );
         let build = |value: i64| {
             let mut builder = CfdDataModel::builder(&schema);
@@ -565,7 +565,7 @@ mod tests {
     fn dimension_variant_incremental_replacement_matches_full() {
         let schema = schema(
             r#"
-                type Item {
+                table Item {
                     @localized
                     name: string;
                     check { name.for("zh") != ""; }
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn deleted_record_and_record_set_diagnostics_are_removed_by_stable_scope() {
         let schema =
-            schema("type Item {} check Empty { records(Item).len() == 0: \"not empty\"; }");
+            schema("table Item {} check Empty { records(Item).len() == 0: \"not empty\"; }");
         let mut before = CfdDataModel::builder(&schema);
         before.add_record("a", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
         let before = before.build().expect("before");
@@ -631,7 +631,7 @@ mod tests {
     #[test]
     fn adding_a_variant_invalidates_other_records_variant_collections() {
         let schema = schema(
-            r#"type Item { @localized name: string; check { name.variants().len() <= 1; } }"#,
+            r#"table Item { @localized name: string; check { name.variants().len() <= 1; } }"#,
         );
         let build = |extra: bool| {
             let mut builder = CfdDataModel::builder(&schema);

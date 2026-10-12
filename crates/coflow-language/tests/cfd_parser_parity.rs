@@ -94,3 +94,23 @@ fn option_constructors_share_the_structural_depth_budget() {
         }
     }
 }
+
+#[test]
+fn unparenthesized_flag_expression_chains_use_the_ast_depth_limit() {
+    use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
+    use coflow_language::limits::StructuralLimits;
+    let options = CfdParseOptions {
+        structural_limits: StructuralLimits::new(8, 1000, 1000),
+    };
+    let source = format!(
+        "item: Sample {{ value: {} }}",
+        std::iter::repeat("Read")
+            .take(16)
+            .collect::<Vec<_>>()
+            .join(" | ")
+    );
+    let (_, diagnostics) = parse_cfd_with_options(&source, options);
+    assert!(diagnostics
+        .iter()
+        .any(|error| error.message.contains("depth limit 8")));
+}

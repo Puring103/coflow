@@ -43,7 +43,7 @@ pub use diagnostics::{
     CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity, CfdStage, MappedDiagnostic,
     MappedLabel, RecordOrigin, SourceLocation, TextSpan,
 };
-pub use formatted::{evaluate_formatted_string, stringify_value};
+pub use formatted::stringify_value;
 pub use ingest::{
     DimensionValueDraft, LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment,
     LoadedFormattedString, LoadedRecordDraft, LoadedValueDraft,

@@ -103,6 +103,16 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             );
             return None;
         };
+        if expected_type.is_none() && actual_type_meta.is_data() {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::TypeMismatch,
+                    "data cannot be a top-level record",
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        }
         if expected_type.is_none() && actual_type_meta.is_abstract {
             self.push(
                 CfdDiagnostic::error(
@@ -275,9 +285,32 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 )?;
                 Some(ValueDraft::Value(value))
             }
-            (CftValueType::RecordRef(expected), LoadedValueDraft::RecordRef(key)) => {
+            (CftValueType::RecordRef(_), LoadedValueDraft::RecordRef(key)) => {
                 Some(ValueDraft::PendingRef {
-                    expected_type: expected.clone(),
+                    explicit_type: None,
+                    key: key.clone(),
+                })
+            }
+            (
+                CftValueType::RecordRef(expected),
+                LoadedValueDraft::TypedRecordRef { type_name, key },
+            ) => {
+                if !self
+                    .schema
+                    .cft()
+                    .is_assignable(type_name, expected.as_str())
+                {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            "explicit reference type must be assignable to the declared type",
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
+                Some(ValueDraft::PendingRef {
+                    explicit_type: Some(TypeName::new(type_name.clone()).ok()?),
                     key: key.clone(),
                 })
             }
@@ -527,7 +560,7 @@ fn input_value_kind(value: &LoadedValueDraft) -> &'static str {
 
         LoadedValueDraft::EnumVariant { .. } | LoadedValueDraft::EnumValue { .. } => "enum",
         LoadedValueDraft::Object { .. } => "object",
-        LoadedValueDraft::RecordRef(_) => "record ref",
+        LoadedValueDraft::RecordRef(_) | LoadedValueDraft::TypedRecordRef { .. } => "record ref",
         LoadedValueDraft::Array(_) => "array",
         LoadedValueDraft::Dict(_) => "dict",
     }

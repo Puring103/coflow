@@ -1,7 +1,7 @@
 use crate::schema::{
     CftConst, CftDimension, CftEnum, CftField, CftSchema, CftTopLevelCheck, CftType,
     CheckDependency, CheckOwner, CheckStatementId, CheckStatementInfo, CheckStatementRef, EnumName,
-    EnumVariantName, FieldName, TypeName, ValueDependencyPlan,
+    EnumVariantName, TypeName, ValueDependencyPlan,
 };
 
 impl CftSchema {
@@ -132,6 +132,11 @@ impl CftSchema {
     }
 
     #[must_use]
+    pub fn check_owner_applies_to_actual(&self, owner: &str, actual: &str) -> bool {
+        self.check_index.owner_applies_to_actual(owner, actual)
+    }
+
+    #[must_use]
     pub fn check_dependency_is_cross_record(
         &self,
         statement: CheckStatementId,
@@ -146,32 +151,6 @@ impl CftSchema {
         actual_type: &str,
     ) -> impl Iterator<Item = CheckStatementId> + '_ {
         self.check_index.for_actual_type(actual_type)
-    }
-
-    pub fn check_hosts_for_nested_type(
-        &self,
-        nested_type: &str,
-    ) -> impl Iterator<Item = &TypeName> {
-        self.check_index.hosts_for_nested_type(nested_type)
-    }
-
-    #[must_use]
-    pub fn check_owner_applies_to_actual(&self, owner: &str, actual: &str) -> bool {
-        self.check_index.owner_applies_to_actual(owner, actual)
-    }
-
-    pub fn check_statements_for_nested_field(
-        &self,
-        actual_type: &TypeName,
-        field_name: &FieldName,
-    ) -> impl Iterator<Item = CheckStatementId> + '_ {
-        self.check_index.for_nested_field(actual_type, field_name)
-    }
-
-    #[must_use]
-    pub fn field_has_nested_checks(&self, actual_type: &str, field_name: &str) -> bool {
-        self.check_index
-            .field_has_nested_checks(actual_type, field_name)
     }
 
     #[must_use]
@@ -207,7 +186,7 @@ impl CftSchema {
     }
 
     pub fn singleton_types(&self) -> impl Iterator<Item = &CftType> {
-        self.types.values().filter(|meta| meta.is_singleton)
+        self.types.values().filter(|meta| meta.is_singleton())
     }
 
     #[must_use]
@@ -237,6 +216,19 @@ impl CftSchema {
     }
 }
 impl CftType {
+    #[must_use]
+    pub const fn is_singleton(&self) -> bool {
+        matches!(self.kind, super::CftTypeKind::Singleton)
+    }
+    #[must_use]
+    pub const fn is_table(&self) -> bool {
+        matches!(self.kind, super::CftTypeKind::Table)
+    }
+    #[must_use]
+    pub const fn is_data(&self) -> bool {
+        matches!(self.kind, super::CftTypeKind::Data)
+    }
+
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&CftField> {
         let index = *self.field_by_name.get(name)?;

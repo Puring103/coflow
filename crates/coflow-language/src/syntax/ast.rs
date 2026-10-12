@@ -88,8 +88,17 @@ pub struct EnumVariant {
     pub span: Span,
 }
 
+/// 声明类别决定记录身份与内联值边界，贯穿语法、schema 和所有宿主。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeKind {
+    Table,
+    Data,
+    Singleton,
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeDef {
+    pub kind: TypeKind,
     pub name: String,
     pub name_span: Span,
     pub is_abstract: bool,

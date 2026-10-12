@@ -3,10 +3,10 @@
 
 namespace Game.Config
 {
-public class Settings
+public sealed partial class Settings
 {
-    public string? id { get; }
-    internal Settings(string? key) { id = key; }
+    public string id { get; }
+    internal Settings(string key) { id = key; }
     public Item start { get; internal set; } = default!;
 }
 }

@@ -4,7 +4,7 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 
 ## 特性
 
-- CFT 类型、记录与内联对象、默认值、枚举、引用、多态和维度。
+- CFT table、data、singleton 声明、默认值、枚举、引用、多态和维度。
 - CFD 文本的结构化记录、内联对象、数组、字典和跨文件引用。
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
 - C# 通过 `Coflow.Loader` 将调用方提供的 CFD 直接加载为生成类型。
@@ -51,12 +51,13 @@ var result = CoflowData.Load(new[] {
     new CfdSource("ja.cfd", japaneseText),
 });
 var data = result.Data;
-var sword = data.Item["sword"];
+var sword = data.Table<Item>()["sword"];
 var japaneseName = sword.name.For("ja");
 ```
 
 加载结果包含成功状态和诊断。`int`、`float` 对应 C# `long`、`double`，可选值使用可嵌套的 `Option<T>`。
-`@struct` 类型的内联值生成为结构体，顶层记录和引用使用对应的 `TypeRecord` 身份类，记录引用直接连接生成对象。
+table 和 singleton 生成 partial class；data 默认生成 partial class，`@struct sealed data` 生成 partial struct。
+通过 `Table<T>()`、`Singleton<T>()` 获取业务数据；枚举主键提供对应表的 `Get(enum)`、`TryGet(enum, out record)` 扩展。记录引用直接连接生成对象。
 维度字段通过 `Default` 和 `For(variant)` 读取；未覆盖的值回退到基础值。
 C# 加载只使用 CFD 和生成代码，CFT 用于编辑器声明检查和代码生成，check 规则由编辑器执行。
 详见 [C# 接入文档](docs/csharp-unity.md)。

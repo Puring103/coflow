@@ -5,7 +5,8 @@
 - CFT 供编辑器声明校验及代码生成使用；C# 不读取 CFT。
 - C# `Coflow.Loader` 读取调用方提供的 CFD 内容，直接构造生成类型。
 - 生成代码提供业务类型、静态加载描述及类型明确的构造入口；共享库提供公共加载算法。
-- type 同时用于记录与内联值；普通类型生成 class，@struct 的内联值生成结构体，记录及引用使用 TypeRecord 身份类。
+- table 与 singleton 保存记录身份并生成 partial class，data 保存内联值并生成 partial class 或 @struct partial struct。
+- CoflowData 使用 Table<T>()、Singleton<T>()，枚举主键使用对应表的 Get/TryGet 扩展。
 - int/float 使用 long/double，Option<T> 每层独立保存 None/Some 状态。
 - 维度覆盖采用 `dimension[variant] { key: Type { field: value } }`；文件来源不决定优先级，重复字段覆盖报错。
 - 维度字段保留基础值和全部覆盖，使用 `Default`、`For(variant)` 和有效变体集合读取。

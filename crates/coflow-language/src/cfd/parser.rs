@@ -436,7 +436,20 @@ impl<'a> Parser<'a> {
             }
             let (rhs, _) = operand(self)?;
             let span = Span::new(lhs.span.start, rhs.span.end);
+            let depth = lhs.depth.max(rhs.depth).saturating_add(1);
+            // 二元链即使没有括号也会形成递归 AST，不能只统计源码括号深度。
+            self.budget
+                .check_additional_depth(
+                    TraversalCursor::root(),
+                    StructureKind::SyntaxAst,
+                    self.open_nesting.saturating_add(depth),
+                )
+                .map_err(|error| CfdSyntaxDiagnostic {
+                    message: error.to_string(),
+                    span,
+                })?;
             lhs = CfdBitExpr {
+                depth,
                 kind: CfdBitExprKind::Binary {
                     op,
                     lhs: Box::new(lhs),
@@ -467,6 +480,7 @@ impl<'a> Parser<'a> {
         let token = self.parse_value_token("flag expression operand")?;
         Ok((
             CfdBitExpr {
+                depth: 1,
                 kind: CfdBitExprKind::Value(token.text),
                 span: token.span,
             },

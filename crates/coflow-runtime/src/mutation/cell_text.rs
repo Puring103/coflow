@@ -9,7 +9,6 @@ use super::{coercion::coerce_json_field_value, one_value_error};
 pub(crate) fn parse_cell_text_value(
     session: &ProjectSession,
     actual_type: &str,
-    key: &str,
     path: &[CfdPathSegment],
     text: &str,
 ) -> Result<CfdValue, crate::api::DiagnosticSet> {
@@ -33,23 +32,11 @@ pub(crate) fn parse_cell_text_value(
         })?;
     let ParsedCell::Value(input) = parsed else {
         return Err(one_value_error(
-            "empty cell text omits a value; use `null` for a nullable field",
+            "empty cell text omits a value; use `None` for an Option field",
         ));
     };
-    let input = match input {
-        LoadedValueDraft::FormattedString(formatted) => {
-            return crate::data_model::evaluate_formatted_string(
-                session.schema(),
-                session.model(),
-                actual_type,
-                key,
-                &formatted,
-            )
-            .map(CfdValue::FormattedString)
-            .map_err(one_value_error);
-        }
-        other => other,
-    };
+    validate_explicit_references(session, &input)?;
+    // 输入阶段只验证模板并保存源码；写入后统一由模型按实际所属对象求值，避免旧记录值污染预览。
     let json = input_value_to_json(input)?;
     coerce_json_field_value(session, &expected, &json)
 }
@@ -58,6 +45,41 @@ pub(crate) fn render_cell_text_value(
     value: &CfdValue,
 ) -> Result<String, crate::api::DiagnosticSet> {
     render_cell_value(value).map_err(|error| one_value_error(error.to_string()))
+}
+
+fn validate_explicit_references(
+    session: &ProjectSession,
+    value: &LoadedValueDraft,
+) -> Result<(), crate::api::DiagnosticSet> {
+    match value {
+        LoadedValueDraft::TypedRecordRef { type_name, key } => {
+            if session
+                .model()
+                .lookup_assignable(session.schema(), type_name, key)
+                .is_none()
+            {
+                return Err(one_value_error(format!("explicit reference `&{type_name}::{key}` was not found or has a different actual type")));
+            }
+        }
+        LoadedValueDraft::OptionSome(inner) => validate_explicit_references(session, inner)?,
+        LoadedValueDraft::Array(items) => {
+            for item in items {
+                validate_explicit_references(session, item)?;
+            }
+        }
+        LoadedValueDraft::Dict(entries) => {
+            for (_, item) in entries {
+                validate_explicit_references(session, item)?;
+            }
+        }
+        LoadedValueDraft::Object { fields, .. } => {
+            for item in fields.values() {
+                validate_explicit_references(session, item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::DiagnosticSet> {
@@ -74,12 +96,11 @@ fn input_value_to_json(value: LoadedValueDraft) -> Result<Value, crate::api::Dia
             .map(Value::Number)
             .ok_or_else(|| one_value_error("cell float must be finite")),
         LoadedValueDraft::String(value) => Ok(Value::String(value)),
-        LoadedValueDraft::FormattedString(_) => Err(one_value_error(
-            "formatted strings must be evaluated before JSON coercion",
-        )),
+        LoadedValueDraft::FormattedString(formatted) => Ok(Value::String(formatted.source)),
 
         LoadedValueDraft::EnumVariant { variant, .. } => Ok(Value::String(variant)),
-        LoadedValueDraft::RecordRef(key) => {
+        LoadedValueDraft::TypedRecordRef { type_name: _, key }
+        | LoadedValueDraft::RecordRef(key) => {
             let mut object = Map::new();
             object.insert("$ref".to_string(), Value::String(key));
             Ok(Value::Object(object))

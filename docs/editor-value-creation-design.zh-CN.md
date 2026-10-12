@@ -16,7 +16,7 @@
 CFT 默认值是字段声明中显式给出的业务默认值：
 
 ```cft
-type Reward {
+table Reward {
   count: int = 10;
 }
 ```
@@ -95,7 +95,7 @@ object 创建对继承后的完整字段集合应用同一规则。集合新增�
 - `None` 显示加号，点击后创建 `Some`；
 - `Some(value)` 显示叉号，点击后变为 `None` 并删除内部值；
 - `Some` 的内部值按创建优先级产生；
-- `Option<&T>` 创建为包含缺失引用的 `Some`；
+- `Option<T>` 创建为包含缺失引用的 `Some`；
 - `Option<ConcreteObject>` 直接创建并展开；
 - `Option<AbstractObject>` 点击加号后先选择具体类型。
 
@@ -108,8 +108,8 @@ None”的 tooltip 与无障碍名称。
 
 ```text
 &Item                 -> MissingRef(Item)
-Option<&Item>          -> None
-Some(Option<&Item>)    -> Some(None)
+Option<Item>          -> None
+Some(Option<Item>)    -> Some(None)
 ```
 
 CFT 已声明引用默认值时直接使用该引用。引用目标不存在或类型不匹配时保留原始引用和诊断，不替换为其他
@@ -122,26 +122,26 @@ CFT 已声明引用默认值时直接使用该引用。引用目标不存在或�
 语言禁止必须立即展开的 object 包含环：
 
 ```cft
-type A {
-  child: A;
+table A {
+  child: &A;
 }
 
-type Left {
-  right: Right;
+table Left {
+  right: &Right;
 }
 
-type Right {
-  left: Left;
+table Right {
+  left: &Left;
 }
 ```
 
 `Option`、array、dictionary 和引用提供有限终止状态，因此允许递归：
 
 ```cft
-type Node {
-  parent: Option<Node>;
-  children: [Node];
-  indexed: {string: Node};
+table Node {
+  parent: Option<&Node>;
+  children: [&Node];
+  indexed: {string: &Node};
   linked: Option<&Node>;
 }
 ```
@@ -154,8 +154,8 @@ dictionary 和引用终止该路径。直接或间接形成环时，schema 编�
 合法的递归类型仍可能由 CFT 默认值触发无限物化：
 
 ```cft
-type Node {
-  child: Option<Node> = Some(Node {});
+table Node {
+  child: Option<&Node> = Some(Node {});
 }
 ```
 
@@ -330,7 +330,7 @@ CreateRequiredInput = Ref | AbstractObject
 ### 8.3 前端测试
 
 - `None` 显示加号，`Some` 显示叉号；
-- `Option<&T>` 可以创建为带缺失引用的 `Some`；
+- `Option<T>` 可以创建为带缺失引用的 `Some`；
 - 具体 object 直接创建并展开；
 - 抽象字段和集合元素先显示类型选择器；
 - object 标题显示实际类型，多态类型右侧显示下拉；

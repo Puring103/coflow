@@ -1,6 +1,6 @@
-# C# 代码生成与加载
+# C# 代码生成与数据访问
 
-C# 应用引用 `Coflow.Loader` 与生成源码，支持 .NET Standard 2.1、.NET 8 和 Unity 2022+。调用方提供所选 CFD 文件的逻辑路径与内容，加载结果直接包含生成的业务对象。
+C# 应用引用 `Coflow.Loader` 与生成源码，支持 .NET Standard 2.1、.NET 8 和 Unity 2022+。
 
 ```yaml
 schema: schema/
@@ -11,7 +11,7 @@ codegen:
     namespace: Game.Config
 ```
 
-运行 `coflow codegen .` 后，将 `runtimes/csharp/Coflow.Loader` 和生成文件加入 C# 项目。
+运行 `coflow codegen .` 后，将 `runtimes/csharp/Coflow.Loader` 与生成文件加入同一 C# 项目。
 
 ```csharp
 using Coflow.Loader;
@@ -26,40 +26,62 @@ if (!result.Success) {
         System.Console.WriteLine(diagnostic);
     return;
 }
-var item = result.Data.Item["sword"];
-var name = item.name.For("ja");
+var data = result.Data;
+var items = data.Table<Item>();
+var sword = items["sword"];
+var settings = data.Singleton<Settings>();
+var name = sword.name.For("ja");
 ```
 
-互相引用的记录应在同一次加载中提供。逻辑路径用于定位诊断；失败结果包含 Diagnostics，读取失败结果的 Data 抛出异常。
+`Table<T>()` 获取 table 声明对应的只读表，支持索引、TryGetValue、ContainsKey、Count、Keys、Values 和遍历。`Singleton<T>()` 获取单例。父类型表包含子类型记录，表与字段引用共享对象；重复获取返回同一表。data 类型用于内联值，不产生记录表。
 
-## 类型映射
+## 类型与扩展
 
 | CFT | C# |
 | --- | --- |
+| table / singleton | partial class |
+| data | partial class |
+| @struct sealed data | partial struct |
 | int / float | long / double |
-| bool / string / fstring | bool / string / string |
+| string / fstring | string |
 | enum | 以 long 为基础的 enum |
-| 普通 Type | class 内联对象 |
-| &Type | 对应记录 class 的对象引用 |
-| @struct Type | 内联值为结构体，记录及引用为 TypeRecord class |
+| `&TableName` 字段 | 对应业务对象引用 |
+| data 类型字段 | 内联业务值 |
 | `Option<T>` | `Coflow.Loader.Option<T>` |
 | [T] / {K: V} | `IReadOnlyList<T>` / `IReadOnlyDictionary<K, V>` |
 | 维度字段 | `DimensionValue<T>` |
 
-普通 type 的记录与内联值使用同一业务 class。记录 id 为 CFD key，内联对象 id 为 null。`@struct` 的记录身份类具有相同业务字段，引用可以形成环。继承表与引用共享同一记录对象，结构体保留继承字段；结构体子类型放在 class 父类型字段时使用其类表示。
-
-所有类型都有对应记录表。`@singleton` 通过同名属性读取唯一记录。
-
-## 可选值与维度
+记录和单例具有 string id，data 保存业务字段。生成类型保留 abstract、sealed 和继承约束。业务方法与计算属性可以写在独立 partial 文件中，扩展文件须位于同一 namespace 和程序集。
 
 ```csharp
-if (item.next.IsSome) {
-    var next = item.next.Value;
+public partial class Item
+{
+    public bool IsFree => price == 0;
 }
 ```
 
-Option 使用 `IsSome`、`IsNone`、`Value`；读取 None 的 Value 抛出异常。嵌套 `Option<Option<T>>` 区分 None、Some(None) 与 Some(Some(value))。
+## 枚举主键
 
-维度字段使用 `Default`、`For(variant)`、`Variants`。未覆盖字段及未知变体回退到基础值，显式 None 保持为空。一次加载可读取多个变体。
+```cft
+enum ItemId {}
+@idAsEnum(ItemId)
+table Item { name: string; }
+```
 
-普通字符串保持文本，fstring 在加载时生成结果。输入类型、默认值、引用、分组和覆盖错误通过加载诊断返回。CFT 用于声明检查与代码生成，check 规则由编辑器执行。
+生成 ItemId 的稳定编号及对应表的强类型查询扩展：
+
+```csharp
+var items = data.Table<Item>();
+Item sword = items.Get(ItemId.sword);
+bool found = items.TryGet(ItemId.shield, out var shield);
+```
+
+Get 在 key 不存在时抛出 KeyNotFoundException，TryGet 返回 false。枚举扩展属于对应表，字符串索引仍可用于按 CFD key 查询。@idAsEnum 的映射只包含当前记录，编号在增删记录后保持稳定。
+
+## 可选值、维度与错误
+
+Option 通过 IsSome、IsNone、Value 访问，读取 None 的 Value 抛出异常。嵌套可选保留 None、Some(None) 和 Some(Some(value))。
+
+维度字段使用 Default、For(variant)、Variants；未覆盖或未知变体回退基础值，显式 None 保持为空。fstring 在加载时生成文本，普通字符串保留花括号。
+
+调用方提供互相引用的一组 CFD 内容，逻辑路径用于定位诊断。失败结果包含 Diagnostics，读取失败结果的 Data 抛出异常。CFT 用于声明校验与生成代码，编辑器执行 check。

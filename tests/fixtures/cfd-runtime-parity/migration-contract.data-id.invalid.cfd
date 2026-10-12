@@ -1,0 +1,16 @@
+a: ContractNode { next: Some(&ContractNode::b) }
+b: ContractNode { next: Some(&ContractNode::a) }
+entry: ContractNode {}
+entry: ContractEntry {
+  payload: { score: 2147483648, label: f"{self.id}" },
+  shape: ContractShape { inner: Some(ContractShape { count: 4 }) },
+  polymorphic: ContractChild { name: "child", score: 7 },
+  child: ContractChild { name: "value", score: 8 },
+  target: &ContractNode::a,
+  constant_nested: CONTRACT_NESTED,
+  samples: CONTRACT_VALUES,
+  flags: CONTRACT_MASK,
+  indexed: CONTRACT_INDEX,
+}
+contract_language[ja] { entry: ContractEntry { localized: Some(None) } }
+contract_language[en] { entry: ContractEntry { localized: None } }

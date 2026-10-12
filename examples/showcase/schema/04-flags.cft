@@ -7,6 +7,6 @@ enum Permission {
   Share = 4,
 }
 
-type FlagExample {
+table FlagExample {
   permissions: Permission;
 }

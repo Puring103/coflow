@@ -90,14 +90,13 @@ impl<'a> TypeParser<'a> {
         self.skip_ws();
         if self.eat('&') {
             let name = self.parse_name();
-            if name.is_empty() {
-                return Err(invalid_declared_type(
-                    "reference type is missing target type",
-                ));
-            }
-            if self.schema.resolve_type(&name).is_none() {
+            if !self
+                .schema
+                .resolve_type(&name)
+                .is_some_and(|ty| ty.is_table())
+            {
                 return Err(invalid_declared_type(format!(
-                    "reference target `{name}` is not an object type"
+                    "reference target `{name}` must be table"
                 )));
             }
             return Ok(CellType::Ref(name));
@@ -147,6 +146,35 @@ impl<'a> TypeParser<'a> {
             "string" => CellType::String,
             "fstring" => CellType::FormattedString,
             other if self.schema.resolve_enum(other).is_some() => CellType::Enum(other.to_string()),
+            other
+                if self
+                    .schema
+                    .resolve_type(other)
+                    .is_some_and(|ty| ty.is_table()) =>
+            {
+                return Err(invalid_declared_type(format!(
+                    "table value type must be `&{other}`"
+                )))
+            }
+            other
+                if self
+                    .schema
+                    .resolve_type(other)
+                    .is_some_and(|ty| ty.is_data()) =>
+            {
+                CellType::Type(other.to_string())
+            }
+            other
+                if self
+                    .schema
+                    .resolve_type(other)
+                    .is_some_and(|ty| ty.is_singleton())
+                    || other.starts_with('&') =>
+            {
+                return Err(invalid_declared_type(format!(
+                    "invalid value type `{other}`"
+                )))
+            }
             other => CellType::Type(other.to_string()),
         })
     }

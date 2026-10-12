@@ -80,7 +80,10 @@ pub(super) fn lower_constant(
         (V::RecordReference { type_name, key }, T::RecordRef(expected))
             if schema.is_assignable(type_name.as_str(), expected.as_str()) =>
         {
-            LoadedValueDraft::RecordRef(key.clone())
+            LoadedValueDraft::TypedRecordRef {
+                type_name: type_name.to_string(),
+                key: key.clone(),
+            }
         }
         _ => {
             return Err(error(

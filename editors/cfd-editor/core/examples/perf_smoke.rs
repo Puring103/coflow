@@ -211,13 +211,13 @@ codegen:
 
 const SCHEMA: &str = "\
 @struct
-sealed type Vec2 {
+sealed data Vec2 {
   x: float = 0.0;
   y: float = 0.0;
 }
 
 @struct
-sealed type Stats {
+sealed data Stats {
   health: int = 100;
   speed: float = 1.0;
   resistances: {string: float} = {};
@@ -229,7 +229,7 @@ enum Rarity {
   Epic,
 }
 
-type Entity {
+table Entity {
   name: string;
   level: int = 1;
   rarity: Rarity = Common;
@@ -252,7 +252,7 @@ type Entity {
   flags: [string] = [];
 }
 
-type Item {
+table Item {
   name: string;
   value: int = 0;
   owner: &Entity;

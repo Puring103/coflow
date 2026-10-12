@@ -177,21 +177,6 @@ fn plan_field_change(
     changed: &ChangedField,
     tasks: &mut CheckTaskBuilder,
 ) {
-    if let Some(record) = record {
-        for statement in
-            schema.check_statements_for_nested_field(&coordinate.actual_type, &changed.field)
-        {
-            if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
-                insert_changed_statement_task(
-                    schema,
-                    info,
-                    CheckTarget::Record(record),
-                    &changed.projection,
-                    tasks,
-                );
-            }
-        }
-    }
     let mut owners = vec![coordinate.actual_type.clone()];
     owners.extend(
         schema
@@ -254,13 +239,10 @@ fn insert_owner_tasks(
             );
         }
         CheckOwner::Type(owner) => {
-            let mut records = model
+            let records = model
                 .records_assignable_to(schema, owner)
                 .map(|(id, _)| id)
                 .collect::<BTreeSet<_>>();
-            for host in schema.check_hosts_for_nested_type(owner) {
-                records.extend(model.records_of_type(host).map(|(id, _)| id));
-            }
             for record in records {
                 if tasks.overflowed() {
                     break;
@@ -307,11 +289,6 @@ fn insert_statement_task(
 fn owner_fits_host(schema: &CftSchema, owner: &CheckOwner, actual_type: &str) -> bool {
     match owner {
         CheckOwner::Project(_) => false,
-        CheckOwner::Type(owner) => {
-            schema.check_owner_applies_to_actual(owner, actual_type)
-                || schema
-                    .check_hosts_for_nested_type(owner)
-                    .any(|host| host.as_str() == actual_type)
-        }
+        CheckOwner::Type(owner) => schema.check_owner_applies_to_actual(owner, actual_type),
     }
 }

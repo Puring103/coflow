@@ -11,7 +11,7 @@ use coflow_language::cfd::parse_cfd;
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
-    let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let schema_source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);
     let cfd_path = project.root_dir().join("data.cfd");
     let cfd_uri = path_to_file_uri(&cfd_path);
@@ -60,7 +60,7 @@ fn cfd_definition_request_returns_schema_field_location() {
 
 #[test]
 fn cfd_requests_ignore_uppercase_cfd_extension() {
-    let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let schema_source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-uppercase-cfd-extension", schema_source);
     let cfd_path = project.root_dir().join("data.CFD");
     let cfd_uri = path_to_file_uri(&cfd_path);
@@ -106,8 +106,8 @@ fn cfd_requests_ignore_uppercase_cfd_extension() {
 
 #[test]
 fn cfd_definition_request_resolves_record_keys_across_project_sources() {
-    let schema_source = "type Item { key: string; }\n\
-type Holder { key: string; item: Item; }\n";
+    let schema_source = "table Item { key: string = \"\"; }\n\
+table Holder { key: string = \"\"; item: &Item; }\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-cross-file-key-definition", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -190,9 +190,9 @@ type Holder { key: string; item: Item; }\n";
 
 #[test]
 fn cfd_definition_index_uses_actual_type_and_dirty_overlay() {
-    let schema_source = "type Item {}\n\
-type Skill {}\n\
-type Holder { item: &Item; }\n";
+    let schema_source = "table Item {}\n\
+table Skill {}\n\
+table Holder { item: &Item; }\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-typed-definition-index", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -242,9 +242,9 @@ type Holder { item: &Item; }\n";
 
 #[test]
 fn cfd_definition_request_returns_null_for_invalid_record_references() {
-    let schema_source = "type Stats {\n  hp: int;\n}\n\
-type Monster {\n  key: string;\n  stats: Stats;\n}\n\
-type Holder {\n  key: string;\n  hp: int;\n}\n";
+    let schema_source = "data Stats {\n  hp: int;\n}\n\
+table Monster {\n  key: string;\n  stats: Stats;\n}\n\
+table Holder {\n  key: string;\n  hp: int;\n}\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-path-field-definition", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -283,8 +283,8 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
 
 #[test]
 fn cfd_definition_request_resolves_each_nested_object_field() {
-    let schema_source = "type Stats {\n  hp: int;\n}\n\
-type Monster {\n  key: string;\n  stats: Stats;\n}\n";
+    let schema_source = "data Stats {\n  hp: int;\n}\n\
+table Monster {\n  key: string;\n  stats: Stats;\n}\n";
     let (_cleanup, project) =
         test_project_with_config("lsp-cfd-nested-field-definition", schema_source, "data");
     let data_dir = project.root_dir().join("data");
@@ -370,7 +370,7 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
 
 #[test]
 fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
-    let schema_source = "type Product { name: string; }\n";
+    let schema_source = "table Product { name: string; }\n";
     let (_cleanup, project) = test_project("lsp-cfd-dirty-group-key", schema_source);
     let cfd_path = project.root_dir().join("data.cfd");
     let cfd_uri = path_to_file_uri(&cfd_path);
@@ -435,8 +435,8 @@ fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
 
 #[test]
 fn incomplete_group_record_field_completion_uses_record_schema_context() {
-    let schema_source = "type Product { name: string; price: int; enabled: bool; }\n\
-type Unrelated { payload: string; }\n";
+    let schema_source = "table Product { name: string; price: int; enabled: bool; }\n\
+table Unrelated { payload: string; }\n";
     let (_cleanup, project) = test_project("lsp-cfd-dirty-group-field", schema_source);
     let cfd_path = project.root_dir().join("data.cfd");
     let cfd_uri = path_to_file_uri(&cfd_path);
@@ -482,7 +482,7 @@ type Unrelated { payload: string; }\n";
 #[test]
 fn cfd_value_completion_uses_schema_types() {
     let schema_source = "enum Rarity { Common, Rare, }\n\
-type Settings {\n\
+table Settings {\n\
   enabled: bool;\n\
   rarity: Rarity;\n\
 }\n";
@@ -510,7 +510,7 @@ type Settings {\n\
 
 #[test]
 fn cfd_formatted_strings_highlight_and_complete_record_fields() {
-    let schema_source = "type Message { amount: int; enabled: Option<bool>; label: fstring; }\n";
+    let schema_source = "table Message { amount: int; enabled: Option<bool>; label: fstring; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-string", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = r#"message: Message { amount: 7, enabled: true, label: f"amount={self.amount}" }"#;
@@ -551,8 +551,8 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
 
 #[test]
 fn cfd_formatted_string_completion_includes_nested_paths() {
-    let schema_source = "type Details { count: int; }\n\
-type Message { details: Details; label: fstring; }\n";
+    let schema_source = "data Details { count: int; }\n\
+table Message { details: Details; label: fstring; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-nested", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = r#"message: Message { details: { count: 1 }, label: f"{self.det}" }"#;
@@ -568,7 +568,7 @@ type Message { details: Details; label: fstring; }\n";
 
 #[test]
 fn cfd_formatted_string_completion_supports_record_reference_syntax() {
-    let schema_source = "type DefaultSettings { visible: bool; title: fstring; }\n";
+    let schema_source = "table DefaultSettings { visible: bool; title: fstring; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-record-ref", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = r#"standard: DefaultSettings { visible: true, title: f"{&DefaultSettings::standard.visible}" }"#;
@@ -641,8 +641,8 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
 
 #[test]
 fn cfd_completion_recurses_through_arrays_and_inline_objects() {
-    let schema_source = "type Child { enabled: bool; label: string = \"default\"; }\n\
-type Root { children: [Child]; child: Child; }\n";
+    let schema_source = "data Child { enabled: bool; label: string = \"default\"; }\n\
+table Root { children: [Child]; child: Child; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-nested-completion", schema_source);
     let schema = build.schema().expect("compiled schema");
 
@@ -668,7 +668,7 @@ type Root { children: [Child]; child: Child; }\n";
 
 #[test]
 fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
-    let schema_source = "type Product { name: string; enabled: bool = true; }\n";
+    let schema_source = "table Product { name: string; enabled: bool = true; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-record-snippet", schema_source);
     let schema = build.schema().expect("compiled schema");
     let (ast, diagnostics) = parse_cfd("");
@@ -691,7 +691,7 @@ fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
 #[test]
 fn cfd_flag_completion_excludes_variants_already_in_an_incomplete_expression() {
     let schema_source = "@flag enum Access { Read = 1, Write = 2, Execute = 4, }\n\
-type Settings { access: Access; }\n";
+table Settings { access: Access; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-flag-completion", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = "settings: Settings { access: Read |  }";
@@ -779,7 +779,7 @@ fn cfd_definition_field_name_extracts_record_field_at_offset() {
 
 #[test]
 fn cfd_schema_field_definition_location_finds_field_name_span() {
-    let source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, build) = test_lsp_build("cfd-schema-field-goto-def", source);
 
     let result = cft_schema_field_definition_location(&build, "Item", "damage")
@@ -795,7 +795,7 @@ fn cfd_schema_field_definition_location_finds_field_name_span() {
 fn cfd_goto_def_continues_past_unparseable_document() {
     // Build an LspBuild with two modules; one has a syntax error.
     // cft_type_definition_location should still find the type in the good module.
-    let cft_source = "type GoodType { level: int; }\n";
+    let cft_source = "table GoodType { level: int; }\n";
     let (_cleanup, build) = test_lsp_build("cfd-goto-def", cft_source);
     // GoodType is defined — should find it.
     let result = cft_type_definition_location(&build, "GoodType");
@@ -828,7 +828,7 @@ fn line_indexed_cfd_range_matches_linear_scan() {
 fn literal_and_escaped_braces_do_not_offer_interpolation_paths() {
     let (_cleanup, build) = test_lsp_build(
         "lsp-cfd-literal-braces",
-        "type Item { name: string; label: fstring; }",
+        "table Item { name: string; label: fstring; }",
     );
     let schema = build.schema().expect("schema");
     for source in [

@@ -132,6 +132,8 @@ pub enum CftConstValue {
     },
 }
 
+pub use crate::syntax::ast::TypeKind as CftTypeKind;
+
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::struct_excessive_bools)] // CFT modifiers and annotation semantics are orthogonal.
 pub struct CftType {
@@ -141,7 +143,7 @@ pub struct CftType {
     pub is_abstract: bool,
     pub is_sealed: bool,
     pub is_struct: bool,
-    pub is_singleton: bool,
+    pub kind: CftTypeKind,
     pub id_as_enum: Option<EnumName>,
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,

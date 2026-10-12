@@ -52,8 +52,8 @@ impl Scenario {
 
 pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let source = r#"
-        type Character { level: int; }
-        type Item {
+        table Character { level: int; }
+        table Item {
             price: int;
             name: string;
             enabled: bool;
@@ -64,7 +64,7 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
             tags: [string];
             attrs: {string: int};
             owner: &Character;
-            optional: int? = null;
+            optional: Option<int> = None;
             check {
                 price > 0;
                 name != "";
@@ -81,14 +81,14 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
                 attrs.containsKey("weight");
                 attrs["weight"] >= 0;
                 owner.level > 0;
-                optional == null || optional >= 0;
+                when optional is Some(value) { value >= 0; }
                 all number in nums { number >= 0; }
                 all number in nums2 { number >= 0; }
             }
         }
         check ProjectIntegrity { records(Item).len() > 0; }
     "#;
-    let schema = compile(source::default());
+    let schema = compile(source);
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..100 {
         builder.add_record(
@@ -133,7 +133,7 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
 
 pub(crate) fn nested_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let schema =
-        compile("type Part { value: int; check { value >= 0; } } type Item { parts: [Part]; }");
+        compile("data Part { value: int; } table Item { parts: [Part]; check { all part in parts { part.value >= 0; } } }");
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
         builder.add_record(
@@ -159,11 +159,11 @@ pub(crate) fn dimension_fixture(
 ) -> (CftSchema, CfdDataModel) {
     let schema = compile(
         r#"
-            type Item {
+            table Item {
                 @localized
                 name: string;
                 price: int;
-                check { name != "" && price > 0; }
+                check { name.default() != "" && price > 0; all variant, text in name.variants() { text != ""; } }
             }
         "#,
     );
@@ -178,6 +178,22 @@ pub(crate) fn dimension_fixture(
             ],
         );
     }
+    for variant in 0..variant_count {
+        let name = coflow_language::cft::VariantName::new(format!("v{variant}")).expect("variant");
+        let dimension = coflow_language::cft::DimensionName::new("language").expect("dimension");
+        builder.add_dimension_variant(dimension.clone(), name.clone());
+        for index in 0..record_count {
+            builder.add_dimension_value_draft(coflow_runtime::DimensionValueDraft {
+                source_type: coflow_language::cft::TypeName::new("Item").expect("type"),
+                source_key: coflow_language::cft::RecordKey::new(item_key(index)).expect("key"),
+                field: coflow_language::cft::FieldName::new("name").expect("field"),
+                dimension: dimension.clone(),
+                variant: name.clone(),
+                value: format!("Item {index} v{variant}").into(),
+                origin: coflow_runtime::RecordOrigin::None,
+            });
+        }
+    }
     let model = builder.build().expect("model");
     (schema, model)
 }
@@ -185,14 +201,14 @@ pub(crate) fn dimension_fixture(
 pub(crate) fn inheritance_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let schema = compile(
         r#"
-            abstract type Base {
+            abstract table Base {
                 value: int;
                 check {
                     value >= 0;
                     value < 100;
                 }
             }
-            type Item : Base {}
+            table Item : Base {}
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -206,7 +222,7 @@ pub(crate) fn inheritance_fixture(record_count: usize) -> (CftSchema, CfdDataMod
 pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let schema = compile(
         r#"
-            type Item {
+            table Item {
                 nums: [int];
                 check {
                     all value, index in nums {
@@ -229,7 +245,7 @@ pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataMode
 }
 
 pub(crate) fn limit_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
-    let schema = compile("type Item { value: int; check { value >= 0; } }");
+    let schema = compile("table Item { value: int; check { value >= 0; } }");
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
         builder.add_record(item_key(index), "Item", [("value", 1_i64.into())]);
@@ -243,9 +259,9 @@ pub(crate) fn worst_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
         .map(|threshold| format!("owner.level > {threshold};"))
         .collect::<String>();
     let source = format!(
-        "type Character {{ level: int; }} type Item {{ owner: &Character; check {{ {checks} }} }}"
+        "table Character {{ level: int; }} table Item {{ owner: &Character; check {{ {checks} }} }}"
     );
-    let schema = compile(&source::default());
+    let schema = compile(&source);
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..100 {
         builder.add_record(

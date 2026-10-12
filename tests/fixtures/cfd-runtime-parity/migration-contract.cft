@@ -3,24 +3,45 @@ const CONTRACT_NESTED: Option<Option<int>> = Some(None);
 const CONTRACT_MASK: ContractFlags = ContractFlags::A | ContractFlags::B;
 const CONTRACT_VALUES: [int] = [2147483648, -9223372036854775808];
 const CONTRACT_INDEX: {ContractFlags: int} = { ContractFlags::A | ContractFlags::B: 7 };
-type ContractPayload { score: int; }
-abstract type ContractBase { name: string; }
-@struct sealed type ContractChild: ContractBase { score: int; }
-@struct sealed type ContractShape {
-  count: int = 2147483648;
-  next: Option<&ContractShape> = None;
-  inner: Option<ContractShape> = None;
+data ContractPayload {
+  score: int;
+  label: fstring = f"score {self.score}";
+  labels: [fstring] = [f"array {self.score}"];
+  indexed_labels: {string: fstring} = { "label": f"dict {self.score}" };
+  template: Option<fstring> = Some(f"optional {self.score}");
+  nested: ContractDetails = {};
 }
-type ContractEntry {
+data ContractDetails {
+  score: int = 42;
+  label: fstring = f"details {self.score}";
+}
+abstract data ContractBase { name: string; }
+sealed data ContractChild: ContractBase { score: int; }
+@struct sealed data ContractShape {
+  count: int = 2147483648;
+  inner: Option<ContractShape> = None;
+  label: fstring = f"shape {self.count}";
+}
+table ContractNode {
+  label: fstring = f"node {self.id}";
+  next: Option<&ContractNode> = None;
+}
+table ContractChildNode: ContractNode {}
+const CONTRACT_CHILD_REF: &ContractNode = &ContractChildNode::a;
+table ContractEntry {
   payload: ContractPayload;
   shape: ContractShape;
   polymorphic: ContractBase;
   child: ContractChild;
-  target: &ContractShape;
+  @dimension("contract_ref")
+  target: &ContractNode;
   wide: int = -9223372036854775808;
   precise: float = 1.0000000000000002;
   large: float = 1e100;
   scalar_text: fstring = f"{self.wide}|{self.precise}|{self.large}";
+  plain_text: string = "{self.id}";
+  own_id: fstring = f"{self.id}";
+  other_id: fstring = f"{&ContractEntry::entry.id}";
   nested: Option<Option<int>> = Some(None);
   constant_nested: Option<Option<int>> = CONTRACT_NESTED;
   samples: [int] = CONTRACT_VALUES;

@@ -3,7 +3,7 @@
 
 namespace Game.Config
 {
-public struct Stats
+public partial struct Stats
 {
     public long hp { get; internal set; }
     public CfdField extra { get; internal set; }

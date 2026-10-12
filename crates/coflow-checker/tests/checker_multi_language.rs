@@ -28,7 +28,7 @@ fn add_overlay(
 #[test]
 fn explicit_variant_selection_reads_overlay_and_locates_its_source() {
     let schema = compile_schema(
-        r#"type Item { @localized name: string; check { name.for("ja") != "" : "empty translation"; name.for("unknown") == "base"; } }"#,
+        r#"table Item { @localized name: string; check { name.for("ja") != "" : "empty translation"; name.for("unknown") == "base"; } }"#,
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [("name", "base".into())]);
@@ -63,7 +63,7 @@ fn explicit_variant_selection_reads_overlay_and_locates_its_source() {
 #[test]
 fn missing_or_unknown_variant_uses_base_value() {
     let schema = compile_schema(
-        r#"type Item { @localized name: string; check { name.for("ja") == "base"; name.for("unknown") == "base"; } }"#,
+        r#"table Item { @localized name: string; check { name.for("ja") == "base"; name.for("unknown") == "base"; } }"#,
     );
     for overlay in [false, true] {
         let mut builder = CfdDataModel::builder(&schema);
@@ -79,7 +79,7 @@ fn missing_or_unknown_variant_uses_base_value() {
 #[test]
 fn explicit_none_does_not_fall_back_to_optional_base() {
     let schema = compile_schema(
-        r#"type Item { @localized name: Option<string>; check { name.for("ja") == None; name.for("unknown") is Some(value) && value == "base"; } }"#,
+        r#"table Item { @localized name: Option<string>; check { name.for("ja") == None; name.for("unknown") is Some(value) && value == "base"; } }"#,
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -98,9 +98,9 @@ fn explicit_none_does_not_fall_back_to_optional_base() {
 #[test]
 fn for_requires_a_dimension_field_and_a_string_variant() {
     for source in [
-        r#"type Item { name: string; check { name.for("ja") == "x"; } }"#,
-        r#"type Item { @localized name: string; check { name.for(1) == "x"; } }"#,
-        r#"type Item { @localized name: string; check { name == "x"; } }"#,
+        r#"table Item { name: string; check { name.for("ja") == "x"; } }"#,
+        r#"table Item { @localized name: string; check { name.for(1) == "x"; } }"#,
+        r#"table Item { @localized name: string; check { name == "x"; } }"#,
     ] {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
         assert!(build_schema(&modules).is_err(), "{source}");
@@ -110,7 +110,7 @@ fn for_requires_a_dimension_field_and_a_string_variant() {
 #[test]
 fn variants_include_empty_headers_and_effective_fallback_values() {
     let schema = compile_schema(
-        r#"type Item {
+        r#"table Item {
         @localized name: string;
         check {
             name.default() == "base";

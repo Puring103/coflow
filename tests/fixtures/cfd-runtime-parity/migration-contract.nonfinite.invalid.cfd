@@ -3,7 +3,7 @@ entry: ContractEntry {
   shape: ContractShape {},
   polymorphic: ContractChild { name: "child", score: 7 },
   child: ContractChild { name: "value", score: 8 },
-  target: &ContractShape::a,
+  target: &ContractNode::a,
   large: inf,
 }
-a: ContractShape {}
+a: ContractNode {}

@@ -24,7 +24,7 @@ fn selected_dimension_sources_keep_physical_tree_and_header_metadata() {
         fs::create_dir_all(data_dir.join("translations")).expect("data directory");
         fs::write(
             project_dir.join("schema.cft"),
-            "type Item { @localized name: string; }",
+            "table Item { @localized name: string; }",
         )
         .expect("schema");
         fs::write(data_dir.join("items.cfd"), "one: Item { name: \"Name\" }").expect("base");

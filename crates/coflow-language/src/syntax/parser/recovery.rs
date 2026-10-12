@@ -60,6 +60,9 @@ impl Parser<'_> {
         } else if self.at(&TokenKind::Enum) {
             self.parse_enum(annotations).map(Item::Enum).map(Some)
         } else if self.at(&TokenKind::Type)
+            || self.at(&TokenKind::Table)
+            || self.at(&TokenKind::Data)
+            || self.at(&TokenKind::Singleton)
             || self.at(&TokenKind::Abstract)
             || self.at(&TokenKind::Sealed)
         {
@@ -71,7 +74,7 @@ impl Parser<'_> {
         } else {
             self.err(
                 CftErrorCode::InvalidTopLevelItem,
-                "expected a top-level const, enum, type, or check definition",
+                "expected const, enum, table, data, singleton, type alias, or check",
             )
         }
     }
@@ -102,6 +105,9 @@ impl Parser<'_> {
             || self.at(&TokenKind::Const)
             || self.at(&TokenKind::Enum)
             || self.at(&TokenKind::Type)
+            || self.at(&TokenKind::Table)
+            || self.at(&TokenKind::Data)
+            || self.at(&TokenKind::Singleton)
             || self.at(&TokenKind::Abstract)
             || self.at(&TokenKind::Sealed)
             || self.at(&TokenKind::Check)

@@ -19,7 +19,7 @@ pub(crate) enum ValueDraft {
     FormattedString(LoadedFormattedString),
     Object(Box<RecordDraft>),
     PendingRef {
-        expected_type: TypeName,
+        explicit_type: Option<TypeName>,
         key: String,
     },
     Array(Vec<ValueDraft>),

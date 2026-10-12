@@ -49,14 +49,18 @@ public sealed class CfdField<T> : CfdField
     public CfdField(string name, CfdValueType<T> type, CfdValueNode? defaultValue = null) : base(name, type, defaultValue) { }
 }
 
+public enum CfdTypeKind { Table, Data, Singleton }
+
 public abstract class CfdType
 {
-    protected CfdType(string name, IReadOnlyList<CfdField> fields, bool singleton, string? parent, bool abstractType, bool structValue)
-    { Name = name; Fields = fields; IsSingleton = singleton; Parent = parent; IsAbstract = abstractType; IsStruct = structValue; }
+    protected CfdType(string name, CfdTypeKind kind, Type valueType, IReadOnlyList<CfdField> fields, string? parent, bool abstractType)
+    { Name = name; Kind = kind; ValueType = valueType; Fields = fields; Parent = parent; IsAbstract = abstractType; }
     public string Name { get; }
     internal IReadOnlyList<CfdField> Fields { get; }
-    internal bool IsSingleton { get; }
-    internal bool IsStruct { get; }
+    internal CfdTypeKind Kind { get; }
+    internal Type ValueType { get; }
+    internal abstract object BuildTable(IReadOnlyList<RecordState> records);
+    internal abstract object BuildSingleton(IReadOnlyList<RecordState> records);
     internal bool IsAbstract { get; }
     internal string? Parent { get; }
     internal abstract object CreateRecord(string key);
@@ -64,17 +68,25 @@ public abstract class CfdType
     internal abstract object Construct(CfdReader reader);
 }
 
-public sealed class CfdType<TValue, TRecord> : CfdType where TRecord : class
+public sealed class CfdType<T> : CfdType
 {
-    private readonly Func<string, TRecord>? _create;
-    private readonly Action<TRecord, CfdReader>? _fill;
-    private readonly Func<CfdReader, TValue>? _construct;
-    // 同一 CFT type 同时提供内联构造和记录构造；结构体记录使用生成的身份类。
-    public CfdType(string name, IReadOnlyList<CfdField> fields, Func<string, TRecord>? create, Action<TRecord, CfdReader>? fill, Func<CfdReader, TValue>? construct, bool singleton = false, string? parent = null, bool abstractType = false, bool structValue = false)
-        : base(name, fields, singleton, parent, abstractType, structValue) { _create = create; _fill = fill; _construct = construct; }
-    internal override object CreateRecord(string key) => _create!(key);
-    internal override void FillRecord(object value, CfdReader reader) => _fill!((TRecord)value, reader);
+    private readonly Func<string, T>? _create;
+    private readonly Action<T, CfdReader>? _fill;
+    private readonly Func<CfdReader, T>? _construct;
+    // 声明类别明确选择记录身份或内联构造，注册时生成强类型表与单例。
+    public CfdType(string name, CfdTypeKind kind, IReadOnlyList<CfdField> fields, Func<string, T>? create, Action<T, CfdReader>? fill, Func<CfdReader, T>? construct, string? parent = null, bool abstractType = false)
+        : base(name, kind, typeof(T), fields, parent, abstractType) { _create = create; _fill = fill; _construct = construct; }
+    internal override object CreateRecord(string key) => _create!(key)!;
+    internal override void FillRecord(object value, CfdReader reader) => _fill!((T)value, reader);
     internal override object Construct(CfdReader reader) => _construct!(reader)!;
+    internal override object BuildTable(IReadOnlyList<RecordState> records)
+    {
+        var values = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var record in records) if (record.Value is T value) values.Add(record.Node.Key, value);
+        return new Table<T>(values);
+    }
+    internal override object BuildSingleton(IReadOnlyList<RecordState> records)
+        => records.Single(record => record.Value is T).Value;
 }
 
 public static class CfdDefaults

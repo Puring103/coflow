@@ -39,7 +39,7 @@ interface SemanticTokenUpdate {
 // 用户可见范围内的即时词法着色：LSP 语义 token 到达前先给出基础高亮，
 // 到达后由 `cm-lsp-token-*` 覆盖细化。只依赖词法，不涉及 schema 或项目状态。
 const BASE_HIGHLIGHT_KEYWORDS = new Set([
-  'type', 'enum', 'const', 'abstract', 'sealed', 'check', 'when', 'all', 'any', 'none',
+  'type', 'table', 'data', 'singleton', 'enum', 'const', 'abstract', 'sealed', 'check', 'when', 'all', 'any', 'none',
   'in', 'is', 'true', 'false', 'fn', 'var', 'return', 'if', 'else', 'match', 'for',
   'while', 'break', 'continue',
 ])

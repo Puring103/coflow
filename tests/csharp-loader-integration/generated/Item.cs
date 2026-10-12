@@ -3,9 +3,9 @@
 
 namespace Game.Config
 {
-public class Item : Entity
+public partial class Item : Entity
 {
-    internal Item(string? key) : base(key) { }
+    internal Item(string key) : base(key) { }
     public Stats stats { get; internal set; } = default!;
     public long price { get; internal set; } = default!;
     public global::Coflow.Loader.Option<Item> next { get; internal set; } = default!;

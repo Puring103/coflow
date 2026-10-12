@@ -25,7 +25,7 @@ public static class CfdLoader
             var context = new LoadContext(CfdParser.ParseAll(sources), types, constants);
             context.Build();
             // 对外数据只含生成对象；构建上下文和解析节点不进入结果。
-            return new LoadResult<T>(construct(new CfdData(context.Records)), System.Array.Empty<CfdDiagnostic>());
+            return new LoadResult<T>(construct(new CfdData(types, context.Records)), System.Array.Empty<CfdDiagnostic>());
         }
         catch (CfdLoadException error) { return new LoadResult<T>(null, error.Diagnostics); }
     }
@@ -33,22 +33,21 @@ public static class CfdLoader
 
 public sealed class CfdData
 {
-    private readonly IReadOnlyList<(string Key, object Value)> _records;
-    internal CfdData(IReadOnlyList<RecordState> records)
-    { _records = records.Select(record => (record.Node.Key, record.Value)).ToArray(); }
-    public IReadOnlyDictionary<string, T> Records<T>() where T : class
+    private readonly Dictionary<Type, object> _tables = new Dictionary<Type, object>();
+    private readonly Dictionary<Type, object> _singletons = new Dictionary<Type, object>();
+    internal CfdData(IReadOnlyList<CfdType> types, IReadOnlyList<RecordState> records)
     {
-        var result = new Dictionary<string, T>(StringComparer.Ordinal);
-        foreach (var record in _records)
-            if (record.Value is T value) result.Add(record.Key, value);
-        return new ReadOnlyDictionary<string, T>(result);
+        // 注册类别决定可访问入口，data 不进入记录表；重复获取返回同一只读表。
+        foreach (var type in types)
+        {
+            if (type.Kind == CfdTypeKind.Table) _tables.Add(type.ValueType, type.BuildTable(records));
+            if (type.Kind == CfdTypeKind.Singleton) _singletons.Add(type.ValueType, type.BuildSingleton(records));
+        }
     }
-    public T Singleton<T>() where T : class
-    {
-        var records = Records<T>();
-        if (records.Count != 1) throw new CfdLoadException(new[] { new CfdDiagnostic("CFD-SINGLETON", "expected exactly one singleton record", "") });
-        return records.Values.Single();
-    }
+    public Table<T> Table<T>() where T : class => _tables.TryGetValue(typeof(T), out var table)
+        ? (Table<T>)table : throw new InvalidOperationException($"`{typeof(T).Name}` is not a table in this schema.");
+    public T Singleton<T>() where T : class => _singletons.TryGetValue(typeof(T), out var value)
+        ? (T)value : throw new InvalidOperationException($"`{typeof(T).Name}` is not a singleton in this schema.");
 }
 
 internal sealed class RecordState
@@ -88,10 +87,10 @@ internal sealed class LoadContext
         foreach (var document in documents)
             foreach (var node in document.Records)
             {
-                if (!_types.TryGetValue(node.DeclaredType, out var type) || type.IsAbstract)
+                if (!_types.TryGetValue(node.DeclaredType, out var type) || type.Kind == CfdTypeKind.Data || type.IsAbstract)
                     throw Error("CFD-TYPE", $"invalid record type `{node.DeclaredType}`", document.Path, node.Span);
                 // 分组声明限定实际类型，未知分组与无关类型不能绕过继承校验。
-                if (node.GroupType != null && (!_types.ContainsKey(node.GroupType) || !Assignable(type, node.GroupType)))
+                if (node.GroupType != null && (!_types.TryGetValue(node.GroupType, out var group) || group.Kind != CfdTypeKind.Table || !Assignable(type, node.GroupType)))
                     throw Error("CFD-TYPE", $"record type `{type.Name}` is not assignable to group `{node.GroupType}`", document.Path, node.Span);
                 var identity = (Root(type), node.Key);
                 if (_recordsByIdentity.ContainsKey(identity))
@@ -104,7 +103,7 @@ internal sealed class LoadContext
                     _recordsByKey.Add(node.Key, matching = new List<RecordState>());
                 matching.Add(record);
             }
-        foreach (var type in types.Where(type => type.IsSingleton && !type.IsAbstract))
+        foreach (var type in types.Where(type => type.Kind == CfdTypeKind.Singleton))
         {
             var records = Records.Where(record => Assignable(record.Type, type.Name)).ToArray();
             if (records.Length != 1)
@@ -182,15 +181,7 @@ internal sealed class LoadContext
     {
         var reader = owner.ObjectReader(expected, node);
         reader.Validate();
-        // 结构体子类型放入 class 父类型字段时使用生成的类表示，保留多态字段与实际类型。
-        object value;
-        if (reader.Type.IsStruct && !_types[expected].IsStruct)
-        {
-            value = reader.Type.CreateRecord(null!);
-            reader.Type.FillRecord(value, reader);
-        }
-        else value = reader.Type.Construct(reader);
-        if (value is T result) return result;
+        if (reader.Type.Construct(reader) is T result) return result;
         throw owner.Error(node, "CFD-TYPE", "generated object type mismatch");
     }
     internal CfdReader CreateObjectReader(string expected, CfdValueNode node, CfdReader owner)
@@ -204,7 +195,7 @@ internal sealed class LoadContext
             fields = dictionary.Entries.Select(entry => new CfdFieldNode(entry.Key is CfdScalarValue key ? key.Value : entry.Key is CfdStringValue text ? text.Value : throw owner.Error(entry.Key, "CFD-TYPE", "expected field name"), entry.Value, entry.Span)).ToArray();
         }
         else throw owner.Error(node, "CFD-TYPE", "expected inline data object");
-        if (!_types.TryGetValue(actual ?? expected, out var type) || type.IsSingleton || type.IsAbstract || !Assignable(type, expected)) throw owner.Error(node, "CFD-TYPE", "inline object type mismatch");
+        if (!_types.TryGetValue(actual ?? expected, out var type) || type.Kind != CfdTypeKind.Data || type.IsAbstract || !Assignable(type, expected)) throw owner.Error(node, "CFD-TYPE", "inline object type mismatch");
         return new CfdReader(this, type, fields, Source(node, owner.Path), node.Span);
     }
     internal static CfdLoadException Error(string code, string message, string path, CfdSpan span) => new CfdLoadException(new[] { new CfdDiagnostic(code, message, path, span) });
@@ -232,7 +223,14 @@ public sealed class CfdReader
     internal CfdReader(LoadContext context, CfdType type, IReadOnlyList<CfdFieldNode> nodes, string path, CfdSpan span, string? key = null, IReadOnlyDictionary<string, Dictionary<string, CfdValueNode>>? overrides = null)
     {
         _context = context; _type = type; _span = span; _key = key; Path = path;
-        _nodes = nodes.ToDictionary(node => node.Name, node => node.Value, StringComparer.Ordinal);
+        // 未标类型的内联字典也要给出来源诊断，重复字段不能泄漏 Dictionary 异常。
+        var fieldsByName = new Dictionary<string, CfdValueNode>(StringComparer.Ordinal);
+        foreach (var field in nodes)
+        {
+            if (fieldsByName.ContainsKey(field.Name)) throw Error(field.Value, "CFD-DUPLICATE-FIELD", $"duplicate field `{field.Name}`");
+            fieldsByName.Add(field.Name, field.Value);
+        }
+        _nodes = fieldsByName;
         _overrides = overrides ?? new Dictionary<string, Dictionary<string, CfdValueNode>>();
         foreach (var field in nodes)
             if (!type.Fields.Any(descriptor => descriptor.Name == field.Name)) throw Error(field.Value, "CFD-FIELD", $"unknown field `{field.Name}`");

@@ -78,7 +78,7 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
             queries
                 .schema_type_names()
                 .into_iter()
-                .filter(|name| !queries.type_is_abstract(name))
+                .filter(|name| !queries.type_is_abstract(name) && !queries.type_is_data(name))
                 .collect()
         });
     FileRecords {

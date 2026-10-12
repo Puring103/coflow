@@ -8,9 +8,11 @@ adasdasd: game {
   name: "",
 }
 
+resident: NPC {
+  gender: Male,
+  name: "",
+}
+
 builginf: Building {
-  npc: NPC {
-    gender: Male,
-    name: "",
-  },
+  npc: &NPC::resident,
 }

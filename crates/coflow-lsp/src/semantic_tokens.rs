@@ -261,6 +261,9 @@ fn add_lex_semantic_token(
         TokenKind::Const
         | TokenKind::Enum
         | TokenKind::Type
+        | TokenKind::Table
+        | TokenKind::Data
+        | TokenKind::Singleton
         | TokenKind::Abstract
         | TokenKind::Sealed
         | TokenKind::Check
@@ -272,8 +275,7 @@ fn add_lex_semantic_token(
         | TokenKind::Is
         | TokenKind::True
         | TokenKind::False => SEM_KEYWORD,
-        TokenKind::Ident(text) if matches!(text.as_str(), "Option" | "None" | "Some") =>
-        {
+        TokenKind::Ident(text) if matches!(text.as_str(), "Option" | "None" | "Some") => {
             SEM_KEYWORD
         }
         TokenKind::Int(_) | TokenKind::UIntOverflow(_) | TokenKind::Float(_) => SEM_NUMBER,
@@ -506,10 +508,9 @@ fn add_value_type_semantic(
                 tokens,
             );
         }
-        TypeRefKind::Array(inner) | TypeRefKind::Option(inner) => {
+        TypeRefKind::Array(inner) | TypeRefKind::Option(inner) | TypeRefKind::Ref(inner) => {
             add_value_type_semantic(build, document, inner, tokens);
         }
-        TypeRefKind::Ref(inner) => add_value_type_semantic(build, document, inner, tokens),
         TypeRefKind::Dict(key, value) => {
             add_value_type_semantic(build, document, key, tokens);
             add_value_type_semantic(build, document, value, tokens);

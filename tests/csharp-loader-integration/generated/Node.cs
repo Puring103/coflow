@@ -3,10 +3,10 @@
 
 namespace Game.Config
 {
-public class Node
+public partial class Node
 {
-    public string? id { get; }
-    internal Node(string? key) { id = key; }
+    public string id { get; }
+    internal Node(string key) { id = key; }
     public global::Coflow.Loader.Option<Node> next { get; internal set; } = default!;
 }
 }

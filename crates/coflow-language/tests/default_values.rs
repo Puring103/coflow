@@ -18,10 +18,10 @@ fn supports_data_field_defaults() {
         r#"
 @flag enum Permission { Read = 1, Write = 2 }
 const BRACES: string = "{{ready}}";
-abstract type Effect { amount: int; }
-type Damage: Effect {}
+abstract data Effect { amount: int; }
+data Damage: Effect {}
 @description("literal {{braces}}")
-type Rule {
+table Rule {
   name: string;
   label: fstring = f"rule {self.name}";
   braces: string = "{{ready}}";
@@ -59,7 +59,7 @@ type Rule {
 #[test]
 fn ordinary_string_braces_are_literal() {
     let schema =
-        compile(r#"type Rule { label: string = "{self.name}"; }"#).expect("literal braces");
+        compile(r#"table Rule { label: string = "{self.name}"; }"#).expect("literal braces");
     let rule = schema.resolve_type("Rule").expect("Rule");
     assert!(
         matches!(rule.field("label").and_then(|field| field.default.as_ref()), Some(CftSchemaDefaultValue::String(value)) if value == "{self.name}")
@@ -69,9 +69,9 @@ fn ordinary_string_braces_are_literal() {
 #[test]
 fn formatted_defaults_only_accept_field_paths() {
     for source in [
-        r#"type Rule { name: string; label: fstring = f"{self.name()}"; }"#,
-        r#"type Rule { price: int; label: fstring = f"{self.price + 1}"; }"#,
-        r#"type Rule { price: int; label: fstring = f"{self.price:000}"; }"#,
+        r#"table Rule { name: string; label: fstring = f"{self.name()}"; }"#,
+        r#"table Rule { price: int; label: fstring = f"{self.price + 1}"; }"#,
+        r#"table Rule { price: int; label: fstring = f"{self.price:000}"; }"#,
     ] {
         let diagnostics = compile(source).expect_err("data interpolation must reject expressions");
         assert!(diagnostics
@@ -84,8 +84,8 @@ fn formatted_defaults_only_accept_field_paths() {
 #[test]
 fn function_types_and_defaults_are_rejected() {
     for source in [
-        "type Rule { apply: fn(value: int) -> int; }",
-        "type Rule { apply: int = fn(value: int) -> int { value }; }",
+        "table Rule { apply: fn(value: int) -> int; }",
+        "table Rule { apply: int = fn(value: int) -> int { value }; }",
     ] {
         assert!(compile(source).is_err(), "{source}");
     }
@@ -94,7 +94,7 @@ fn function_types_and_defaults_are_rejected() {
 #[test]
 fn rejects_invalid_flag_default_expressions() {
     let diagnostics =
-        compile("enum Mode { A = 1, B = 2 } type Rule { mode: Mode = Mode::A | Mode::B; }")
+        compile("enum Mode { A = 1, B = 2 } table Rule { mode: Mode = Mode::A | Mode::B; }")
             .expect_err("bit expressions require a flag enum");
     assert!(diagnostics
         .diagnostics
@@ -102,7 +102,7 @@ fn rejects_invalid_flag_default_expressions() {
         .any(|diagnostic| diagnostic.code == CftErrorCode::InvalidConstValue));
 
     let diagnostics = compile(
-        "@flag enum Permission { Read = 1, Write = 2 } type Rule { permissions: Permission = 8; }",
+        "@flag enum Permission { Read = 1, Write = 2 } table Rule { permissions: Permission = 8; }",
     )
     .expect_err("flag defaults cannot contain undeclared bits");
     assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
@@ -113,7 +113,7 @@ fn rejects_invalid_flag_default_expressions() {
 
 #[test]
 fn check_messages_only_interpolate_paths() {
-    compile(r#"type Rule { price: int; check { price >= 0 : f"bad {price}"; } }"#)
+    compile(r#"table Rule { price: int; check { price >= 0 : f"bad {price}"; } }"#)
         .expect("scalar field interpolation");
     for expression in [
         "price + 1",
@@ -123,7 +123,7 @@ fn check_messages_only_interpolate_paths() {
         "len(price)",
     ] {
         let source = format!(
-            "type Rule {{ price: int; check {{ price >= 0 : f\"bad {{{expression}}}\"; }} }}"
+            "table Rule {{ price: int; check {{ price >= 0 : f\"bad {{{expression}}}\"; }} }}"
         );
         assert!(compile(&source).is_err(), "{expression}");
     }

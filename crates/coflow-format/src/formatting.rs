@@ -221,10 +221,7 @@ fn joinable_colon_prefix(source: &str) -> bool {
     if prefix.starts_with('"') && prefix.ends_with('"') {
         return true;
     }
-    prefix.split("::").all(is_identifier)
-        || ["type ", "abstract type ", "sealed type "]
-            .iter()
-            .any(|start| prefix.starts_with(start))
+    prefix.split("::").all(is_identifier) || is_type_header(prefix)
 }
 
 fn split_array_object_header(source: &str) -> Option<(&str, &str)> {
@@ -427,9 +424,7 @@ fn classify_open_brace(prefix: &str, language: FormatLanguage) -> BraceKind {
         FormatLanguage::Cft => {
             if prefix.starts_with("enum ") {
                 BraceKind::Enum
-            } else if prefix.starts_with("type ")
-                || prefix.starts_with("abstract type ")
-                || prefix.starts_with("sealed type ")
+            } else if is_type_header(prefix)
                 || prefix == "check"
                 || prefix.starts_with("check ")
                 || prefix.starts_with("when ")
@@ -547,9 +542,8 @@ fn last_output_line_is_annotation(output: &str) -> bool {
 
 fn is_definition_start(line: &str) -> bool {
     let line = line.trim_start();
-    line.starts_with("type ")
-        || line.starts_with("abstract type ")
-        || line.starts_with("sealed type ")
+    is_type_header(line)
+        || line.starts_with("type ")
         || line.starts_with("enum ")
         || line.starts_with("const ")
         || line.starts_with("check ")
@@ -784,16 +778,23 @@ fn is_generic_open(output: &str) -> bool {
         .rev()
         .find(|token| !token.is_trivia())
         .is_some_and(|token| {
-            token.kind == LosslessTokenKind::Identifier
-                && token.text(output) == "Option"
+            token.kind == LosslessTokenKind::Identifier && token.text(output) == "Option"
         })
 }
 
 fn is_type_header(line: &str) -> bool {
     let line = line.trim_start();
-    line.starts_with("type ")
-        || line.starts_with("abstract type ")
-        || line.starts_with("sealed type ")
+    [
+        "table ",
+        "data ",
+        "singleton ",
+        "abstract table ",
+        "abstract data ",
+        "sealed table ",
+        "sealed data ",
+    ]
+    .iter()
+    .any(|keyword| line.starts_with(keyword))
 }
 
 fn push_pending_space(output: &mut String, pending_space: &mut bool) {

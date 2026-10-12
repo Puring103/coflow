@@ -13,8 +13,8 @@ fn compile(
 
 #[test]
 fn legacy_nullable_type_and_null_default_are_rejected() {
-    assert!(compile("type Item { value: int?; }").is_err());
-    assert!(compile("type Item { value: int = null; }").is_err());
+    assert!(compile("table Item { value: int?; }").is_err());
+    assert!(compile("table Item { value: int = null; }").is_err());
 }
 
 #[test]
@@ -22,7 +22,7 @@ fn deeply_nested_option_types_are_rejected_before_recursing() {
     use coflow_language::cft::syntax::parser::{parse_module_with_options, CftParseOptions};
     use coflow_language::limits::StructuralLimits;
     let source = format!(
-        "type Item {{ value: {}int{}; }}",
+        "table Item {{ value: {}int{}; }}",
         "Option<".repeat(300),
         ">".repeat(300)
     );
@@ -45,7 +45,7 @@ fn deeply_nested_option_types_are_rejected_before_recursing() {
 fn option_types_preserve_nested_defaults() {
     let schema = compile(
         r#"
-            type Item {
+            table Item {
                 nested: Option<Option<int>> = Some(None);
             }
         "#,

@@ -88,7 +88,7 @@ fn type_navigation(
     let concrete_types = queries
         .schema_type_names()
         .into_iter()
-        .filter(|name| !queries.type_is_abstract(name))
+        .filter(|name| !queries.type_is_abstract(name) && !queries.type_is_data(name))
         .collect::<Vec<_>>();
     for file_path in queries.source_files() {
         let mut type_names = concrete_types.clone();

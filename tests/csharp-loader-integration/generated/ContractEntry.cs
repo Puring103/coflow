@@ -3,19 +3,22 @@
 
 namespace Game.Config
 {
-public class ContractEntry
+public partial class ContractEntry
 {
-    public string? id { get; }
-    internal ContractEntry(string? key) { id = key; }
+    public string id { get; }
+    internal ContractEntry(string key) { id = key; }
     public ContractPayload payload { get; internal set; } = default!;
     public ContractShape shape { get; internal set; } = default!;
     public ContractBase polymorphic { get; internal set; } = default!;
     public ContractChild child { get; internal set; } = default!;
-    public ContractShapeRecord target { get; internal set; } = default!;
+    public global::Coflow.Loader.DimensionValue<ContractNode> target { get; internal set; } = default!;
     public long wide { get; internal set; } = default!;
     public double precise { get; internal set; } = default!;
     public double large { get; internal set; } = default!;
     public string scalar_text { get; internal set; } = default!;
+    public string plain_text { get; internal set; } = default!;
+    public string own_id { get; internal set; } = default!;
+    public string other_id { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> nested { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> constant_nested { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyList<long> samples { get; internal set; } = default!;

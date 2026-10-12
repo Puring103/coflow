@@ -177,7 +177,7 @@ mod project_runtime_tests {
     fn reverting_to_published_schema_discards_failed_attempt() {
         let root = tempfile::tempdir().expect("temp project");
         let schema_path = root.path().join("schema.cft");
-        fs::write(&schema_path, "type Item { value: int; }\n").expect("write schema");
+        fs::write(&schema_path, "table Item { value: int; }\n").expect("write schema");
         fs::write(
             root.path().join("coflow.yaml"),
             "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
@@ -191,7 +191,7 @@ mod project_runtime_tests {
             .refresh_with_overrides(&[SchemaTextOverride {
                 requested_module: None,
                 normalized_path: normalize_path(&schema_path),
-                source: "type Item { value: Missing; }\n".to_string(),
+                source: "table Item { value: Missing; }\n".to_string(),
             }])
             .is_err());
         assert!(runtime
@@ -210,7 +210,7 @@ mod project_runtime_tests {
         fs::create_dir_all(root.path().join("data")).expect("create data");
         fs::write(
             root.path().join("schema.cft"),
-            "type Item { name: string; value: int; }\n",
+            "table Item { name: string; value: int; }\n",
         )
         .expect("write schema");
         fs::write(
@@ -261,7 +261,7 @@ mod project_runtime_tests {
         fs::create_dir_all(root.path().join("data")).expect("create data");
         fs::write(
             root.path().join("schema.cft"),
-            "type Item { value: int; }\n",
+            "table Item { value: int; }\n",
         )
         .expect("write schema");
         fs::write(
@@ -631,13 +631,7 @@ impl WriteProjectSession {
         path: &[CfdPathSegment],
         text: &str,
     ) -> Result<CfdValue, DiagnosticSet> {
-        crate::mutation::parse_cell_text_value(
-            &self.session,
-            &coordinate.actual_type,
-            &coordinate.key,
-            path,
-            text,
-        )
+        crate::mutation::parse_cell_text_value(&self.session, &coordinate.actual_type, path, text)
     }
 
     #[must_use]

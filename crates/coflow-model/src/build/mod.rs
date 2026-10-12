@@ -290,6 +290,8 @@ impl<'a> ModelCompiler<'a> {
                 dimension_fields: BTreeMap::default(),
             });
         }
+        self.editable_diagnostics
+            .extend(resolver.take_reference_diagnostics());
         records
     }
 
@@ -467,6 +469,14 @@ impl<'a> ModelCompiler<'a> {
                 if let Some(value) = resolver.resolve_dimension_value(record_id, &draft, &path) {
                     values.push((record_id, input.clone(), value));
                 }
+                let mut reference_errors = resolver.take_reference_diagnostics();
+                attach_origin_to_diagnostics(
+                    &mut reference_errors,
+                    &input.origin,
+                    Some(record_id),
+                    &path,
+                );
+                self.editable_diagnostics.extend(reference_errors);
                 origins.push((
                     start,
                     resolver.diagnostic_count(),

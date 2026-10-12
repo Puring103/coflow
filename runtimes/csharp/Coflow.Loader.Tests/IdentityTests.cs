@@ -29,8 +29,8 @@ public sealed class IdentityTests
     {
         internal Graph(CfdData data)
         {
-            Nodes = data.Records<Node>();
-            Others = data.Records<Other>();
+            Nodes = data.Table<Node>();
+            Others = data.Table<Other>();
         }
         internal IReadOnlyDictionary<string, Node> Nodes { get; }
         internal IReadOnlyDictionary<string, Other> Others { get; }
@@ -50,9 +50,9 @@ public sealed class IdentityTests
 
     private static readonly CfdType[] Types =
     {
-        new CfdType<Node, Node>("Node", Fields, key => new Node(key), Fill, reader => { var value = new Node(null!); Fill(value, reader); return value; }),
-        new CfdType<Child, Child>("Child", Fields, key => new Child(key), (node, reader) => Fill(node, reader), reader => { var value = new Child(null!); Fill(value, reader); return value; }, parent: "Node"),
-        new CfdType<Other, Other>("Other", System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, reader => new Other(null!)),
+        new CfdType<Node>("Node", CfdTypeKind.Table, Fields, key => new Node(key), Fill, construct: null),
+        new CfdType<Child>("Child", CfdTypeKind.Table, Fields, key => new Child(key), (node, reader) => Fill(node, reader), construct: null, parent: "Node"),
+        new CfdType<Other>("Other", CfdTypeKind.Table, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, construct: null),
     };
 
     private static LoadResult<Graph> Load(string source) => CfdLoader.Load(
@@ -88,11 +88,11 @@ public sealed class IdentityTests
     [InlineData("fstring", false)]
     public void TypeIdentifiersFollowTheSharedLanguageReservations(string name, bool success)
     {
-        var type = new CfdType<Other, Other>(name, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, reader => new Other(null!));
+        var type = new CfdType<Other>(name, CfdTypeKind.Table, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, construct: null);
         var result = CfdLoader.Load(new[] { new CfdSource("names.cfd", "a: " + name + " {}") },
-            new CfdType[] { type }, data => new Graph(data));
+            new CfdType[] { type }, data => new System.Tuple<Table<Other>>(data.Table<Other>()));
         Assert.Equal(success, result.Success);
-        if (success) Assert.Equal("a", result.Data.Others["a"].Key);
+        if (success) Assert.Equal("a", result.Data.Item1["a"].Key);
         else Assert.Equal("names.cfd", result.Diagnostics[0].Path);
     }
 

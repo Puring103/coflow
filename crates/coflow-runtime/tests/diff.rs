@@ -38,7 +38,7 @@ fn compares_published_session_with_heads_own_project_model() {
     let project_root = repo.path().join("game");
     write_project(
         &project_root,
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item {\n  old { value: 1, }\n  changed { value: 2, }\n}\n",
     );
     git(repo.path(), &["init", "--quiet"]);
@@ -50,7 +50,7 @@ fn compares_published_session_with_heads_own_project_model() {
     // 当前 schema 新增默认字段，HEAD 仍必须按旧 schema 加载。
     fs::write(
         project_root.join("schema.cft"),
-        "type Item { value: int; enabled: bool = true; }\n",
+        "table Item { value: int; enabled: bool = true; }\n",
     )
     .expect("update schema");
     fs::write(
@@ -112,7 +112,7 @@ fn excludes_ignored_untracked_project_sources() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item { base { value: 1, } }\n",
     );
     fs::write(repo.path().join(".gitignore"), "data/ignored.cfd\n").expect("write ignore");
@@ -145,7 +145,7 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item { current { value: 1, } }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
@@ -168,7 +168,7 @@ fn uses_the_published_session_instead_of_rereading_working_files() {
     fs::write(repo.path().join("coflow.yaml"), "invalid: true\n").expect("write later config");
     fs::write(
         repo.path().join("schema.cft"),
-        "type Broken { value: string; }\n",
+        "table Broken { value: string; }\n",
     )
     .expect("write later schema");
     fs::write(
@@ -197,7 +197,7 @@ fn keeps_source_diff_when_head_project_is_invalid() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item { current { value: 1, } }\n",
     );
     fs::write(repo.path().join("coflow.yaml"), "not-a-project: true\n")
@@ -242,7 +242,7 @@ fn ignores_checkout_line_ending_differences() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item { current { value: 1, } }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
@@ -274,7 +274,7 @@ fn respects_nested_excludes_and_keeps_force_added_files() {
     let global = tempfile::NamedTempFile::new().expect("global excludes");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item { base { value: 1, } }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
@@ -343,7 +343,7 @@ fn reads_packed_heads_in_detached_linked_worktrees() {
         let project_path = "游戏 project";
         write_project(
             &repo.path().join(project_path),
-            "type Item { value: int; }\n",
+            "table Item { value: int; }\n",
             "Item { base { value: 1, } }\n",
         );
         git(
@@ -399,7 +399,7 @@ fn reports_git_diagnostic_for_unborn_head() {
     let repo = tempfile::tempdir().expect("temp repo");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "Item { base { value: 1, } }\n",
     );
     git(repo.path(), &["init", "--quiet"]);
@@ -421,7 +421,7 @@ fn compares_absolute_dimension_paths_against_snapshot() {
     let repo = tempfile::tempdir().expect("repo");
     write_project(
         repo.path(),
-        "type Item { @localized name: string; }\n",
+        "table Item { @localized name: string; }\n",
         "one: Item { name: \"Name\" }\n",
     );
     let dimensions = repo.path().join("dimensions/language");
@@ -466,7 +466,7 @@ fn excludes_sources_outside_repository_with_diagnostics() {
     let external = tempfile::tempdir().expect("external");
     write_project(
         repo.path(),
-        "type Item { value: int; }\n",
+        "table Item { value: int; }\n",
         "base: Item { value: 1 }\n",
     );
     let external_file = external.path().join("outside.cfd");

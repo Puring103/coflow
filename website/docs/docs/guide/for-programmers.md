@@ -22,11 +22,11 @@ var result = CoflowData.Load(new[] {
     new CfdSource("ja.cfd", localizationText),
 });
 if (result.Success) {
-    var sword = result.Data.Item["sword"];
+    var sword = result.Data.Table<Item>()["sword"];
     var name = sword.name.For("ja");
 }
 ```
 
 互相引用的记录一起加载，引用直接连接业务对象。整数与浮点使用 long/double，可选值使用 `Option<T>` 保留每层状态。应用选择文件、读取内容和处理加载诊断，编辑器执行 CFT 中的业务检查。
 
-类型映射、单例、结构体记录与加载结果见 [C# 参考](../reference/07-codegen/01-csharp.md)。
+类型映射、partial 扩展、表与单例获取、枚举主键和加载结果见 [C# 参考](../reference/07-codegen/01-csharp.md)。

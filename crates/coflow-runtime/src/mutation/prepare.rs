@@ -800,10 +800,10 @@ fn ensure_type_can_insert(
             format!("abstract type `{actual_type}` cannot be inserted"),
         ));
     }
-    if schema_type.is_singleton {
+    if !schema_type.is_table() {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
-            format!("singleton type `{actual_type}` cannot be inserted"),
+            format!("only table records can be inserted: `{actual_type}`"),
         ));
     }
     Ok(())

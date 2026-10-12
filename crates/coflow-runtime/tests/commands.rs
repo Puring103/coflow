@@ -10,7 +10,7 @@ fn write_project() -> TempDir {
     let dir = tempfile::tempdir().expect("temp project");
     fs::write(
         dir.path().join("schema.cft"),
-        "type Item { name: string; }\n",
+        "table Item { name: string; }\n",
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data")).expect("data dir");
@@ -32,7 +32,7 @@ fn write_id_as_enum_project(is_flag: bool, records: &str) -> TempDir {
     let flag = if is_flag { "@flag " } else { "" };
     fs::write(
         dir.path().join("schema.cft"),
-        format!("{flag}enum ItemId {{}}\n@idAsEnum(ItemId) type Item {{ name: string; }}\n"),
+        format!("{flag}enum ItemId {{}}\n@idAsEnum(ItemId) table Item {{ name: string; }}\n"),
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data")).expect("data dir");
@@ -354,7 +354,7 @@ fn codegen_preserves_unity_meta_without_generation_history() {
 
     fs::write(
         project_dir.path().join("schema.cft"),
-        "type Item { name: string; level: int = 1; }\n",
+        "table Item { name: string; level: int = 1; }\n",
     )
     .expect("change schema");
     let changed = Project::open(Some(&config)).expect("reopen changed project");
@@ -368,12 +368,10 @@ fn codegen_preserves_unity_meta_without_generation_history() {
 
 fn dimension_project(singleton: bool, overlay: &str) -> TempDir {
     let dir = tempfile::tempdir().expect("dimension project");
-    let modifier = if singleton { "@singleton " } else { "" };
+    let modifier = if singleton { "singleton" } else { "table" };
     fs::write(
         dir.path().join("schema.cft"),
-        format!(
-            "{modifier}type UiText {{ @localized welcome: string; @localized farewell: string; }}"
-        ),
+        format!("{modifier} UiText {{ @localized welcome: string; @localized farewell: string; }}"),
     )
     .expect("schema");
     fs::create_dir_all(dir.path().join("data")).expect("data dir");
@@ -415,7 +413,7 @@ fn csharp_codegen_uses_one_singleton_business_type_for_dimensions() {
     let project = Project::open(Some(dir.path())).expect("project");
     coflow_runtime::commands::generate_project_code(&project).expect("generate");
     let root = fs::read_to_string(dir.path().join("generated/csharp/CoflowData.cs")).expect("root");
-    assert!(root.contains("singleton: true"));
+    assert!(root.contains("CfdTypeKind.Singleton"));
     assert_eq!(root.matches("CfdValues.Dimension(\"language\"").count(), 2);
     assert!(!root.contains("__coflow_"));
 }
@@ -469,7 +467,7 @@ fn editor_rules_do_not_execute_in_data_sessions_or_block_cli_generation() {
     let dir = write_project();
     fs::write(
         dir.path().join("schema.cft"),
-        "type Item { name: string; check { false : \"editor business issue\"; } }",
+        "table Item { name: string; check { false : \"editor business issue\"; } }",
     )
     .expect("schema with check");
     let project = Project::open(Some(dir.path())).expect("project");
@@ -477,10 +475,7 @@ fn editor_rules_do_not_execute_in_data_sessions_or_block_cli_generation() {
         .open_data_session(project.clone())
         .expect("data session");
     assert!(!data.queries().has_diagnostics());
-    assert_eq!(
-        data.queries().execution_stats().check_roots_executed,
-        0
-    );
+    assert_eq!(data.queries().execution_stats().check_roots_executed, 0);
     let editor = Runtime::new()
         .open_read_only_session(project.clone())
         .expect("editor session");

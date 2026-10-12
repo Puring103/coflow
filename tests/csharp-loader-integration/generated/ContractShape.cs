@@ -3,10 +3,10 @@
 
 namespace Game.Config
 {
-public struct ContractShape
+public partial struct ContractShape
 {
     public long count { get; internal set; }
-    public global::Coflow.Loader.Option<ContractShapeRecord> next { get; internal set; }
     public global::Coflow.Loader.Option<ContractShape> inner { get; internal set; }
+    public string label { get; internal set; }
 }
 }

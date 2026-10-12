@@ -3,9 +3,9 @@
 
 namespace Game.Config
 {
-public struct ContractChild
+public sealed partial class ContractChild : ContractBase
 {
-    public string name { get; internal set; }
-    public long score { get; internal set; }
+    internal ContractChild() { }
+    public long score { get; internal set; } = default!;
 }
 }

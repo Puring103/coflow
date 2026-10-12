@@ -1,11 +1,10 @@
-use super::annotations::has_annotation;
 use super::inferred_type::{is_valid_dict_key, InferredType};
 use super::state::{FieldInfo, SymbolKind};
 use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
 use crate::source::Span;
-use crate::syntax::ast::{TypeRef, TypeRefKind};
+use crate::syntax::ast::{TypeKind, TypeRef, TypeRefKind};
 use crate::CftValueType;
 use std::collections::BTreeMap;
 
@@ -71,7 +70,15 @@ impl ResolvedTypes<'_> {
                                 "singleton type cannot be used as a value type",
                             );
                         }
-                        InferredType::object(crate::TypeName::from_validated(resolved_name))
+                        if self.type_is_table(&resolved_name) {
+                            self.push_diag(
+                                CftErrorCode::InvalidAnnotatedFieldType,
+                                module,
+                                ty.span,
+                                format!("table type `{resolved_name}` must be written as `&{resolved_name}`"),
+                            );
+                        }
+                        self.named_value_type(&resolved_name)
                     }
                     Some(SymbolKind::Enum) => {
                         InferredType::enum_value(crate::EnumName::from_validated(resolved_name))
@@ -109,24 +116,16 @@ impl ResolvedTypes<'_> {
                 }
             }
             TypeRefKind::Ref(inner) => {
-                let inner_ty = self.resolve_alias_target(module, inner, visiting);
-                match inner_ty.object_name() {
-                    Some(name) if self.type_is_singleton(name) => self.push_diag(
-                        CftErrorCode::InvalidAnnotatedFieldType,
-                        module,
-                        inner.span,
-                        "reference target type must not be a singleton type",
-                    ),
-                    Some(_) => {}
-                    None if inner_ty.is_unknown() => {}
-                    None => self.push_diag(
-                        CftErrorCode::InvalidAnnotatedFieldType,
-                        module,
-                        inner.span,
-                        "reference target must be a non-singleton object type",
-                    ),
+                // 先解析别名依赖，再验证显式引用目标；裸 table 仅能出现在 & 内部。
+                if let TypeRefKind::Named(name) = &inner.kind {
+                    if self.aliases.contains_key(name) {
+                        self.resolve_type_alias(name, visiting);
+                    }
                 }
-                InferredType::record_ref(inner_ty)
+                let mut diagnostics = Vec::new();
+                let resolved = self.validate_reference_type(module, inner, &mut diagnostics);
+                self.diagnostics.extend(diagnostics);
+                resolved
             }
             TypeRefKind::Array(inner) => {
                 InferredType::array(self.resolve_alias_target(module, inner, visiting))
@@ -152,6 +151,22 @@ impl ResolvedTypes<'_> {
     pub(super) fn validate_type_headers(&mut self) {
         let mut diagnostics = Vec::new();
         for info in self.types.values() {
+            if info.def.kind == TypeKind::Singleton && info.def.is_abstract {
+                diagnostics.push(CftDiagnostic::error(
+                    CftErrorCode::SingletonOnAbstractType,
+                    info.module.clone(),
+                    info.def.span,
+                    "singleton must be concrete",
+                ));
+            }
+            if info.def.kind == TypeKind::Data && info.def.check.is_some() {
+                diagnostics.push(CftDiagnostic::error(
+                    CftErrorCode::InvalidTopLevelItem,
+                    info.module.clone(),
+                    info.def.span,
+                    "check belongs to table, singleton, or project scope",
+                ));
+            }
             if info.def.is_abstract && info.def.is_sealed {
                 let span = info
                     .def
@@ -168,7 +183,24 @@ impl ResolvedTypes<'_> {
             if let Some(parent) = &info.def.parent {
                 let parent_name = parent.name.clone();
                 match self.symbols.get(&parent_name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Type => {}
+                    Some(symbol) if symbol.kind == SymbolKind::Type => {
+                        if let Some(parent_info) = self.types.get(&parent_name) {
+                            let valid = match info.def.kind {
+                                TypeKind::Data => parent_info.def.kind == TypeKind::Data,
+                                TypeKind::Table | TypeKind::Singleton => {
+                                    parent_info.def.kind == TypeKind::Table
+                                }
+                            };
+                            if !valid {
+                                diagnostics.push(CftDiagnostic::error(
+                                    CftErrorCode::ParentMustBeType,
+                                    info.module.clone(),
+                                    parent.span,
+                                    "data inherits data; table and singleton inherit table",
+                                ));
+                            }
+                        }
+                    }
                     Some(symbol) => {
                         diagnostics.push(
                             CftDiagnostic::error(
@@ -362,9 +394,7 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Named(name) => {
                 let name = name.clone();
                 match self.symbols.get(&name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Type => {
-                        InferredType::object(crate::TypeName::from_validated(name))
-                    }
+                    Some(symbol) if symbol.kind == SymbolKind::Type => self.named_value_type(&name),
                     Some(symbol) if symbol.kind == SymbolKind::Enum => {
                         InferredType::enum_value(crate::EnumName::from_validated(name))
                     }
@@ -376,7 +406,12 @@ impl ResolvedTypes<'_> {
                     _ => InferredType::Unknown,
                 }
             }
-            TypeRefKind::Ref(inner) => InferredType::record_ref(self.resolve_field_type(inner)),
+            TypeRefKind::Ref(inner) => match self.resolve_field_type(inner).object_name() {
+                Some(name) if self.type_is_table(name) => InferredType::Value(
+                    CftValueType::RecordRef(crate::TypeName::from_validated(name.to_string())),
+                ),
+                _ => InferredType::Unknown,
+            },
             TypeRefKind::Array(inner) => InferredType::array(self.resolve_field_type(inner)),
             TypeRefKind::Dict(key, value) => {
                 InferredType::dict(self.resolve_field_type(key), self.resolve_field_type(value))
@@ -413,7 +448,14 @@ impl ResolvedTypes<'_> {
                                 "singleton type cannot be used as a field type".into(),
                             ));
                         }
-                        InferredType::object(crate::TypeName::from_validated(resolved_name))
+                        if self.type_is_table(&resolved_name) {
+                            diagnostics.push(diagnostic(
+                                CftErrorCode::InvalidAnnotatedFieldType,
+                                ty.span,
+                                format!("table type `{resolved_name}` must be written as `&{resolved_name}`"),
+                            ));
+                        }
+                        self.named_value_type(&resolved_name)
                     }
                     Some(symbol) if symbol.kind == SymbolKind::Enum => {
                         InferredType::enum_value(crate::EnumName::from_validated(resolved_name))
@@ -448,24 +490,7 @@ impl ResolvedTypes<'_> {
                     }
                 }
             }
-            TypeRefKind::Ref(inner) => {
-                let inner_ty = self.validate_field_type(module, inner, diagnostics);
-                match inner_ty.object_name() {
-                    Some(name) if self.type_is_singleton(name) => diagnostics.push(diagnostic(
-                        CftErrorCode::InvalidAnnotatedFieldType,
-                        inner.span,
-                        "reference target type must not be a singleton type".into(),
-                    )),
-                    Some(_) => {}
-                    None if inner_ty.is_unknown() => {}
-                    None => diagnostics.push(diagnostic(
-                        CftErrorCode::InvalidAnnotatedFieldType,
-                        inner.span,
-                        "reference target must be a non-singleton object type".into(),
-                    )),
-                }
-                InferredType::record_ref(inner_ty)
-            }
+            TypeRefKind::Ref(inner) => self.validate_reference_type(module, inner, diagnostics),
             TypeRefKind::Array(inner) => {
                 InferredType::array(self.validate_field_type(module, inner, diagnostics))
             }
@@ -486,9 +511,46 @@ impl ResolvedTypes<'_> {
         }
     }
 
+    // & 只允许指向 table；data 内联保存，singleton 通过唯一入口访问。
+    fn validate_reference_type(
+        &self,
+        module: &ModuleId,
+        inner: &TypeRef,
+        diagnostics: &mut Vec<CftDiagnostic>,
+    ) -> InferredType {
+        let resolved = self.resolve_field_type(inner);
+        if let Some(name) = resolved.object_name() {
+            if self.type_is_table(name) {
+                return InferredType::Value(CftValueType::RecordRef(
+                    crate::TypeName::from_validated(name.to_string()),
+                ));
+            }
+        }
+        if resolved.is_unknown() {
+            self.validate_field_type(module, inner, diagnostics);
+        }
+        diagnostics.push(CftDiagnostic::error(
+            CftErrorCode::InvalidAnnotatedFieldType,
+            module.clone(),
+            inner.span,
+            "reference target must be a table type",
+        ));
+        InferredType::Unknown
+    }
+
+    fn named_value_type(&self, name: &str) -> InferredType {
+        InferredType::object(crate::TypeName::from_validated(name.to_string()))
+    }
+
+    fn type_is_table(&self, name: &str) -> bool {
+        self.types
+            .get(name)
+            .is_some_and(|info| info.def.kind == TypeKind::Table)
+    }
+
     fn type_is_singleton(&self, name: &str) -> bool {
         self.types
             .get(name)
-            .is_some_and(|info| has_annotation(&info.def.annotations, "singleton"))
+            .is_some_and(|info| info.def.kind == TypeKind::Singleton)
     }
 }

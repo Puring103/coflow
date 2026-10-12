@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn phase_diagnostics_keep_source_independent_pass_order() {
-        let modules = modules("abstract sealed type Child: Missing { type: int; }");
+        let modules = modules("abstract sealed table Child: Missing { type: int; }");
         let diagnostics = build_schema(&modules).expect_err("schema must fail");
         let codes = diagnostics
             .diagnostics
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn analysis_budget_is_passed_to_the_graph_phase() {
-        let modules = modules("type Parent {} type Child: Parent {}");
+        let modules = modules("table Parent {} table Child: Parent {}");
         let diagnostics = build_schema_with_limits(&modules, StructuralLimits::new(100, 100, 0))
             .expect_err("inheritance edge must exhaust analysis steps");
         assert_eq!(
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn failed_inheritance_does_not_enter_value_resolution() {
-        let modules = modules("type A: B { value: int = Missing; } type B: A {}");
+        let modules = modules("table A: B { value: int = Missing; } table B: A {}");
         let diagnostics =
             build_schema(&modules).expect_err("inheritance cycle must stop the pipeline");
         assert!(diagnostics
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn symbol_stage_returns_complete_declarations() {
-        let modules = modules("enum State { Ready = 1 } type Item { state: State; }");
+        let modules = modules("enum State { Ready = 1 } table Item { state: State; }");
         let mut budget = StructuralBudget::new(StructuralLimits::default());
         let symbols = collect_symbols(&modules, &mut budget).expect("symbol stage");
         assert_eq!(symbols.product.enums.len(), 1);
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn stage_outputs_accumulate_diagnostics_without_back_writing() {
-        let modules = modules("type Item: Missing {} type Item {}");
+        let modules = modules("table Item: Missing {} table Item {}");
         let limits = StructuralLimits::default();
         let mut structural = StructuralBudget::new(limits);
         let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn symbol_stage_enforces_its_own_structural_budget() {
-        let modules = modules("type Item {}");
+        let modules = modules("table Item {}");
         let mut budget = StructuralBudget::new(StructuralLimits::new(100, 0, 100));
         let Err(diagnostics) = collect_symbols(&modules, &mut budget) else {
             panic!("symbol stage must enforce its node budget");
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn type_and_value_stages_publish_resolved_products() {
         let modules = modules(
-            "const Default = 3; type Parent { base: int; } type Child: Parent { value: int = Default; }",
+            "const Default = 3; table Parent { base: int; } table Child: Parent { value: int = Default; }",
         );
         let limits = StructuralLimits::default();
         let mut structural = StructuralBudget::new(limits);
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn check_stage_publishes_analysis_for_every_check_block() {
-        let modules = modules("type Item { value: int; check { value > 0; } }");
+        let modules = modules("table Item { value: int; check { value > 0; } }");
         let limits = StructuralLimits::default();
         let mut structural = StructuralBudget::new(limits);
         let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn lower_stage_publishes_only_a_fully_validated_schema() {
-        let modules = modules("type Item { value: int; }");
+        let modules = modules("table Item { value: int; }");
         let limits = StructuralLimits::default();
         let mut structural = StructuralBudget::new(limits);
         let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");

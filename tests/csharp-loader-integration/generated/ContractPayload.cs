@@ -3,10 +3,14 @@
 
 namespace Game.Config
 {
-public class ContractPayload
+public partial class ContractPayload
 {
-    public string? id { get; }
-    internal ContractPayload(string? key) { id = key; }
+    internal ContractPayload() { }
     public long score { get; internal set; } = default!;
+    public string label { get; internal set; } = default!;
+    public global::System.Collections.Generic.IReadOnlyList<string> labels { get; internal set; } = default!;
+    public global::System.Collections.Generic.IReadOnlyDictionary<string, string> indexed_labels { get; internal set; } = default!;
+    public global::Coflow.Loader.Option<string> template { get; internal set; } = default!;
+    public ContractDetails nested { get; internal set; } = default!;
 }
 }

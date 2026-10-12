@@ -85,21 +85,25 @@ pub(super) fn apply_patch(
                 &source[span.end..]
             ))
         }
-        WriteTarget::InsertTopLevel { ty } => {
+        WriteTarget::InsertTopLevel {
+            ty,
+            previous_value_end,
+        } => {
             let block_end = record.span.end.min(source.len());
             let insert_pos = find_closing_brace(source, block_end)?;
             let fragment = format!(
                 "{CFD_INDENT}{top_field}: {},\n",
                 serialize_value_for_type(new_value, Some(request.schema), Some(&ty), 2)
             );
-            Ok(format!(
-                "{}{}{}",
-                &source[..insert_pos],
-                fragment,
-                &source[insert_pos..]
+            Ok(insert_field_fragment(
+                source,
+                insert_pos,
+                previous_value_end,
+                &fragment,
             ))
         }
         WriteTarget::InsertNested {
+            previous_value_end,
             block_span,
             depth,
             field_name,
@@ -113,14 +117,37 @@ pub(super) fn apply_patch(
                 "{indent}{field_name}: {},\n{outer}",
                 serialize_value_for_type(new_value, Some(request.schema), Some(&ty), depth + 2)
             );
-            Ok(format!(
-                "{}{}{}",
-                &source[..insert_pos],
-                fragment,
-                &source[insert_pos..]
+            Ok(insert_field_fragment(
+                source,
+                insert_pos,
+                previous_value_end,
+                &fragment,
             ))
         }
     }
+}
+
+// 缺失末尾逗号的合法对象在追加字段时补齐分隔符，注释和未修改源码保持原样。
+fn insert_field_fragment(
+    source: &str,
+    position: usize,
+    previous: Option<usize>,
+    fragment: &str,
+) -> String {
+    let mut prefix = source[..position].to_string();
+    if let Some(end) = previous {
+        let suffix = &source[end..position];
+        let has_comma = coflow_language::lexical::tokenize_lossless(suffix)
+            .iter()
+            .any(|token| token.text(suffix) == ",");
+        if !has_comma {
+            prefix.insert(end, ',');
+        }
+    }
+    if !prefix.ends_with('\n') {
+        prefix.push('\n');
+    }
+    format!("{prefix}{fragment}{}", &source[position..])
 }
 
 fn replacement_serialization_depth(source: &str, offset: usize, value: &CfdValue) -> usize {

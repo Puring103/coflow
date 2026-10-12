@@ -1,49 +1,41 @@
 # C# 生成类型与加载器
 
-## 职责
+## 声明与目标类型
 
-CFT 声明由开发工具编译，用于编辑器检查及生成代码。应用只引用生成源码与 Coflow.Loader，提供所选 CFD 内容。
-check 由编辑器执行，不进入生成源码或加载器。
+CFT 使用 table、data、singleton 三类声明。table 与 singleton 生成 partial class，保留 abstract、sealed 和继承约束；data 默认生成 partial class，`@struct sealed data` 生成 partial struct。enum 使用 long 基础类型。CoflowData 为 sealed partial class。
 
-生成源码提供业务类型、枚举、静态字段描述、默认值描述及类型明确的构造回调。
-共享加载器负责 CFD 解析、字段校验、默认值合成、引用连接、维度覆盖、基础插值和诊断。
-加载器不通过反射发现字段；生成源码不复制公共解析和加载算法。
+字段中的 `&TableName` 对应记录对象引用，data 名称对应内联数据。singleton 不作为字段类型。table 和 singleton 具有 string id，data 不提供 id。继承限定 data 继承 data，table 与 singleton 继承 table；singleton 本身封闭。
 
-## 对象构建
+int/float 生成 long/double，可选层生成 Option<T>，集合生成 IReadOnlyList/IReadOnlyDictionary，维度字段生成 DimensionValue<T>。属性公开读取、internal 赋值，构造入口 internal。业务扩展与生成代码在同一程序集及 namespace 中组成 partial 类型。
 
-记录先分配 class 对象身份，再填充字段；引用直接连接这些对象，支持引用成环。
-同一 type 提供记录构造和内联构造两套回调。内联对象通过完整字段值构造，普通 class 的内联 id 为空。
-`@struct` 的内联值生成 C# 结构体；记录及引用使用生成的 `TypeRecord` 类，身份先分配再填充，继承字段完整保留。
-struct 子类型赋给 class 父类型字段时使用对应类表示，保存实际类型与全部字段。
-生成加载入口保存全部类型的记录表和 singleton。继承表与引用共享记录对象。
+## 生成与构造
 
-解析节点、来源索引、字段读取缓存和构建读者只在加载期间存在。
-静态描述保存加载协议及声明默认值，不保存已加载 CFD。加载结果不保留构建上下文或第二份通用值模型。
+生成器输出业务类型、枚举、字段描述、默认值与常量节点，以及类型明确的构造回调。公共解析、默认值读取、字段校验、引用连接、维度合成、插值及诊断由 Coflow.Loader 提供。
 
-## 数值与可选值
+table 和 singleton 使用 create(key)、fill(object, reader) 两阶段构造，先建立全部记录身份，再读取字段与连接引用，允许跨文件引用及引用成环。data 使用 construct(reader) 一次性构造完整内联值。abstract 声明只提供字段及继承元数据，由具体子类型构造。
 
-int 为 long，float 为有限 double。字段、默认值、常量与 CFD 输入保持同一范围和精度。
-`Option<T>` 为每层独立状态，使用 IsSome、IsNone、Value、None 和 Some(value)。内部强类型存在节点打断递归结构体的布局依赖。
-默认值描述保留 Some 节点；读取时显式 Some 与裸值物化一层，None 只终止当前层。Option 不直接参与基础插值。
+CfdTypeKind 贯穿注册与加载：data 不能作为顶层记录，table 不能构造内联值，singleton 只产生唯一实例。构造描述中的 CLR Type 只用于类型注册查找；字段读取与赋值使用生成的泛型回调，不通过反射访问业务成员。
 
-## 维度与模板
+## 数据访问
 
-覆盖块采用 `dimension[variant] { key: Type { field: value } }`。
-所有文件共同构建一份数据，文件顺序不决定覆盖优先级；同一维度、变体、记录和字段的重复覆盖报错。
-覆盖完整字段值。记录必须存在，字段必须绑定该维度；错误包含覆盖来源。
+CoflowData.Load(sources) 返回 LoadResult<CoflowData>。成功结果保存注册后的业务表与单例；失败返回来源诊断，不交付部分数据。
 
-字段为 `DimensionValue<T>`，保存基础值和所有已发现变体的有效值。
-`Default` 读取基础值；`For(variant)` 读取对应覆盖，未覆盖或未知变体回退到基础值。
-显式 None 保持为空。Variants 提供有效变体值，无须重新加载即可读取不同变体。
+CoflowData.Table<T>() 返回共享的 Table<T>，支持 string 索引、TryGetValue、ContainsKey、Count、Keys、Values 和遍历。父类型表包含子类型记录，表与引用共享对象。Singleton<T>() 只访问注册的单例。data 与 singleton 不进入 table 注册；错误类型访问抛出 InvalidOperationException。
 
-fstring 在加载时求值。模板仅使用 self 字段路径或限定记录的字段路径，末端值为基础值或已求值模板文本。
-路径依赖使用字段读取缓存；遇到循环依赖直接生成诊断。模板不能调用函数、执行运算或使用格式说明符。
+@idAsEnum 为 table 提供稳定编号枚举。每个适用的具体或父表生成接收者为 Table<业务类型> 的 Get(enum) 和 TryGet(enum, out record) 扩展，通过静态 enum->CFD key 映射查询。未知枚举值的 Get 抛出 KeyNotFoundException，TryGet 返回 false。映射包含当前有效记录 key，稳定编号保存在项目 enum lock 中，不通过 enum.ToString 推断。
 
-## 加载入口
+CoflowData 不生成业务类型同名的字典属性。Table<T>() 缓存创建后的只读表，多次调用返回同一表；结果不保留 parser AST、来源索引、字段读取缓存或第二份通用记录模型。
 
-`CfdSource` 为调用方提供的逻辑文件路径与内容。`CoflowData.Load(sources)` 返回 `LoadResult<CoflowData>`。
-成功结果直接包含生成对象；失败结果包含加载诊断，读取失败结果的 Data 抛出异常。
-失败不会向调用方交付部分数据。
+## 可选值、维度与模板
 
-加载器的值解析与字段依赖深度上限为 256。Some、数组、对象和括号表达式均在递归前收费；分组记录验证实际类型属于分组的继承域。
-编辑器 DTO 在 cfd-editor-core 导出，桌面插件 DTO 在 Tauri 宿主导出；固定 CFD loader 测试在 runtime 私有模块内验证。
+Option<T> 独立保存 IsSome/IsNone/Value，默认节点保留 Some 包裹。None、Some(None)、Some(Some(value)) 均保持不同状态，强类型存在节点允许有限递归结构体。
+
+维度覆盖使用 `dimension[variant] { key: Table { field: value } }`，同一维度、变体、记录、字段重复覆盖报错。覆盖只替换明确字段，未覆盖和未知变体回退基础值。DimensionValue<T> 提供 Default、For(variant)、Variants；显式 None 保持为空。
+
+fstring 在加载时生成文本，只读取字段路径和可转文本的基础末端，循环依赖产生来源诊断。self 绑定模板所在的记录或 data 对象；数组、字典和 Option 传递所属对象，嵌套 data 重新绑定。id 只属于顶层记录，data 不提供 id。
+
+编辑器 cell 输入验证模板语法并保存源码，完整模型在写入后统一求值；同一求值器负责默认值、集合、可选值和维度覆盖。显式引用的目标类型保留到记录链接校验阶段，错误保留来源和可修复的记录状态。float 文本保持与 Rust 十进制表示一致。值解析和依赖深度上限为 256，所有递归构造在进入前计入预算。
+
+## 验证与工具边界
+
+Rust 和生成 C# 共同消费 parser/runtime parity 夹具，覆盖声明边界、partial 扩展、枚举主键、继承表、单例、64 位值、可选层、引用身份及覆盖，并核对嵌套模板所属对象、记录 id、显式子类型引用与重复内联字段。语言服务、格式化器、编辑器和 VS Code 使用同一声明分类。编辑器 DTO 在 core 导出，宿主插件 DTO 在 Tauri 导出；固定 CFD loader 测试保持 runtime 私有。

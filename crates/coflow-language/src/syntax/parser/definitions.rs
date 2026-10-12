@@ -3,8 +3,8 @@ use crate::diagnostics::{CftDiagnostics, CftErrorCode};
 use crate::limits::StructureKind;
 use crate::source::Span;
 use crate::syntax::ast::{
-    Annotation, ConstDef, EnumDef, EnumVariant, FieldDef, Item, TypeAliasDef, TypeDef, TypeRef,
-    TypeRefKind,
+    Annotation, ConstDef, EnumDef, EnumVariant, FieldDef, Item, TypeAliasDef, TypeDef, TypeKind,
+    TypeRef, TypeRefKind,
 };
 use crate::syntax::lexer::{Token, TokenKind};
 
@@ -113,9 +113,23 @@ impl Parser<'_> {
                 break;
             }
         }
-        self.expect_simple(&TokenKind::Type, CftErrorCode::ExpectedToken)?;
+        let declaration = self.bump();
+        let kind = match declaration.kind {
+            TokenKind::Table => Some(TypeKind::Table),
+            TokenKind::Data => Some(TypeKind::Data),
+            TokenKind::Singleton => Some(TypeKind::Singleton),
+            TokenKind::Type => None,
+            _ => {
+                return self.err_at(
+                    CftErrorCode::ExpectedToken,
+                    declaration.span,
+                    "expected table, data, singleton, or type alias",
+                )
+            }
+        };
         let name = self.expect_ident()?;
-        if self.eat(&TokenKind::Equal).is_some() {
+        let Some(kind) = kind else {
+            self.expect_simple(&TokenKind::Equal, CftErrorCode::ExpectedToken)?;
             if let Some(span) = abstract_span.or(sealed_span) {
                 return self.err_at(
                     CftErrorCode::InvalidTopLevelItem,
@@ -134,7 +148,7 @@ impl Parser<'_> {
                 annotations,
                 span: Span::new(start, end),
             }));
-        }
+        };
         let parent = if self.eat(&TokenKind::Colon).is_some() {
             Some(self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?)
         } else {
@@ -180,6 +194,7 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
         Ok(Item::Type(TypeDef {
+            kind,
             name: name.name,
             name_span: name.span,
             is_abstract,
@@ -241,6 +256,7 @@ impl Parser<'_> {
                 kind: TypeRefKind::Option(Box::new(inner.value)),
             });
         }
+        // 引用类型保留显式 & 标记，与 CFD 引用值使用同一语法提示。
         if let Some(start) = self.eat(&TokenKind::Amp) {
             let inner = self.nested(StructureKind::TypeRef, start, |parser| {
                 parser.parse_value_type_primary()
