@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
 import type { ProjectDiff } from '../bindings/ProjectDiff'
@@ -11,24 +11,26 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { FileTreeNode } from '../bindings/FileTreeNode'
 import type { DimensionInfo } from '../bindings/DimensionInfo'
-import { buildFileTreeGroups } from './FileTree'
+import { FileTree, buildFileTreeGroups } from './FileTree'
 import * as api from '../api'
 import { decodeSemanticTokens } from '../code/lspAdapter'
 import { errorMessage } from '../wire'
 import { summaryOf } from '../value/fieldValue'
 import { coordinateId, sameCoordinate, type FieldPathSegment } from '../wire'
 import type { EditorSelection } from '../state/editorSelection'
-import { typeColor } from '../utils/typeColor'
 import { CfdCodeEditor, type CodeLineDecoration, type CodeSemanticToken } from './CfdCodeEditor'
 import { Icon } from './Icon'
 import { RecordView } from './RecordView'
 import { TableView, type TableRowPresentation } from './TableView'
+import { changedRecordFields, diffAnnotation, expandedDiffPaths } from '../state/diffPresentation'
+import { useDiffRowAlignment } from '../hooks/useDiffRowAlignment'
 import './GitDiffMode.css'
 
 export type GitDiffView = 'record' | 'table' | 'source'
 
 export interface GitDiffSelection {
   filePath: string | null
+  dimension?: string | null
   typeName?: string | null
   coordinate: RecordCoordinate | null
 }
@@ -83,185 +85,85 @@ export function buildDiffIndex(diff: ProjectDiff | null): DiffIndex {
   return { fileByPath, recordsByFile, changedPaths }
 }
 
-export function GitDiffSidebar({ diff, loading, error, selection, onSelectionChange, onRefresh, nodes, fileTypes }: Props & { nodes: FileTreeNode[], dimensions: DimensionInfo[], fileTypes: Record<string, FileTypeOption[] | undefined> }) {
-  // 左侧文件树与主界面共用分组/图标/排序，仅保留变化文件及其祖先目录，不显示记录节点。
+export function GitDiffSidebar({ diff, loading, error, selection, onSelectionChange, onRefresh, nodes, dimensions, fileTypes }: Props & { nodes: FileTreeNode[], dimensions: DimensionInfo[], fileTypes: Record<string, FileTypeOption[] | undefined> }) {
   const index = useMemo(() => buildDiffIndex(diff), [diff])
   const filtered = useMemo(() => buildDiffTree(diff, nodes, index.changedPaths), [diff, nodes, index])
-  const groups = useMemo(() => buildFileTreeGroups(filtered, [], true).filter(group => group.nodes.length > 0), [filtered])
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
-  const toggle = (path: string) => setCollapsed(previous => {
-    const next = new Set(previous)
-    if (next.has(path)) next.delete(path)
-    else next.add(path)
-    return next
-  })
-  const counts = useMemo(() => diff ? changeCounts(diff.records) : null, [diff])
-  // 选中文件时展开祖先目录，保证定位可见。
-  useEffect(() => {
-    if (!selection.filePath) return
-    setCollapsed(previous => {
-      const next = new Set(previous)
-      let changed = false
-      const parts = selection.filePath!.split('/')
-      let prefix = ''
-      for (let i = 0; i < parts.length - 1; i += 1) {
-        prefix = prefix ? `${prefix}/${parts[i]}` : parts[i]!
-        if (next.delete(prefix)) changed = true
+  // HEAD 独有的覆盖文件也由快照归入所属维度，混合文件可同时出现在基础和维度目录。
+  const diffDimensions = useMemo(() => {
+    const result = new Map(dimensions.map(d => [d.name, { ...d, files: [...d.files] }]))
+    for (const record of diff?.records ?? []) {
+      for (const snapshot of [record.before, record.after]) {
+        if (!snapshot?.dimension) continue
+        let dimension = result.get(snapshot.dimension)
+        if (!dimension) {
+          dimension = { name: snapshot.dimension, display_name: snapshot.dimension, variants: [], fields: [], dir: null, files: [] }
+          result.set(snapshot.dimension, dimension)
+        }
+        if (!dimension.files.includes(snapshot.file_path)) dimension.files.push(snapshot.file_path)
       }
-      return changed ? next : previous
-    })
-  }, [selection.filePath])
-
-  const selectFile = (path: string, typeName: string) => {
-    onSelectionChange({ filePath: path, typeName: typeName || null, coordinate: null })
-  }
-
-  const renderNode = (node: FileTreeNode, depth: number): React.ReactNode => {
-    if (node.is_dir) {
-      const expanded = !collapsed.has(node.path)
-      return (
-        <div key={node.path} role="group">
-          <div className="tree-dir-label" style={{ paddingLeft: depth * 12 + 8 }} role="treeitem" aria-level={depth + 1} aria-expanded={expanded} tabIndex={0} data-path={node.path}
-            onClick={() => toggle(node.path)}
-            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggle(node.path) } }}>
-            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={12} className="tree-dir-chevron" aria-hidden />
-            <Icon name="folder" size={16} className="icon-folder" aria-hidden />
-            <span>{node.name}</span>
-          </div>
-          {!expanded ? null : node.children.map(child => renderNode(child, depth + 1))}
-        </div>
-      )
     }
-    const types = fileTypes[node.path] ?? []
-    const file = index.fileByPath.get(node.path)
-    const records = index.recordsByFile.get(node.path) ?? []
-    const mark = file?.change ?? (records.length > 0 ? aggregateChange(records) : null)
-    const isCfd = node.name.endsWith('.cfd')
-    // 多类型文件展开类型子行，与主文件树一致；单击类型即切换视图类型。
-    // 无任何类型命中变化记录时（如本地化生成文件、纯源码文本变更），或仅一个类型有变化时，
-    // 退化为单行可选中文件，保证变化文件始终可点击加载，且单类型无需展开下拉。
-    const changedTypes = !node.is_dir && types.length > 1
-      ? types.filter(type => records.some(record => record.coordinate.actual_type === type.name))
-      : []
-    const showTypeChildren = changedTypes.length > 1
-    if (!node.is_dir && types.length > 1 && showTypeChildren) {
-      const expanded = !collapsed.has(node.path)
-      const containsSelection = selection.filePath === node.path
-      return (
-        <div key={node.path} role="group">
-          <div className={`tree-file tree-file-parent${containsSelection ? ' contains-selection' : ''}${isCfd ? ' is-cfd' : ''}`}
-            style={{ paddingLeft: (depth + 1) * 12 + 8 }} role="treeitem" aria-level={depth + 1} aria-expanded={expanded}
-            tabIndex={0} data-path={node.path} data-file-path={node.path} title={node.path} onClick={() => toggle(node.path)}>
-            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={12} className="tree-file-chevron" aria-hidden />
-            <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
-            <span className="tree-item-label">{node.name}</span>
-            {mark && <ChangeMark change={mark} />}
-          </div>
-          {!expanded ? null : changedTypes.map(type => {
-            const selected = selection.filePath === node.path && (selection.typeName ?? types[0]?.name) === type.name
-            const typeRecords = records.filter(record => record.coordinate.actual_type === type.name)
-            return (
-              <div key={type.name}
-                className={`tree-type${selected ? ' selected' : ''}`}
-                style={{ paddingLeft: (depth + 2) * 12 + 20, '--type-color': typeColor(type.name) } as React.CSSProperties}
-                role="treeitem" aria-level={depth + 2} aria-selected={selected} tabIndex={0}
-                data-path={`${node.path}  ${type.name}`} data-file-path={node.path} data-type-name={type.name}
-                onClick={() => selectFile(node.path, type.name)}
-                title={type.display_name === type.name ? type.name : `${type.display_name} (${type.name})`}>
-                <span className="tree-type-dot" aria-hidden />
-                <span className="tree-item-label">{type.display_name}</span>
-                <span className="tree-type-count">{typeRecords.length}</span>
-                <ChangeMark change={aggregateChange(typeRecords)} />
-              </div>
-            )
-          })}
-        </div>
-      )
-    }
-    const selected = selection.filePath === node.path
-    // 多类型文件中仅一个类型有变化时，直接选中该类型，省去展开下拉。
-    const typeName = changedTypes.length === 1 ? changedTypes[0]!.name : types[0]?.name ?? ''
-    return (
-      <div key={node.path}
-        className={`tree-file${selected ? ' selected' : ''}${isCfd ? ' is-cfd' : ''}`}
-        style={{ paddingLeft: (depth + 1) * 12 + 8 }}
-        role="treeitem" aria-level={depth + 1} aria-selected={selected} tabIndex={0}
-        data-path={node.path} data-file-path={node.path} data-type-name={typeName}
-        onClick={() => selectFile(node.path, typeName)}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); selectFile(node.path, typeName) } }}
-        title={node.path}>
-        <span className="tree-file-chevron-spacer" aria-hidden />
-        <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
-        <span className="tree-item-label">{node.name}</span>
-        {mark && <ChangeMark change={mark} />}
-      </div>
-    )
-  }
-  return (
-    <div className="git-changes-sidebar">
-      <div className="sidebar-header git-changes-header">
-        <span>Git 变更</span>
-        <button className="btn btn-icon" onClick={onRefresh} disabled={loading} title="刷新 Git Diff" aria-label="刷新 Git Diff">
-          <Icon name="refresh" size={14} aria-hidden />
-        </button>
-      </div>
-      {counts && (
-        <div className="git-changes-counts" aria-label="变更统计">
-          <span className="added">+{counts.added}</span>
-          <span className="deleted">-{counts.deleted}</span>
-          <span className="modified">M{counts.modified}</span>
-        </div>
-      )}
-      <div className="git-changes-list">
-        {!diff && !error && <div className="git-diff-message">{loading ? '正在比较 HEAD...' : '尚未获得比较结果'}</div>}
-        {error && <div className="git-diff-message error">{error}</div>}
-        {diff && !hasProjectDiffChanges(diff) && <div className="git-diff-message">工作区与 HEAD 一致</div>}
-        {groups.map(group => <div className="tree-section" key={group.key}>
-          <button className="tree-heading" aria-expanded={!collapsed.has(group.key)} onClick={() => toggle(group.key)}>
-            <Icon name={collapsed.has(group.key) ? 'chevron-right' : 'chevron-down'} size={12} className="tree-heading-chev" />
-            <Icon name={group.icon} size={17} className={`tree-heading-icon ${group.icon}`} /><strong>{group.label}</strong>
-          </button>
-          {!collapsed.has(group.key) && <div className="tree-content">{group.nodes.map(node => renderNode(node, 0))}</div>}
-        </div>)}
-      </div>
+    return [...result.values()]
+  }, [diff, dimensions])
+  const groups = useMemo(() => buildFileTreeGroups(filtered, diffDimensions, true)
+    .filter(group => group.nodes.length || group.dimensionNodes?.length), [filtered, diffDimensions])
+  const types = useMemo(() => Object.fromEntries([...index.changedPaths].map(path => {
+    const records = (index.recordsByFile.get(path) ?? []).filter(record => !recordDimension(record))
+    const names = [...new Set(records.map(record => record.coordinate.actual_type))]
+    return [path, names.map(name => fileTypes[path]?.find(type => type.name === name)
+      ?? { name, display_name: name, record_count: records.filter(record => record.coordinate.actual_type === name).length, is_singleton: false, dimension_fields: {} })]
+  })), [index, fileTypes])
+  const counts = diff ? changeCounts(diff.records) : null
+  return <div className="git-changes-sidebar">
+    <div className="sidebar-header git-changes-header"><span>Git 变更</span>
+      <button className="btn btn-icon" onClick={onRefresh} disabled={loading} title="刷新 Git Diff" aria-label="刷新 Git Diff"><Icon name="refresh" size={14} /></button>
     </div>
-  )
+    {counts && <div className="git-changes-counts" aria-label="变更统计"><span className="added">+{counts.added}</span><span className="deleted">-{counts.deleted}</span><span className="modified">M{counts.modified}</span></div>}
+    {error && <div className="git-diff-message error">{error}</div>}
+    {!diff && !error && <div className="git-diff-message">{loading ? '正在比较 HEAD...' : '尚未获得比较结果'}</div>}
+    {diff && !hasProjectDiffChanges(diff) && <div className="git-diff-message">工作区与 HEAD 一致</div>}
+    <FileTree nodes={filtered} dimensions={diffDimensions} fileTypes={types} groups={groups} readOnly
+      selectedFile={selection.dimension ? null : selection.filePath} selectedType={selection.typeName ?? ''}
+      selectedDimension={selection.dimension && selection.filePath ? { dimension: selection.dimension, filePath: selection.filePath } : null}
+      onSelectFile={(filePath, typeName) => onSelectionChange({ filePath, typeName, coordinate: null })}
+      onSelectDimension={target => onSelectionChange({ filePath: target.filePath, dimension: target.dimension, coordinate: null })}
+      fileBadge={path => { const change = index.fileByPath.get(path)?.change ?? aggregateChange(index.recordsByFile.get(path) ?? []); return <ChangeMark change={change} /> }} />
+  </div>
+}
+
+function recordDimension(record: ProjectRecordDiff): string | undefined {
+  return record.after?.dimension ?? record.before?.dimension
 }
 
 export function GitDiffMode({ diff, loading, error, selection, onSelectionChange, onRefresh, sessionId, fileTypes }: Props & { sessionId: number, fileTypes: Record<string, FileTypeOption[] | undefined> }) {
   const index = useMemo(() => buildDiffIndex(diff), [diff])
-  const fallbackFile = diff?.files[0]?.path ?? firstChangedRecordPath(diff) ?? null
+  const fallbackFile = firstChangedRecordPath(diff) ?? diff?.files[0]?.path ?? null
   const activeFilePath = selection.filePath ?? fallbackFile
+  const activeDimension = selection.filePath ? selection.dimension : diff?.records[0] && recordDimension(diff.records[0])
   const typeOptions = (activeFilePath ? fileTypes[activeFilePath] : undefined) ?? []
-  const fallbackType = typeOptions[0]?.name
-    ?? (activeFilePath ? (index.recordsByFile.get(activeFilePath) ?? [])[0]?.coordinate.actual_type : undefined)
+  const fallbackType = (activeFilePath ? (index.recordsByFile.get(activeFilePath) ?? []).find(record => (recordDimension(record) ?? null) === (activeDimension ?? null))?.coordinate.actual_type : undefined)
+    ?? typeOptions[0]?.name
     ?? null
-  const activeTypeName = selection.typeName ?? fallbackType
+  const changedTypes = [...new Set((activeFilePath ? index.recordsByFile.get(activeFilePath) ?? [] : [])
+    .filter(record => (recordDimension(record) ?? null) === (activeDimension ?? null))
+    .map(record => record.coordinate.actual_type))]
+  const activeTypeName = selection.typeName && changedTypes.includes(selection.typeName) ? selection.typeName : fallbackType
   const isSourceFile = !!activeFilePath && (activeFilePath.endsWith('.cft') || activeFilePath.endsWith('.yaml') || activeFilePath.endsWith('.yml'))
   const recordsForView = useMemo(() => {
     if (!activeFilePath) return []
-    const list = index.recordsByFile.get(activeFilePath) ?? []
+    const list = (index.recordsByFile.get(activeFilePath) ?? []).filter(record => (recordDimension(record) ?? null) === (activeDimension ?? null))
     if (!activeTypeName) return list
     return list.filter(record => record.coordinate.actual_type === activeTypeName)
-  }, [index, activeFilePath, activeTypeName])
-  const isSingleton = useMemo(() => {
-    if (!activeFilePath || !activeTypeName) return false
-    return typeOptions.find(option => option.name === activeTypeName)?.is_singleton ?? false
-  }, [typeOptions, activeFilePath, activeTypeName])
-  // 视图固定——源码文件/语义不可用时仅源码；单例固定记录+源码；普通记录固定记录+表格+源码。
+  }, [index, activeFilePath, activeTypeName, activeDimension])
   const availableViews: GitDiffView[] = useMemo(() => {
     if (!diff?.semantic_available || !activeFilePath) return ['source']
     if (isSourceFile) return ['source']
     if (recordsForView.length === 0) return ['source']
-    return isSingleton ? ['record', 'source'] : ['record', 'table', 'source']
-  }, [diff?.semantic_available, activeFilePath, isSourceFile, recordsForView.length, isSingleton])
+    return ['table', 'record', 'source']
+  }, [diff?.semantic_available, activeFilePath, isSourceFile, recordsForView.length])
 
-  const [view, setView] = useState<GitDiffView>('record')
-  // 同步钳制当前视图，保证首屏/SSR 即为可用视图；文件/类型切换时回到首个可用视图。
+  const [view, setView] = useState<GitDiffView>('table')
+  // 源码文件的临时显示不覆盖数据视图偏好，切回数据时仍默认表格。
   const clampedView = availableViews.includes(view) ? view : (availableViews[0] ?? 'source')
-  useEffect(() => {
-    if (clampedView !== view) setView(clampedView)
-  }, [clampedView, view])
   // 记录/表格视图共用的字段过滤开关，默认仅显示修改字段。
   const [changedOnly, setChangedOnly] = useState(true)
 
@@ -280,6 +182,10 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
           {availableViews.includes('table') && <DiffTab view="table" active={clampedView} onSelect={setView} icon="table" label="表格" />}
           {availableViews.includes('source') && <DiffTab view="source" active={clampedView} onSelect={setView} icon="code" label="源码" />}
         </div>
+        {activeDimension && changedTypes.length > 1 && <select aria-label="对比类型" value={activeTypeName ?? ''}
+          onChange={event => onSelectionChange({ filePath: activeFilePath, dimension: activeDimension, typeName: event.target.value, coordinate: null })}>
+          {changedTypes.map(name => <option key={name} value={name}>{typeOptions.find(type => type.name === name)?.display_name ?? name}</option>)}
+        </select>}
         {(clampedView === 'record' || clampedView === 'table') && (
           <label className="git-diff-changed-only"><input type="checkbox" checked={changedOnly} onChange={event => setChangedOnly(event.target.checked)} />仅修改字段</label>
         )}
@@ -291,7 +197,7 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
       {clampedView === 'record' ? (
         <RecordDiffView records={recordsForView} selection={selection} onSelectionChange={onSelectionChange} changedOnly={changedOnly} />
       ) : clampedView === 'table' ? (
-        <TableComparison diff={diff} filePath={activeFilePath} actualType={activeTypeName ?? ''} changedOnly={changedOnly} />
+        <TableComparison diff={diff} dimension={activeDimension} filePath={activeFilePath} actualType={activeTypeName ?? ''} changedOnly={changedOnly} />
       ) : (
         <SourceComparison file={activeFile} sessionId={sessionId} />
       )}
@@ -341,17 +247,25 @@ function RecordDiffView({ records, selection, onSelectionChange, changedOnly }: 
       onSelectionChange({ ...selection, coordinate: activeRecord.coordinate })
     }
   }, [activeRecord, selection, onSelectionChange])
-  if (records.length === 0) return <div className="git-diff-message centered">没有可显示的记录变化</div>
   const changedPaths = useMemo(() => new Set(activeRecord?.fields.map(field => field.path) ?? []), [activeRecord])
   // 仅修改字段模式下，记录窗格只保留变化顶层字段，并自动展开其祖先路径。
   const visibleTopFields = useMemo(() => {
     if (!changedOnly || !activeRecord || activeRecord.change !== 'modified') return undefined
-    return new Set([...changedPaths].map(topLevelPath))
-  }, [changedOnly, activeRecord, changedPaths])
-  const autoExpandPaths = useMemo(() => {
-    if (!changedOnly || !activeRecord || activeRecord.change !== 'modified') return undefined
-    return ancestorPathKeys(changedPaths)
-  }, [changedOnly, activeRecord, changedPaths])
+    const fields = changedRecordFields(activeRecord)
+    return fields.size > 0 ? fields : undefined
+  }, [changedOnly, activeRecord])
+  const autoExpandPaths = useMemo(() => activeRecord ? expandedDiffPaths(activeRecord) : new Set<string>(), [activeRecord])
+  const [expansion, setExpansion] = useState<{ record: ProjectRecordDiff | null, paths: ReadonlySet<string> } | null>(null)
+  const expandedPaths = expansion?.record === activeRecord ? expansion.paths : autoExpandPaths
+  const onToggleExpandedPath = (path: string, expanded: boolean) => {
+    const paths = new Set(expandedPaths)
+    if (expanded) paths.add(path)
+    else paths.delete(path)
+    setExpansion({ record: activeRecord, paths })
+  }
+  const comparisonRef = useRef<HTMLDivElement>(null)
+  useDiffRowAlignment(comparisonRef, activeRecord)
+  if (records.length === 0) return <div className="git-diff-message centered">没有可显示的记录变化</div>
   return (
     <div className="git-record-diff">
       <aside className="git-record-list" aria-label="变化记录">
@@ -373,21 +287,22 @@ function RecordDiffView({ records, selection, onSelectionChange, changedOnly }: 
           {filtered.length === 0 && <div className="git-diff-message">无匹配记录</div>}
         </div>
       </aside>
-      <div className={`git-record-comparison ${activeRecord?.change ?? ''}`}>
-        <RecordPane label="HEAD" snapshot={activeRecord?.before} record={activeRecord} changedPaths={changedPaths} visibleTopFields={visibleTopFields} autoExpandPaths={autoExpandPaths} />
-        <RecordPane label="当前工作区" snapshot={activeRecord?.after} record={activeRecord} changedPaths={changedPaths} visibleTopFields={visibleTopFields} autoExpandPaths={autoExpandPaths} />
+      <div ref={comparisonRef} className={`git-record-comparison ${activeRecord?.change ?? ''}`}>
+        <RecordPane label="HEAD" snapshot={activeRecord?.before} record={activeRecord} changedPaths={changedPaths} visibleTopFields={visibleTopFields} expandedPaths={expandedPaths} onToggleExpandedPath={onToggleExpandedPath} />
+        <RecordPane label="当前工作区" snapshot={activeRecord?.after} record={activeRecord} changedPaths={changedPaths} visibleTopFields={visibleTopFields} expandedPaths={expandedPaths} onToggleExpandedPath={onToggleExpandedPath} />
       </div>
     </div>
   )
 }
 
-function RecordPane({ label, snapshot, record, changedPaths, visibleTopFields, autoExpandPaths }: {
+function RecordPane({ label, snapshot, record, changedPaths, visibleTopFields, expandedPaths, onToggleExpandedPath }: {
   label: string
   snapshot?: ProjectRecordSnapshot
   record: ProjectRecordDiff | null
   changedPaths: ReadonlySet<string>
   visibleTopFields?: ReadonlySet<string>
-  autoExpandPaths?: ReadonlySet<string>
+  expandedPaths: ReadonlySet<string>
+  onToggleExpandedPath(path: string, expanded: boolean): void
 }) {
   // 只读但保留选中能力， selection 状态本地维护，不触发任何写操作。
   const [selection, setSelection] = useState<EditorSelection | null>(null)
@@ -415,24 +330,43 @@ function RecordPane({ label, snapshot, record, changedPaths, visibleTopFields, a
         onSelectRecord={coordinate => setSelection({ kind: 'record', filePath: snapshot.file_path, coordinate, coordinates: [coordinate], anchor: coordinate })}
         onOpenRecord={() => {}}
         diffChangedPaths={record.change === 'modified' ? changedPaths : undefined}
-        initialExpandedPaths={autoExpandPaths}
+        expandedPaths={expandedPaths}
+        onToggleExpandedPath={onToggleExpandedPath}
       />
     </section>
   )
 }
 
 // 表格 diff——新增/删除单行（整行绿/红），修改显示两行（先原本 HEAD，后修改后当前），变化单元格深黄高亮。
-function TableComparison({ diff, filePath, actualType, changedOnly }: {
+function TableComparison({ diff, dimension, filePath, actualType, changedOnly }: {
   diff: ProjectDiff
+  dimension?: string | null
   filePath: string | null
   actualType: string
   changedOnly: boolean
 }) {
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const projected = useMemo(
-    () => projectTable(diff, filePath, actualType),
-    [diff, filePath, actualType],
+    () => projectTable(diff, filePath, actualType, dimension),
+    [diff, filePath, actualType, dimension],
   )
+  const [expansion, setExpansion] = useState<{ projected: ProjectedTable, paths: ReadonlyMap<string, ReadonlySet<string>> } | null>(null)
+  const rowPresentation = useCallback((row: RecordRow): TableRowPresentation | undefined => {
+    const presentation = projected.presentations.get(row)
+    if (!presentation) return undefined
+    const id = coordinateId(row.coordinate)
+    return { ...presentation,
+      expandedPaths: (expansion?.projected === projected ? expansion.paths.get(id) : undefined) ?? presentation.expandedPaths,
+      onToggleExpandedPath: (path, expanded) => setExpansion(current => {
+        const paths = new Map(current?.projected === projected ? current.paths : [])
+        const recordPaths = new Set(paths.get(id) ?? presentation.expandedPaths)
+        if (expanded) recordPaths.add(path)
+        else recordPaths.delete(path)
+        paths.set(id, recordPaths)
+        return { projected, paths }
+      }),
+    }
+  }, [projected, expansion])
   const visible = useMemo(() => {
     if (!changedOnly) return undefined
     const columns = changedTableColumns(projected)
@@ -453,7 +387,7 @@ function TableComparison({ diff, filePath, actualType, changedOnly }: {
       onClearSelection={() => setSelection(null)}
       visibleColumns={visible}
       onOpenRecord={() => {}}
-      rowPresentation={row => projected.presentations.get(row)}
+      rowPresentation={rowPresentation}
     />
     </div>
   )
@@ -554,7 +488,7 @@ export function sourceLineDecorations(patch: string): { before: CodeLineDecorati
 }
 
 // 表格投影——新增/删除单行，修改显示两行（先原本 HEAD，后修改后当前），行级 change 决定整行底色。
-export function projectTable(diff: ProjectDiff, filePath: string | null, actualType: string): ProjectedTable {
+export function projectTable(diff: ProjectDiff, filePath: string | null, actualType: string, dimension?: string | null): ProjectedTable {
   const rows: RecordRow[] = []
   const presentations = new Map<RecordRow, TableRowPresentation>()
   if (!actualType) {
@@ -564,10 +498,13 @@ export function projectTable(diff: ProjectDiff, filePath: string | null, actualT
     }
   }
   for (const record of diff.records) {
+    if ((recordDimension(record) ?? null) !== (dimension ?? null)) continue
     if (record.coordinate.actual_type !== actualType) continue
     if (filePath && recordPath(record) !== filePath) continue
     if (record.change === 'modified' && record.before && record.after) {
-      const changedFields = new Set(record.fields.map(field => topLevelPath(field.path)))
+      const changedFields = changedRecordFields(record)
+      const expandedPaths = expandedDiffPaths(record)
+      const changedPaths = new Set(record.fields.map(field => field.path))
       const beforeRow = snapshotRow(record, record.before, rows.length, 0)
       rows.push(beforeRow)
       presentations.set(beforeRow, {
@@ -575,6 +512,8 @@ export function projectTable(diff: ProjectDiff, filePath: string | null, actualT
         version: 'HEAD',
         change: record.change,
         changedFields,
+        expandedPaths,
+        changedPaths,
         groupStart: true,
       })
       const afterRow = snapshotRow(record, record.after, rows.length, 0)
@@ -584,6 +523,8 @@ export function projectTable(diff: ProjectDiff, filePath: string | null, actualT
         version: '当前',
         change: record.change,
         changedFields,
+        expandedPaths,
+        changedPaths,
       })
       continue
     }
@@ -595,7 +536,9 @@ export function projectTable(diff: ProjectDiff, filePath: string | null, actualT
       id: coordinateId(record.coordinate),
       version: record.after ? '当前' : 'HEAD',
       change: record.change,
-      changedFields: new Set<string>(),
+      changedFields: changedRecordFields(record),
+      expandedPaths: expandedDiffPaths(record),
+      changedPaths: new Set(record.fields.map(field => field.path)),
       groupStart: true,
     })
   }
@@ -618,7 +561,7 @@ export function hasProjectDiffChanges(diff: ProjectDiff): boolean {
 function snapshotFileRecords(record: ProjectRecordDiff, snapshot: ProjectRecordSnapshot, revision: number, visibleTopFields?: ReadonlySet<string>): FileRecords {
   // 仅修改字段模式下，只保留变化顶层字段；新增/删除记录始终显示全部字段。
   const values = visibleTopFields
-    ? snapshot.values.filter(item => visibleTopFields.has(topLevelPath(item.path)))
+    ? snapshot.values.filter(item => visibleTopFields.has(item.path))
     : snapshot.values
   const row = snapshotRow(record, { ...snapshot, values }, 0, 1)
   return {
@@ -631,23 +574,8 @@ function snapshotFileRecords(record: ProjectRecordDiff, snapshot: ProjectRecordS
   }
 }
 
-// 由变化字段路径展开全部祖先路径键（如 a.b[0].c → a、a.b、a.b[0]），供记录视图预展开。
-export function ancestorPathKeys(paths: ReadonlySet<string>): Set<string> {
-  const ancestors = new Set<string>()
-  for (const path of paths) {
-    let current = path
-    for (;;) {
-      const stripped = current.replace(/(\.[^.[\]]+|\[[^\]]*\])$/, '')
-      if (stripped === current || stripped.length === 0) break
-      ancestors.add(stripped)
-      current = stripped
-    }
-  }
-  return ancestors
-}
-
 function snapshotRow(record: ProjectRecordDiff, snapshot: ProjectRecordSnapshot, index: number, size: number): RecordRow {
-  const fields = snapshot.values.map(item => ({ name: item.path, value: item.value, missing: false, annotation: null }))
+  const fields = snapshot.values.map(item => ({ name: item.path, value: item.value, missing: false, annotation: diffAnnotation(item.display) }))
   return {
     coordinate: { ...record.coordinate },
     display_path: snapshot.file_path,
@@ -709,6 +637,7 @@ export function buildDiffTree(diff: ProjectDiff | null, nodes: FileTreeNode[], c
     }
   }
   collect(tree)
+  const currentPaths = new Set(indexByPath.keys())
   // HEAD 独有路径按路径字符串的最长已存在目录前缀挂回同一层级，
   // 兼容目录节点 path 本身含斜杠（如维度 out_dir）的情况；无前缀时再逐级补目录。
   const findDir = (dirPath: string): FileTreeNode | undefined => {
@@ -766,6 +695,17 @@ export function buildDiffTree(diff: ProjectDiff | null, nodes: FileTreeNode[], c
     if (node.is_dir) return children.length > 0 ? [{ ...node, children }] : []
     return paths.has(node.path) ? [{ ...node, in_sources: true, children: [] }] : []
   }).sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
+  const dimensionPaths = new Set<string>()
+  const basePaths = new Set<string>()
+  for (const record of diff?.records ?? []) {
+    for (const snapshot of [record.before, record.after]) {
+      if (snapshot) (snapshot.dimension ? dimensionPaths : basePaths).add(snapshot.file_path)
+    }
+  }
+  for (const path of dimensionPaths) {
+    const node = indexByPath.get(path)
+    if (node && !basePaths.has(path) && !currentPaths.has(path)) node.dimension_only = true
+  }
   return prune(tree)
 }
 
@@ -784,8 +724,4 @@ function changeCounts(records: readonly ProjectRecordDiff[]) {
     counts[record.change] += 1
     return counts
   }, { added: 0, deleted: 0, modified: 0 })
-}
-
-function topLevelPath(path: string): string {
-  return path.split(/[.[]/, 1)[0] ?? path
 }

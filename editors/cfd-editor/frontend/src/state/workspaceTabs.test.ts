@@ -16,7 +16,7 @@ const fileTypes = {
 
 describe('project workspace tabs', () => {
   it('opens CFT files directly in their only source view', () => {
-    const tab = defaultWorkspaceTab('schema/items.cft', '', false)
+    const tab = defaultWorkspaceTab('schema/items.cft', '')
     expect(tab).toMatchObject({ viewKind: 'source', viewId: '__default_source' })
     expect(routeForWorkspaceTab(tab)).toMatchObject({
       view: 'source',
@@ -25,24 +25,16 @@ describe('project workspace tabs', () => {
     })
   })
 
-  it('waits for a real singleton coordinate before entering record view', () => {
-    const tab = defaultWorkspaceTab('data/settings.cfd', 'Settings', true)
-    expect(tab).toMatchObject({ viewKind: 'record', viewId: '__default_record' })
-    expect(routeForWorkspaceTab(tab)).toMatchObject({
-      view: 'table',
-      viewId: '__default_table',
-      typeFilter: 'Settings',
-    })
+  it('defaults singleton files to table and resolves coordinates only for an explicit record view', () => {
+    const tab = defaultWorkspaceTab('data/settings.cfd', 'Settings')
+    expect(tab).toMatchObject({ viewKind: 'table', viewId: '__default_table' })
     expect(routeForWorkspaceTab(tab, { actual_type: 'Settings', key: 'settings' })).toMatchObject({
-      view: 'record',
-      coordinate: { actual_type: 'Settings', key: 'settings' },
+      view: 'table', viewId: '__default_table', typeFilter: 'Settings',
     })
-    expect(routeForWorkspaceTab({
-      ...tab,
-      coordinate: { actual_type: 'Settings', key: '' },
-    }, { actual_type: 'Settings', key: 'settings' })).toMatchObject({
-      view: 'record',
-      coordinate: { actual_type: 'Settings', key: 'settings' },
+    const recordTab = workspaceTabWithView(tab, 'record', '__default_record')
+    expect(routeForWorkspaceTab(recordTab)).toMatchObject({ view: 'table', viewId: '__default_table' })
+    expect(routeForWorkspaceTab(recordTab, { actual_type: 'Settings', key: 'settings' })).toMatchObject({
+      view: 'record', coordinate: { actual_type: 'Settings', key: 'settings' },
     })
   })
 
@@ -58,7 +50,7 @@ describe('project workspace tabs', () => {
     }, fileTypes)
     expect(restored?.tabs).toHaveLength(2)
     expect(restored?.tabs[0]).toMatchObject({ viewKind: 'graph', viewId: 'refs' })
-    expect(restored?.tabs[1]).toMatchObject({ viewKind: 'record', viewId: '__default_record' })
+    expect(restored?.tabs[1]).toMatchObject({ viewKind: 'table', viewId: '__default_table' })
     expect(restored?.activeTabId).toBe(itemId)
   })
 
@@ -101,7 +93,7 @@ describe('project workspace tabs', () => {
 
   it('switches a record workspace tab back to source before routing', () => {
     const record = {
-      ...defaultWorkspaceTab('data/item.cfd', 'Item', false),
+      ...defaultWorkspaceTab('data/item.cfd', 'Item'),
       viewKind: 'record' as const,
       viewId: '__default_record',
       coordinate: { actual_type: 'Item', key: 'sword' },
@@ -117,7 +109,7 @@ describe('project workspace tabs', () => {
   })
 
   it('serializes workspace state using the backend wire names', () => {
-    const tab = defaultWorkspaceTab('data/item.cfd', 'Item', false)
+    const tab = defaultWorkspaceTab('data/item.cfd', 'Item')
     expect(workspaceToWire([tab], tab.id)).toEqual({
       active_tab_id: tab.id,
       tabs: [{
@@ -133,7 +125,7 @@ describe('project workspace tabs', () => {
 
   it('serializes an empty record coordinate as null', () => {
     const tab = {
-      ...defaultWorkspaceTab('data/settings.cfd', 'Settings', true),
+      ...defaultWorkspaceTab('data/settings.cfd', 'Settings'),
       coordinate: { actual_type: 'Settings', key: '' },
     }
     expect(workspaceToWire([tab], tab.id).tabs[0].coordinate).toBeNull()

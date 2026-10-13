@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, createContext, useContext } from 'react'
 import type { FileTreeNode } from '../bindings/FileTreeNode'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
 import type { DimensionInfo } from '../bindings/DimensionInfo'
@@ -7,7 +7,12 @@ import { typeColor } from '../utils/typeColor'
 import { cssEscape } from '../utils/dom'
 import { buildDimensionTree, dimensionTargetId, suggestedDimensionTarget, type DimensionTarget, type DimensionTreeNode } from '../state/dimensionNavigation'
 
+const FileBadgeContext = createContext<((path: string) => React.ReactNode) | undefined>(undefined)
+
 interface Props {
+  groups?: FileTreeGroup[]
+  fileBadge?: (path: string) => React.ReactNode
+  readOnly?: boolean
   nodes: FileTreeNode[]
   dimensions: DimensionInfo[]
   fileTypes: Record<string, FileTypeOption[] | undefined>
@@ -86,7 +91,7 @@ export function buildFileTreeGroups(
     // 源码比较按实际文件展示覆盖，避免纯覆盖的 Git 变更被逻辑维度入口隐藏。
     groups.push({
       key: '__dimension_sources__', label: '维度', icon: 'dimension',
-      nodes: filterTree(nodes, node => node.dimension_only, () => false),
+      nodes: filterTree(nodes, node => node.dimension_only && !dimensions.some(dimension => dimension.files.includes(node.path)), () => false),
     })
   }
   const orderedDimensions = [...dimensions].sort((left, right) => {
@@ -188,7 +193,7 @@ function DimensionNode({ node, depth, collapsed, selectedId, onToggle, onSelect,
   const activate = () => branch ? onToggle(node.id) : node.target && onSelect?.(node.target)
   return <div role="group">
     <div role="treeitem" aria-level={depth + 1} aria-expanded={branch ? expanded : undefined}
-      aria-selected={selected} tabIndex={0} data-path={node.id} title={node.label}
+      aria-selected={selected} tabIndex={0} data-path={node.id} data-file-path={node.target?.filePath} title={node.label}
       className={node.kind === 'directory' ? 'tree-dir-label' : `tree-file${selected ? ' selected' : ''}${branch ? ' tree-file-parent' : ''}`}
       style={{ paddingLeft: (depth + 1) * 12 + 8 }}
       onContextMenu={event => node.target && onContextMenu(event, node)}
@@ -199,6 +204,7 @@ function DimensionNode({ node, depth, collapsed, selectedId, onToggle, onSelect,
       }}>
       <Icon name={branch ? (expanded ? 'chevron-down' : 'chevron-right') : 'file-cfd'} size={14} aria-hidden />
       <span className="tree-item-label">{node.label}</span>
+      {node.target && <FileBadge path={node.target.filePath} />}
     </div>
     {branch && expanded && node.children.map(child => <DimensionNode key={child.id} node={child}
       depth={depth + 1} collapsed={collapsed} selectedId={selectedId} onToggle={onToggle} onSelect={onSelect} onContextMenu={onContextMenu} />)}
@@ -214,7 +220,7 @@ function countSourceFiles(nodes: FileTreeNode[]): number {
   return count
 }
 
-export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSelectDimension, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile, onAddInput, onCreateRecord, onCreateFile, onDeleteEntry }: Props) {
+export function FileTree({ groups: suppliedGroups, fileBadge, readOnly, nodes, dimensions, fileTypes, selectedDimension, onSelectDimension, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile, onAddInput, onCreateRecord, onCreateFile, onDeleteEntry }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
   const [contextMenu, setContextMenu] = useState<{
@@ -222,7 +228,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
     isDir?: boolean; sourceKind?: 'schema' | 'data'; canManage?: boolean
   } | null>(null)
   const contextReturnPath = useRef<string | null>(null)
-  const groups = buildFileTreeGroups(nodes, dimensions)
+  const groups = suppliedGroups ?? buildFileTreeGroups(nodes, dimensions)
 
   const toggle = (path: string) => {
     setCollapsed(prev => {
@@ -364,6 +370,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
   }, [contextMenu])
 
   return (
+    <FileBadgeContext.Provider value={fileBadge}>
     <div className="file-tree" role="tree" aria-label="项目文件" onKeyDown={onKeyDown} ref={rootRef}>
       {groups.map(group => (
         <div className="tree-section" key={group.key}>
@@ -374,7 +381,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
             aria-expanded={!collapsed.has(group.key)}
             onContextMenu={event => {
               const kind = group.key === '__schema__' ? 'schema' : group.key === '__data__' ? 'data' : null
-              if (!kind || !onAddInput) return
+              if (readOnly || !kind || !onAddInput) return
               event.preventDefault()
               setContextMenu({ x: event.clientX, y: event.clientY, group: kind })
             }}
@@ -397,6 +404,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
                   onToggle={toggle} onSelect={onSelectDimension}
                   onContextMenu={(event, entry) => {
                     event.preventDefault()
+                    if (readOnly) return
                     contextReturnPath.current = entry.id
                     setContextMenu({ x: event.clientX, y: event.clientY, path: entry.target!.filePath,
                       isDir: false, canManage: true })
@@ -415,6 +423,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
                   onToggle={toggle}
                   onContextMenu={(event, path, typeName, isDir, sourceKind, canManage = true) => {
                     event.preventDefault()
+                    if (readOnly) return
                     contextReturnPath.current = path
                     setContextMenu({ x: event.clientX, y: event.clientY, path, typeName, isDir, sourceKind, canManage })
                   }}
@@ -457,7 +466,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
             onCreateRecord(path, typeName)
           }}><Icon name="plus" size={13} aria-hidden />新建记录</button>
           )}
-          {contextMenu.path && !contextMenu.isDir && contextMenu.sourceKind === 'data' && onSelectDimension
+          {contextMenu.path && !contextMenu.isDir && contextMenu.sourceKind === 'data' && onSelectDimension && !readOnly
             && dimensions.filter(dimension => (fileTypes[contextMenu.path!] ?? []).some(type =>
               (type.dimension_fields[dimension.name] ?? []).length > 0)).map(dimension => {
               const target = suggestedDimensionTarget(dimension, contextMenu.path!)
@@ -496,6 +505,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
         </div>
       )}
     </div>
+    </FileBadgeContext.Provider>
   )
 }
 
@@ -654,6 +664,7 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
           <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={12} className="tree-file-chevron" aria-hidden />
           <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
           <span className="tree-item-label">{node.name}</span>
+          <FileBadge path={node.path} />
         </div>
         {!isCollapsed && types.map(type => (
           <div
@@ -705,7 +716,12 @@ function TreeNode({ node, fileTypes, selectedFile, selectedType, onSelectFile, d
     >
       <span className="tree-file-chevron-spacer" aria-hidden />
       <Icon name={isCfd ? 'file-cfd' : 'file'} size={16} className="icon-file" aria-hidden />
-      <span>{node.name}</span>
+      <span className="tree-item-label">{node.name}</span>
+      <FileBadge path={node.path} />
     </div>
   )
+}
+
+function FileBadge({ path }: { path: string }) {
+  return useContext(FileBadgeContext)?.(path) ?? null
 }

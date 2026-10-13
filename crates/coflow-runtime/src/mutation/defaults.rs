@@ -60,7 +60,7 @@ pub(super) fn default_missing_fields_for_type(
         })
 }
 
-pub(super) fn create_record_draft_for_type(
+pub(crate) fn create_record_draft_for_type(
     schema: &CftSchema,
     type_name: &str,
 ) -> Result<CreateRecordDraft, DiagnosticSet> {

@@ -18,6 +18,9 @@ ts-export = [
 ]
 
 [dependencies]
+coflow-format = { path = "../coflow-format" }
+schemars = "0.8.22"
+sha2 = "0.10"
 coflow-language = { path = "../coflow-language" }
 coflow-model = { path = "../coflow-model" }
 coflow-checker = { path = "../coflow-checker" }
@@ -31,7 +34,7 @@ ts-rs = { version = "10", optional = true }
 walkdir = "2"
 tempfile = "3"
 dunce = "1"
-gix = { version = "0.87", default-features = false, features = ["sha1", "sha256", "excludes", "blob-diff"] }
+gix = { version = "0.87", default-features = false, features = ["sha1", "sha256", "excludes", "blob-diff", "revision"] }
 
 [dev-dependencies]
 coflow-format = { path = "../coflow-format" }

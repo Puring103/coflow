@@ -148,13 +148,6 @@ export function inferredCellType(cell: RecordRow['fields'][number] | undefined):
 
 
 
-/** Stable identity for the column set: file path + column names joined.
- *  Used as a memo key so column widths only recompute when the schema-
- *  determined column set changes, not when a cell value updates. */
-export function columnKeySignature(data: FileRecords): string {
-  return data.columns.map(c => c.name).join('')
-}
-
 export function columnDropdownKind(
   data: FileRecords,
   fieldName: string,

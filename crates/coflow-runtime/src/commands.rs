@@ -217,6 +217,19 @@ fn prepare_project_code<T>(
     finish(prepared, &pending).map(CommandOutcome::Success)
 }
 
+/// 为自动化宿主提供只读产物差异和统一发布。
+pub fn codegen_automation(project: &Project, preview: bool) -> Result<CommandOutcome<serde_json::Value>, DiagnosticSet> {
+    let snapshot = crate::automation::InputSnapshot::capture(project).map_err(|e| e.diagnostics)?;
+    prepare_project_code(project, |prepared, _| {
+        let report = prepared.preview()?;
+        if !preview {
+            snapshot.verify(project).map_err(|e| e.diagnostics)?;
+            prepared.publish()?;
+        }
+        Ok(report)
+    })
+}
+
 fn codegen_report(pending: &[PendingCodegen]) -> CodegenProjectReport {
     let targets = pending
         .iter()

@@ -107,7 +107,6 @@ import { isNativeEditorTarget } from '../utils/dom'
 import {
   boundedPasteMatrix,
   columnDropdownKind,
-  columnKeySignature,
   elementBounds,
   estimateTextWidth,
   fieldCell,
@@ -119,32 +118,21 @@ import {
   tableCellKey,
 } from './TableView.support'
 
-// 列准备结果只由 schema/注解决定，跨组件挂载复用可让来回切文件接近零成本。
-// 结构键包含文件、活动类型、列名集合、记录数与文件类型集合，避免跨项目误命中。
-const COLUMN_PREP_CACHE = new Map<string, unknown>()
-const COLUMN_PREP_CACHE_LIMIT = 64
+// 按不可变数据快照缓存列准备结果。基础视图、HEAD 与工作区投影互不串用注解，
+// 同一查询对象跨组件挂载仍可复用，过期快照由 WeakMap 自动回收。
+const COLUMN_PREP_CACHE = new WeakMap<FileRecords, Map<string, unknown>>()
 
-function columnPrepKey(kind: string, data: FileRecords, activeType: string, extra = ''): string {
-  return [
-    kind,
-    data.file_path,
-    activeType,
-    columnKeySignature(data),
-    data.records.length,
-    data.type_names.join(','),
-    extra,
-  ].join('\u001f')
+function columnPrepKey(kind: string, activeType: string, extra = ''): string {
+  return [kind, activeType, extra].join('\u001f')
 }
 
-function cachedColumnPrep<T>(key: string, compute: () => T): T {
-  const cached = COLUMN_PREP_CACHE.get(key)
+function cachedColumnPrep<T>(data: FileRecords, key: string, compute: () => T): T {
+  let cache = COLUMN_PREP_CACHE.get(data)
+  if (!cache) { cache = new Map(); COLUMN_PREP_CACHE.set(data, cache) }
+  const cached = cache.get(key)
   if (cached !== undefined) return cached as T
   const value = compute()
-  COLUMN_PREP_CACHE.set(key, value)
-  if (COLUMN_PREP_CACHE.size > COLUMN_PREP_CACHE_LIMIT) {
-    const oldest = COLUMN_PREP_CACHE.keys().next().value
-    if (oldest !== undefined) COLUMN_PREP_CACHE.delete(oldest)
-  }
+  cache.set(key, value)
   return value
 }
 
@@ -215,6 +203,9 @@ export interface TableRowPresentation {
   version: 'HEAD' | '当前'
   change: 'added' | 'deleted' | 'modified'
   changedFields: ReadonlySet<string>
+  expandedPaths?: ReadonlySet<string>
+  changedPaths?: ReadonlySet<string>
+  onToggleExpandedPath?: (path: string, expanded: boolean) => void
   /** Diff 分组首行（每条记录一组的首行），用于渲染组间分隔线。 */
   groupStart?: boolean
 }
@@ -367,7 +358,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // 列的下拉/胶囊类型（ref/enum/bool）只依赖 schema；同一列集合内计算一次，
   // 供 pill-class 与列宽估算共用，避免两处重复扫描记录。
   const columnKinds = useMemo(
-    () => cachedColumnPrep(columnPrepKey('kinds', data, activeType), () => {
+    () => cachedColumnPrep(data, columnPrepKey('kinds', activeType), () => {
       const kinds: Record<string, 'ref' | 'enum' | 'bool' | null> = {}
       for (const column of data.columns) {
         if (!column.type_names.includes(activeType)) continue
@@ -394,14 +385,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // carries an annotation for this field. Different records normally
   // agree on the declared type for a shared field name; if they don't
   // (e.g. a rename mid-migration) we show whatever we saw first.
-  // Depending on `data.records` here would rebuild the map — and via the
-  // columns memo, every columnDef — on every edit, causing react-table to
-  // replay column sizes and briefly flash the row layout. Freezing on the
-  // structural signature (file + active type + column set) keeps the
-  // memo stable across writes.
+  // 数据快照变化时重新读取注解；同一快照的列计算由共享 WeakMap 复用。
   const columnDeclaredTypes = useMemo(
-    () => cachedColumnPrep(
-      columnPrepKey('declaredTypes', data, activeType, allFieldNames.join(',')),
+    () => cachedColumnPrep(data,
+      columnPrepKey('declaredTypes', activeType, allFieldNames.join(',')),
       () => {
         const map: Record<string, string> = {}
         const snapshot = dataForCellsRef.current
@@ -422,8 +409,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // Display metadata follows the same structural lifetime as declared types:
   // the schema owns it, while record values only carry it to the table.
   const columnDisplay = useMemo(
-    () => cachedColumnPrep(
-      columnPrepKey('display', data, activeType, allFieldNames.join(',')),
+    () => cachedColumnPrep(data,
+      columnPrepKey('display', activeType, allFieldNames.join(',')),
       () => {
         const map: Record<string, { label?: string, description?: string }> = {}
         const snapshot = dataForCellsRef.current
@@ -454,7 +441,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // value shouldn't reflow the layout; the user can drag-resize if a newly
   // added cell needs more room.
   const columnSizeHints = useMemo(
-    () => cachedColumnPrep(columnPrepKey('sizeHints', data, activeType, allFieldNames.join(',')), () => {
+    () => cachedColumnPrep(data, columnPrepKey('sizeHints', activeType, allFieldNames.join(',')), () => {
       const snapshot = dataForCellsRef.current
       const measure = (text: string) => estimateTextWidth(text, false)
       const measureMono = (text: string) => estimateTextWidth(text, true)
@@ -654,6 +641,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   }}
                 />
               )
+            }
+            const comparison = rowPresentationRef.current?.(row.original, row.index)
+            if (comparison?.expandedPaths && comparison.changedFields.has(name) && isComplexValue(f.value)) {
+              // 复杂单元格沿用记录详情的字段树；前后版本共享展开状态。
+              return <div className="table-diff-detail">
+                <DataCardCompact value={presentationValue(f.value)} annotation={f.annotation}
+                  pathPrefix={name} fieldPath={[fieldPathField(name)]}
+                  expandedPaths={comparison.expandedPaths} onRowToggle={comparison.onToggleExpandedPath}
+                  diffChangedPaths={comparison.changedPaths} />
+              </div>
             }
             const readOnlyFromSchema = cellReadOnly(f)
             const cellEditable = canEdit && !readOnlyFromSchema

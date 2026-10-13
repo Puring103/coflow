@@ -24,6 +24,7 @@ mod cfd_loader;
 pub mod check_benchmark_support;
 mod checks;
 pub mod commands;
+pub mod automation;
 pub use coflow_codegen as codegen;
 mod diff;
 mod dimensions;
@@ -68,8 +69,8 @@ pub use coflow_model::{
     ValueValidationRequest,
 };
 pub use diff::{
-    ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffValue, ProjectFieldDiff,
-    ProjectFileDiff, ProjectRecordDiff, ProjectRecordSnapshot,
+    ProjectDiff, ProjectDiffChange, ProjectDiffDiagnostic, ProjectDiffDisplay, ProjectDiffValue,
+    ProjectFieldDiff, ProjectFileDiff, ProjectRecordDiff, ProjectRecordSnapshot,
 };
 pub use dimensions::{DimensionFieldInfo, DimensionInfo};
 pub use files::FileTreeNode;

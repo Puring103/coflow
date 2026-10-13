@@ -219,7 +219,7 @@ fn lower_object_fields(
     finish(values, diagnostics)
 }
 
-fn lower_value_resolved(
+pub(super) fn lower_value_resolved(
     schema: &CftSchema,
     value: &CfdValue,
     ty: &CftValueType,

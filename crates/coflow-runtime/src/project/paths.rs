@@ -11,6 +11,16 @@ use std::path::{Component, Path, PathBuf};
 /// Returns an error when the requested config file/directory cannot be resolved
 /// to `coflow.yaml` or `coflow.yml`.
 pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, DiagnosticSet> {
+    // 隐式调用向父目录查找，显式目录仍只定位指定项目。
+    if config_or_dir.is_none() {
+        let current = std::env::current_dir().map_err(|e| plain_error("PROJECT-CWD", "PROJECT", e.to_string()))?;
+        for directory in current.ancestors() {
+            if directory.join("coflow.yaml").exists() || directory.join("coflow.yml").exists() {
+                return find_default_config(directory);
+            }
+        }
+        return find_default_config(&current);
+    }
     let candidate = config_or_dir.unwrap_or_else(|| Path::new("."));
     if config_or_dir.is_some() && candidate.is_file() {
         return Ok(candidate.to_path_buf());

@@ -1,6 +1,6 @@
 pub(crate) mod impact;
-mod planning;
-mod render;
+pub(crate) mod planning;
+pub(crate) mod render;
 mod store;
 
 use std::collections::BTreeMap;
