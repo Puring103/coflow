@@ -196,17 +196,30 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, refTargetType, annotation, highlightQuery }: { value: FieldValue; refTargetType?: string; annotation?: FieldAnnotation | null; highlightQuery?: string }) {
-  const fallback = isComplexValue(value)
-    ? (
-      <HighlightQueryCtx.Provider value={highlightQuery}>
-        <div className="dc-inspector dc-inspector-compact">
-          <ComplexValueChildren value={value} depth={0} fieldPath={[]} valueAnnotation={annotation} />
-        </div>
-      </HighlightQueryCtx.Provider>
-    )
-    : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
-  return fallback
+export function DataCardCompact({ value, refTargetType, annotation, highlightQuery, pathPrefix, fieldPath = [], expandedPaths, onRowToggle, diffChangedPaths }: {
+  value: FieldValue
+  refTargetType?: string
+  annotation?: FieldAnnotation | null
+  highlightQuery?: string
+  pathPrefix?: string
+  fieldPath?: FieldPathSegment[]
+  expandedPaths?: ReadonlySet<string>
+  onRowToggle?: (path: string, expanded: boolean) => void
+  diffChangedPaths?: ReadonlySet<string>
+}) {
+  // 表格和维度单元格共用同一棵紧凑字段树，对比模式只注入展开和高亮状态。
+  return isComplexValue(value) ? (
+    <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
+      <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
+        <HighlightQueryCtx.Provider value={highlightQuery}>
+          <div className="dc-inspector dc-inspector-compact">
+            <ComplexValueChildren value={value} depth={0} fieldPath={fieldPath} pathKey={pathPrefix}
+              valueAnnotation={annotation} onRowToggle={onRowToggle} />
+          </div>
+        </HighlightQueryCtx.Provider>
+      </ControlledExpansionCtx.Provider>
+    </DiffPathCtx.Provider>
+  ) : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
 }
 
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
@@ -632,7 +645,8 @@ function useDiffRowClass(pathKey: string | undefined): string {
   if (!paths || !pathKey) return ''
   if (paths.has(pathKey)) return ' dc-row-diff-modified'
   for (const changed of paths) {
-    if (changed.startsWith(`${pathKey}.`) || changed.startsWith(`${pathKey}[`)) {
+    if (changed.startsWith(`${pathKey}.`) || changed.startsWith(`${pathKey}[`)
+      || pathKey.startsWith(`${changed}.`) || pathKey.startsWith(`${changed}[`)) {
       return ' dc-row-diff-modified'
     }
   }

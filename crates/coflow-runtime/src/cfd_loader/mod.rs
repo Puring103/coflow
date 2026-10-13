@@ -47,6 +47,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 pub(crate) use writer::{CfdWriter, CFD_WRITER_CAPABILITIES};
 
+/// 公共操作协议的表达式复用 CFD 语法与类型降低，不经过编辑器单元格语法。
+pub(crate) fn parse_expression(
+    schema: &coflow_language::cft::CftSchema,
+    expected: &coflow_language::cft::CftValueType,
+    source: &str,
+) -> Result<crate::LoadedValueDraft, DiagnosticSet> {
+    let wrapped = format!("request: Request {{ value: {source} }}");
+    let (ast, diagnostics) = coflow_language::cfd::parse_cfd(&wrapped);
+    if !diagnostics.is_empty() || ast.records.len() != 1 || ast.records[0].fields.len() != 1 || !ast.dimensions.is_empty() {
+        return Err(DiagnosticSet::one(Diagnostic::error("CLI-VALUE", "CFD", format!("expected one CFD expression: {diagnostics:?}"))));
+    }
+    lower::lower_value_resolved(schema, &ast.records[0].fields[0].value, expected, false)
+        .map_err(|errors| DiagnosticSet::one(Diagnostic::error("CLI-VALUE", "CFD", errors.diagnostics.iter().map(|e| e.message.as_str()).collect::<Vec<_>>().join("; "))))
+}
+
 /// Parses `.cfd` text into source-neutral input records.
 ///
 /// The returned records use the top-level CFD record name as

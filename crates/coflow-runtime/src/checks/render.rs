@@ -35,7 +35,7 @@ pub(super) fn render_check_store(
     }
 }
 
-fn map_check_diagnostics_with_origins(
+pub(crate) fn map_check_diagnostics_with_origins(
     schema: Option<&CftSchema>,
     diagnostics: Vec<CheckDiagnostic>,
     origins: &[RecordOrigin],

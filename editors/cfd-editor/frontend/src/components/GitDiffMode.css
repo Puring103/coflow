@@ -26,7 +26,7 @@
 .git-tree-label { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .git-tree-record { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; }
 .git-tree-spacer { width: 24px; flex-shrink: 0; }
-.git-changes-list .git-change-mark { margin-left: auto; padding-right: 8px; }
+.git-changes-sidebar .git-change-mark { margin-left: auto; padding-right: 8px; }
 .git-table-comparison { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
 .git-table-filter { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: var(--fs-xs); }
 /* 记录/表格视图共用的字段过滤开关，位于 diff 工具栏。 */
@@ -114,9 +114,9 @@
   background: color-mix(in srgb, var(--yellow) 22%, var(--bg-1));
 }
 .git-diff-mode-toolbar {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   min-height: 42px;
-  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 12px;
   padding: 6px 10px;
@@ -124,7 +124,7 @@
   background: var(--bg-2);
 }
 .git-diff-head { color: var(--text-mute); font: var(--fs-xs) 'JetBrains Mono', monospace; }
-.git-diff-view-tabs { justify-self: start; }
+.git-diff-view-tabs { margin-right: auto; }
 .git-diff-updating { color: var(--text-mute); font-size: var(--fs-xs); }
 .git-diff-message { padding: 12px; color: var(--text-mute); font-size: var(--fs-sm); }
 .git-diff-message.centered {
@@ -208,6 +208,10 @@
   .git-source-comparison { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 1fr) minmax(240px, 1fr); }
   .git-record-pane,
   .git-source-pane { border-right: 0; border-bottom: 1px solid var(--border); }
-  .git-diff-mode-toolbar { grid-template-columns: 1fr auto; }
-  .git-diff-view-tabs { grid-column: 1 / -1; grid-row: 2; }
+  .git-diff-view-tabs { flex-wrap: wrap; }
 }
+
+/* 展开的复杂值沿用紧凑字段树，允许表格虚拟行测量实际高度。 */
+.table-view-comparison .table-row td:has(.table-diff-detail) { vertical-align: top; white-space: normal; overflow: visible; }
+.table-diff-detail { min-width: 240px; text-align: left; }
+.git-changes-sidebar > .file-tree { min-height: 0; flex: 1; overflow: auto; }

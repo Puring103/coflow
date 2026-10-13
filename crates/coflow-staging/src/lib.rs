@@ -8,6 +8,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod transaction;
+
 use std::fmt;
 use std::fs;
 use std::io::{self, Write};

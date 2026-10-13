@@ -175,7 +175,13 @@ const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
 // 共享空数组，避免每次渲染产生新引用而让下游 useMemo 失效。
 const EMPTY_RECORD_GROUPS: never[] = []
-export default function App() {
+interface AppProps {
+  /** 独立浏览器预览启用布局实验，正式入口保持原布局。 */
+  layoutPreview?: boolean
+  browserSettings?: EditorProjectSettings
+}
+
+export default function App({ layoutPreview = false, browserSettings = MOCK_EDITOR_SETTINGS }: AppProps = {}) {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
     settings: pluginSettings,
@@ -451,7 +457,7 @@ export default function App() {
   const documentSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(layoutPreview)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
   const [tableFocusRequest, setTableFocusRequest] = useState(0)
   const [firstRecordFocusRequest, setFirstRecordFocusRequest] = useState(0)
@@ -587,7 +593,7 @@ export default function App() {
       const firstFile = bootstrap.first_source_file ?? sourceFiles[0]
       if (firstFile) {
         const option = bootstrap.file_types[firstFile]?.[0]
-        const tab = defaultWorkspaceTab(firstFile, option?.name ?? '', option?.is_singleton ?? false)
+        const tab = defaultWorkspaceTab(firstFile, option?.name ?? '')
         tabs = [tab]
         activeTabId = tab.id
         pluginDefaultPendingTabsRef.current.add(tab.id)
@@ -614,9 +620,9 @@ export default function App() {
       lookups.adopt({ sessionId: MOCK_PROJECT.session_id, revision: MOCK_PROJECT.revision })
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
-      setProjectSettings(MOCK_EDITOR_SETTINGS)
+      setProjectSettings(browserSettings)
       setGraphCache({ [graphCacheKey('data/npc.cfd', GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
-      installWorkspace(MOCK_PROJECT, MOCK_EDITOR_SETTINGS)
+      installWorkspace(MOCK_PROJECT, browserSettings)
     }
   }, [generation, installWorkspace, lookups])
 
@@ -641,7 +647,7 @@ export default function App() {
         return bootstrap
       })
       resetProjections()
-      setProjectSettings(api.isTauri ? null : MOCK_EDITOR_SETTINGS)
+      setProjectSettings(api.isTauri ? null : browserSettings)
       setWorkspaceTabs([])
       workspaceTabsRef.current = []
       pluginDefaultPendingTabsRef.current.clear()
@@ -666,7 +672,7 @@ export default function App() {
           }
         })
       } else {
-        installWorkspace(bootstrap, MOCK_EDITOR_SETTINGS)
+        installWorkspace(bootstrap, browserSettings)
       }
     },
     [generation, history, installWorkspace, lookups, resetProjections, router]
@@ -719,7 +725,7 @@ export default function App() {
       history.clear()
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
-      setProjectSettings(MOCK_EDITOR_SETTINGS)
+      setProjectSettings(browserSettings)
       return
     }
     const request = generation.beginProjectRequest()
@@ -765,7 +771,7 @@ export default function App() {
       if (!current || !keepFile) {
         setProject(bootstrap)
         const option = bootstrap.file_types[nextFile]?.[0]
-        const tab = defaultWorkspaceTab(nextFile, option?.name ?? '', option?.is_singleton ?? false)
+        const tab = defaultWorkspaceTab(nextFile, option?.name ?? '')
         setWorkspaceTabs(existing => {
           const next = [
             ...existing.filter(item => item.id !== tab.id),
@@ -924,8 +930,7 @@ export default function App() {
       const typeName = requestedType || options[0]?.name || ''
       const id = workspaceTabId(filePath, typeName)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
-      const option = options.find(candidate => candidate.name === typeName)
-      const baseTab = existing ?? defaultWorkspaceTab(filePath, typeName, option?.is_singleton ?? false)
+      const baseTab = existing ?? defaultWorkspaceTab(filePath, typeName)
       const defaultPluginView = !existing && typeName ? preferredPluginView(typeName) : undefined
       const tab = defaultPluginView
         ? { ...baseTab, viewKind: 'table' as const, viewId: defaultPluginView.key }
@@ -984,7 +989,7 @@ export default function App() {
       pluginDefaultPendingTabsRef.current.delete(id)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
       const tab: WorkspaceTab = {
-        ...(existing ?? defaultWorkspaceTab(filePath, coordinate.actual_type, false)),
+        ...(existing ?? defaultWorkspaceTab(filePath, coordinate.actual_type)),
         viewKind: 'record',
         viewId: DEFAULT_RECORD_VIEW_ID,
         coordinate,
@@ -1010,7 +1015,7 @@ export default function App() {
     const id = workspaceTabId(target.file_path, typeName)
     const existing = workspaceTabsRef.current.find(tab => tab.id === id)
     const tab: WorkspaceTab = {
-      ...(existing ?? defaultWorkspaceTab(target.file_path, typeName, false)),
+      ...(existing ?? defaultWorkspaceTab(target.file_path, typeName)),
       viewKind: 'source',
       viewId: DEFAULT_SOURCE_VIEW_ID,
     }
@@ -1081,11 +1086,9 @@ export default function App() {
       const { coordinate, file_path: filePath } = target
       const id = workspaceTabId(filePath, coordinate.actual_type)
       const existing = workspaceTabsRef.current.find(tab => tab.id === id)
-      const option = project?.file_types[filePath]?.find(item => item.name === coordinate.actual_type)
       const base = existing ?? defaultWorkspaceTab(
         filePath,
         coordinate.actual_type,
-        option?.is_singleton ?? false,
       )
       const tab = base.viewKind === 'record' ? { ...base, coordinate } : base
       const next = existing
@@ -1551,16 +1554,13 @@ export default function App() {
     setActiveWorkspaceTabId(id)
     if (typeName) setActiveType(typeName)
     if (!typeName) return
-    const singleton = project?.file_types[currentRoute.file]
-      ?.find(option => option.name === typeName)?.is_singleton ?? false
     setWorkspaceTabs(current => {
       let changed = false
       const next = current.map(tab => {
         if (tab.id !== id) return tab
         const pluginView = pluginRegistry.views.some(view => view.key === currentRoute.viewId)
-        const singletonSource = singleton && currentRoute.view === 'source'
-        const viewKind = pluginView ? 'table' : singletonSource ? 'source' : singleton ? 'record' : currentRoute.view
-        const viewId = pluginView ? currentRoute.viewId : singletonSource ? DEFAULT_SOURCE_VIEW_ID : singleton ? DEFAULT_RECORD_VIEW_ID : currentRoute.viewId
+        const viewKind = pluginView ? 'table' : currentRoute.view
+        const viewId = currentRoute.viewId
         const coordinate = viewKind === 'record' && currentRoute.view === 'record'
           ? currentRoute.coordinate
           : tab.coordinate
@@ -1578,7 +1578,7 @@ export default function App() {
       workspaceTabsRef.current = next
       return next
     })
-  }, [currentRoute, pluginRegistry.views, pluginsReady, project?.file_types, workspaceTabs])
+  }, [currentRoute, pluginRegistry.views, pluginsReady, workspaceTabs])
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeDimensionTarget = workspaceTabs.find(tab => tab.id === (currentRoute?.view === 'table' ? currentRoute.dimensionTargetId : undefined))?.dimensionTarget
   const activeDimensionData = activeFile
@@ -1615,8 +1615,6 @@ export default function App() {
     : undefined
   const activeViewKind = activePluginView
     ? 'plugin'
-    : currentRoute && isSingletonType && currentRoute.view !== 'source'
-    ? 'record'
     : currentRoute?.view
   const activeRecordCoordinate = useMemo(() => (
     currentRoute?.view === 'record'
@@ -2397,7 +2395,7 @@ export default function App() {
     const id = workspaceTabId(currentRoute.file, activeType)
     pluginDefaultPendingTabsRef.current.delete(id)
     const existing = workspaceTabsRef.current.find(candidate => candidate.id === id)
-      ?? defaultWorkspaceTab(currentRoute.file, activeType, isSingletonType)
+      ?? defaultWorkspaceTab(currentRoute.file, activeType)
     const nextTab = workspaceTabWithView(existing, tab.kind, tab.id, firstCoordinate)
     const nextTabs = workspaceTabsRef.current.some(candidate => candidate.id === id)
       ? workspaceTabsRef.current.map(candidate => candidate.id === id ? nextTab : candidate)
@@ -2416,7 +2414,7 @@ export default function App() {
     const id = workspaceTabId(activeFile, activeType)
     pluginDefaultPendingTabsRef.current.delete(id)
     const existing = workspaceTabsRef.current.find(candidate => candidate.id === id)
-      ?? defaultWorkspaceTab(activeFile, activeType, isSingletonType)
+      ?? defaultWorkspaceTab(activeFile, activeType)
     const nextTab: WorkspaceTab = { ...existing, viewKind: 'table', viewId: view.key }
     const nextTabs = workspaceTabsRef.current.some(candidate => candidate.id === id)
       ? workspaceTabsRef.current.map(candidate => candidate.id === id ? nextTab : candidate)
@@ -2428,12 +2426,12 @@ export default function App() {
 
   // Record tabs can be restored before their file records have loaded. Once
   // data arrives, replace the placeholder coordinate with a real record.
-  // Singleton types are always normalized to this record route.
+  // 仅记录视图需要补齐记录坐标。
   useEffect(() => {
     if (!pluginsReady || !currentRoute || activePluginView) return
     if (activeFileData?.file_path !== currentRoute.file) return
     const activeTab = workspaceTabsRef.current.find(tab => tab.id === activeWorkspaceTabId)
-    const needsRecord = (isSingletonType && currentRoute.view !== 'source') || activeTab?.viewKind === 'record'
+    const needsRecord = activeTab?.viewKind === 'record'
     if (!needsRecord) return
     const coordinateIsValid = currentRoute.view === 'record'
       && activeFileData.records.some(record => (
@@ -2452,7 +2450,7 @@ export default function App() {
         coordinate: firstCoord,
       })
     }
-  }, [activeFileData, activePluginView, activeType, activeWorkspaceTabId, currentRoute, isSingletonType, pluginsReady, router])
+  }, [activeFileData, activePluginView, activeType, activeWorkspaceTabId, currentRoute, pluginsReady, router])
 
   // Deleted custom views and stale routes fall back locally for this tab.
   useEffect(() => {
@@ -2469,27 +2467,13 @@ export default function App() {
       })
       return
     }
-    if (isSingletonType) {
-      const firstCoord = activeFileData.records.find(
-        record => !activeType || recordActualType(record) === activeType,
-      )?.coordinate
-      if (firstCoord) {
-        router.replace({
-          view: 'record',
-          file: currentRoute.file,
-          viewId: DEFAULT_RECORD_VIEW_ID,
-          coordinate: firstCoord,
-        })
-      }
-      return
-    }
     router.replace({
       view: 'table',
       file: currentRoute.file,
       viewId: DEFAULT_TABLE_VIEW_ID,
       typeFilter: activeType,
     })
-  }, [activeFileData, activePluginView, activeType, currentRoute, isSingletonType, pluginsReady, router, viewTabs])
+  }, [activeFileData, activePluginView, activeType, currentRoute, pluginsReady, router, viewTabs])
 
   // If the current file doesn't support graph view but a stale route asks for
   // it, drop back to the type's valid default view.
@@ -2497,17 +2481,8 @@ export default function App() {
     if (!currentRoute || currentRoute.view !== 'graph') return
     if (activeFileData?.file_path !== currentRoute.file) return
     if (graphSupported) return
-    if (isSingletonType) {
-      const coordinate = activeFileData.records.find(
-        record => !activeType || recordActualType(record) === activeType,
-      )?.coordinate
-      if (coordinate) {
-        router.replace({ view: 'record', file: currentRoute.file, viewId: DEFAULT_RECORD_VIEW_ID, coordinate })
-      }
-    } else {
-      router.replace({ view: 'table', file: currentRoute.file, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
-    }
-  }, [currentRoute, activeFileData, graphSupported, activeType, isSingletonType, router])
+    router.replace({ view: 'table', file: currentRoute.file, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
+  }, [currentRoute, activeFileData, graphSupported, activeType, router])
 
   function activateDocumentTab(id: string): void {
     if (deferSourceNavigation(() => activateDocumentTab(id))) return
@@ -2538,7 +2513,7 @@ export default function App() {
       sessionId={project?.session_id}
       onOpenReference={openReference}
     >
-    <div className="app">
+    <div className={layoutPreview ? "app layout-preview" : "app"}>
       <div
         className="topbar"
         role="toolbar"
@@ -2594,7 +2569,20 @@ export default function App() {
             <Icon name="arrow-right" size={14} />
           </button>
         </div>
-        <div className="topbar-center" />
+        <div className="topbar-center">
+          {layoutPreview && (
+            <button className="layout-preview-project-search"
+              disabled={!pluginRegistry.sidebars.some(sidebar => sidebar.pluginId === 'project-search')}
+              onClick={() => {
+                openPluginSidebar('project-search', 'project-search')
+                requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-built-in-project-search-input]')?.focus())
+              }}>
+              <Icon name="search" size={14} />
+              <span>搜索记录、Key 或字段值</span>
+              <kbd>Ctrl ⇧ F</kbd>
+            </button>
+          )}
+        </div>
         <div className="topbar-right">
           {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
             <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
@@ -2827,6 +2815,9 @@ export default function App() {
                     >
                       <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={13} aria-hidden />
                       {tab.name}
+                      {layoutPreview && !tab.isDefault && (
+                        <span className="layout-preview-view-kind">{tab.kind === 'graph' ? '图谱' : '表格'}</span>
+                      )}
                     </button>
                   ))}
                   {activePluginView && (
@@ -2886,6 +2877,39 @@ export default function App() {
                     )}
                   </div>
                 )}
+                {layoutPreview && !activePluginView && !!activeType && (
+                  <div className="layout-preview-view-actions">
+                    <span className="layout-preview-view-summary">
+                      {resolvedView?.isDefault ? '全部字段' : (
+                        String(visibleFields?.size ?? 0) + ' 个字段' + (resolvedView?.groupFilter ? ' · 已按分组过滤' : '')
+                      )}
+                    </span>
+                    <button
+                      className="btn btn-outlined"
+                      onClick={() => {
+                        const saved = projectSettings?.views[activeFile ?? '']?.[activeType]
+                          ?.find(view => view.id === currentRoute.viewId)
+                        if (saved) setViewEditor({ mode: 'edit', view: saved })
+                        else openViewEditor('create')
+                      }}
+                      title={resolvedView?.isDefault ? '新建自定义视图，选择显示字段与分组' : '配置当前视图的字段、顺序、关系与分组'}
+                    >
+                      <Icon name="settings" size={13} />
+                      {resolvedView?.isDefault ? '自定义视图' : '视图选项'}
+                    </button>
+                    {(activeViewKind === 'table' || activeViewKind === 'graph') && (
+                      <button
+                        className="btn btn-outlined"
+                        aria-pressed={!inspectorCollapsed}
+                        onClick={() => setInspectorCollapsed(value => !value)}
+                      >
+                        <Icon name="record" size={13} />
+                        详情
+                      </button>
+                    )}
+                  </div>
+                )}
+
               </div>
             )
           )}
@@ -3218,6 +3242,7 @@ export default function App() {
         </div>
         {project && (
           <DiagnosticsPanel
+            initialCollapsed={layoutPreview}
             diagnostics={project.diagnostics}
             focus={diagFocus}
             onFocusConsumed={() => setDiagFocus(null)}

@@ -17,7 +17,11 @@ pub(super) fn serialize_value_for_type(
     match v {
         CfdValue::OptionNone => "None".to_string(),
         CfdValue::OptionSome(value) => {
-            serialize_value_for_type(value, schema, option_inner(expected), depth)
+            let rendered = serialize_value_for_type(value, schema, option_inner(expected), depth);
+            // 嵌套 Option 的 Some(None) 必须保留外层构造，不能退化为 None。
+            if matches!(value.as_ref(), CfdValue::OptionNone | CfdValue::OptionSome(_)) {
+                format!("Some({rendered})")
+            } else { rendered }
         }
         CfdValue::Bool(v) => v.to_string(),
         CfdValue::Int(v) => v.to_string(),

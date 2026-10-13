@@ -39,15 +39,14 @@ export function dimensionWorkspaceTab(target: DimensionTarget): WorkspaceTab {
 export function defaultWorkspaceTab(
   filePath: string,
   typeName: string,
-  isSingleton: boolean,
 ): WorkspaceTab {
   const sourceOnly = filePath.endsWith('.cft')
   return {
     id: workspaceTabId(filePath, typeName),
     filePath,
     typeName,
-    viewId: sourceOnly ? DEFAULT_SOURCE_VIEW_ID : isSingleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
-    viewKind: sourceOnly ? 'source' : isSingleton ? 'record' : 'table',
+    viewId: sourceOnly ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
+    viewKind: sourceOnly ? 'source' : 'table',
   }
 }
 
@@ -131,13 +130,9 @@ export function sanitizeProjectWorkspace(
     const pluginView = requestedId.includes('/')
     const viewKind: ViewRenderKind = validTarget ? (requestedKind === 'record' ? 'record' : 'table') : pluginView
       ? 'table'
-      : option?.is_singleton
-      ? requestedKind === 'source' ? 'source' : 'record'
       : isDimensionFile && requestedKind === 'graph' ? 'table' : requestedKind
     const viewId = validTarget ? (viewKind === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID) : pluginView
       ? requestedId
-      : option?.is_singleton
-      ? viewKind === 'source' ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_RECORD_VIEW_ID
       : requestedId || (viewKind === 'record'
         ? DEFAULT_RECORD_VIEW_ID
         : viewKind === 'source' ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_TABLE_VIEW_ID)

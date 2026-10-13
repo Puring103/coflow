@@ -13,7 +13,7 @@ use crate::RecordCoordinate;
 pub(crate) fn plan_full_checks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
     plan_full_checks_with_limit(schema, model, usize::MAX).unwrap_or_default()
 }
-pub(super) fn plan_full_checks_with_limit(
+pub(crate) fn plan_full_checks_with_limit(
     schema: &CftSchema,
     model: &CfdDataModel,
     max_tasks: usize,
@@ -124,7 +124,7 @@ pub(super) fn plan_incremental_checks_with_limit(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct CheckPlanningError {
+pub(crate) struct CheckPlanningError {
     pub(super) max_tasks: usize,
 }
 

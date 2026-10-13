@@ -67,7 +67,7 @@ describe('viewTabsFor', () => {
       'v-graph', DEFAULT_SOURCE_VIEW_ID, DEFAULT_TABLE_VIEW_ID, DEFAULT_RECORD_VIEW_ID, 'v-table',
     ])
     expect(viewTabsFor(settings, FILE, TYPE, true, true).map(tab => tab.id)).toEqual([
-      DEFAULT_SOURCE_VIEW_ID, DEFAULT_RECORD_VIEW_ID,
+      DEFAULT_SOURCE_VIEW_ID, DEFAULT_TABLE_VIEW_ID, DEFAULT_RECORD_VIEW_ID,
     ])
     expect(viewTabsFor(settings, FILE, TYPE, false, false).map(tab => tab.id)).not.toContain('v-graph')
   })
@@ -84,10 +84,11 @@ describe('viewTabsFor', () => {
     ])
   })
 
-  it('returns record and source views for singleton types', () => {
+  it('includes table, record and source views for singleton types', () => {
     const tabs = viewTabsFor(null, FILE, TYPE, true, true)
     expect(tabs).toEqual([
       { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
+      { id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', isDefault: true },
       { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
     ])
   })
@@ -118,11 +119,12 @@ describe('viewTabsFor', () => {
 })
 
 describe('resolveView', () => {
-  it('never resolves a table route for singleton types', () => {
+  it('resolves the table route for singleton types', () => {
     expect(resolveView(null, FILE, TYPE, DEFAULT_TABLE_VIEW_ID, true)).toEqual({
-      id: DEFAULT_RECORD_VIEW_ID,
-      kind: 'record',
+      id: DEFAULT_TABLE_VIEW_ID,
+      kind: 'table',
       isDefault: true,
+      columnWidths: {},
     })
   })
 

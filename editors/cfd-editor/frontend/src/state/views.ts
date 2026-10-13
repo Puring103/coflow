@@ -51,7 +51,7 @@ function customViews(
 
 /**
  * The view tabs to show for a (file, type).
- * - Singleton types: default record and source views.
+ * - All data types: default table, record and source views.
  * - Other types: default record, table, source, and supported custom views.
  * - Saved tab order applies to both built-in and custom views.
  */
@@ -66,17 +66,12 @@ export function viewTabsFor(
   if (!type) {
     return [{ id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true }]
   }
-  if (isSingleton) {
-    return orderViewTabs([
-      { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
-      { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
-    ], order)
-  }
   const tabs: ViewTab[] = [
     { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
     { id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', isDefault: true },
     { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
   ]
+  if (isSingleton) return orderViewTabs(tabs, order)
   for (const view of customViews(settings, file, type)) {
     if (view.kind === 'graph' && !graphSupported) continue
     tabs.push({ id: view.id, name: view.name, kind: view.kind, isDefault: false })
@@ -106,11 +101,6 @@ export function resolveView(
   viewId: string,
   isSingleton = false,
 ): ResolvedView {
-  if (isSingleton) {
-    return viewId === DEFAULT_SOURCE_VIEW_ID
-      ? { id: DEFAULT_SOURCE_VIEW_ID, kind: 'source', isDefault: true }
-      : { id: DEFAULT_RECORD_VIEW_ID, kind: 'record', isDefault: true }
-  }
   if (viewId === DEFAULT_RECORD_VIEW_ID) {
     return { id: viewId, kind: 'record', isDefault: true }
   }
@@ -125,7 +115,7 @@ export function resolveView(
   if (viewId === DEFAULT_SOURCE_VIEW_ID) {
     return { id: viewId, kind: 'source', isDefault: true }
   }
-  const view = customViews(settings, file, type).find(v => v.id === viewId)
+  const view = isSingleton ? undefined : customViews(settings, file, type).find(v => v.id === viewId)
   if (!view) {
     return {
       id: DEFAULT_TABLE_VIEW_ID,

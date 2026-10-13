@@ -1,8 +1,10 @@
+use coflow_language::cft::CftSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use gix::bstr::ByteSlice;
 use gix::diff::blob::unified_diff::{ConsumeHunk, ContextSize, DiffLineKind, HunkHeader};
@@ -33,9 +35,24 @@ pub enum ProjectDiffChange {
     feature = "ts-export",
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
+pub struct ProjectDiffDisplay {
+    pub label: Option<String>,
+    pub description: Option<String>,
+    pub children: BTreeMap<String, ProjectDiffDisplay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectDiffValue {
     pub path: String,
     pub value: CfdValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub display: Option<ProjectDiffDisplay>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +63,9 @@ pub struct ProjectDiffValue {
 )]
 pub struct ProjectRecordSnapshot {
     pub file_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub dimension: Option<String>,
     pub values: Vec<ProjectDiffValue>,
 }
 
@@ -131,12 +151,17 @@ pub struct ProjectDiff {
     pub diagnostics: Vec<ProjectDiffDiagnostic>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+type RecordStateKey = (RecordCoordinate, Option<String>, String);
+
+#[derive(Debug, Clone)]
 struct RecordState {
     // 文件路径与语义值分开存放，快照仅在确认变化后构造，
     // 避免为海量未变化记录重复克隆 CfdValue。
     file_path: String,
     values: BTreeMap<String, CfdValue>,
+    dimension: Option<String>,
+    actual_type: String,
+    schema: Arc<CftSchema>,
 }
 
 // HEAD 分支在作用域线程内独立计算的结果；Loaded 携带的诊断已按
@@ -144,7 +169,7 @@ struct RecordState {
 enum HeadOutcome {
     Loaded {
         sources: BTreeMap<String, String>,
-        records: BTreeMap<RecordCoordinate, RecordState>,
+        records: BTreeMap<RecordStateKey, RecordState>,
         valid: bool,
         head_diagnostics: Vec<ProjectDiffDiagnostic>,
         session_diagnostics: Vec<ProjectDiffDiagnostic>,
@@ -158,7 +183,21 @@ pub(crate) fn diff_against_head(
     session: &ProjectSession,
     target_revision: u64,
 ) -> Result<ProjectDiff, DiagnosticSet> {
-    let git = GitProject::open(&session.project)?;
+    diff_against_revision(session, target_revision, "HEAD")
+}
+
+pub(crate) fn diff_against_revision(
+    session: &ProjectSession,
+    target_revision: u64,
+    revision: &str,
+) -> Result<ProjectDiff, DiagnosticSet> {
+    let mut git = GitProject::open(&session.project)?;
+    if revision != "HEAD" {
+        git.head_oid = git.repo.rev_parse_single(revision)
+            .map_err(|error| git_error(format!("无法解析比较基线 `{revision}`：{error}")))?
+            .object().map_err(|error| git_error(error.to_string()))?
+            .peel_to_commit().map_err(|error| git_error(error.to_string()))?.id;
+    }
     let head = git.materialize_head()?;
     let mut diagnostics = Vec::new();
     let current_sources = session_sources(session, &git.diff_paths(), None, &mut diagnostics);
@@ -258,7 +297,7 @@ pub(crate) fn diff_against_head(
 fn filter_ignored_additions(
     ignored: &BTreeSet<String>,
     head_sources: &BTreeMap<String, String>,
-    records: &mut BTreeMap<RecordCoordinate, RecordState>,
+    records: &mut BTreeMap<RecordStateKey, RecordState>,
 ) {
     // 仅保留 HEAD 已跟踪或未被忽略的新增记录，避免忽略文件放大语义差异。
     records.retain(|_, record| {
@@ -328,7 +367,7 @@ fn record_states(
     session: &ProjectSession,
     git: &GitDiffPaths,
     snapshot: Option<&Path>,
-) -> BTreeMap<RecordCoordinate, RecordState> {
+) -> BTreeMap<RecordStateKey, RecordState> {
     let mut records = BTreeMap::new();
     // diff_path 内部多次访问文件系统（symlink_metadata + canonicalize），
     // 同一文件的每条记录结果完全相同，按文件路径记忆化，将万次系统调用降为文件数级别。
@@ -348,23 +387,121 @@ fn record_states(
         else {
             continue;
         };
-        let mut values = record
+        let values = record
             .fields()
             .iter()
             .map(|(name, value)| (name.to_string(), normalized_semantic_value(value)))
             .collect::<BTreeMap<_, _>>();
+        records.insert(
+            (coordinate.clone(), None, String::new()),
+            RecordState {
+                file_path,
+                values,
+                dimension: None,
+                actual_type: record.actual_type().to_string(),
+                schema: Arc::clone(&session.schema),
+            },
+        );
+        // 覆盖值按真实来源文件和维度独立比较，不混入基础记录。
         for (field_name, dimensions) in &record.dimension_fields {
             for (variant, value) in &dimensions.variants {
-                values.insert(
-                    format!("{}[{}={}]", field_name, dimensions.dimension, variant),
-                    normalized_semantic_value(&value.value),
-                );
+                let Some(source) = session.source_data.dimension_source(
+                    session.schema(),
+                    coordinate.actual_type(),
+                    coordinate.key(),
+                    field_name,
+                    &dimensions.dimension,
+                    variant,
+                ) else {
+                    continue;
+                };
+                let Some(path) = file_path_cache
+                    .entry(source.display_path.clone())
+                    .or_insert_with(|| git.diff_path(root, &source.display_path, snapshot))
+                    .clone()
+                else {
+                    continue;
+                };
+                let dimension = dimensions.dimension.to_string();
+                let state = records
+                    .entry((coordinate.clone(), Some(dimension.clone()), path.clone()))
+                    .or_insert_with(|| RecordState {
+                        file_path: path,
+                        values: BTreeMap::new(),
+                        dimension: Some(dimension),
+                        actual_type: record.actual_type().to_string(),
+                        schema: Arc::clone(&session.schema),
+                    });
+                let name = format!("{}[{}={}]", field_name, dimensions.dimension, variant);
+                state
+                    .values
+                    .insert(name, normalized_semantic_value(&value.value));
             }
         }
-        // 此处只保存归一化后的值映射，快照在 record_diffs 确认变化后按需构造。
-        records.insert(coordinate, RecordState { file_path, values });
     }
     records
+}
+
+// 展示元数据绑定各自端点的 schema，删除字段和旧类型仍保留原始 label/描述。
+fn diff_display(
+    schema: &CftSchema,
+    actual_type: &str,
+    field: &str,
+    value: &CfdValue,
+) -> ProjectDiffDisplay {
+    let display = schema
+        .field(actual_type, field)
+        .and_then(|field| field.display.as_ref());
+    let mut display = ProjectDiffDisplay {
+        label: display.and_then(|display| display.label.clone()),
+        description: display.and_then(|display| display.description.clone()),
+        children: BTreeMap::new(),
+    };
+    fn children(schema: &CftSchema, value: &CfdValue) -> BTreeMap<String, ProjectDiffDisplay> {
+        match value {
+            CfdValue::OptionSome(inner) => children(schema, inner),
+            CfdValue::Object(object) => object
+                .fields()
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.to_string(),
+                        diff_display(schema, object.actual_type(), name, value),
+                    )
+                })
+                .collect(),
+            CfdValue::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    (
+                        index.to_string(),
+                        ProjectDiffDisplay {
+                            label: None,
+                            description: None,
+                            children: children(schema, value),
+                        },
+                    )
+                })
+                .collect(),
+            CfdValue::Dict(items) => items
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        crate::dict_key_path_text(key),
+                        ProjectDiffDisplay {
+                            label: None,
+                            description: None,
+                            children: children(schema, value),
+                        },
+                    )
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        }
+    }
+    display.children = children(schema, value);
+    display
 }
 
 fn normalized_semantic_value(value: &CfdValue) -> CfdValue {
@@ -401,8 +538,8 @@ fn normalized_line_endings(value: &str) -> String {
 }
 
 fn record_diffs(
-    before: &BTreeMap<RecordCoordinate, RecordState>,
-    after: &BTreeMap<RecordCoordinate, RecordState>,
+    before: &BTreeMap<RecordStateKey, RecordState>,
+    after: &BTreeMap<RecordStateKey, RecordState>,
 ) -> Vec<ProjectRecordDiff> {
     let coordinates = before
         .keys()
@@ -413,36 +550,34 @@ fn record_diffs(
     // 未变化记录零克隆，直接跳过。
     coordinates
         .into_iter()
-        .filter_map(
-            |coordinate| match (before.get(&coordinate), after.get(&coordinate)) {
-                (None, Some(after)) => Some(ProjectRecordDiff {
-                    coordinate,
-                    change: ProjectDiffChange::Added,
-                    before: None,
-                    after: Some(snapshot_of(after)),
-                    fields: field_diffs(&BTreeMap::new(), &after.values),
-                }),
-                (Some(before), None) => Some(ProjectRecordDiff {
-                    coordinate,
-                    change: ProjectDiffChange::Deleted,
+        .filter_map(|key| match (before.get(&key), after.get(&key)) {
+            (None, Some(after)) => Some(ProjectRecordDiff {
+                coordinate: key.0,
+                change: ProjectDiffChange::Added,
+                before: None,
+                after: Some(snapshot_of(after)),
+                fields: field_diffs(&BTreeMap::new(), &after.values),
+            }),
+            (Some(before), None) => Some(ProjectRecordDiff {
+                coordinate: key.0,
+                change: ProjectDiffChange::Deleted,
+                before: Some(snapshot_of(before)),
+                after: None,
+                fields: field_diffs(&before.values, &BTreeMap::new()),
+            }),
+            (Some(before), Some(after))
+                if before.values != after.values || before.file_path != after.file_path =>
+            {
+                Some(ProjectRecordDiff {
+                    coordinate: key.0,
+                    change: ProjectDiffChange::Modified,
                     before: Some(snapshot_of(before)),
-                    after: None,
-                    fields: field_diffs(&before.values, &BTreeMap::new()),
-                }),
-                (Some(before), Some(after))
-                    if before.values != after.values || before.file_path != after.file_path =>
-                {
-                    Some(ProjectRecordDiff {
-                        coordinate,
-                        change: ProjectDiffChange::Modified,
-                        before: Some(snapshot_of(before)),
-                        after: Some(snapshot_of(after)),
-                        fields: field_diffs(&before.values, &after.values),
-                    })
-                }
-                _ => None,
-            },
-        )
+                    after: Some(snapshot_of(after)),
+                    fields: field_diffs(&before.values, &after.values),
+                })
+            }
+            _ => None,
+        })
         .collect()
 }
 
@@ -450,12 +585,30 @@ fn snapshot_of(state: &RecordState) -> ProjectRecordSnapshot {
     // 变化记录的唯一克隆点，由值映射生成有序快照。
     ProjectRecordSnapshot {
         file_path: state.file_path.clone(),
+        dimension: state.dimension.clone(),
         values: state
             .values
             .iter()
-            .map(|(path, value)| ProjectDiffValue {
-                path: path.clone(),
-                value: value.clone(),
+            .map(|(path, value)| {
+                // 仅为确认变化的记录构造展示元数据，未变化记录只持有共享 schema。
+                let name = if state.dimension.is_some() {
+                    path.split('[').next().unwrap_or(path)
+                } else {
+                    path
+                };
+                let mut display = diff_display(&state.schema, &state.actual_type, name, value);
+                if state.dimension.is_some() {
+                    display.label = Some(format!(
+                        "{}{}",
+                        display.label.as_deref().unwrap_or(name),
+                        &path[name.len()..]
+                    ));
+                }
+                ProjectDiffValue {
+                    path: path.clone(),
+                    value: value.clone(),
+                    display: Some(display),
+                }
             })
             .collect(),
     }
@@ -465,34 +618,99 @@ fn field_diffs(
     before: &BTreeMap<String, CfdValue>,
     after: &BTreeMap<String, CfdValue>,
 ) -> Vec<ProjectFieldDiff> {
-    before
-        .keys()
-        .chain(after.keys())
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|path| match (before.get(&path), after.get(&path)) {
-            (None, Some(after)) => Some(ProjectFieldDiff {
-                path,
-                change: ProjectDiffChange::Added,
-                before: None,
-                after: Some(after.clone()),
-            }),
-            (Some(before), None) => Some(ProjectFieldDiff {
-                path,
-                change: ProjectDiffChange::Deleted,
-                before: Some(before.clone()),
-                after: None,
-            }),
-            (Some(before), Some(after)) if before != after => Some(ProjectFieldDiff {
-                path,
-                change: ProjectDiffChange::Modified,
-                before: Some(before.clone()),
-                after: Some(after.clone()),
-            }),
-            _ => None,
-        })
-        .collect()
+    let mut changes = Vec::new();
+    for path in before.keys().chain(after.keys()).collect::<BTreeSet<_>>() {
+        value_diffs(path, before.get(path), after.get(path), &mut changes);
+    }
+    changes
+}
+
+// 嵌套值按稳定字段/索引/字典键比较，前端可直接定位并展开变化的子字段。
+fn value_diffs(
+    path: &str,
+    before: Option<&CfdValue>,
+    after: Option<&CfdValue>,
+    changes: &mut Vec<ProjectFieldDiff>,
+) {
+    if before == after {
+        return;
+    }
+    match (before, after) {
+        (Some(CfdValue::OptionSome(left)), Some(CfdValue::OptionSome(right))) => {
+            value_diffs(path, Some(left), Some(right), changes);
+            return;
+        }
+        (Some(CfdValue::Object(left)), Some(CfdValue::Object(right)))
+            if left.actual_type() == right.actual_type() =>
+        {
+            for name in left
+                .fields()
+                .keys()
+                .chain(right.fields().keys())
+                .collect::<BTreeSet<_>>()
+            {
+                value_diffs(
+                    &format!("{path}.{name}"),
+                    left.fields().get(name),
+                    right.fields().get(name),
+                    changes,
+                );
+            }
+            return;
+        }
+        (Some(CfdValue::Array(left)), Some(CfdValue::Array(right))) => {
+            for index in 0..left.len().max(right.len()) {
+                value_diffs(
+                    &format!("{path}[{index}]"),
+                    left.get(index),
+                    right.get(index),
+                    changes,
+                );
+            }
+            return;
+        }
+        (Some(CfdValue::Dict(left)), Some(CfdValue::Dict(right))) => {
+            let left: BTreeMap<_, _> = left
+                .iter()
+                .map(|(key, value)| (crate::dict_key_path_text(key), value))
+                .collect();
+            let right: BTreeMap<_, _> = right
+                .iter()
+                .map(|(key, value)| (crate::dict_key_path_text(key), value))
+                .collect();
+            for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
+                value_diffs(
+                    &format!("{path}[{key}]"),
+                    left.get(key).copied(),
+                    right.get(key).copied(),
+                    changes,
+                );
+            }
+            // 字典重排没有子值变化，仍保留容器级差异。
+            if left == right {
+                changes.push(ProjectFieldDiff {
+                    path: path.into(),
+                    change: ProjectDiffChange::Modified,
+                    before: before.cloned(),
+                    after: after.cloned(),
+                });
+            }
+            return;
+        }
+        _ => {}
+    }
+    changes.push(ProjectFieldDiff {
+        path: path.to_string(),
+        change: if before.is_none() {
+            ProjectDiffChange::Added
+        } else if after.is_none() {
+            ProjectDiffChange::Deleted
+        } else {
+            ProjectDiffChange::Modified
+        },
+        before: before.cloned(),
+        after: after.cloned(),
+    });
 }
 
 fn source_diffs(

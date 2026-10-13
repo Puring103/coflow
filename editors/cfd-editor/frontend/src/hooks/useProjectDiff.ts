@@ -49,12 +49,14 @@ export function useProjectDiff(
       const coordinateStillExists = !current.coordinate || next.records.some(record => (
         record.coordinate.actual_type === current.coordinate?.actual_type
         && record.coordinate.key === current.coordinate.key
+        && (record.after?.file_path ?? record.before?.file_path) === current.filePath
+        && (record.after?.dimension ?? record.before?.dimension ?? null) === (current.dimension ?? null)
       ))
       if (current.filePath && paths.has(current.filePath) && coordinateStillExists) return current
       const record = next.records[0]
       if (record) {
         const filePath = record.after?.file_path ?? record.before?.file_path ?? null
-        return { filePath, typeName: record.coordinate.actual_type, coordinate: record.coordinate }
+        return { filePath, dimension: record.after?.dimension ?? record.before?.dimension, typeName: record.coordinate.actual_type, coordinate: record.coordinate }
       }
       return { filePath: next.files[0]?.path ?? null, typeName: null, coordinate: null }
     })

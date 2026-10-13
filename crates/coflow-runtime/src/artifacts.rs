@@ -58,6 +58,32 @@ impl PreparedCodeRelease {
         Ok(false)
     }
 
+    pub(crate) fn preview(&self) -> Result<serde_json::Value, DiagnosticSet> {
+        let mut changes = Vec::new();
+        for output in &self.outputs {
+            let expected: BTreeMap<_,_> = output.files.iter().map(|f| (f.relative_path.clone(), &f.contents)).collect();
+            for (path, contents) in &expected {
+                let absolute = output.directory.join(path);
+                let previous = read_optional_file(&absolute)?;
+                if previous.as_deref() != Some(contents.as_bytes()) {
+                    changes.push(serde_json::json!({"path": absolute, "change": if previous.is_some() {"modified"} else {"added"}}));
+                }
+            }
+            if output.directory.exists() {
+                for entry in walkdir::WalkDir::new(&output.directory) {
+                    let entry = entry.map_err(|e| artifact_error(&output.directory,e.to_string()))?;
+                    if entry.file_type().is_file() && entry.path().extension().is_none_or(|e| e != "meta") {
+                        if let Ok(relative) = entry.path().strip_prefix(&output.directory) {
+                            if !expected.contains_key(relative) { changes.push(serde_json::json!({"path":entry.path(),"change":"deleted"})); }
+                        }
+                    }
+                }
+            }
+        }
+        if self.enum_lock_changed { changes.push(serde_json::json!({"path":self.enum_lock_path,"change":if self.enum_lock_original.is_some(){"modified"}else{"added"},"mapping":self.id_as_enum_values})); }
+        Ok(serde_json::json!({"changed":!changes.is_empty(),"files":changes}))
+    }
+
     pub(crate) fn publish(self) -> Result<(), DiagnosticSet> {
         if !self.has_changes()? {
             return Ok(());

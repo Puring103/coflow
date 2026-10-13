@@ -458,7 +458,30 @@ fn compares_absolute_dimension_paths_against_snapshot() {
     assert_eq!(diff.files[0].path, "dimensions/language/Item_name.cfd");
     assert!(diff.files[0].patch.contains("Before"));
     assert!(diff.files[0].patch.contains("After"));
-    assert!(!diff.records.is_empty());
+    assert_eq!(diff.records.len(), 1);
+    let overlay_diff = &diff.records[0];
+    for snapshot in [&overlay_diff.before, &overlay_diff.after] {
+        let snapshot = snapshot.as_ref().expect("dimension snapshot");
+        assert_eq!(snapshot.file_path, "dimensions/language/Item_name.cfd");
+        assert_eq!(snapshot.dimension.as_deref(), Some("language"));
+        assert_eq!(snapshot.values[0].path, "name[language=zh]");
+    }
+    fs::remove_file(&overlay).expect("delete overlay");
+    let session = Runtime::new()
+        .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
+        .expect("session");
+    let deleted = session.queries().diff_against_head().expect("deleted diff");
+    assert_eq!(deleted.records.len(), 1);
+    assert_eq!(deleted.records[0].change, ProjectDiffChange::Deleted);
+    assert_eq!(
+        deleted.records[0]
+            .before
+            .as_ref()
+            .expect("HEAD snapshot")
+            .dimension
+            .as_deref(),
+        Some("language")
+    );
 }
 
 #[test]
@@ -500,4 +523,108 @@ fn excludes_sources_outside_repository_with_diagnostics() {
     assert_eq!(diff.files[0].path, "data/items.cfd");
     assert!(diff.files[0].patch.contains("-base: Item { value: 1 }"));
     assert!(!diff.semantic_available);
+}
+
+#[test]
+fn nested_diff_keeps_each_endpoints_display_metadata() {
+    let repo = tempfile::tempdir().expect("repo");
+    let schema = r#"
+data Stats { @label("生命值") @description("旧说明") hp: int; }
+table Item { @label("属性") @description("角色属性列表") stats: [Stats]; }
+"#;
+    write_project(
+        repo.path(),
+        schema,
+        "one: Item { stats: [Stats { hp: 1 }] }",
+    );
+    git(repo.path(), &["init", "--quiet"]);
+    git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
+    git(repo.path(), &["config", "user.name", "Coflow Tests"]);
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
+    fs::write(
+        repo.path().join("schema.cft"),
+        schema
+            .replace("生命值", "当前生命值")
+            .replace("旧说明", "新说明"),
+    )
+    .expect("schema");
+    fs::write(
+        repo.path().join("data/items.cfd"),
+        "one: Item { stats: [Stats { hp: 2 }, Stats { hp: 3 }] }",
+    )
+    .expect("data");
+    let session = Runtime::new()
+        .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
+        .expect("session");
+    let diff = session.queries().diff_against_head().expect("diff");
+    assert!(diff.semantic_available, "{:?}", diff.diagnostics);
+    assert_eq!(diff.records.len(), 1);
+    let record = &diff.records[0];
+    assert_eq!(
+        record
+            .fields
+            .iter()
+            .map(|field| (field.path.as_str(), field.change))
+            .collect::<Vec<_>>(),
+        vec![
+            ("stats[0].hp", ProjectDiffChange::Modified),
+            ("stats[1]", ProjectDiffChange::Added)
+        ]
+    );
+    for (snapshot, label, description) in [
+        (&record.before, "生命值", "旧说明"),
+        (&record.after, "当前生命值", "新说明"),
+    ] {
+        let value = &snapshot.as_ref().expect("snapshot").values[0];
+        let display = value.display.as_ref().expect("display metadata");
+        assert_eq!(display.label.as_deref(), Some("属性"));
+        let nested = &display.children["0"].children["hp"];
+        assert_eq!(nested.label.as_deref(), Some(label));
+        assert_eq!(nested.description.as_deref(), Some(description));
+    }
+}
+
+#[test]
+fn mixed_file_dimensions_do_not_change_base_record() {
+    let repo = tempfile::tempdir().expect("repo");
+    let before = r#"
+one: Item { name: "Base", hint: "Base hint" }
+language[zh] { one: Item { name: "旧名称" } }
+platform[pc] { one: Item { hint: "旧提示" } }
+"#;
+    write_project(
+        repo.path(),
+        "table Item { @localized name: string; @dimension(\"platform\") hint: string; }",
+        before,
+    );
+    git(repo.path(), &["init", "--quiet"]);
+    git(repo.path(), &["config", "user.email", "tests@coflow.local"]);
+    git(repo.path(), &["config", "user.name", "Coflow Tests"]);
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "--quiet", "-m", "baseline"]);
+    fs::write(
+        repo.path().join("data/items.cfd"),
+        before
+            .replace("旧名称", "新名称")
+            .replace("旧提示", "新提示"),
+    )
+    .expect("overlays");
+    let session = Runtime::new()
+        .open_read_only_session(Project::open(Some(repo.path())).expect("project"))
+        .expect("session");
+    let diff = session.queries().diff_against_head().expect("diff");
+    assert!(diff.semantic_available, "{:?}", diff.diagnostics);
+    assert_eq!(diff.records.len(), 2);
+    let dimensions = diff
+        .records
+        .iter()
+        .map(|record| {
+            let snapshot = record.after.as_ref().expect("snapshot");
+            assert_eq!(snapshot.file_path, "data/items.cfd");
+            assert_eq!(snapshot.values.len(), 1);
+            snapshot.dimension.as_deref().expect("dimension")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(dimensions, vec!["language", "platform"]);
 }

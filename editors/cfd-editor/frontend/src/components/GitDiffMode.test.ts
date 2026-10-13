@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectDiff } from '../bindings/ProjectDiff'
-import { ancestorPathKeys, buildDiffTree, changedTableColumns, GitDiffMode, GitDiffSidebar, hasProjectDiffChanges, projectTable, sourceLineDecorations } from './GitDiffMode'
+import { buildDiffTree, changedTableColumns, GitDiffMode, GitDiffSidebar, hasProjectDiffChanges, projectTable, sourceLineDecorations } from './GitDiffMode'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { buildFileTreeGroups } from './FileTree'
@@ -18,12 +18,13 @@ describe('Git Diff available views and tree', () => {
     expect(html).toContain('源码</button>')
   })
 
-  it('shows record and source views for singleton types without a table view', () => {
+  it('defaults singleton diffs to the shared table view', () => {
     const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Settings', key: 'only' }, change: 'modified', before: { file_path: 'data/settings.cfd', values: [] }, after: { file_path: 'data/settings.cfd', values: [] }, fields: [] }] }
     const singletonTypes = { 'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true, dimension_fields: {} }] }
     const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes: singletonTypes, loading: false, error: null, selection: { filePath: 'data/settings.cfd', typeName: 'Settings', coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
     expect(html).toContain('>记录</button>')
-    expect(html).not.toContain('>表格</button>')
+    expect(html).toContain('>表格</button>')
+    expect(html).toContain('table-view-comparison')
     expect(html).toContain('>源码</button>')
   })
 
@@ -201,13 +202,6 @@ describe('Git Diff table projection', () => {
     expect(new Set(projected.data.records.map(row => projected.presentations.get(row)?.id)).size).toBe(2)
     expect(projected.presentations.get(projected.data.records[0])?.changedFields).toEqual(new Set(['level']))
     expect(projected.presentations.get(projected.data.records[1])?.changedFields).toEqual(new Set(['level']))
-  })
-
-  it('expands ancestor paths of changed fields for record auto-expansion', () => {
-    expect(ancestorPathKeys(new Set(['level']))).toEqual(new Set())
-    expect(ancestorPathKeys(new Set(['nested.value', 'Desc[language=en]', 'a.b[0].c']))).toEqual(
-      new Set(['nested', 'Desc', 'a', 'a.b', 'a.b[0]']),
-    )
   })
 
   it('filters unchanged columns and keeps nested changes and all added or deleted fields', () => {

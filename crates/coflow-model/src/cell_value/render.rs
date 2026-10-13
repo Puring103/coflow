@@ -34,7 +34,13 @@ impl std::error::Error for CellRenderError {}
 pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
     match value {
         CfdValue::OptionNone => Ok("None".to_string()),
-        CfdValue::OptionSome(value) => render_cell_value(value),
+        CfdValue::OptionSome(value) => {
+            let rendered = render_cell_value(value)?;
+            // 保留嵌套 Option 的层级，否则 Some(None) 会被误读为外层空态。
+            Ok(if matches!(value.as_ref(), CfdValue::OptionNone | CfdValue::OptionSome(_)) {
+                format!("Some({rendered})")
+            } else { rendered })
+        }
         CfdValue::Bool(value) => Ok(value.to_string()),
         CfdValue::Int(value) => Ok(value.to_string()),
         CfdValue::Float(value) => Ok(value.to_string()),
