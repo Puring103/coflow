@@ -291,14 +291,23 @@ fn collect_cfd_sources(
 ) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
     let mut sources = Vec::new();
     let mut failures = Vec::new();
-    for source in &project.config().data {
-        let path = source.location();
-        let resolved = project.resolve_path(path);
+    let mut discovered = BTreeSet::new();
+    for input in project.cfd_input_paths() {
+        let resolved = project.resolve_path(input);
+        if !resolved.exists()
+            && project
+                .config()
+                .dimensions
+                .values()
+                .any(|dimension| dimension.dir.as_deref() == Some(input))
+        {
+            continue;
+        }
         if resolved.is_dir() {
             match discover_directory_files(&resolved) {
                 Ok(paths) => {
                     for path in paths {
-                        if is_cfd_path(&path) {
+                        if is_cfd_path(&path) && discovered.insert(normalize_path(&path)) {
                             collect_cfd_source(&path, open_documents, &mut sources, &mut failures);
                         }
                     }
@@ -308,7 +317,7 @@ fn collect_cfd_sources(
                     message: err.to_string(),
                 }),
             }
-        } else if is_cfd_path(&resolved) {
+        } else if is_cfd_path(&resolved) && discovered.insert(normalize_path(&resolved)) {
             collect_cfd_source(&resolved, open_documents, &mut sources, &mut failures);
         }
     }

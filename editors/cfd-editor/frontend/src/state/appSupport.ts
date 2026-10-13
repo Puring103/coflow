@@ -108,7 +108,7 @@ export function dimensionForFile(
   filePath: string,
 ): DimensionInfo | undefined {
   const normalizedFile = filePath.replace(/\\/g, '/')
-  return dimensions.find(dimension => normalizedFile === `@dimension/${dimension.name}`)
+  return dimensions.find(dimension => normalizedFile.startsWith(`@dimension/${dimension.name}/`))
 
 }
 

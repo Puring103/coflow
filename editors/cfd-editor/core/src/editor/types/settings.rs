@@ -52,7 +52,7 @@ pub struct EditorWorkspaceState {
     pub active_tab_id: Option<String>,
 }
 
-/// 维度导航目标是业务文件中的类型/字段，不对应独立 CFD 文件。
+/// 维度导航按实际 CFD 文件定位，同一文件可包含多个类型和字段。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -61,12 +61,8 @@ pub struct EditorWorkspaceState {
 )]
 pub struct EditorDimensionTarget {
     pub dimension: String,
-    #[serde(rename = "ownerFile")]
-    pub owner_file: String,
-    #[serde(rename = "typeName")]
-    pub type_name: String,
-    pub field: Option<String>,
-    pub singleton: bool,
+    #[serde(rename = "filePath")]
+    pub file_path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

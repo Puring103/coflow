@@ -1,4 +1,4 @@
-import { dimensionTargetId, type DimensionTarget } from './dimensionNavigation'
+import { dimensionTargetId, dimensionViewPath, type DimensionTarget } from './dimensionNavigation'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
 import type { DimensionInfo } from '../bindings/DimensionInfo'
 import type { EditorWorkspaceState } from '../bindings/EditorWorkspaceState'
@@ -31,10 +31,9 @@ export function workspaceTabId(filePath: string, typeName: string): string {
 }
 
 export function dimensionWorkspaceTab(target: DimensionTarget): WorkspaceTab {
-  const filePath = `@dimension/${target.dimension}`
+  const filePath = dimensionViewPath(target)
   return { id: dimensionTargetId(target), filePath, typeName: '',
-    viewId: target.singleton ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID,
-    viewKind: target.singleton ? 'record' : 'table', dimensionTarget: target }
+    viewId: DEFAULT_TABLE_VIEW_ID, viewKind: 'table', dimensionTarget: target }
 }
 
 export function defaultWorkspaceTab(
@@ -105,7 +104,7 @@ export function sanitizeProjectWorkspace(
   fileTypes: { [file: string]: FileTypeOption[] | undefined },
   sourceFiles?: ReadonlySet<string>,
   dimensions: DimensionInfo[] = [],
-  dimensionFiles: ReadonlySet<string> = new Set(),
+
 ): ProjectWorkspace | null {
   if (!isObject(value) || !Array.isArray(value.tabs)) return null
   const tabs: WorkspaceTab[] = []
@@ -116,12 +115,9 @@ export function sanitizeProjectWorkspace(
     const typeName = stringProperty(candidate, 'type_name')
     const target = isObject(candidate.dimension_target) ? readDimensionTarget(candidate.dimension_target) : null
     const dimension = target && dimensions.find(item => item.name === target.dimension)
-    const validTarget = target && dimension && filePath === `@dimension/${target.dimension}`
-      && dimensionFiles.has(target.ownerFile) && (fileTypes[target.ownerFile] ?? [])
-        .some(item => item.name === target.typeName && item.record_count > 0
-          && item.is_singleton === target.singleton
-          && (target.singleton ? (item.dimension_fields[target.dimension] ?? []).length > 0
-            : (item.dimension_fields[target.dimension] ?? []).includes(target.field!))) ? target : null
+    const validTarget = target && dimension && filePath === dimensionViewPath(target)
+      && (dimension.files.includes(target.filePath)
+        || !!dimension.dir && target.filePath.startsWith(`${dimension.dir.replace(/\/$/, '')}/`)) ? target : null
     const option = fileTypes[filePath]?.find(type => type.name === typeName)
     const isDimensionFile = !target && !typeName && (sourceFiles?.has(filePath) ?? false)
     if (!option && !isDimensionFile && !validTarget) continue
@@ -133,12 +129,12 @@ export function sanitizeProjectWorkspace(
     const requestedKind = isViewKind(rawKind) ? rawKind : 'table'
     const requestedId = stringProperty(candidate, 'view_id')
     const pluginView = requestedId.includes('/')
-    const viewKind: ViewRenderKind = validTarget ? (validTarget.singleton ? 'record' : requestedKind === 'record' ? 'record' : 'table') : pluginView
+    const viewKind: ViewRenderKind = validTarget ? (requestedKind === 'record' ? 'record' : 'table') : pluginView
       ? 'table'
       : option?.is_singleton
       ? requestedKind === 'source' ? 'source' : 'record'
       : isDimensionFile && requestedKind === 'graph' ? 'table' : requestedKind
-    const viewId = validTarget ? (validTarget.singleton || viewKind === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID) : pluginView
+    const viewId = validTarget ? (viewKind === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID) : pluginView
       ? requestedId
       : option?.is_singleton
       ? viewKind === 'source' ? DEFAULT_SOURCE_VIEW_ID : DEFAULT_RECORD_VIEW_ID
@@ -202,12 +198,7 @@ function stringProperty(
 
 function readDimensionTarget(value: Record<string, unknown>): DimensionTarget | null {
   const dimension = stringProperty(value, 'dimension')
-  const ownerFile = stringProperty(value, 'ownerFile')
-  const typeName = stringProperty(value, 'typeName')
-  const field = value.field
-  const singleton = value.singleton
-  if (!dimension || !ownerFile || !typeName || typeof singleton !== 'boolean'
-    || !(typeof field === 'string' || field === null)
-    || (singleton ? field !== null : !field)) return null
-  return { dimension, ownerFile, typeName, field, singleton }
+  const filePath = stringProperty(value, 'filePath')
+  if (!dimension || !filePath) return null
+  return { dimension, filePath }
 }

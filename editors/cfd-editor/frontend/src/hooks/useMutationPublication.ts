@@ -23,6 +23,7 @@ interface MutationPublicationOptions {
     sessionId: number,
     revision: number,
     diagnostics: FlatDiagnostic[],
+    projectMetadata?: MutationPublicationRequest['projectMetadata'],
   ) => boolean
 }
 

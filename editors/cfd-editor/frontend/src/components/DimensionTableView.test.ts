@@ -24,6 +24,7 @@ describe('organizeDimensionRows', () => {
     coordinate: { actual_type: 'Item', key },
     field: 'name',
     owner_file_path: owner,
+    sources: {},
     default_value: { kind: 'string', value: key },
     values: {},
   })

@@ -433,7 +433,8 @@ fn compares_absolute_dimension_paths_against_snapshot() {
     )
     .expect("overlay");
     let config = serde_json::json!({
-        "schema": "schema.cft", "data": ["data/", coflow_runtime::path_to_slash(&dimensions)],
+        "schema": "schema.cft", "data": ["data/"],
+        "dimensions": {"language": {"dir": coflow_runtime::path_to_slash(&dimensions)}},
         "codegen": [{"language": "csharp", "dir": "generated"}],
     });
     fs::write(

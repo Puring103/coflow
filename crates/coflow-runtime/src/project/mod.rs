@@ -76,6 +76,20 @@ impl Project {
         &self.config.data
     }
 
+    /// 全部 CFD 输入包含基础数据和维度目录；目录允许在首次写入时创建。
+    pub fn cfd_input_paths(&self) -> impl Iterator<Item = &Path> {
+        self.config
+            .data
+            .iter()
+            .map(|source| source.path().as_path())
+            .chain(
+                self.config
+                    .dimensions
+                    .values()
+                    .filter_map(|dimension| dimension.dir.as_deref()),
+            )
+    }
+
     /// Opens a Coflow project by resolving and parsing its config file.
     ///
     /// # Errors
@@ -189,12 +203,7 @@ impl Project {
             .paths()
             .iter()
             .map(|path| self.resolve_path(path))
-            .chain(
-                self.config
-                    .data
-                    .iter()
-                    .map(|source| self.resolve_path(source.path())),
-            )
+            .chain(self.cfd_input_paths().map(|path| self.resolve_path(path)))
             .map(|path| normalize_path(&path))
             .collect::<Vec<_>>();
         roots.sort();
@@ -211,6 +220,67 @@ impl Project {
                 .source_roots()
                 .iter()
                 .any(|root| path_is_same_or_descendant(&path, root))
+    }
+
+    /// 将新写入的数据文件纳入候选项目；配置与 CFD 由同一写入事务发布。
+    pub(crate) fn include_data_files(
+        &mut self,
+        files: impl IntoIterator<Item = PathBuf>,
+    ) -> Result<Vec<crate::ProjectFileUpdate>, DiagnosticSet> {
+        let mut changed = false;
+        for file in files {
+            let covered = self.config.data.iter().any(|source| {
+                let root = self.resolve_path(source.path());
+                normalized_path_identity(&root) == normalized_path_identity(&file)
+                    || root.is_dir() && path_is_same_or_descendant(&file, &root)
+            }) || self
+                .config
+                .dimensions
+                .values()
+                .filter_map(|dimension| dimension.dir.as_ref())
+                .any(|dir| path_is_same_or_descendant(&file, &self.resolve_path(dir)));
+            if covered {
+                continue;
+            }
+            if self
+                .config
+                .schema
+                .paths()
+                .iter()
+                .any(|source| path_is_same_or_descendant(&file, &self.resolve_path(source)))
+            {
+                return Err(diagnostics::file_error(
+                    &file,
+                    "PROJECT-CONFIG-OVERLAP",
+                    "PROJECT",
+                    "data files must not overlap schema inputs",
+                ));
+            }
+            let configured = file
+                .strip_prefix(&self.root_dir)
+                .unwrap_or(&file)
+                .to_path_buf();
+            self.config.data.push(SourceConfig::from_path(configured));
+            changed = true;
+        }
+        if !changed {
+            return Ok(Vec::new());
+        }
+        let source = serde_yaml::to_string(&self.config).map_err(|error| {
+            diagnostics::file_error(
+                &self.config_path,
+                "PROJECT-CONFIG-WRITE",
+                "PROJECT",
+                error.to_string(),
+            )
+        })?;
+        let update = crate::ProjectFileUpdate::new(
+            self.config_path.clone(),
+            Some(self.config_source.as_bytes().to_vec()),
+            source.as_bytes().to_vec(),
+        );
+        self.config_source = source.into();
+        Ok(vec![update])
     }
 
     /// Returns all schema files configured for this project.

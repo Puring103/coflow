@@ -659,7 +659,9 @@ export class EditorMutationController {
         coordinate,
         expectedValue,
         newValue,
-        filePath.startsWith('@dimension/') ? null : filePath,
+        filePath.startsWith('@dimension/')
+          ? filePath.slice('@dimension/'.length).split('/').slice(1).join('/')
+          : filePath,
       ),
       undefined,
       outcome => {
@@ -677,6 +679,7 @@ export class EditorMutationController {
       },
       outcome => containsDimensionReference(outcome.old_value)
         || containsDimensionReference(outcome.new_value),
+      outcome => ({ file_tree: outcome.file_tree, dimensions: outcome.dimensions }),
     )
   }
 
@@ -834,6 +837,7 @@ export class EditorMutationController {
     knownRecords: ((outcome: TOutcome) => FileRecords | undefined) | undefined,
     afterCommit: (outcome: TOutcome) => TValue,
     topologyChanged: (outcome: TOutcome) => boolean = () => true,
+    projectMetadata?: (outcome: TOutcome) => MutationPublicationRequest['projectMetadata'],
   ): Promise<MutationResult<TValue>> {
     const generation = this.port.currentGeneration()
     if (!generation) return failed()
@@ -848,6 +852,7 @@ export class EditorMutationController {
         fallbackFile,
         knownRecords: knownRecords?.(outcome),
         topologyChanged: topologyChanged(outcome),
+        projectMetadata: projectMetadata?.(outcome),
       }
       let publication: MutationResult<void>
       try {

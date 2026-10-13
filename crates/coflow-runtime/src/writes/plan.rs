@@ -10,7 +10,9 @@ use crate::{ProjectSession, RecordCoordinate};
 
 use super::refs::{reference_update_actions, ReferenceUpdateAction};
 use super::target::{is_id_path, not_found, write_target_for_path, WriteTarget};
-use super::writer::{lookup_source_writer, source_for_file, source_for_id};
+use super::writer::{
+    dimension_source_for_file, lookup_source_writer, source_for_file, source_for_id,
+};
 use crate::write_rules;
 
 pub(crate) enum MutationExecutionPlan {
@@ -173,7 +175,7 @@ pub(crate) fn prepare_mutation_execution(
             )
         }),
         PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
-            let source = source_for_file(session, write_file)?;
+            let source = dimension_source_for_file(session, write_file)?;
             let manager = catalog.dimension_source_manager();
             Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
                 source,

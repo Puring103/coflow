@@ -40,18 +40,26 @@ export const MOCK_PROJECT: ProjectBootstrap = {
       in_sources: true,
       in_schema: false,
       in_data: true,
+      dimension_only: false,
       first_source_descendant: 'data/item.cfd',
       children: [
-        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/item.cfd', children: [] },
-        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/archive.cfd', children: [] },
-        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: 'data/npc.cfd', children: [] },
+        { name: 'item.cfd', path: 'data/item.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: 'data/item.cfd', children: [] },
+        { name: 'archive.cfd', path: 'data/archive.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: 'data/archive.cfd', children: [] },
+        { name: 'npc.cfd', path: 'data/npc.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: 'data/npc.cfd', children: [] },
       ],
     },
-    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] },
+    { name: 'dimensions', path: 'dimensions', is_dir: true, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [
+      { name: 'language', path: 'dimensions/language', is_dir: true, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [
+        { name: 'data', path: 'dimensions/language/data', is_dir: true, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [
+          { name: 'item.cfd', path: 'dimensions/language/data/item.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: true, first_source_descendant: null, children: [] },
+        ] },
+      ] },
+    ] },
+    { name: 'grey.cfd', path: 'grey.cfd', is_dir: false, in_sources: false, in_schema: false, in_data: false, dimension_only: false, first_source_descendant: null, children: [] },
   ],
   dimensions: [
-    { name: 'language', display_name: '本地化', variants: ['zh-CN', 'en-US'], fields: [{ source_type: 'Item', source_field: 'name', is_singleton: false }] },
-    { name: 'platform', display_name: '平台', variants: ['mobile', 'desktop'], fields: [{ source_type: 'Item', source_field: 'icon', is_singleton: false }] },
+    { name: 'language', dir: 'dimensions/language', files: ['dimensions/language/data/item.cfd'], display_name: '本地化', variants: ['zh-CN', 'en-US'], fields: [{ source_type: 'Item', source_field: 'name', is_singleton: false }] },
+    { name: 'platform', dir: 'dimensions/platform', files: [], display_name: '平台', variants: ['mobile', 'desktop'], fields: [{ source_type: 'Item', source_field: 'icon', is_singleton: false }] },
   ],
   file_types: {
     'data/item.cfd': [
@@ -189,9 +197,9 @@ export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
 }
 
 export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> = {
-  'data/dimensions/language/Item_name.cfd': {
+  '@dimension/language/dimensions/language/data/item.cfd': {
     revision: 1,
-    file_path: 'data/dimensions/language/Item_name.cfd',
+    file_path: '@dimension/language/dimensions/language/data/item.cfd',
     dimension: 'language',
     display_name: '本地化',
     variants: ['zh-CN', 'en-US'],
@@ -201,6 +209,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
         field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('初级药水'),
+        sources: { 'zh-CN': 'dimensions/language/data/item.cfd', 'en-US': 'dimensions/language/data/item.cfd' },
         values: {
           'zh-CN': { kind: 'value', value: stringValue('初级药水') },
           'en-US': { kind: 'value', value: stringValue('Minor Potion') },
@@ -211,6 +220,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
         field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('中级药水'),
+        sources: { 'zh-CN': 'dimensions/language/data/item.cfd', 'en-US': null },
         values: {
           'zh-CN': { kind: 'value', value: stringValue('中级药水') },
           'en-US': { kind: 'missing' },
@@ -218,9 +228,9 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
       },
     ],
   },
-  'data/dimensions/platform/Item_icon.cfd': {
+  '@dimension/platform/dimensions/platform/data/item.cfd': {
     revision: 1,
-    file_path: 'data/dimensions/platform/Item_icon.cfd',
+    file_path: '@dimension/platform/dimensions/platform/data/item.cfd',
     dimension: 'platform',
     display_name: '平台',
     variants: ['mobile', 'desktop'],

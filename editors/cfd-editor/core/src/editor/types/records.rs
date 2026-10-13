@@ -34,6 +34,8 @@ pub struct DimensionFileRow {
     pub owner_file_path: String,
     pub default_value: CfdValue,
     pub values: BTreeMap<String, DimensionValueState>,
+    /// 保留各变体真实来源，文件视图可标明跨文件覆盖并写回正确来源。
+    pub sources: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -317,6 +319,9 @@ pub struct WriteDimensionValueOutcome {
     pub coordinate: coflow_runtime::DimensionValueCoordinate,
     pub old_value: DimensionValueState,
     pub new_value: DimensionValueState,
+    /// 维度写入可创建来源文件与变体，随同版本返回最新导航元数据。
+    pub file_tree: Vec<coflow_runtime::FileTreeNode>,
+    pub dimensions: Vec<coflow_runtime::DimensionInfo>,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
 }

@@ -118,6 +118,26 @@ describe('publishMutationGeneration', () => {
     expect(published).toEqual([[['data/items.cfd', newerRecords]]])
   })
 
+  it('publishes dimension navigation metadata with its accepted revision', async () => {
+    const metadata = { file_tree: [], dimensions: [
+      { name: 'language', display_name: '本地化', variants: ['ja', 'en'], fields: [], dir: null, files: [] },
+    ] }
+    const acceptRevision = vi.fn(() => true)
+    const port: MutationPublicationPort = {
+      acceptRevision,
+      isCurrent: vi.fn(() => true),
+      getFileRecords: vi.fn(async (_sessionId, file) => fileRecords(2, file)),
+      publishFileRecords: vi.fn(),
+    }
+    const result = await publishMutationGeneration(port, {
+      sessionId: 1, revision: 2, diagnostics: [],
+      affectedFiles: ['data/items.language.cfd'], fallbackFile: '@dimension/language',
+      projectMetadata: metadata,
+    })
+    expect(result.status).toBe('committed')
+    expect(acceptRevision).toHaveBeenCalledWith(1, 2, [], metadata)
+  })
+
   it('does not advance the editor generation when projection refresh fails', async () => {
     const acceptRevision = vi.fn(() => true)
     const port: MutationPublicationPort = {

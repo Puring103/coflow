@@ -31,16 +31,6 @@ export function TextInputDialog({ initialValue = '', placeholder, suffix, ...pro
   )} />
 }
 
-export function SelectFileDialog({ files, ...props }: BaseProps & { files: readonly string[] }) {
-  const [value, setValue] = useState(files[0] ?? '')
-  return <ActionDialog {...props} value={value} input={(
-    <select className="action-dialog-input" aria-label="目标 CFD 文件" value={value}
-      onChange={event => setValue(event.target.value)}>
-      {files.map(file => <option key={file} value={file}>{file}</option>)}
-    </select>
-  )} />
-}
-
 export function ConfirmDialog(props: BaseProps) {
   return <ActionDialog {...props} value="" />
 }

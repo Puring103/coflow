@@ -203,16 +203,13 @@ mod tests {
         let owner = coflow_runtime::path_to_slash(&root.join("data").join("mixed.cfd"));
         let target = EditorDimensionTarget {
             dimension: "language".to_string(),
-            owner_file: owner.clone(),
-            type_name: "Item".to_string(),
-            field: Some("name".to_string()),
-            singleton: false,
+            file_path: owner.clone(),
         };
-        let id = serde_json::to_string(&["language", &owner, "Item", "name"]).expect("id");
+        let id = serde_json::to_string(&["language", &owner]).expect("id");
         let mut settings = EditorProjectSettings::default();
         settings.workspace = EditorWorkspaceState {
             tabs: vec![EditorWorkspaceTab {
-                file_path: "@dimension/language".to_string(),
+                file_path: format!("@dimension/language/{owner}"),
                 type_name: String::new(),
                 view_id: "__default_table".to_string(),
                 view_kind: crate::editor::WorkspaceViewKind::Table,
@@ -231,12 +228,12 @@ mod tests {
                 .dimension_target
                 .as_ref()
                 .expect("target")
-                .owner_file,
+                .file_path,
             "data/mixed.cfd"
         );
         assert_eq!(
             loaded.workspace.active_tab_id.as_deref(),
-            Some("[\"language\",\"data/mixed.cfd\",\"Item\",\"name\"]")
+            Some("[\"language\",\"data/mixed.cfd\"]")
         );
         let _ = fs::remove_file(super::io::local_settings_path(&root).expect("local path"));
         fs::remove_dir_all(root).expect("remove fixture");

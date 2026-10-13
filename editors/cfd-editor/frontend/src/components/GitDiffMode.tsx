@@ -83,11 +83,11 @@ export function buildDiffIndex(diff: ProjectDiff | null): DiffIndex {
   return { fileByPath, recordsByFile, changedPaths }
 }
 
-export function GitDiffSidebar({ diff, loading, error, selection, onSelectionChange, onRefresh, nodes, dimensions, fileTypes }: Props & { nodes: FileTreeNode[], dimensions: DimensionInfo[], fileTypes: Record<string, FileTypeOption[] | undefined> }) {
+export function GitDiffSidebar({ diff, loading, error, selection, onSelectionChange, onRefresh, nodes, fileTypes }: Props & { nodes: FileTreeNode[], dimensions: DimensionInfo[], fileTypes: Record<string, FileTypeOption[] | undefined> }) {
   // 左侧文件树与主界面共用分组/图标/排序，仅保留变化文件及其祖先目录，不显示记录节点。
   const index = useMemo(() => buildDiffIndex(diff), [diff])
   const filtered = useMemo(() => buildDiffTree(diff, nodes, index.changedPaths), [diff, nodes, index])
-  const groups = useMemo(() => buildFileTreeGroups(filtered, []).filter(group => group.nodes.length > 0), [filtered, dimensions])
+  const groups = useMemo(() => buildFileTreeGroups(filtered, [], true).filter(group => group.nodes.length > 0), [filtered])
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const toggle = (path: string) => setCollapsed(previous => {
     const next = new Set(previous)
@@ -738,7 +738,7 @@ export function buildDiffTree(diff: ProjectDiff | null, nodes: FileTreeNode[], c
         const isDir = i < segments.length - 1
         let node = siblings.find(item => item.path === prefix)
         if (!node) {
-          node = { name, path: prefix, is_dir: isDir, in_sources: !isDir, in_schema: !isDir && prefix.endsWith('.cft'), in_data: !isDir && !prefix.endsWith('.cft'), first_source_descendant: isDir ? path : null, children: [] }
+          node = { name, path: prefix, is_dir: isDir, in_sources: !isDir, in_schema: !isDir && prefix.endsWith('.cft'), in_data: !isDir && !prefix.endsWith('.cft'), dimension_only: false, first_source_descendant: isDir ? path : null, children: [] }
           siblings.push(node)
           indexByPath.set(prefix, node)
         }
@@ -754,7 +754,7 @@ export function buildDiffTree(diff: ProjectDiff | null, nodes: FileTreeNode[], c
       const isDir = i < parts.length - 1
       let node = siblings.find(item => item.path === prefix)
       if (!node) {
-        node = { name: parts[i]!, path: prefix, is_dir: isDir, in_sources: !isDir, in_schema: !isDir && prefix.endsWith('.cft'), in_data: !isDir && !prefix.endsWith('.cft'), first_source_descendant: isDir ? path : null, children: [] }
+        node = { name: parts[i]!, path: prefix, is_dir: isDir, in_sources: !isDir, in_schema: !isDir && prefix.endsWith('.cft'), in_data: !isDir && !prefix.endsWith('.cft'), dimension_only: false, first_source_descendant: isDir ? path : null, children: [] }
         siblings.push(node)
         indexByPath.set(prefix, node)
       }

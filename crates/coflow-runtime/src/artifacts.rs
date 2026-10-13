@@ -210,8 +210,8 @@ fn validate_output_scope(
             .iter()
             .map(|path| ("schema path", project.resolve_path(path))),
     );
-    for source in project.data_paths() {
-        let path = project.resolve_path(source.path());
+    for input in project.cfd_input_paths() {
+        let path = project.resolve_path(input);
         protected.push(("data source", path.clone()));
         let is_file = fs::metadata(&path).map_or_else(
             |_| path.extension().is_some(),

@@ -21,9 +21,10 @@ impl SessionStore {
         let session = entry.state.read();
         let queries = session.queries();
         let normalized_path = file_path.replace('\\', "/");
-        let name = normalized_path
+        let (name, source_file) = normalized_path
             .strip_prefix("@dimension/")
-            .ok_or_else(|| EditorError::not_found("dimension view not found"))?;
+            .and_then(|path| path.split_once('/'))
+            .ok_or_else(|| EditorError::not_found("dimension file view not found"))?;
         let dimension = queries
             .dimensions()
             .into_iter()
@@ -48,6 +49,8 @@ impl SessionStore {
                 let actual_type = target.coordinate.actual_type.clone();
                 let record_key = target.coordinate.key.clone();
                 let mut values = std::collections::BTreeMap::new();
+                let mut sources = std::collections::BTreeMap::new();
+                let mut contains_override = false;
                 for variant in &dimension.variants {
                     let coordinate = DimensionValueCoordinate {
                         actual_type: actual_type.clone(),
@@ -61,7 +64,19 @@ impl SessionStore {
                     let state = queries
                         .dimension_value(&coordinate)
                         .map_or(DimensionValueState::Missing, |value| value.state);
+                    let source = queries
+                        .dimension_source_file(&coordinate)
+                        .map(str::to_string);
+                    contains_override |= source.as_deref() == Some(source_file);
+                    sources.insert(variant.clone(), source);
                     values.insert(variant.clone(), state);
+                }
+                let recommended = queries
+                    .dimension_destination(actual_type.as_str(), record_key.as_str(), name)
+                    .ok();
+                // 推荐文件可编辑主体的全部字段；分散来源只展示实际包含的覆盖字段。
+                if !contains_override && recommended.as_deref() != Some(source_file) {
+                    continue;
                 }
                 rows.push(DimensionFileRow {
                     owner_file_path: queries
@@ -72,6 +87,7 @@ impl SessionStore {
                     field: field.source_field.clone(),
                     default_value,
                     values,
+                    sources,
                 });
             }
         }
@@ -114,13 +130,34 @@ impl SessionStore {
                 DimensionValueExpectation::Value(MutationValue::Cfd(value.clone()))
             }
         };
+        // 推荐路径由配置目录与主体项目相对路径组成；已有覆盖优先写回真实来源。
+        let suggested_file = if destination_file.is_none()
+            && matches!(new_value, DimensionValueState::Value(_))
+            && session
+                .queries()
+                .dimension_source_file(coordinate)
+                .is_none()
+        {
+            Some(
+                session
+                    .queries()
+                    .dimension_destination(
+                        coordinate.actual_type.as_str(),
+                        coordinate.record_key.as_str(),
+                        coordinate.dimension.as_str(),
+                    )
+                    .map_err(api_diagnostics_to_editor_error)?,
+            )
+        } else {
+            None
+        };
         let op = match new_value {
             DimensionValueState::Missing => MutationOp::ClearDimensionValue {
                 coordinate: coordinate.clone(),
                 expected,
             },
             DimensionValueState::Value(value) => MutationOp::SetDimensionValue {
-                file: destination_file.map(str::to_string),
+                file: destination_file.map(str::to_string).or(suggested_file),
                 coordinate: coordinate.clone(),
                 expected,
                 value: MutationValue::Cfd(value.clone()),
@@ -145,6 +182,8 @@ impl SessionStore {
             coordinate: coordinate.clone(),
             old_value: expected_value.clone(),
             new_value,
+            file_tree: session.queries().file_tree(),
+            dimensions: session.queries().dimensions(),
             diagnostics: report.diagnostics,
             affected_files: report.affected_files,
         })

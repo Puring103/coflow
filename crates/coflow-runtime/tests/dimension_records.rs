@@ -170,6 +170,147 @@ fn new_overrides_require_an_explicit_destination() {
 }
 
 #[test]
+fn new_destination_is_loaded_before_publication_and_registered_for_explicit_inputs() {
+    for explicit in [false, true] {
+        let dir = project(
+            "table Item { @localized title: string; @localized description: string; }",
+            "one: Item { title: \"One\", description: \"First\" }\ntwo: Item { title: \"Two\", description: \"Second\" }",
+            &[],
+        );
+        let config_path = dir.path().join("coflow.yaml");
+        if explicit {
+            fs::write(&config_path, "schema: schema.cft\ndata: [data/base.cfd]\ncodegen: [{ language: csharp, dir: generated }]\n").expect("config");
+        }
+        let original = fs::read(&config_path).expect("config");
+        let mut session = Runtime::new()
+            .open_write_session(Project::open(Some(dir.path())).expect("project"))
+            .expect("session");
+        apply(
+            &mut session,
+            vec![
+                set(
+                    coordinate("Item", "one", "title", "ja"),
+                    Some("data/base.language.cfd"),
+                    CfdValue::String("一".into()),
+                ),
+                set(
+                    coordinate("Item", "two", "description", "en"),
+                    Some("data/base.language.cfd"),
+                    CfdValue::String("Second item".into()),
+                ),
+            ],
+        );
+        assert_eq!(
+            session
+                .queries()
+                .dimension_value(&coordinate("Item", "one", "title", "ja"))
+                .expect("value")
+                .state,
+            DimensionValueState::Value(CfdValue::String("一".into()))
+        );
+        let text =
+            fs::read_to_string(dir.path().join("data/base.language.cfd")).expect("destination");
+        assert!(
+            text.contains("language[ja]") && text.contains("language[en]"),
+            "{text}"
+        );
+        let project = Project::open(Some(dir.path())).expect("project");
+        assert_eq!(project.data_paths().len(), if explicit { 2 } else { 1 });
+        if !explicit {
+            assert_eq!(fs::read(&config_path).expect("config"), original);
+        }
+        let reopened = Runtime::new()
+            .open_read_only_session(project)
+            .expect("reload");
+        assert!(reopened.queries().diagnostics().is_empty());
+        assert_eq!(
+            reopened
+                .queries()
+                .dimension_value(&coordinate("Item", "two", "description", "en"))
+                .expect("value")
+                .state,
+            DimensionValueState::Value(CfdValue::String("Second item".into()))
+        );
+    }
+}
+
+#[test]
+fn new_destination_and_config_are_not_published_when_a_later_operation_fails() {
+    let dir = project(
+        "table Item { @localized title: string; }",
+        "one: Item { title: \"One\" }",
+        &[],
+    );
+    let config_path = dir.path().join("coflow.yaml");
+    fs::write(&config_path, "schema: schema.cft\ndata: [data/base.cfd]\ncodegen: [{ language: csharp, dir: generated }]\n").expect("config");
+    let original = fs::read(&config_path).expect("config");
+    let mut session = Runtime::new()
+        .open_write_session(Project::open(Some(dir.path())).expect("project"))
+        .expect("session");
+    let report = coflow_runtime::commands::apply_project_mutation(
+        &mut session,
+        MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![
+                set(
+                    coordinate("Item", "one", "title", "ja"),
+                    Some("data/base.language.cfd"),
+                    CfdValue::String("一".into()),
+                ),
+                set(
+                    coordinate("Item", "one", "title", "en"),
+                    Some("data/invalid.txt"),
+                    CfdValue::String("One".into()),
+                ),
+            ],
+        },
+    )
+    .expect("report");
+    assert!(!report.write_ok && !report.generation_changed, "{report:?}");
+    assert!(!dir.path().join("data/base.language.cfd").exists());
+    assert_eq!(fs::read(&config_path).expect("config"), original);
+    assert_eq!(
+        session
+            .queries()
+            .dimension_value(&coordinate("Item", "one", "title", "ja"))
+            .expect("missing")
+            .state,
+        DimensionValueState::Missing
+    );
+}
+
+#[test]
+fn new_destination_does_not_overwrite_an_external_config_change() {
+    let dir = project(
+        "table Item { @localized title: string; }",
+        "one: Item { title: \"One\" }",
+        &[],
+    );
+    let config_path = dir.path().join("coflow.yaml");
+    fs::write(&config_path, "schema: schema.cft\ndata: [data/base.cfd]\ncodegen: [{ language: csharp, dir: generated }]\n").expect("config");
+    let mut session = Runtime::new()
+        .open_write_session(Project::open(Some(dir.path())).expect("project"))
+        .expect("session");
+    let external = "schema: schema.cft\ndata: [data/base.cfd]\ncodegen: [{ language: csharp, dir: generated }]\n# external edit\n";
+    fs::write(&config_path, external).expect("external config");
+    let report = coflow_runtime::commands::apply_project_mutation(
+        &mut session,
+        MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![set(
+                coordinate("Item", "one", "title", "ja"),
+                Some("data/base.language.cfd"),
+                CfdValue::String("一".into()),
+            )],
+        },
+    )
+    .expect("report");
+    assert!(!report.write_ok && !report.generation_changed, "{report:?}");
+    assert!(!dir.path().join("data/base.language.cfd").exists());
+    assert_eq!(fs::read_to_string(&config_path).expect("config"), external);
+}
+
+#[test]
 fn inherited_record_rename_and_delete_update_all_overlay_files() {
     let dir = project("table Base { @localized name: string; @dimension(\"platform\") hint: string; } table Child: Base {}",
         "one: Child { name: \"Name\", hint: \"Hint\" }",

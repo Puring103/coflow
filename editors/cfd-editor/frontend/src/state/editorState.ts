@@ -88,6 +88,7 @@ export interface MutationPublicationRequest {
   fallbackFile: string
   knownRecords?: FileRecords
   topologyChanged?: boolean
+  projectMetadata?: Pick<ProjectBootstrap, 'file_tree' | 'dimensions'>
 }
 
 export interface MutationPublicationPort {
@@ -95,6 +96,7 @@ export interface MutationPublicationPort {
     sessionId: number,
     revision: number,
     diagnostics: FlatDiagnostic[],
+    projectMetadata?: MutationPublicationRequest['projectMetadata'],
   ) => boolean
   isCurrent: (sessionId: number, revision: number) => boolean
   getFileRecords: (sessionId: number, filePath: string) => Promise<FileRecords>
@@ -136,7 +138,7 @@ export async function publishMutationGeneration(
     return superseded()
   }
 
-  if (!port.acceptRevision(sessionId, revision, diagnostics)) return superseded()
+  if (!port.acceptRevision(sessionId, revision, diagnostics, request.projectMetadata)) return superseded()
   if (!port.isCurrent(sessionId, revision)) return superseded()
   port.publishGraphProjection?.(
     revision,

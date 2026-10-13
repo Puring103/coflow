@@ -115,7 +115,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub(crate) fn dimensions(&self) -> Vec<DimensionInfo> {
-        dimensions_for_project(&self.project, &self.schema, &self.model)
+        dimensions_for_project(&self.project, &self.schema, &self.model, &self.source_data)
     }
 
     /// Compose a read-only [`RecordView`] for a coordinate. Returns `None`
@@ -237,8 +237,8 @@ impl ProjectSession {
                 options.schema_roots.insert(path_to_slash(relative));
             }
         }
-        for source in self.project.data_paths() {
-            let absolute = self.project.resolve_path(source.path());
+        for path in self.project.cfd_input_paths() {
+            let absolute = self.project.resolve_path(path);
             if let Ok(relative) = absolute.strip_prefix(self.project.root_dir()) {
                 options.data_roots.insert(path_to_slash(relative));
             }
@@ -276,9 +276,8 @@ impl ProjectSession {
             .map(|path| (path.as_path(), true, false))
             .chain(
                 self.project
-                    .data_paths()
-                    .iter()
-                    .map(|source| (source.path().as_path(), false, true)),
+                    .cfd_input_paths()
+                    .map(|path| (path, false, true)),
             )
         {
             let absolute = normalize_path(&self.project.resolve_path(configured));
@@ -286,6 +285,15 @@ impl ProjectSession {
                 continue;
             }
             let display_path = path_to_slash(&normalize_path(&absolute));
+            if tree.iter().any(|node| {
+                node.path == display_path
+                    || node.is_dir && display_path.starts_with(&format!("{}/", node.path))
+            }) {
+                continue;
+            }
+            if absolute.is_dir() {
+                tree.retain(|node| !node.path.starts_with(&format!("{display_path}/")));
+            }
             if let Some(node) = files::build_external_source_subtree(
                 &absolute,
                 &display_path,
@@ -297,6 +305,14 @@ impl ProjectSession {
             }
         }
         files::sort_file_tree(&mut tree);
+        let dimension_files = self.source_data.dimension_only_files(&self.project);
+        fn annotate_dimensions(nodes: &mut [FileTreeNode], files: &BTreeSet<&str>) {
+            for node in nodes {
+                node.dimension_only = !node.is_dir && files.contains(node.path.as_str());
+                annotate_dimensions(&mut node.children, files);
+            }
+        }
+        annotate_dimensions(&mut tree, &dimension_files);
 
         tree
     }
