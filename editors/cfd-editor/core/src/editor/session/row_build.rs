@@ -158,12 +158,16 @@ fn record_container_key(origin: &RecordOrigin) -> String {
 }
 
 fn first_source_file(nodes: &[coflow_runtime::FileTreeNode]) -> Option<String> {
-    for node in nodes {
-        if let Some(path) = node.first_source_descendant.clone() {
-            return Some(path);
+    // 初始工作区入口必须出现在类型或数据树中，纯覆盖通过维度树导航。
+    nodes.iter().find_map(|node| {
+        if node.is_dir {
+            first_source_file(&node.children)
+        } else if node.in_sources && !node.dimension_only {
+            Some(node.path.clone())
+        } else {
+            None
         }
-    }
-    None
+    })
 }
 
 /// 会话引导快照：文件树/revision/维度元数据属于同一原子快照。

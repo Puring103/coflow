@@ -23,6 +23,9 @@ pub struct DimensionInfo {
     /// `config.display_name` → built-in (`"language" → "本地化"`) → `name`.
     pub display_name: String,
     pub variants: Vec<String>,
+    /// 配置的覆盖目录与已加载的实际覆盖文件，供宿主按文件导航。
+    pub dir: Option<String>,
+    pub files: Vec<String>,
     /// Schema fields belonging to this dimension. Wire only the source
     /// type and field; the schema view itself is not part of the editor surface.
     pub fields: Vec<DimensionFieldInfo>,
@@ -46,6 +49,7 @@ pub(crate) fn dimensions_for_project(
     project: &Project,
     schema: &CftSchema,
     model: &crate::CfdDataModel,
+    sources: &crate::load::SourceDataCache,
 ) -> Vec<DimensionInfo> {
     let mut out = Vec::new();
     for dimension in schema.all_dimensions() {
@@ -72,6 +76,22 @@ pub(crate) fn dimensions_for_project(
                 .dimension_variants(name)
                 .map(ToString::to_string)
                 .collect(),
+            dir: project
+                .config()
+                .dimensions
+                .get(name)
+                .and_then(|config| config.dir.as_ref())
+                .map(|dir| crate::project_path(project.root_dir(), &project.resolve_path(dir))),
+            files: sources.dimension_files(
+                name,
+                project
+                    .config()
+                    .dimensions
+                    .get(name)
+                    .and_then(|config| config.dir.as_ref())
+                    .map(|dir| project.resolve_path(dir))
+                    .as_deref(),
+            ),
             fields: info_fields,
         });
     }

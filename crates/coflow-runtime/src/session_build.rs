@@ -52,6 +52,7 @@ pub(crate) fn open_project_session_from_schema(
 
 pub(crate) struct SessionBuildOutput {
     pub(crate) session: ProjectSession,
+    pub(crate) project_file_updates: Vec<crate::ProjectFileUpdate>,
 }
 
 pub(crate) fn rebuild_project_session_from_generation(
@@ -65,6 +66,12 @@ pub(crate) fn rebuild_project_session_from_generation(
         schema: session.schema.clone(),
         source_overrides: source_overrides.to_vec(),
     };
+    let project_file_updates = ctx.project.include_data_files(
+        source_overrides
+            .iter()
+            .filter(|item| !item.deleted)
+            .map(|item| item.normalized_path.clone()),
+    )?;
     let mut diagnostics = DiagnosticsStore::empty();
     let LoadedSessionData {
         model,
@@ -83,6 +90,7 @@ pub(crate) fn rebuild_project_session_from_generation(
             check_state,
             execution_stats,
         ),
+        project_file_updates,
     })
 }
 
@@ -131,6 +139,7 @@ fn finish_project_session(
             check_state,
             execution_stats,
         ),
+        project_file_updates: Vec::new(),
     })
 }
 
@@ -290,10 +299,11 @@ fn load_cached_data(
     options: CachedLoadOptions<'_>,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
+    let pending = previous.with_pending_sources(&ctx.project, &ctx.source_overrides);
     let output = match reload_project_data_from_cache(
         &ctx.schema,
         &mut indexes,
-        previous,
+        &pending,
         options.reload_paths,
         ReloadProjectDataOptions {
             load: LoadProjectDataOptions {

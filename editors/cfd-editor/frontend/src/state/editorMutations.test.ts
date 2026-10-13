@@ -92,6 +92,8 @@ function dimensionOutcome(
     new_value: newValue === null
       ? { kind: 'missing' }
       : { kind: 'value', value: { kind: 'string', value: newValue } },
+    file_tree: [],
+    dimensions: [],
     diagnostics: [],
     affected_files: ['data/dimensions/language/Item_name.cfd'],
   }
@@ -372,11 +374,14 @@ describe('EditorMutationController', () => {
     const mutations = new EditorMutationController(backend(vi.fn(), writeDimensionValue), port, history)
     const state = (text: string) => ({ kind: 'value' as const, value: { kind: 'string' as const, value: text } })
 
-    await mutations.writeDimensionValue('@dimension/language/Item/name', dimensionCoordinate,
+    await mutations.writeDimensionValue('@dimension/language/localization/ja.cfd', dimensionCoordinate,
       state('旧译文'), state('新译文'))
     expect(writeDimensionValue).toHaveBeenNthCalledWith(1, 1, dimensionCoordinate,
-      state('旧译文'), state('新译文'), null)
+      state('旧译文'), state('新译文'), sourceFile)
     expect(history.getSnapshot().undo[0]).toMatchObject({ kind: 'dimension', filePath: sourceFile })
+    expect(port.publish).toHaveBeenCalledWith(expect.objectContaining({
+      projectMetadata: { file_tree: [], dimensions: [] },
+    }))
 
     await mutations.undo()
     expect(writeDimensionValue).toHaveBeenNthCalledWith(2, 1, dimensionCoordinate,

@@ -142,7 +142,7 @@ where
         }
     };
     let new_session = rebuilt.session;
-    let additional_files = match prepare_additional_files(&new_session, &staged) {
+    let mut additional_files = match prepare_additional_files(&new_session, &staged) {
         Ok(files) => files,
         Err(diagnostics) => {
             if let Some(last) = executable.last() {
@@ -151,6 +151,7 @@ where
             return report_without_publish(session, false, failed);
         }
     };
+    additional_files.extend(rebuilt.project_file_updates);
     let additional_paths = additional_files
         .iter()
         .map(|update| project_display_path(session, update.path()))

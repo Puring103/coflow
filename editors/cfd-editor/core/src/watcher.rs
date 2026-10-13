@@ -179,10 +179,11 @@ fn watch_roots(project: &Project) -> Vec<PathBuf> {
     let project_root = coflow_runtime::normalize_path(project.root_dir());
     let mut roots = vec![project_root.clone()];
     for source_root in project.source_roots() {
-        if !coflow_runtime::path_is_same_or_descendant(&source_root, &project_root)
-            && source_root.exists()
-        {
-            roots.push(source_root);
+        if !coflow_runtime::path_is_same_or_descendant(&source_root, &project_root) {
+            // 维度目录可尚未创建，先监听最近存在的父目录以捕获首次创建。
+            if let Some(existing) = source_root.ancestors().find(|path| path.exists()) {
+                roots.push(existing.to_path_buf());
+            }
         }
     }
     roots.sort();

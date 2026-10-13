@@ -28,8 +28,8 @@ describe('Git Diff available views and tree', () => {
   })
 
   it('restores deleted paths and preserves the main tree dimension grouping', () => {
-    const tree = buildDiffTree({ ...emptyDiff, files: ['schema/old.cft', 'data/nested/old.cfd', 'generated/lang/old.cfd'].map(path => ({ path, change: 'deleted', before: '', patch: '' })) }, [{ name: '本地化', path: 'generated/lang', is_dir: true, in_sources: false, in_schema: false, in_data: false, first_source_descendant: null, children: [] }])
-    const groups = buildFileTreeGroups(tree, [{ name: 'language', display_name: '本地化', variants: [], fields: [] }])
+    const tree = buildDiffTree({ ...emptyDiff, files: ['schema/old.cft', 'data/nested/old.cfd', 'generated/lang/old.cfd'].map(path => ({ path, change: 'deleted', before: '', patch: '' })) }, [{ name: '本地化', path: 'generated/lang', is_dir: true, in_sources: false, in_schema: false, in_data: false, dimension_only: false, first_source_descendant: null, children: [] }])
+    const groups = buildFileTreeGroups(tree, [{ name: 'language', display_name: '本地化', variants: [], fields: [], dir: null, files: [] }])
     expect(groups[0].nodes[0].children[0].path).toBe('schema/old.cft')
     expect(JSON.stringify(groups[1].nodes)).toContain('data/nested/old.cfd')
     expect(JSON.stringify(groups[1].nodes)).toContain('generated/lang/old.cfd')
@@ -40,11 +40,28 @@ describe('Git Diff available views and tree', () => {
     const tree = buildDiffTree(
       { ...emptyDiff, files: [{ path: 'data/changed.cfd', change: 'modified', before: 'a', after: 'b', patch: '' }] },
       [
-        { name: 'changed.cfd', path: 'data/changed.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
-        { name: 'same.cfd', path: 'data/same.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+        { name: 'changed.cfd', path: 'data/changed.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [] },
+        { name: 'same.cfd', path: 'data/same.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [] },
       ],
     )
     expect(tree.map(node => node.path)).toEqual(['data/changed.cfd'])
+  })
+
+  it('keeps pure overlay changes selectable in a separate source group', () => {
+    const path = 'data/items.language.cfd'
+    const diff: ProjectDiff = { ...emptyDiff, files: [
+      { path, change: 'modified', before: 'language[ja] {}', after: 'language[en] {}', patch: '' },
+    ] }
+    const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
+      diff, nodes: [{ name: 'items.language.cfd', path, is_dir: false, in_sources: true,
+        in_schema: false, in_data: true, dimension_only: true, first_source_descendant: path, children: [] }],
+      dimensions: [], fileTypes: {}, loading: false, error: null,
+      selection: { filePath: path, typeName: null, coordinate: null },
+      onSelectionChange() {}, onRefresh() {},
+    }))
+    expect(html).toContain('<strong>维度</strong>')
+    expect(html).toContain(`data-file-path="${path}"`)
+    expect(html).toContain('aria-selected="true"')
   })
 
   it('renders multi-type files without changed records as a selectable single row', () => {
@@ -55,7 +72,7 @@ describe('Git Diff available views and tree', () => {
       records: [],
     }
     const nodes = [
-      { name: 'Item_name.cfd', path: 'dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+      { name: 'Item_name.cfd', path: 'dimensions/language/Item_name.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [] },
     ]
     const multiTypes = {
       'dimensions/language/Item_name.cfd': [
@@ -66,7 +83,7 @@ describe('Git Diff available views and tree', () => {
     const html = renderToStaticMarkup(createElement(GitDiffSidebar, {
       diff,
       nodes,
-      dimensions: [{ name: 'language', display_name: '本地化', variants: [], fields: [] }],
+      dimensions: [{ name: 'language', display_name: '本地化', variants: [], fields: [], dir: null, files: [] }],
       fileTypes: multiTypes,
       loading: false,
       error: null,
@@ -92,7 +109,7 @@ describe('Git Diff available views and tree', () => {
       }],
     }
     const nodes = [
-      { name: 'mixed.cfd', path: 'data/mixed.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, first_source_descendant: null, children: [] },
+      { name: 'mixed.cfd', path: 'data/mixed.cfd', is_dir: false, in_sources: true, in_schema: false, in_data: true, dimension_only: false, first_source_descendant: null, children: [] },
     ]
     const mixedTypes = {
       'data/mixed.cfd': [

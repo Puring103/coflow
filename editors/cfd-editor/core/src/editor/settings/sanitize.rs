@@ -18,13 +18,8 @@ fn workspace_tab_id(
     target: Option<&crate::editor::types::EditorDimensionTarget>,
 ) -> String {
     match target {
-        Some(target) => serde_json::to_string(&[
-            &target.dimension,
-            &target.owner_file,
-            &target.type_name,
-            target.field.as_deref().unwrap_or(""),
-        ])
-        .expect("JSON 字符串数组必可序列化"),
+        Some(target) => serde_json::to_string(&[&target.dimension, &target.file_path])
+            .expect("JSON 字符串数组必可序列化"),
         None => format!("{file_path}\u{1f}{type_name}"),
     }
 }
@@ -59,12 +54,9 @@ pub(crate) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWork
                 return None;
             }
             if let Some(target) = &tab.dimension_target {
-                if file_path != format!("@dimension/{}", target.dimension)
+                if file_path != format!("@dimension/{}/{}", target.dimension, target.file_path)
                     || !type_name.is_empty()
-                    || target.owner_file.trim().is_empty()
-                    || target.type_name.trim().is_empty()
-                    || (target.singleton && target.field.is_some())
-                    || (!target.singleton && target.field.as_deref().is_none_or(str::is_empty))
+                    || target.file_path.trim().is_empty()
                 {
                     return None;
                 }

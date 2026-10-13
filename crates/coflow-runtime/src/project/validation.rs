@@ -40,13 +40,44 @@ pub(super) fn validate_project_config_schema_only_collecting(
     diagnostics.extend(validate_source_shapes_collecting(&config.data));
     for (name, dimension) in &config.dimensions {
         diagnostics.extend(validate_dimension_collecting(name, dimension));
+        if let Some(dir) = &dimension.dir {
+            let resolved = resolve_project_relative(root_dir, dir);
+            if resolved.exists() && !resolved.is_dir() {
+                diagnostics.push(ProjectDiagnostic::new(
+                    "dimension dir must be a directory",
+                    ["dimensions", name, "dir"],
+                ));
+            }
+            if config.schema.paths().iter().any(|schema| {
+                let schema = resolve_project_relative(root_dir, schema);
+                path_is_same_or_descendant(&resolved, &schema)
+                    || path_is_same_or_descendant(&schema, &resolved)
+            }) {
+                diagnostics.push(ProjectDiagnostic::new(
+                    "dimension directory must not overlap schema inputs",
+                    ["dimensions", name, "dir"],
+                ));
+            }
+            for (other_name, other) in config.dimensions.range(..name.clone()) {
+                if other.dir.as_ref().is_some_and(|other_dir| {
+                    let other = resolve_project_relative(root_dir, other_dir);
+                    path_is_same_or_descendant(&resolved, &other)
+                        || path_is_same_or_descendant(&other, &resolved)
+                }) {
+                    diagnostics.push(ProjectDiagnostic::new(
+                        format!("dimension directory overlaps dimensions.{other_name}.dir"),
+                        ["dimensions", name, "dir"],
+                    ));
+                }
+            }
+        }
     }
     diagnostics
 }
 
 fn validate_dimension_collecting(
     dimension: &str,
-    _config: &DimensionConfig,
+    config: &DimensionConfig,
 ) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     if !coflow_language::lexical::is_cft_identifier(dimension) {
@@ -57,6 +88,16 @@ fn validate_dimension_collecting(
             )
             .with_code("DIM-CONFIG-002"),
         );
+    }
+    if config
+        .dir
+        .as_ref()
+        .is_some_and(|dir| dir.as_os_str().is_empty())
+    {
+        diagnostics.push(ProjectDiagnostic::new(
+            "dimension dir is empty",
+            ["dimensions", dimension, "dir"],
+        ));
     }
     diagnostics
 }

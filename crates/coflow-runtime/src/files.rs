@@ -25,6 +25,8 @@ pub struct FileTreeNode {
     pub in_schema: bool,
     #[serde(default)]
     pub in_data: bool,
+    /// 仅含维度覆盖的来源由编辑器维度树展示；混合文件仍保留数据入口。
+    pub dimension_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_source_descendant: Option<String>,
     pub children: Vec<Self>,
@@ -114,6 +116,7 @@ pub(crate) fn build_external_source_subtree(
             in_sources: true,
             in_schema,
             in_data,
+            dimension_only: false,
             first_source_descendant: Some(display_path.to_string()),
             children: Vec::new(),
         });
@@ -151,6 +154,7 @@ pub(crate) fn build_external_source_subtree(
         in_sources: true,
         in_schema,
         in_data,
+        dimension_only: false,
         first_source_descendant: first_source_descendant(&children),
         children,
     })
@@ -214,6 +218,7 @@ fn insert_path(
         in_sources: in_src,
         in_schema,
         in_data,
+        dimension_only: false,
         first_source_descendant: None,
         children: Vec::new(),
     };
@@ -263,6 +268,7 @@ fn insert_source_path(
         in_sources: is_dir || in_sources.contains(&path),
         in_schema: false,
         in_data: false,
+        dimension_only: false,
         first_source_descendant: None,
         children: Vec::new(),
     };

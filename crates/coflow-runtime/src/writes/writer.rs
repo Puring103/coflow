@@ -49,6 +49,36 @@ pub(super) fn source_for_file(
     }
 }
 
+pub(super) fn dimension_source_for_file(
+    session: &ProjectSession,
+    file: &str,
+) -> Result<CfdSource, DiagnosticSet> {
+    if !session.files.sources_for_display(file).is_empty() {
+        return source_for_file(session, file);
+    }
+    let path = crate::resolve_existing_or_future_path(
+        &session.project.resolve_path(std::path::Path::new(file)),
+    )
+    .map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "WRITE-NO-SOURCE",
+            "WRITE",
+            error.to_string(),
+        ))
+    })?;
+    if path.extension().and_then(|extension| extension.to_str()) != Some("cfd") {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-NO-SOURCE",
+            "WRITE",
+            "dimension destinations must be CFD files",
+        )));
+    }
+    Ok(CfdSource {
+        display_name: crate::project_path(session.project.root_dir(), &path),
+        location: crate::api::CfdSourcePath::new(path),
+    })
+}
+
 pub(super) fn lookup_source_writer(catalog: &CfdSourceCatalog) -> Arc<CfdWriter> {
     catalog.writer()
 }

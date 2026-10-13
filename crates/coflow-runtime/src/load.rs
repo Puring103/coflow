@@ -57,10 +57,87 @@ struct CachedSourceBatch {
 }
 
 impl SourceDataCache {
+    /// 新文件先进入候选缓存，再由常规重载解析；磁盘发布前即可校验完整模型。
+    pub(crate) fn with_pending_sources(
+        &self,
+        project: &Project,
+        overrides: &[DataSourceTextOverride],
+    ) -> Self {
+        let mut pending = self.clone();
+        for source_override in overrides.iter().filter(|item| !item.deleted) {
+            if pending.batches.iter().any(|batch| {
+                crate::normalized_path_identity(batch.entry.source.location.path())
+                    == crate::normalized_path_identity(&source_override.normalized_path)
+            }) {
+                continue;
+            }
+            let display_path =
+                crate::project_path(project.root_dir(), &source_override.normalized_path);
+            pending.batches.push(CachedSourceBatch {
+                entry: CfdSourceEntry {
+                    source: CfdSource {
+                        location: crate::api::CfdSourcePath::new(
+                            source_override.normalized_path.clone(),
+                        ),
+                        display_name: display_path.clone(),
+                    },
+                    display_path,
+                },
+                source: Arc::from(""),
+                records: Arc::default(),
+                dimension_values: Arc::default(),
+                dimension_variants: Arc::default(),
+            });
+        }
+        pending
+    }
+
     pub(crate) fn sources(&self) -> impl Iterator<Item = (&str, &str)> {
         self.batches
             .iter()
             .map(|batch| (batch.entry.display_path.as_str(), batch.source.as_ref()))
+    }
+
+    pub(crate) fn dimension_files(
+        &self,
+        name: &str,
+        directory: Option<&std::path::Path>,
+    ) -> Vec<String> {
+        self.batches
+            .iter()
+            .filter(|batch| {
+                batch
+                    .dimension_variants
+                    .iter()
+                    .any(|(dimension, _)| dimension.as_str() == name)
+                    || directory.is_some_and(|dir| {
+                        crate::path_is_same_or_descendant(batch.entry.source.location.path(), dir)
+                    })
+            })
+            .map(|batch| batch.entry.display_path.clone())
+            .collect()
+    }
+
+    pub(crate) fn dimension_only_files(&self, project: &Project) -> BTreeSet<&str> {
+        self.batches
+            .iter()
+            .filter(|batch| {
+                batch.records.is_empty()
+                    && (!batch.dimension_variants.is_empty()
+                        || project
+                            .config()
+                            .dimensions
+                            .values()
+                            .filter_map(|config| config.dir.as_ref())
+                            .any(|dir| {
+                                crate::path_is_same_or_descendant(
+                                    batch.entry.source.location.path(),
+                                    &project.resolve_path(dir),
+                                )
+                            }))
+            })
+            .map(|batch| batch.entry.display_path.as_str())
+            .collect()
     }
 
     pub(crate) fn overlay_sources(&self) -> impl Iterator<Item = &CfdSourceEntry> {
@@ -155,15 +232,34 @@ pub(crate) fn load_project_data(
     };
     let mut diagnostics = DiagnosticSet::empty();
     let resolver = SourceResolver::new(project);
-    for source in &project.config().data {
-        let configured = resolver.configured(source);
-        let resolved_sources = match resolver.resolve_for_load(source, &configured) {
+    let mut resolved_paths = BTreeSet::new();
+    for path in project.cfd_input_paths() {
+        let is_dimension_dir = project
+            .config()
+            .dimensions
+            .values()
+            .any(|dimension| dimension.dir.as_deref() == Some(path));
+        if is_dimension_dir && !project.resolve_path(path).exists() {
+            continue;
+        }
+        let source = crate::SourceConfig::from_path(path.to_path_buf());
+        let configured = resolver.configured(&source);
+        let resolved_sources = match resolver.resolve_for_load(&source, &configured) {
             Ok(resolved_sources) => resolved_sources,
             Err(err) => {
                 diagnostics.extend(err);
                 continue;
             }
         };
+        // 维度目录可以同时被 data 目录包含，同一实际来源只加载一次。
+        let resolved_sources = resolved_sources
+            .into_iter()
+            .filter(|resolved| {
+                resolved_paths.insert(crate::normalized_path_identity(
+                    resolved.source.location.path(),
+                ))
+            })
+            .collect::<Vec<_>>();
         statistics.sources_resolved = statistics
             .sources_resolved
             .saturating_add(resolved_sources.len());

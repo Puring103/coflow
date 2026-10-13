@@ -38,6 +38,13 @@ pub fn add_project_input(
         .paths()
         .iter()
         .chain(project.config.data.iter().map(SourceConfig::path))
+        .chain(
+            project
+                .config
+                .dimensions
+                .values()
+                .filter_map(|dimension| dimension.dir.as_ref()),
+        )
         .map(|path| project.resolve_path(path))
         .collect::<Vec<_>>();
     let already_in_kind = roots_for(&project, kind).iter().any(|root| {
@@ -195,6 +202,16 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
         removed_config |= !keep;
         keep
     });
+    for dimension in project.config.dimensions.values_mut() {
+        if dimension
+            .dir
+            .as_ref()
+            .is_some_and(|dir| same_path(&root_dir, dir, &target))
+        {
+            dimension.dir = None;
+            removed_config = true;
+        }
+    }
     let configured_roots = roots_for(&project, ProjectInputKind::Schema)
         .into_iter()
         .chain(roots_for(&project, ProjectInputKind::Data))
@@ -240,10 +257,8 @@ fn roots_for(project: &Project, kind: ProjectInputKind) -> Vec<PathBuf> {
             .map(|path| project.resolve_path(path))
             .collect(),
         ProjectInputKind::Data => project
-            .config
-            .data
-            .iter()
-            .map(|source| project.resolve_path(source.path()))
+            .cfd_input_paths()
+            .map(|path| project.resolve_path(path))
             .collect(),
     }
 }

@@ -5,7 +5,7 @@ import type { DimensionInfo } from '../bindings/DimensionInfo'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { cssEscape } from '../utils/dom'
-import { buildDimensionTree, dimensionTargetId, type DimensionTarget, type DimensionTreeNode } from '../state/dimensionNavigation'
+import { buildDimensionTree, dimensionTargetId, suggestedDimensionTarget, type DimensionTarget, type DimensionTreeNode } from '../state/dimensionNavigation'
 
 interface Props {
   nodes: FileTreeNode[]
@@ -62,7 +62,7 @@ export interface FileTreeGroup {
 
 export function buildFileTreeGroups(
   nodes: FileTreeNode[], dimensions: DimensionInfo[],
-  fileTypes: Record<string, FileTypeOption[] | undefined> = {},
+  includeDimensionSources = false,
 ): FileTreeGroup[] {
   const groups: FileTreeGroup[] = [{
     key: '__schema__',
@@ -75,10 +75,20 @@ export function buildFileTreeGroups(
     icon: 'data',
     nodes: filterTree(
       nodes,
-      node => !node.name.endsWith('.cft'),
-      node => node.in_data,
+      // 按解析后的内容分树，推荐命名和手工分散的覆盖文件遵循同一规则。
+      node => !node.name.endsWith('.cft') && !node.dimension_only,
+      node => node.in_data && !dimensions.some(dimension => dimension.dir
+        && (node.path === dimension.dir || node.path.startsWith(`${dimension.dir}/`)))
+        && (node.children.length === 0 || hasBaseFile(node)),
     ),
   }]
+  if (includeDimensionSources) {
+    // 源码比较按实际文件展示覆盖，避免纯覆盖的 Git 变更被逻辑维度入口隐藏。
+    groups.push({
+      key: '__dimension_sources__', label: '维度', icon: 'dimension',
+      nodes: filterTree(nodes, node => node.dimension_only, () => false),
+    })
+  }
   const orderedDimensions = [...dimensions].sort((left, right) => {
     if (left.name === 'language') return -1
     if (right.name === 'language') return 1
@@ -90,10 +100,14 @@ export function buildFileTreeGroups(
       label: dimension.display_name,
       icon: dimension.name === 'language' ? 'localization' : 'dimension',
       nodes: [],
-      dimensionNodes: buildDimensionTree(nodes, dimension, fileTypes),
+      dimensionNodes: buildDimensionTree(nodes, dimension),
     })
   }
   return groups
+}
+
+function hasBaseFile(node: FileTreeNode): boolean {
+  return node.is_dir ? node.children.some(hasBaseFile) : !node.dimension_only && node.in_data
 }
 
 function filterTree(
@@ -135,9 +149,7 @@ function visibleFlatItems(
 }
 
 function countDimensionFiles(nodes: DimensionTreeNode[]): number {
-  // 文件节点即使是单例入口，也应按业务文件计数；类型节点不重复计数。
-  return nodes.reduce((count, node) => count + (node.kind === 'file'
-    || node.kind === 'singleton' && (node.target?.ownerFile.endsWith('/' + node.label) || node.target?.ownerFile === node.label) ? 1 : 0)
+  return nodes.reduce((count, node) => count + (node.kind === 'file' ? 1 : 0)
     + countDimensionFiles(node.children), 0)
 }
 
@@ -161,13 +173,14 @@ function expandDimensionAncestors(nodes: DimensionTreeNode[], selectedId: string
   return ancestors.reduce((changed, id) => collapsed.delete(id) || changed, false)
 }
 
-function DimensionNode({ node, depth, collapsed, selectedId, onToggle, onSelect }: {
+function DimensionNode({ node, depth, collapsed, selectedId, onToggle, onSelect, onContextMenu }: {
   node: DimensionTreeNode
   depth: number
   collapsed: ReadonlySet<string>
   selectedId: string | null
   onToggle: (id: string) => void
   onSelect?: (target: DimensionTarget) => void
+  onContextMenu: (event: React.MouseEvent, node: DimensionTreeNode) => void
 }) {
   const expanded = !collapsed.has(node.id)
   const branch = node.children.length > 0
@@ -178,16 +191,17 @@ function DimensionNode({ node, depth, collapsed, selectedId, onToggle, onSelect 
       aria-selected={selected} tabIndex={0} data-path={node.id} title={node.label}
       className={node.kind === 'directory' ? 'tree-dir-label' : `tree-file${selected ? ' selected' : ''}${branch ? ' tree-file-parent' : ''}`}
       style={{ paddingLeft: (depth + 1) * 12 + 8 }}
+      onContextMenu={event => node.target && onContextMenu(event, node)}
       onClick={activate} onKeyDown={event => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault(); event.stopPropagation(); activate()
         }
       }}>
-      <Icon name={branch ? (expanded ? 'chevron-down' : 'chevron-right') : node.kind === 'field' ? 'code' : 'file-cfd'} size={14} aria-hidden />
+      <Icon name={branch ? (expanded ? 'chevron-down' : 'chevron-right') : 'file-cfd'} size={14} aria-hidden />
       <span className="tree-item-label">{node.label}</span>
     </div>
     {branch && expanded && node.children.map(child => <DimensionNode key={child.id} node={child}
-      depth={depth + 1} collapsed={collapsed} selectedId={selectedId} onToggle={onToggle} onSelect={onSelect} />)}
+      depth={depth + 1} collapsed={collapsed} selectedId={selectedId} onToggle={onToggle} onSelect={onSelect} onContextMenu={onContextMenu} />)}
   </div>
 }
 
@@ -208,7 +222,7 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
     isDir?: boolean; sourceKind?: 'schema' | 'data'; canManage?: boolean
   } | null>(null)
   const contextReturnPath = useRef<string | null>(null)
-  const groups = buildFileTreeGroups(nodes, dimensions, fileTypes)
+  const groups = buildFileTreeGroups(nodes, dimensions)
 
   const toggle = (path: string) => {
     setCollapsed(prev => {
@@ -380,7 +394,13 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
               {group.dimensionNodes?.map(node => (
                 <DimensionNode key={node.id} node={node} depth={0} collapsed={collapsed}
                   selectedId={selectedDimension ? dimensionTargetId(selectedDimension) : null}
-                  onToggle={toggle} onSelect={onSelectDimension} />
+                  onToggle={toggle} onSelect={onSelectDimension}
+                  onContextMenu={(event, entry) => {
+                    event.preventDefault()
+                    contextReturnPath.current = entry.id
+                    setContextMenu({ x: event.clientX, y: event.clientY, path: entry.target!.filePath,
+                      isDir: false, canManage: true })
+                  }} />
               ))}
               {group.nodes.map(n => (
                 <TreeNode
@@ -437,6 +457,15 @@ export function FileTree({ nodes, dimensions, fileTypes, selectedDimension, onSe
             onCreateRecord(path, typeName)
           }}><Icon name="plus" size={13} aria-hidden />新建记录</button>
           )}
+          {contextMenu.path && !contextMenu.isDir && contextMenu.sourceKind === 'data' && onSelectDimension
+            && dimensions.filter(dimension => (fileTypes[contextMenu.path!] ?? []).some(type =>
+              (type.dimension_fields[dimension.name] ?? []).length > 0)).map(dimension => {
+              const target = suggestedDimensionTarget(dimension, contextMenu.path!)
+              return target && <button key={dimension.name} type="button" className="ctx-item" role="menuitem"
+                onClick={() => { setContextMenu(null); onSelectDimension(target) }}>
+                <Icon name="dimension" size={13} aria-hidden />编辑{dimension.display_name}
+              </button>
+            })}
           {contextMenu.path && contextMenu.isDir && contextMenu.sourceKind && onCreateFile && (
             <button type="button" className="ctx-item" role="menuitem" onClick={() => {
               const { path, sourceKind } = contextMenu

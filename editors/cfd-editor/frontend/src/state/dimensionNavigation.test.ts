@@ -1,21 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import type { DimensionFileRecords } from '../bindings/DimensionFileRecords'
-import { selectDimensionRows } from './dimensionNavigation'
+import { dimensionTargetId, dimensionViewPath, suggestedDimensionTarget } from './dimensionNavigation'
 
-describe('维度行定位', () => {
-  it('按业务文件、实际类型及字段隔离记录；单例保留全部字段', () => {
-    const rows = [
-      ['data/a.cfd', 'Item', 'name'], ['data/a.cfd', 'Item', 'description'],
-      ['data/b.cfd', 'Item', 'name'], ['data/a.cfd', 'Weapon', 'name'],
-    ].map(([owner_file_path, actual_type, field]) => ({
-      owner_file_path, coordinate: { actual_type, key: 'id' }, field,
-      default_value: { kind: 'string' as const, value: 'default' }, values: {},
-    }))
-    const data = { revision: 1, file_path: '@dimension/language', dimension: 'language',
-      display_name: '本地化', variants: ['en'], rows } as DimensionFileRecords
-    expect(selectDimensionRows(data, { dimension: 'language', ownerFile: 'data/a.cfd', typeName: 'Item',
-      field: 'name', singleton: false }).rows).toEqual([rows[0]])
-    expect(selectDimensionRows(data, { dimension: 'language', ownerFile: 'data/a.cfd', typeName: 'Item',
-      field: null, singleton: true }).rows).toEqual([rows[0], rows[1]])
+const language = { name: 'language', display_name: '本地化', dir: 'dimensions/language', files: [], variants: [], fields: [] }
+describe('维度文件导航', () => {
+  it('保留完整项目相对路径并使用实际文件作为标签身份', () => {
+    const target = suggestedDimensionTarget(language, 'data/equipment/items.cfd')!
+    expect(target).toEqual({ dimension: 'language', filePath: 'dimensions/language/data/equipment/items.cfd' })
+    expect(dimensionViewPath(target)).toBe('@dimension/language/dimensions/language/data/equipment/items.cfd')
+    expect(dimensionTargetId(target)).toBe('["language","dimensions/language/data/equipment/items.cfd"]')
+  })
+  it('不同数据根中的同名文件不会合并', () => {
+    expect(suggestedDimensionTarget(language, 'data/items.cfd')).not.toEqual(suggestedDimensionTarget(language, 'other/items.cfd'))
+  })
+  it('缺少目录或主体在项目外时不构造自动创建路径', () => {
+    expect(suggestedDimensionTarget({ ...language, dir: null }, 'data/items.cfd')).toBeNull()
+    expect(suggestedDimensionTarget(language, '../shared/items.cfd')).toBeNull()
+    expect(suggestedDimensionTarget(language, 'C:/shared/items.cfd')).toBeNull()
   })
 })

@@ -12,6 +12,10 @@ name: string,
  */
 display_name: string, variants: Array<string>,
 /**
+ * 配置的覆盖目录与已加载的实际覆盖文件，供宿主按文件导航。
+ */
+dir: string | null, files: Array<string>,
+/**
  * Schema fields belonging to this dimension. Wire only the source
  * type and field; the schema view itself is not part of the editor surface.
  */

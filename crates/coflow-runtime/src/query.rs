@@ -217,6 +217,62 @@ impl<'a> ProjectQueries<'a> {
         self.session.dimensions()
     }
 
+    /// 编辑器按项目相对路径镜像主体文件，维度目录由项目配置明确指定。
+    pub fn dimension_destination(
+        self,
+        actual_type: &str,
+        key: &str,
+        dimension: &str,
+    ) -> Result<String, crate::DiagnosticSet> {
+        let error = |message: String| {
+            crate::DiagnosticSet::one(crate::Diagnostic::error(
+                "MUTATION-DIMENSION-DESTINATION",
+                "WRITE",
+                message,
+            ))
+        };
+        let project = &self.session.project;
+        let dir = project
+            .config()
+            .dimensions
+            .get(dimension)
+            .and_then(|config| config.dir.as_ref())
+            .ok_or_else(|| {
+                error(format!(
+                    "configure dimensions.{dimension}.dir before creating overrides"
+                ))
+            })?;
+        let owner = self
+            .file_for_record(actual_type, key)
+            .ok_or_else(|| error("dimension owner file not found".into()))?;
+        let absolute = project.resolve_path(std::path::Path::new(owner));
+        let relative = absolute.strip_prefix(project.root_dir()).map_err(|_| {
+            error("automatic dimension files require a project-relative owner file".into())
+        })?;
+        Ok(crate::project_path(
+            project.root_dir(),
+            &project.resolve_path(dir).join(relative),
+        ))
+    }
+
+    #[must_use]
+    pub fn dimension_source_file(
+        self,
+        coordinate: &crate::DimensionValueCoordinate,
+    ) -> Option<&'a str> {
+        self.session
+            .source_data
+            .dimension_source(
+                self.session.schema(),
+                coordinate.actual_type.as_str(),
+                coordinate.record_key.as_str(),
+                coordinate.field.as_str(),
+                coordinate.dimension.as_str(),
+                coordinate.variant.as_str(),
+            )
+            .map(|entry| entry.display_path.as_str())
+    }
+
     #[must_use]
     pub fn dimension_value(
         self,

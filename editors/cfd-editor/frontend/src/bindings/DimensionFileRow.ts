@@ -3,4 +3,8 @@ import type { CfdValue } from "./CfdValue";
 import type { DimensionValueState } from "./DimensionValueState";
 import type { RecordCoordinate } from "./RecordCoordinate";
 
-export type DimensionFileRow = { coordinate: RecordCoordinate, field: string, owner_file_path: string, default_value: CfdValue, values: { [key in string]?: DimensionValueState }, };
+export type DimensionFileRow = { coordinate: RecordCoordinate, field: string, owner_file_path: string, default_value: CfdValue, values: { [key in string]?: DimensionValueState },
+/**
+ * 保留各变体真实来源，文件视图可标明跨文件覆盖并写回正确来源。
+ */
+sources: { [key in string]?: string | null }, };

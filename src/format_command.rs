@@ -74,8 +74,17 @@ fn discover_targets(project: &Project) -> Result<Vec<FormatTarget>, DiagnosticSe
         );
     }
 
-    for source in project.data_paths() {
-        let path = project.resolve_path(source.path());
+    for input in project.cfd_input_paths() {
+        let path = project.resolve_path(input);
+        if !path.exists()
+            && project
+                .config()
+                .dimensions
+                .values()
+                .any(|dimension| dimension.dir.as_deref() == Some(input))
+        {
+            continue;
+        }
         let files = if path.is_dir() {
             discover_directory_files(&path).map_err(|error| {
                 cli_file_error(error.path(), "FORMAT-DISCOVERY", error.to_string())

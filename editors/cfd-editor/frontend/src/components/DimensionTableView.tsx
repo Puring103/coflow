@@ -10,6 +10,7 @@ import { summaryOf as valueSummary } from '../value/fieldValue'
 import { parseCfdClipboard, serializeCfdMatrix } from '../state/clipboard'
 import { DataCardCompact, DirectEditor, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
+import { TextInputDialog } from './ActionDialog'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 
 interface Props {
@@ -103,7 +104,7 @@ export function moveDimensionCell(
 }
 
 export function DimensionTableView({
-  data,
+  data: sourceData,
   mode,
   recordGroupsByFile = {},
   onRenameGroup,
@@ -116,6 +117,12 @@ export function DimensionTableView({
   focusRequest = 0,
   onFocusRequestConsumed,
 }: Props) {
+  const [addingVariant, setAddingVariant] = useState(false)
+  const [draftVariants, setDraftVariants] = useState<string[]>([])
+  // 新变体先作为当前文件的待填列，首次填值时与覆盖文件一起持久化。
+  const data = useMemo(() => ({ ...sourceData,
+    variants: [...new Set([...sourceData.variants, ...draftVariants])],
+  }), [sourceData, draftVariants])
   const [selectedKey, setSelectedKey] = useState(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const [recordField, setRecordField] = useState(0)
@@ -138,6 +145,7 @@ export function DimensionTableView({
   const selected = data.rows.find(row => dimensionRowId(row) === selectedKey) ?? data.rows[0]
   const fields = [...new Set(data.rows.map(row => row.field))]
   const showRowField = fields.length > 1
+  const showRowType = new Set(data.rows.map(row => row.coordinate.actual_type)).size > 1
   const toggleGroup = (key: string) => setCollapsedGroups(current => {
     const next = new Set(current)
     if (next.has(key)) next.delete(key); else next.add(key)
@@ -156,7 +164,11 @@ export function DimensionTableView({
       <div className="dimension-table-meta">
         <strong>{fields.join(', ')}</strong>
         <span>{data.rows.length} 条</span>
+        <button type="button" className="btn" onClick={() => setAddingVariant(true)}>添加变体</button>
       </div>
+      {addingVariant && <TextInputDialog title="添加变体" message="输入变体名称；填写覆盖值后保存。"
+        placeholder="例如 ja 或 en" confirmLabel="添加" onClose={() => setAddingVariant(false)}
+        onConfirm={name => { setDraftVariants(current => [...new Set([...current, name])]); setAddingVariant(false) }} />}
       {mode === 'table' ? (
         <DimensionGrid
           data={data}
@@ -231,7 +243,7 @@ export function DimensionTableView({
                 data-record-index={visibleRows.indexOf(item.row)}
                 onClick={() => { setSelectedKey(dimensionRowId(item.row)); setRecordField(0) }}
               >
-                {item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
+                {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
               </button>
             ))}
           </aside>
@@ -304,6 +316,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const columnCount = data.variants.length + 2
   const visibleRows = items.flatMap(item => item.kind === 'row' ? [item.row] : [])
   const showRowField = new Set(data.rows.map(row => row.field)).size > 1
+  const showRowType = new Set(data.rows.map(row => row.coordinate.actual_type)).size > 1
 
   const selection = anchor
   const range: DimensionRange = rangeEnd ? {
@@ -542,14 +555,15 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 style={recordGroupColorStyle(item.group?.color)}
               >
                 <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>
-                  {item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
+                  {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
                 </th>
                 <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} /></td>
                 {data.variants.map((variant, variantIndex) => {
                   const colIndex = variantIndex + 2
                   const isInline = inlineEdit?.row === rowIndex && inlineEdit.column === colIndex
                   return (
-                    <td key={variant} {...cellProps(rowIndex, colIndex, anchor, isRangeSelection, range, select)}>
+                    <td key={variant} {...cellProps(rowIndex, colIndex, anchor, isRangeSelection, range, select)}
+                      title={item.row.sources[variant] ?? '尚未覆盖'}>
                       {isInline && onParseCellText ? (
                         <DimensionInlineEditor
                           row={item.row}
@@ -588,7 +602,7 @@ function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField 
 }) {
   return (
     <div className="dimension-record-card">
-      <header><strong>{row.coordinate.key}</strong></header>
+      <header><strong>{row.coordinate.actual_type}.{row.coordinate.key} · {row.field}</strong></header>
       <div className={`dimension-record-row readonly${selectedField === 0 ? ' keyboard-selected' : ''}`} data-dimension-record-field="0" onMouseDown={() => onSelectField(0)}>
         <span>default</span>
         <DataCardCompact value={row.default_value} />

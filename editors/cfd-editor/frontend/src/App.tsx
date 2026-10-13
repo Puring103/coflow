@@ -2,7 +2,7 @@ import { afterSourceSave, deferSourceNavigation, flushSourceChanges } from './st
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
 import { CreateRecordDialog } from './components/CreateRecordDialog'
-import { ConfirmDialog, TextInputDialog, SelectFileDialog } from './components/ActionDialog'
+import { ConfirmDialog, TextInputDialog } from './components/ActionDialog'
 import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
@@ -89,6 +89,7 @@ import {
   committed, failed, superseded,
   type GraphPositions,
   type MutationResult,
+  type MutationPublicationRequest,
 } from './state/editorState'
 import {
   EditorMutationController,
@@ -123,7 +124,7 @@ import {
 import { graphSupportForFile, relationFieldNames } from './state/graphSupport'
 import { reachableGraph } from './state/graphFilter'
 import { queryClient } from './queryClient'
-import { dimensionTargetId, selectDimensionRows, type DimensionTarget } from './state/dimensionNavigation'
+import { dimensionTargetId, dimensionViewPath, type DimensionTarget } from './state/dimensionNavigation'
 import { editorQueryKeys } from './queryKeys'
 import { fetchFileRecords, removeSessionQueries } from './editorQueries'
 import {
@@ -166,7 +167,6 @@ const GraphView = lazy(() => import('./components/GraphView').then(module => ({ 
 const SourceEditorView = lazy(() => import('./components/SourceEditorView').then(module => ({ default: module.SourceEditorView })))
 const TableView = lazy(() => import('./components/TableView').then(module => ({ default: module.TableView })))
 const RecordView = lazy(() => import('./components/RecordView').then(module => ({ default: module.RecordView })))
-const DimensionSingletonView = lazy(() => import('./components/DimensionSingletonView').then(module => ({ default: module.DimensionSingletonView })))
 const DimensionTableView = lazy(() => import('./components/DimensionTableView').then(module => ({ default: module.DimensionTableView })))
 const GitDiffMode = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffMode })))
 const GitDiffSidebar = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffSidebar })))
@@ -215,9 +215,6 @@ export default function App() {
     | { kind: 'delete'; path: string }
     | null
   >(null)
-  const [dimensionDestination, setDimensionDestination] = useState<{
-    files: string[]; resolve: (file: string | null) => void
-  } | null>(null)
   const [fileActionBusy, setFileActionBusy] = useState(false)
   const [recoverySession, setRecoverySession] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -583,9 +580,6 @@ export default function App() {
       bootstrap.file_types,
       new Set(sourceFiles),
       bootstrap.dimensions,
-      new Set(bootstrap.file_tree.flatMap(function collect(node): string[] {
-        return node.is_dir ? node.children.flatMap(collect) : node.in_data ? [node.path] : []
-      })),
     )
     let tabs = restored?.tabs ?? []
     let activeTabId = restored?.activeTabId ?? null
@@ -751,9 +745,6 @@ export default function App() {
       const validWorkspace = sanitizeProjectWorkspace(
         workspaceToWire(workspaceTabsRef.current, activeWorkspaceTabId), bootstrap.file_types,
         new Set(collectSourceFiles(bootstrap)), bootstrap.dimensions,
-        new Set(bootstrap.file_tree.flatMap(function collect(node): string[] {
-          return node.is_dir ? node.children.flatMap(collect) : node.in_data ? [node.path] : []
-        })),
       )
       const validTabs = validWorkspace?.tabs ?? []
       workspaceTabsRef.current = validTabs
@@ -762,11 +753,7 @@ export default function App() {
       const sourceFiles = collectSourceFiles(bootstrap)
       const currentTarget = validTabs.find(tab => tab.id === activeWorkspaceTabId)?.dimensionTarget
       const validDimension = currentTarget && bootstrap.dimensions.some(dimension => dimension.name === currentTarget.dimension)
-        && bootstrap.file_types[currentTarget.ownerFile]?.some(type => type.name === currentTarget.typeName
-          && type.record_count > 0 && type.is_singleton === currentTarget.singleton
-          && (currentTarget.singleton ? (type.dimension_fields[currentTarget.dimension] ?? []).length > 0
-            : (type.dimension_fields[currentTarget.dimension] ?? []).includes(currentTarget.field!)))
-      const keepFile = current && (sourceFiles.includes(current.file) || (!!validDimension && current.file === `@dimension/${currentTarget?.dimension}`))
+      const keepFile = current && (sourceFiles.includes(current.file) || (!!validDimension && current.file === dimensionViewPath(currentTarget)))
       const nextFile = keepFile ? current.file : sourceFiles[0]
       history.clear()
       setHighlightField(null)
@@ -838,12 +825,13 @@ export default function App() {
     sessionId: number,
     revision: number,
     diagnostics: FlatDiagnostic[],
+    projectMetadata?: MutationPublicationRequest['projectMetadata'],
   ) => {
     if (!generation.acceptMutation(sessionId, revision)) return false
     lookups.adopt({ sessionId, revision })
     setProject(current => (
       current && current.session_id === sessionId && current.revision <= revision
-        ? { ...current, revision, diagnostics }
+        ? { ...current, ...projectMetadata, revision, diagnostics }
         : current
     ))
     return true
@@ -1228,7 +1216,7 @@ export default function App() {
     rebindCoordinate,
     removeCoordinate,
     recoverPublication: (request, error) => {
-      if (!commitProjectRevision(request.sessionId, request.revision, request.diagnostics)) {
+      if (!commitProjectRevision(request.sessionId, request.revision, request.diagnostics, request.projectMetadata)) {
         return false
       }
       window.setTimeout(() => {
@@ -1278,9 +1266,12 @@ export default function App() {
           return {
           ...base,
           revision,
+          variants: [...new Set([...base.variants, variant])],
           rows: base.rows.map(currentRow => sameCoordinate(currentRow.coordinate, row.coordinate)
             && currentRow.field === row.field
-            ? { ...currentRow, values: { ...currentRow.values, [variant]: value } }
+            ? { ...currentRow, values: { ...currentRow.values, [variant]: value },
+                sources: { ...currentRow.sources, [variant]: value.kind === 'missing' ? null
+                  : currentRow.sources[variant] ?? data.file_path.slice(`@dimension/${data.dimension}/`.length) } }
             : currentRow),
           }
         },
@@ -1290,35 +1281,15 @@ export default function App() {
       updateCache(next, data.revision)
       return
     }
-    let writeFile = data.file_path
-    if (expected.kind === 'missing' && next.kind !== 'missing') {
-      const identity = generation.currentIdentity()
-      if (!identity || !project) return
-      const files: string[] = []
-      const visit = (nodes: typeof project.file_tree) => {
-        for (const node of nodes) {
-          if (!node.is_dir && node.in_data && node.path.endsWith('.cfd')) files.push(node.path)
-          visit(node.children)
-        }
-      }
-      visit(project.file_tree)
-      if (files.length === 0) { setErrorMsg('请先添加可写入覆盖的 CFD 文件'); return }
-      // 新覆盖的来源由用户明确选择，撤销与重做保留该文件。
-      const selected = await new Promise<string | null>(resolve => {
-        setDimensionDestination({ files, resolve })
-      })
-      if (!selected || generation.currentIdentity()?.sessionId !== identity.sessionId) return
-      writeFile = selected
-    }
     const result = await mutations.writeDimensionValue(
-      writeFile,
+      data.file_path,
       coordinate,
       expected,
       next,
     )
     if (!result) return
     updateCache(result, generation.currentIdentity()?.revision ?? data.revision)
-  }, [generation, mutations, project])
+  }, [generation, mutations])
 
   const writeField = useCallback(
     async (filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
@@ -1614,14 +1585,14 @@ export default function App() {
     ? dataQueries.dimensionQuery.data ?? dataQueries.mockDimension ?? null
     : null
   const selectedDimensionData = activeDimensionData && activeDimensionTarget
-    ? selectDimensionRows(activeDimensionData, activeDimensionTarget) : null
+    ? activeDimensionData : null
   useEffect(() => {
     if (!activeDimensionData || !activeWorkspaceTabId || currentRoute?.view !== 'table'
       || activeWorkspaceTabId !== currentRoute.dimensionTargetId) return
     setWorkspaceTabs(current => {
       let changed = false
       const next = current.map(tab => {
-        if (tab.id !== activeWorkspaceTabId || !tab.dimensionTarget || tab.dimensionTarget.singleton) return tab
+        if (tab.id !== activeWorkspaceTabId || !tab.dimensionTarget) return tab
         const viewId = dimensionView === 'record' ? DEFAULT_RECORD_VIEW_ID : DEFAULT_TABLE_VIEW_ID
         if (tab.viewKind === dimensionView && tab.viewId === viewId) return tab
         changed = true
@@ -2818,7 +2789,7 @@ export default function App() {
             ) : activeDimensionData ? (
               <div className="view-tabs-row">
                 <div className="document-view-tabs" role="tablist" aria-label="视图">
-                  {(activeDimensionTarget?.singleton ? ['record'] as const : ['record', 'table'] as const).map(view => (
+                  {(['record', 'table'] as const).map(view => (
                     <button
                       key={view}
                       className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
@@ -2953,17 +2924,6 @@ export default function App() {
                 focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
               />
             </div>
-          ) : currentRoute && selectedDimensionData && activeDimensionTarget?.singleton ? (
-            <DimensionSingletonView
-              key={activeWorkspaceTabId}
-              data={selectedDimensionData}
-              onExitLeft={focusFileTree}
-              onExitUp={focusDocumentTabs}
-              focusRequest={firstRecordFocusRequest}
-              onFocusRequestConsumed={consumeFirstRecordFocusRequest}
-              onWrite={(row, variant, expected, next) =>
-                writeDimensionCell(activeDimensionData!, row, variant, expected, next)}
-            />
           ) : currentRoute && selectedDimensionData ? (
             <DimensionTableView
               key={activeWorkspaceTabId}
@@ -3333,12 +3293,6 @@ export default function App() {
           }}
           onClose={() => setTreeRecordDraft(null)}
         />
-      )}
-      {dimensionDestination && (
-        <SelectFileDialog title="选择覆盖文件" message="选择保存此维度覆盖的 CFD 文件" confirmLabel="写入"
-          files={dimensionDestination.files}
-          onClose={() => { dimensionDestination.resolve(null); setDimensionDestination(null) }}
-          onConfirm={file => { dimensionDestination.resolve(file); setDimensionDestination(null) }} />
       )}
       {fileActionDialog?.kind === 'create' && (
         <TextInputDialog

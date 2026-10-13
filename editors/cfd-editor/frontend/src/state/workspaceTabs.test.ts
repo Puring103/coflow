@@ -161,23 +161,17 @@ describe('project workspace tabs', () => {
 
 
 describe('维度工作区', () => {
-  it('恢复字段与单例两个独立标签，并固定单例为记录视图', () => {
-    const types = {
-      'data/mixed.cfd': [
-        { name: 'Item', display_name: '物品', record_count: 1, is_singleton: false, dimension_fields: { language: ['name'] } },
-        { name: 'Settings', display_name: '设置', record_count: 1, is_singleton: true, dimension_fields: { language: ['title'] } },
-      ],
-    }
-    const field = dimensionWorkspaceTab({ dimension: 'language', ownerFile: 'data/mixed.cfd', typeName: 'Item', field: 'name', singleton: false })
-    const singleton = dimensionWorkspaceTab({ dimension: 'language', ownerFile: 'data/mixed.cfd', typeName: 'Settings', field: null, singleton: true })
-    const wire = workspaceToWire([field, singleton], singleton.id)
-    const restored = sanitizeProjectWorkspace(wire, types,
-      new Set(['data/mixed.cfd']), [{ name: 'language', display_name: '本地化', variants: ['en'], fields: [] }],
-      new Set(['data/mixed.cfd']))
-    expect(restored?.tabs.map(tab => tab.id)).toEqual([field.id, singleton.id])
-    expect(restored?.activeTabId).toBe(singleton.id)
-    expect(restored?.tabs[1]?.viewKind).toBe('record')
-    expect(restored?.tabs[1]?.dimensionTarget).toEqual(singleton.dimensionTarget)
-    expect(routeForWorkspaceTab(field).file).toBe('@dimension/language')
+  it('按实际文件恢复标签，也保留配置目录内尚未写入的文件入口', () => {
+    const existing = dimensionWorkspaceTab({ dimension: 'language', filePath: 'scattered/ja.cfd' })
+    const pending = dimensionWorkspaceTab({ dimension: 'language', filePath: 'dimensions/language/data/items.cfd' })
+    const wire = workspaceToWire([existing, pending], pending.id)
+    const restored = sanitizeProjectWorkspace(wire, {}, new Set(), [{
+      name: 'language', display_name: '本地化', variants: ['en'], fields: [],
+      dir: 'dimensions/language', files: ['scattered/ja.cfd'],
+    }])
+    expect(restored?.tabs.map(tab => tab.id)).toEqual([existing.id, pending.id])
+    expect(restored?.activeTabId).toBe(pending.id)
+    expect(restored?.tabs[1]?.dimensionTarget).toEqual(pending.dimensionTarget)
+    expect(routeForWorkspaceTab(existing).file).toBe('@dimension/language/scattered/ja.cfd')
   })
 })
