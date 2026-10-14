@@ -85,11 +85,14 @@ impl CfdRecord {
         };
         let mut current = self.fields().get(field.as_str())?;
         for segment in segments {
-            current = match current {
-                CfdValue::OptionSome(value) => value,
-                CfdValue::OptionNone => return None,
-                _ => current,
-            };
+            // 路径穿过任意层 Option；空态不可达，终点仍保留原本的 Option 层级。
+            loop {
+                match current {
+                    CfdValue::OptionSome(value) => current = value,
+                    CfdValue::OptionNone => return None,
+                    _ => break,
+                }
+            }
             current = match (segment, current) {
                 (CfdPathSegment::Field(field), CfdValue::Object(record)) => {
                     record.fields().get(field.as_str())?

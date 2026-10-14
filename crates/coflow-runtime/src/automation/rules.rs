@@ -146,7 +146,7 @@ fn explain_diagnostics(session: &ReadOnlyProjectSession, validation: &mut Valida
                 }
                 if let Some(key) = &location.record_key {
                     if let Some(id) = session.model().record_by_type_key(ty, key) {
-                        if let Some(value) = session.model().record(id).and_then(|record| super::query::value_at(record, path).ok().flatten()) {
+                        if let Some(value) = session.model().record(id).and_then(|record| super::query::value_at(session, record, path).ok().flatten()) {
                             explanation["actual_value"] = serde_json::to_value(value).ok().unwrap_or(Value::Null);
                         }
                     }

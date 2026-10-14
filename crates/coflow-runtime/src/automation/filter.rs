@@ -1,5 +1,5 @@
 use crate::{CfdRecord, CfdValue, ReadOnlyProjectSession};
-use super::{Failure, Result, query::{parse_path, value_at, compare_values}};
+use super::{Failure, Result, query::{resolved_path, value_at, compare_values}};
 use std::cmp::Ordering;
 
 pub fn matches(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &str) -> Result<bool> {
@@ -23,7 +23,7 @@ fn evaluate(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &s
     for operator in [" is none", " is some", " is missing", " is empty"] {
         if let Some(field) = expression.strip_suffix(operator) {
             super::query::validate_field(session, record.actual_type(), field.trim())?;
-            let value = value_at(record, field.trim())?;
+            let value = value_at(session, record, field.trim())?;
             return Ok(match operator {
                 " is none" => matches!(value, Some(CfdValue::OptionNone)),
                 " is some" => matches!(value, Some(CfdValue::OptionSome(_))),
@@ -37,9 +37,9 @@ fn evaluate(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &s
     for operator in ["==", "!=", ">=", "<=", ">", "<", " contains "] {
         if let Some((field, literal)) = split(expression, operator) {
             let field = field.trim();
-            let path = parse_path(field)?;
+            let path = resolved_path(session, record.actual_type(), field)?;
             let expected = crate::write_rules::expected_type_for_cfd_path(session.schema(), record.actual_type(), &path, "CLI-FILTER", "CLI")?;
-            let value = value_at(record, field)?;
+            let value = value_at(session, record, field)?;
             if operator == " contains " {
                 return match (&expected,value) {
                     (coflow_language::cft::CftValueType::String,Some(CfdValue::String(text))) => Ok(text.contains(&serde_json::from_str::<String>(literal.trim())?)),
@@ -64,7 +64,7 @@ fn evaluate(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &s
     }
     if expression == "true" { return Ok(true); }
     if expression == "false" { return Ok(false); }
-    match value_at(record, expression)? {
+    match value_at(session, record, expression)? {
         Some(CfdValue::Bool(value)) => Ok(*value),
         _ => Err(Failure::request("filter requires a boolean expression")),
     }

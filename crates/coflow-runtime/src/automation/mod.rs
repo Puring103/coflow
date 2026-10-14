@@ -15,6 +15,8 @@ mod schema_inspection;
 mod transaction;
 mod operations;
 mod values;
+mod model_value;
+pub use model_value::{ModelValue, DictionaryEntry};
 mod rewrite;
 mod execute;
 mod diagnostics;

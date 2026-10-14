@@ -149,9 +149,13 @@ pub(crate) fn expected_type_for_record_path(
     for (index, segment) in path.iter().enumerate() {
         loop {
             match (&current_type, current_value) {
-                (CftValueType::Option(inner), Some(CfdValue::OptionSome(value))) => {
+                (CftValueType::Option(inner), value) => {
+                    // 空态影响路径可达性，不改变后续字段的声明类型。
                     current_type = (**inner).clone();
-                    current_value = Some(value);
+                    current_value = match value {
+                        Some(CfdValue::OptionSome(value)) => Some(value),
+                        _ => None,
+                    };
                 }
                 _ => break,
             }
