@@ -57,7 +57,9 @@ pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Argum
             if version!=1{return Err(Failure::request("unsupported protocol_version"));}
             let mut candidate=Candidate::new(project,snapshot)?;
             match request{ChangeSet::Files{changes,..}=>candidate.apply_files(&changes,carrier_dir).map_err(|failure|candidate.failure_result(failure,args))?,ChangeSet::Operations{ops,..}=>candidate.apply_operations(&ops).map_err(|failure|candidate.failure_result(failure,args))?}
-            let(result,validation)=candidate.finish(args,command!="apply").map_err(|failure|candidate.failure_result(failure,args))?;response.set_validation(validation);response.result=result;
+            let completed = if command == "schema.check" { candidate.preview_schema(args) } else { candidate.finish(args,command!="apply") };
+            let(result,validation)=completed.map_err(|failure|candidate.failure_result(failure,args))?;response.set_validation(validation);response.result=result;
+            if matches!(command, "check" | "schema.check") { response.diagnostics.truncate(args.number("limit",usize::MAX)?); }
         }
         "apply"=>return Err(Failure::request("--input is required")),
         command if is_write(command)=>{

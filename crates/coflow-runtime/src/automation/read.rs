@@ -39,7 +39,12 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
             }
             let report = crate::inspect_schema(&schema, args.get("type"), args.flag("include-derived"));
             response.result = match command {
-                "schema.check" => json!({"schema": if response.diagnostics.is_empty() { "passed" } else { "failed" }}),
+                "schema.check" => {
+                    let validation = super::rules::check_schema(&schema, args);
+                    let report = response.set_validation(validation);
+                    response.diagnostics.truncate(args.number("limit",usize::MAX)?);
+                    report
+                }
                 "schema.symbols" => {
                     if args.get("kind").is_some_and(|kind| !["type", "field", "enum", "const", "rule"].contains(&kind)) {
                         return Err(Failure::request("kind must be type, field, enum, const or rule"));
