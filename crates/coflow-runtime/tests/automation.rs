@@ -127,6 +127,41 @@ fn related_schema_collects_transitive_constants_and_shares_symbol_limits() {
 }
 
 #[test]
+fn candidate_schema_check_ignores_invalid_data_and_never_publishes() {
+    let root = fixture();
+    let schema_file = root.path().join("schema.cft");
+    let original = fs::read_to_string(&schema_file).unwrap();
+    fs::write(root.path().join("data/items.cfd"), "broken CFD data").unwrap();
+    let current = run(root.path(), "schema.check", &[], None);
+    assert_eq!(current.status, Status::Success, "{current:?}");
+    assert_eq!(current.result["structure"], "not_executed");
+    let candidate = json!({"protocol_version":1,"kind":"files","changes":[{"op":"write","file":"schema.cft","content":original.replace("value: int;", "value: int = 42;")}]});
+    let checked = run(root.path(), "schema.check", &[], Some(candidate.clone()));
+    assert_eq!(checked.status, Status::Success, "{checked:?}");
+    assert_eq!(checked.result["validation"]["schema"], "passed");
+    assert_eq!(checked.result["validation"]["structure"], "not_executed");
+    assert_eq!(checked.result["changed"], true);
+    assert_eq!(checked.result["written"], false);
+    assert_eq!(fs::read_to_string(&schema_file).unwrap(), original);
+    let data_check = run(root.path(), "check", &[], Some(candidate));
+    assert_eq!(data_check.status, Status::Invalid);
+    assert_eq!(fs::read_to_string(&schema_file).unwrap(), original);
+}
+
+#[test]
+fn candidate_schema_diagnostic_limits_preserve_total_count_and_failure_status() {
+    let root = fixture();
+    let candidate = json!({"protocol_version":1,"kind":"files","changes":[{"op":"write","file":"schema.cft","content":"table Item { first: Missing; second: AlsoMissing; }\n"}]});
+    let checked = run(root.path(), "schema.check", &[("limit", "1"), ("explain", "true")], Some(candidate));
+    assert_eq!(checked.status, Status::Invalid, "{checked:?}");
+    assert_eq!(checked.diagnostics.len(), 1);
+    assert!(checked.result["validation"]["diagnostic_count"].as_u64().unwrap() >= 2);
+    let encoded = serde_json::to_value(&checked).unwrap();
+    assert!(encoded["diagnostics"][0]["explanation"].is_object());
+    assert!(!encoded["diagnostics"][0]["location"]["path"].as_str().unwrap().contains("inputs/"));
+}
+
+#[test]
 fn typed_filters_support_functions_precedence_and_unreachable_values() {
     let root = fixture();
     fs::write(root.path().join("schema.cft"), "data Details { value: Option<int>; }\ntable Item { active: bool; text: string; numbers: [int]; labels: {string: int}; details: Option<Details>; }\n").unwrap();

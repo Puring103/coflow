@@ -68,6 +68,20 @@ pub(crate) fn check(session: &ReadOnlyProjectSession, args: &Arguments) -> Resul
     check_with_limits(session, args, crate::CheckLimits::default())
 }
 
+pub(crate) fn check_schema(session: &crate::ProjectSchemaSession, args: &Arguments) -> Validation {
+    let diagnostics = session.diagnostics().as_set().clone();
+    let passed = session.schema().is_some() && !super::has_errors(&diagnostics);
+    let explanations = if args.flag("explain") {
+        diagnostics.diagnostics.iter().enumerate().map(|(index, diagnostic)|
+            (index, json!({"code":diagnostic.code,"message":diagnostic.message,"queries":["schema inspect","schema symbols"]}))).collect()
+    } else { Default::default() };
+    Validation {
+        report: json!({"schema": if passed { "passed" } else { "failed" }, "structure":"not_executed", "rules":"not_executed",
+            "complete":passed,"diagnostic_count":diagnostics.diagnostics.len()}),
+        diagnostics, logical_locations: Default::default(), explanations,
+    }
+}
+
 pub(crate) fn check_with_limits(session: &ReadOnlyProjectSession, args: &Arguments, limits: crate::CheckLimits) -> Result<Validation> {
     let store = session.queries().diagnostics();
     let structural = store.as_set().clone();

@@ -274,6 +274,17 @@ impl Candidate {
             "change":if c.before.is_none() {"added"} else if c.after.is_none() {"deleted"} else {"modified"},
             "before":c.before.as_ref().map(|b|String::from_utf8_lossy(b)),"after":c.after.as_ref().map(|b|String::from_utf8_lossy(b))})).collect::<Vec<_>>())
     }
+    pub fn preview_schema(&mut self, args: &Arguments) -> Result<(Value, super::rules::Validation)> {
+        // Schema 候选检查只编译声明；数据与业务规则不参与，也不会发布候选文件。
+        let session = Runtime::open_schema_session(self.project()?)?;
+        let mut validation = super::rules::check_schema(&session, args);
+        self.remap_diagnostics(&mut validation.diagnostics)?;
+        let changes = self.changes()?;
+        let report = json!({"changed":!changes.is_empty(),"written":false,"dry_run":true,"validation":&validation.report,
+            "operations":self.operations,"files":self.file_report(&changes),"written_files":[]});
+        Ok((report, validation))
+    }
+
     pub fn finish(&mut self, args: &Arguments, force_preview: bool) -> Result<(Value, super::rules::Validation)> {
         let project = self.project()?;
         let mut validation = match Runtime::new().open_data_session(project) {
