@@ -36,7 +36,7 @@ pub use transaction::{ChangeSet, FileOperation};
 pub(crate) use transaction::Candidate;
 pub use operations::{Operation, RecordTarget, FieldPath, InputValue, RecordFields};
 pub use request::Arguments;
-pub use read::{read_command, SourceRead};
+pub use read::{read_command, SourceRead, SchemaSymbol};
 pub use snapshot::{InputSnapshot, InputFile};
 pub use query::{Selector, Page, query_records};
 
@@ -188,6 +188,7 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("stats.dimension") => response_schema_of::<Option<Page<DimensionStatistics>>>(),
         Some("stats.field") => response_schema_of::<Option<FieldStatistics>>(),
         Some("rule.list" | "rule.inspect") => response_schema_of::<Option<RuleQuery>>(),
+        Some("schema.symbols") => response_schema_of::<Option<Page<SchemaSymbol>>>(),
         _ => response_schema(),
     }
 }

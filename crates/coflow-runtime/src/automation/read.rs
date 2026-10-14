@@ -11,6 +11,28 @@ pub struct SourceRead {
     pub end_line: usize,
 }
 
+/// 符号种类决定其元数据形状，规则符号共享规则查询的描述契约。
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SchemaSymbol {
+    Type { name: String, module: String },
+    Field { name: String, #[serde(rename = "type")] actual_type: String },
+    Enum { name: String, module: String },
+    Const { name: String, module: String },
+    Rule { name: String, definition: super::RuleDescription },
+}
+
+impl SchemaSymbol {
+    fn name(&self) -> &str {
+        match self { Self::Type { name, .. } | Self::Field { name, .. } | Self::Enum { name, .. } |
+            Self::Const { name, .. } | Self::Rule { name, .. } => name }
+    }
+    fn kind(&self) -> &str {
+        match self { Self::Type { .. } => "type", Self::Field { .. } => "field", Self::Enum { .. } => "enum",
+            Self::Const { .. } => "const", Self::Rule { .. } => "rule" }
+    }
+}
+
 pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, args: &Arguments) -> Result<Response> {
     let mut scoped_args = args.clone();
     scoped_args.0.insert("_command".into(), vec![command.into()]);
@@ -61,14 +83,14 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
                     }
                     let mut items = Vec::new();
                     for ty in &report.types {
-                        items.push(json!({"kind": "type", "name": ty.name, "module": ty.module}));
-                        for field in &ty.fields { items.push(json!({"kind": "field", "name": format!("{}.{}", ty.name, field.name), "type": ty.name})); }
+                        items.push(SchemaSymbol::Type { name: ty.name.clone(), module: ty.module.clone() });
+                        for field in &ty.fields { items.push(SchemaSymbol::Field { name: format!("{}.{}", ty.name, field.name), actual_type: ty.name.clone() }); }
                     }
-                    for item in &report.enums { items.push(json!({"kind": "enum", "name": item.name, "module": item.module})); }
-                    for item in &report.consts { items.push(json!({"kind": "const", "name": item.name, "module": item.module})); }
-                    if let Some(view)=schema.schema(){for info in view.all_check_statements(){items.push(json!({"kind":"rule","name":super::rules::identity(info),"definition":super::rules::describe(view,info,project.root_dir())}));}}
-                    if let Some(kind) = args.get("kind") { items.retain(|v| v["kind"] == kind); }
-                    items.sort_by(|a,b| a["name"].as_str().cmp(&b["name"].as_str()));
+                    for item in &report.enums { items.push(SchemaSymbol::Enum { name: item.name.clone(), module: item.module.clone() }); }
+                    for item in &report.consts { items.push(SchemaSymbol::Const { name: item.name.clone(), module: item.module.clone() }); }
+                    if let Some(view)=schema.schema(){for info in view.all_check_statements(){items.push(SchemaSymbol::Rule { name:super::rules::identity(info), definition:super::rules::describe(view,info,project.root_dir()) });}}
+                    if let Some(kind) = args.get("kind") { items.retain(|value| value.kind() == kind); }
+                    items.sort_by(|a,b| a.name().cmp(b.name()));
                     to_json(query::paginate(items, &args.selector()?)?)?
                 }
                 "schema.refs" => super::schema_queries::references(project, &schema, args)?,
