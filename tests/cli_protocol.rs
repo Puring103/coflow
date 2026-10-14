@@ -109,6 +109,28 @@ fn describe_distinguishes_record_fields_change_sets_and_source_carriers() {
 }
 
 #[test]
+fn explain_uses_real_diagnostic_codes_and_describes_its_typed_result() {
+    let root = tempfile::tempdir().unwrap();
+    for code in ["CFT-SCHEMA-006", "DATA-006", "REF-001", "CHECK-020"] {
+        let (exit, response, _) = call(root.path(), &["explain", code], None);
+        assert_eq!(exit, 0, "{response}");
+        assert_eq!(response["result"]["code"], code);
+        for field in ["meaning", "trigger", "repair"] { assert!(!response["result"][field].as_str().unwrap().is_empty()); }
+    }
+    let (exit, _, _) = call(root.path(), &["explain", "CFT"], None);
+    assert_eq!(exit, 1);
+    let (exit, response, _) = call(root.path(), &["describe", "explain"], None);
+    assert_eq!(exit, 0);
+    let schema = &response["result"]["output_schema"]["definitions"]["DiagnosticExplanation"];
+    assert_eq!(schema["properties"]["meaning"]["type"], "string");
+    assert!(schema["required"].as_array().unwrap().contains(&json!("trigger")));
+    let required = response["result"]["output_schema"]["required"].as_array().unwrap();
+    for field in ["protocol_version", "command", "status", "error_category", "project", "result", "diagnostics"] {
+        assert!(required.contains(&json!(field)), "{field}");
+    }
+}
+
+#[test]
 fn stdin_format_check_reports_changes_without_returning_source() {
     let root = tempfile::tempdir().unwrap();
     let (code, response, _) = call(root.path(), &["format", "--stdin", "--language", "cfd", "--check"], Some("a: Item{value:1}"));

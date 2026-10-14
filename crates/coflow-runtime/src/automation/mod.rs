@@ -20,6 +20,8 @@ pub use model_value::{ModelValue, DictionaryEntry};
 mod rewrite;
 mod execute;
 mod diagnostics;
+mod explanations;
+pub use explanations::DiagnosticExplanation;
 pub use diagnostics::CommandDiagnostic;
 pub use execute::{execute,format_source,explain};
 pub use transaction::{ChangeSet, FileOperation};
@@ -49,13 +51,14 @@ impl Status {
 pub enum ErrorCategory { Request, Execution }
 
 #[derive(Debug, schemars::JsonSchema)]
-pub struct Response {
+pub struct Response<T = Value> {
+    #[schemars(range(min = 1, max = 1))]
     pub protocol_version: u32,
     pub command: String,
     pub status: Status,
     pub error_category: Option<ErrorCategory>,
     pub project: Option<String>,
-    pub result: Value,
+    pub result: T,
     #[schemars(with="Vec<CommandDiagnostic>")]
     pub diagnostics: Vec<Diagnostic>,
     #[schemars(skip)]
@@ -64,7 +67,7 @@ pub struct Response {
     pub(crate) explanations: std::collections::BTreeMap<usize, Value>,
 }
 
-impl Serialize for Response {
+impl<T: Serialize> Serialize for Response<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         let mut fields = serializer.serialize_struct("Response", 7)?;
         fields.serialize_field("protocol_version", &self.protocol_version)?;
@@ -158,4 +161,19 @@ pub(crate) fn json(value: impl Serialize) -> Result<Value> { Ok(serde_json::to_v
 
 pub fn change_set_schema() -> schemars::schema::RootSchema { schemars::schema_for!(ChangeSet) }
 pub fn record_fields_schema() -> schemars::schema::RootSchema { schemars::schema_for!(RecordFields) }
-pub fn response_schema() -> schemars::schema::RootSchema { schemars::schema_for!(Response) }
+pub fn response_schema() -> schemars::schema::RootSchema { response_schema_of::<Value>() }
+pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchema {
+    match command {
+        Some("explain") => response_schema_of::<Option<DiagnosticExplanation>>(),
+        _ => response_schema(),
+    }
+}
+
+fn response_schema_of<T: schemars::JsonSchema>() -> schemars::schema::RootSchema {
+    let mut schema = schemars::schema_for!(Response<T>);
+    // 信封始终输出全部属性；Option 的空值是 null，而不是省略该属性。
+    if let Some(object) = schema.schema.object.as_mut() {
+        object.required.extend(object.properties.keys().cloned());
+    }
+    schema
+}
