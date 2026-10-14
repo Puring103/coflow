@@ -164,6 +164,10 @@ pub(crate) fn describe(target: Option<&str>) -> Result<Value> {
     let mut root = command(); root.build(); let mut selected = &root;
     if let Some(target) = target { for name in target.split('.') { selected = selected.get_subcommands().find(|command| command.get_name() == name).ok_or_else(|| Failure::missing(format!("unknown command `{target}`")))?; } }
     fn description(command: &Command, name: &str) -> Value {
+        let leaf = command.get_subcommands().next().is_none();
+        // 写入能力由实际命令选项与无预览模式的宿主命令共同决定。
+        let writes = command.get_arguments().any(|argument| argument.get_id() == "dry-run")
+            || matches!(name, "init" | "build" | "skill.install" | "skill.uninstall" | "self-update");
         let parameters: Vec<_> = command.get_arguments().filter(|a| a.get_id() != "help" && a.get_id() != "version").map(|a| json!({
             "name": a.get_id().as_str(), "long": a.get_long(), "required": a.is_required_set(), "description": a.get_help().map(ToString::to_string),
             "action": format!("{:?}", a.get_action()),
@@ -173,9 +177,60 @@ pub(crate) fn describe(target: Option<&str>) -> Result<Value> {
         })).collect();
         let groups: Vec<_> = command.get_groups().map(|g| json!({"name": g.get_id().as_str(), "required": g.is_required_set(), "multiple": g.clone().is_multiple(), "parameters": g.get_args().map(|id| id.as_str()).collect::<Vec<_>>()})).collect();
         json!({"command": name, "description": command.get_about().map(ToString::to_string), "parameters": parameters, "groups": groups,
-            "subcommands": command.get_subcommands().map(|child| description(child, &if name == "coflow" { child.get_name().to_string() } else { format!("{name}.{}", child.get_name()) })).collect::<Vec<_>>()})
+            "read_only": leaf.then_some(!writes), "writes": leaf.then_some(writes),
+            "examples": if leaf { vec![example(command, name)] } else { Vec::new() },
+            "subcommands": command.get_subcommands().filter(|child| child.get_name() != "help").map(|child| description(child, &if name == "coflow" { child.get_name().to_string() } else { format!("{name}.{}", child.get_name()) })).collect::<Vec<_>>()})
     }
     Ok(json!({"protocol_version": 1, "definition": description(selected, target.unwrap_or("coflow")),
         "exit_codes": {"0": "success", "1": "validation or incomplete result", "2": "invalid request", "3": "conflict", "4": "execution failure"},
         "input_schema": coflow_runtime::automation::change_set_schema(), "output_schema": coflow_runtime::automation::response_schema()}))
+}
+
+fn example(command: &Command, name: &str) -> String {
+    let mut parameters = std::collections::BTreeSet::new();
+    for argument in command.get_arguments().filter(|argument| argument.is_required_set()) {
+        parameters.insert(argument.get_id().as_str());
+    }
+    // 必填互斥组只选一个成员，示例随 Clap 命令树变化而更新。
+    for group in command.get_groups().filter(|group| group.is_required_set()) {
+        if !group.get_args().any(|id| parameters.contains(id.as_str())) {
+            if let Some(argument) = group.get_args().next() { parameters.insert(argument.as_str()); }
+        }
+    }
+    if name == "self-update" { parameters.insert("check"); }
+    let mut result = format!("coflow {}", name.replace('.', " "));
+    for argument in command.get_arguments().filter(|argument| parameters.contains(argument.get_id().as_str())) {
+        if let Some(long) = argument.get_long() { result.push_str(&format!(" --{long}")); }
+        if argument.get_action().takes_values() {
+            let value = match argument.get_id().as_str() {
+                "type" | "symbol" => "Item", "key" => "sword", "new-key" => "sword2", "path" | "field" => "value",
+                "file" => "data/items.cfd", "to-file" => "data/other.cfd", "input" => "request.json", "value-cfd" => "1",
+                "dimension" => "language", "variant" => "en", "kind" => "data", "rule" => "Item#0", "code" => "CFD-SEM-001",
+                "text" => "sword", "from" => "en", "to" => "zh", _ => "example",
+            };
+            result.push(' '); result.push_str(value);
+        }
+    }
+    if name != "lsp" { result.push_str(" --json"); }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_described_leaf_has_an_example_accepted_by_the_command_parser() {
+        let report = super::describe(None).unwrap();
+        fn check(definition: &serde_json::Value) {
+            let children = definition["subcommands"].as_array().unwrap();
+            if children.is_empty() {
+                assert!(definition["read_only"].is_boolean());
+                for example in definition["examples"].as_array().unwrap() {
+                    let example = example.as_str().unwrap();
+                    super::command().try_get_matches_from(example.split_whitespace())
+                        .unwrap_or_else(|error| panic!("{example}: {error}"));
+                }
+            } else { for child in children { check(child); } }
+        }
+        check(&report["definition"]);
+    }
 }
