@@ -85,6 +85,30 @@ fn describe_reports_canonical_names_and_required_value_groups() {
 }
 
 #[test]
+fn describe_distinguishes_record_fields_change_sets_and_source_carriers() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, response, _) = call(root.path(), &["describe", "data.create"], None);
+    assert_eq!(code, 0);
+    let schema = &response["result"]["input_schema"];
+    assert_eq!(schema["type"], "object");
+    assert!(schema["additionalProperties"].is_object());
+    assert!(schema["definitions"]["InputValue"].is_object());
+    let (_, response, _) = call(root.path(), &["describe", "apply"], None);
+    let variants = response["result"]["input_schema"]["oneOf"].as_array().unwrap();
+    assert!(variants.iter().any(|variant| variant["properties"]["kind"]["enum"] == json!(["operations"])));
+    for variant in variants {
+        assert_eq!(variant["properties"]["protocol_version"]["minimum"].as_f64(), Some(1.0));
+        assert_eq!(variant["properties"]["protocol_version"]["maximum"].as_f64(), Some(1.0));
+    }
+    let (_, response, _) = call(root.path(), &["describe", "source.write"], None);
+    assert!(response["result"]["input_schema"].is_null());
+    assert_eq!(response["result"]["definition"]["input_formats"], json!([{"parameter":"input","format":"source_text"}]));
+    let (_, response, _) = call(root.path(), &["describe", "data.get"], None);
+    assert!(response["result"]["input_schema"].is_null());
+    assert_eq!(response["result"]["definition"]["input_formats"], json!([]));
+}
+
+#[test]
 fn stdin_format_check_reports_changes_without_returning_source() {
     let root = tempfile::tempdir().unwrap();
     let (code, response, _) = call(root.path(), &["format", "--stdin", "--language", "cfd", "--check"], Some("a: Item{value:1}"));

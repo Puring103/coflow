@@ -178,12 +178,33 @@ pub(crate) fn describe(target: Option<&str>) -> Result<Value> {
         let groups: Vec<_> = command.get_groups().map(|g| json!({"name": g.get_id().as_str(), "required": g.is_required_set(), "multiple": g.clone().is_multiple(), "parameters": g.get_args().map(|id| id.as_str()).collect::<Vec<_>>()})).collect();
         json!({"command": name, "description": command.get_about().map(ToString::to_string), "parameters": parameters, "groups": groups,
             "read_only": leaf.then_some(!writes), "writes": leaf.then_some(writes),
+            "input_schema": input_schema(name),
+            "input_formats": command.get_arguments().filter_map(|argument| {
+                let parameter = argument.get_id().as_str();
+                let format = match (name, parameter) {
+                    ("source.write" | "source.create", "input") => "source_text",
+                    (_, "input") if !input_schema(name).is_null() => "json",
+                    (_, "value-cfd" | "value-file") => "cfd_expression",
+                    ("format", "stdin") => "source_text",
+                    _ => return None,
+                };
+                Some(json!({"parameter": parameter, "format": format}))
+            }).collect::<Vec<_>>(),
             "examples": if leaf { vec![example(command, name)] } else { Vec::new() },
             "subcommands": command.get_subcommands().filter(|child| child.get_name() != "help").map(|child| description(child, &if name == "coflow" { child.get_name().to_string() } else { format!("{name}.{}", child.get_name()) })).collect::<Vec<_>>()})
     }
     Ok(json!({"protocol_version": 1, "definition": description(selected, target.unwrap_or("coflow")),
         "exit_codes": {"0": "success", "1": "validation or incomplete result", "2": "invalid request", "3": "conflict", "4": "execution failure"},
-        "input_schema": coflow_runtime::automation::change_set_schema(), "output_schema": coflow_runtime::automation::response_schema()}))
+        "input_schema": target.map(input_schema), "output_schema": coflow_runtime::automation::response_schema()}))
+}
+
+fn input_schema(name: &str) -> Value {
+    // Schema 来自执行时使用的 DTO；源码和 CFD 表达式通过独立的格式说明表达。
+    match name {
+        "apply" | "check" | "schema.check" | "diff" => json!(coflow_runtime::automation::change_set_schema()),
+        "data.create" => json!(coflow_runtime::automation::record_fields_schema()),
+        _ => Value::Null,
+    }
 }
 
 fn example(command: &Command, name: &str) -> String {

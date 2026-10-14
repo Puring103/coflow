@@ -24,7 +24,7 @@ pub use diagnostics::CommandDiagnostic;
 pub use execute::{execute,format_source,explain};
 pub use transaction::{ChangeSet, FileOperation};
 pub(crate) use transaction::Candidate;
-pub use operations::{Operation, RecordTarget, FieldPath, InputValue};
+pub use operations::{Operation, RecordTarget, FieldPath, InputValue, RecordFields};
 pub use request::Arguments;
 pub use read::read_command;
 pub use snapshot::{InputSnapshot, InputFile};
@@ -157,4 +157,5 @@ impl From<serde_json::Error> for Failure {
 pub(crate) fn json(value: impl Serialize) -> Result<Value> { Ok(serde_json::to_value(value)?) }
 
 pub fn change_set_schema() -> schemars::schema::RootSchema { schemars::schema_for!(ChangeSet) }
+pub fn record_fields_schema() -> schemars::schema::RootSchema { schemars::schema_for!(RecordFields) }
 pub fn response_schema() -> schemars::schema::RootSchema { schemars::schema_for!(Response) }
