@@ -28,6 +28,17 @@ fn statistics_contracts_describe_project_counts_groups_and_nullable_coverage() {
     assert_eq!(empty.result["items"][0]["eligible_fields"], 0);
     assert_eq!(empty.result["items"][0]["zero_denominator"], true);
     assert!(empty.result["items"][0]["coverage"].is_null());
+    let empty_field = run(root.path(), "stats.field", &[("type", "Item"), ("field", "value"), ("key", "absent")], None);
+    assert!(empty_field.result["min"].is_null());
+    assert!(empty_field.result["mean"].is_null());
+    let selected = run(root.path(), "stats.field", &[("type", "Item"), ("field", "value"), ("metrics", "count")], None);
+    assert_eq!(selected.result["count"], 2);
+    assert!(selected.result.get("min").is_none());
+    assert!(selected.result.get("mean").is_none());
+    let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some("stats.field"))).unwrap();
+    for name in ["FieldStatistics", "StatisticNumber", "StatisticMean", "ValueFrequency", "ModelValue"] {
+        assert!(schema["definitions"].get(name).is_some(), "{name}");
+    }
 }
 
 #[test]

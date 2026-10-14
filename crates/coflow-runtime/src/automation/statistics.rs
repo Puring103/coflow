@@ -30,6 +30,68 @@ pub struct DimensionStatistics {
     pub coverage: Option<f64>,
 }
 
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum StatisticNumber { Integer(String), Float(f64) }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum StatisticMean { Rational { numerator: String, denominator: usize }, Float(f64) }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct StatisticQuantile { pub q: f64, pub value: Option<StatisticNumber> }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct LengthFrequency { pub length: usize, pub count: usize }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct ValueFrequency { pub value: super::ModelValue, pub count: usize, pub ratio: Option<f64> }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct FieldStatistics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub some: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub none: Option<usize>,
+    pub option_layer: usize,
+    pub numeric_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<Option<StatisticNumber>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<Option<StatisticNumber>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sum: Option<StatisticNumber>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean: Option<Option<StatisticMean>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub empty_count: Option<usize>,
+    pub length_unit: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length_min: Option<Option<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length_max: Option<Option<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length_distribution: Option<Vec<LengthFrequency>>,
+    pub precision: String,
+    pub quantile_method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantiles: Option<Vec<StatisticQuantile>>,
+    pub path_unreachable: usize,
+    pub rejected_records: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<super::Page<ValueFrequency>>,
+}
+
+impl FieldStatistics {
+    fn select_metrics(&mut self, metrics: &[String]) {
+        // 外层 Option 控制是否输出指标；内层 Option 保留“没有样本”的 null。
+        macro_rules! select { ($($field:ident),*) => { $(if !metrics.iter().any(|name| name == stringify!($field)) { self.$field = None; })* }; }
+        select!(count, min, max, sum, mean, quantiles, some, none, empty_count, length_distribution, length_min, length_max);
+    }
+}
+
 pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &Arguments) -> Result<Value> {
     let selector = args.selector()?;
     let records = selected_records(session, &selector)?;
@@ -61,29 +123,29 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                     if args.get("group-by") == Some("value") {
                         let path = super::query::resolved_path(session, record.actual_type(), field)?;
                         let expected = crate::write_rules::expected_type_for_record_path(session.schema(), record, &path, "CLI-PATH", "CLI")?;
-                        encoded_values.push(super::model_value::encode(session.schema(), &expected, Some(value))?);
+                        encoded_values.push(super::ModelValue::from_model(session.schema(), &expected, value)?);
                     }
                 } else { unreachable += 1; }
             }
             let quantiles = if args.get("quantiles").is_some() { args.csv("quantiles").into_iter().map(|v|v.parse::<f64>().map_err(|_|Failure::request("quantiles must be numbers in [0,1]"))).collect::<Result<Vec<_>>>()? } else { vec![0.5,0.9,0.95,0.99] };
             if quantiles.iter().any(|q|!q.is_finite()||!(0.0..=1.0).contains(q)){return Err(Failure::request("quantiles must be numbers in [0,1]"));}
             let mut result = aggregate(&values, args.number("option-layer", 1)?, &quantiles)?;
-            result["path_unreachable"] = json!(unreachable);
-            result["rejected_records"] = json!(rejected);
+            result.path_unreachable = unreachable;
+            result.rejected_records = rejected;
             if args.get("group-by") == Some("value") {
-                let mut groups = BTreeMap::<String, (Value, usize)>::new();
+                let mut groups = BTreeMap::<String, (super::ModelValue, usize)>::new();
                 for encoded in encoded_values {
-                    let entry = groups.entry(encoded.to_string()).or_insert((encoded, 0)); entry.1 += 1;
+                    let entry = groups.entry(serde_json::to_string(&encoded)?).or_insert((encoded, 0)); entry.1 += 1;
                 }
-                result["distribution"] = super::json(paginate(groups.into_values().map(|(value,count)| json!({"value": value, "count": count,
-                    "ratio": if values.is_empty() { None } else { Some(count as f64 / values.len() as f64) }})).collect(), &selector)?)?;
+                result.distribution = Some(paginate(groups.into_values().map(|(value,count)| ValueFrequency { value, count,
+                    ratio: if values.is_empty() { None } else { Some(count as f64 / values.len() as f64) } }).collect(), &selector)?);
             }
             if args.get("metrics").is_some(){
                 let metrics=args.csv("metrics");
                 for metric in &metrics{if !["count","min","max","sum","mean","quantiles","some","none","empty_count","length_distribution"].contains(&metric.as_str()){return Err(Failure::request(format!("unknown metric `{metric}`")));}}
-                if let Some(object)=result.as_object_mut(){object.retain(|name,_|metrics.contains(name)||["numeric_count","path_unreachable","rejected_records","option_layer","precision","quantile_method","length_unit","distribution"].contains(&name.as_str()));}
+                result.select_metrics(&metrics);
             }
-            Ok(result)
+            super::json(result)
         }
         "stats.dimension" => {
             let name = args.require("dimension")?; let variant = args.require("variant")?;
@@ -122,7 +184,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
     }
 }
 
-fn aggregate(values: &[&CfdValue], option_layer: usize, quantiles:&[f64]) -> Result<Value> {
+fn aggregate(values: &[&CfdValue], option_layer: usize, quantiles:&[f64]) -> Result<FieldStatistics> {
     if option_layer==0 {return Err(Failure::request("option-layer starts at 1"));}
     let mut none = 0; let mut some = 0; let mut lengths = Vec::new(); let mut numeric = Vec::new();
     let mut int_sum = 0i128; let mut all_int = true;let mut integers=Vec::new();
@@ -147,25 +209,23 @@ fn aggregate(values: &[&CfdValue], option_layer: usize, quantiles:&[f64]) -> Res
     numeric.sort_by(f64::total_cmp); lengths.sort_unstable();integers.sort_unstable();
     let sum: f64 = numeric.iter().sum();
     if !sum.is_finite() { return Err(Failure::request("floating aggregate overflow")); }
-    let mut result = json!({"count": values.len(), "some": some, "none": none, "option_layer": option_layer,
-        "numeric_count": numeric.len(), "min": numeric.first(), "max": numeric.last(),
-        "sum": if all_int { json!(int_sum.to_string()) } else { json!(sum) },
-        "mean": if numeric.is_empty() { Value::Null } else if all_int { json!({"numerator": int_sum.to_string(), "denominator": numeric.len()}) } else { json!(sum / numeric.len() as f64) },
-        "empty_count": lengths.iter().filter(|n| **n == 0).count(), "length_unit": "unicode_scalar_values_or_elements",
-        "length_min": lengths.first(), "length_max": lengths.last()});
     let mut distribution=BTreeMap::<usize,usize>::new();for length in &lengths{*distribution.entry(*length).or_default()+=1;}
-    result["length_distribution"]=json!(distribution.into_iter().map(|(length,count)|json!({"length":length,"count":count})).collect::<Vec<_>>());
-    result["precision"]=json!(if all_int{"exact_integer_and_rational"}else{"ieee754_binary64_checked_finite"});
-    result["quantile_method"]=json!("nearest_rank");
-    result["quantiles"]=json!(quantiles.iter().map(|q|{
+    let endpoints = |first: bool| if all_int {
+        (if first { integers.first() } else { integers.last() }).map(|value| StatisticNumber::Integer(value.to_string()))
+    } else { (if first { numeric.first() } else { numeric.last() }).copied().map(StatisticNumber::Float) };
+    // 整数端点与和保持十进制编码，均值保持精确分数。
+    let quantiles = quantiles.iter().map(|q|{
         let index=((*q*numeric.len() as f64).ceil() as usize).saturating_sub(1);
-        let value=if all_int{json!(integers.get(index).map(ToString::to_string))}else{json!(numeric.get(index))};
-        json!({"q":q,"value":value})
-    }).collect::<Vec<_>>());
-    // 整数端点保持原始编码；均值使用精确分数，避免 64 位整数经过浮点舍入。
-    if all_int {
-        result["min"] = json!(integers.first().map(ToString::to_string));
-        result["max"] = json!(integers.last().map(ToString::to_string));
-    }
-    Ok(result)
+        let value=if all_int{integers.get(index).map(|value| StatisticNumber::Integer(value.to_string()))}else{numeric.get(index).copied().map(StatisticNumber::Float)};
+        StatisticQuantile { q: *q, value }
+    }).collect();
+    Ok(FieldStatistics { count: Some(values.len()), some: Some(some), none: Some(none), option_layer,
+        numeric_count: numeric.len(), min: Some(endpoints(true)), max: Some(endpoints(false)),
+        sum: Some(if all_int { StatisticNumber::Integer(int_sum.to_string()) } else { StatisticNumber::Float(sum) }),
+        mean: Some(if numeric.is_empty() { None } else if all_int { Some(StatisticMean::Rational { numerator: int_sum.to_string(), denominator: numeric.len() }) } else { Some(StatisticMean::Float(sum / numeric.len() as f64)) }),
+        empty_count: Some(lengths.iter().filter(|length| **length == 0).count()), length_unit: "unicode_scalar_values_or_elements".into(),
+        length_min: Some(lengths.first().copied()), length_max: Some(lengths.last().copied()),
+        length_distribution: Some(distribution.into_iter().map(|(length,count)| LengthFrequency { length, count }).collect()),
+        precision: if all_int { "exact_integer_and_rational" } else { "ieee754_binary64_checked_finite" }.into(),
+        quantile_method: "nearest_rank".into(), quantiles: Some(quantiles), path_unreachable: 0, rejected_records: 0, distribution: None })
 }

@@ -14,7 +14,7 @@ pub use dimension::{DimensionField, DimensionMetadata, DimensionVariant, Dimensi
 mod references;
 pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, ReferenceEdge, ReferenceQuery};
 mod statistics;
-pub use statistics::{ProjectStatistics, RecordStatistics, DimensionStatistics};
+pub use statistics::{ProjectStatistics, RecordStatistics, DimensionStatistics, FieldStatistics, StatisticNumber, StatisticMean, StatisticQuantile, LengthFrequency, ValueFrequency};
 mod rules;
 mod context;
 mod schema_queries;
@@ -185,6 +185,7 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("stats.project") => response_schema_of::<Option<ProjectStatistics>>(),
         Some("stats.records") => response_schema_of::<Option<Page<RecordStatistics>>>(),
         Some("stats.dimension") => response_schema_of::<Option<Page<DimensionStatistics>>>(),
+        Some("stats.field") => response_schema_of::<Option<FieldStatistics>>(),
         _ => response_schema(),
     }
 }
