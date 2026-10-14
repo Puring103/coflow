@@ -71,10 +71,17 @@ fn describe_reports_canonical_names_and_required_value_groups() {
     let (code, response, _) = call(root.path(), &["describe", "data.set"], None);
     assert_eq!(code, 0);
     assert_eq!(response["result"]["definition"]["command"], "data.set");
+    assert_eq!(response["result"]["definition"]["read_only"], false);
+    assert_eq!(response["result"]["definition"]["writes"], true);
+    assert!(response["result"]["definition"]["examples"][0].as_str().unwrap().contains("data set"));
     let groups = response["result"]["definition"]["groups"].as_array().unwrap();
     assert!(groups.iter().any(|group| group["name"] == "value" && group["required"] == true && group["multiple"] == false));
     let parameters = response["result"]["definition"]["parameters"].as_array().unwrap();
     assert!(parameters.iter().any(|argument| argument["name"] == "path" && argument["required"] == true));
+    let (code, response, _) = call(root.path(), &["describe", "data.get"], None);
+    assert_eq!(code, 0);
+    assert_eq!(response["result"]["definition"]["read_only"], true);
+    assert_eq!(response["result"]["definition"]["writes"], false);
 }
 
 #[test]
