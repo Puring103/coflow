@@ -116,19 +116,20 @@ impl PreparedCodeRelease {
         } else {
             None
         };
-        let mut published_count = 0;
         for output in &mut staged {
             if let Err(error) = output.publish() {
-                rollback_requested(&mut staged, published_count);
-                return Err(map_staging_error(&error));
+                let mut diagnostics = map_staging_error(&error);
+                diagnostics.extend(rollback_requested(&mut staged));
+                return Err(diagnostics);
             }
-            published_count += 1;
         }
 
         if let Some(lock) = &mut staged_lock {
             if let Err(error) = lock.publish() {
-                rollback_requested(&mut staged, published_count);
-                return Err(map_staging_error(&error));
+                let mut diagnostics = map_staging_error(&error);
+                if let Err(restoration) = lock.restore() { diagnostics.extend(map_staging_error(&restoration)); }
+                diagnostics.extend(rollback_requested(&mut staged));
+                return Err(diagnostics);
             }
         }
         for output in &mut staged {
@@ -141,10 +142,12 @@ impl PreparedCodeRelease {
     }
 }
 
-fn rollback_requested(outputs: &mut [StagedDirectory], published_count: usize) {
-    for output in outputs[..published_count].iter_mut().rev() {
-        StagedChange::restore(output);
+fn rollback_requested(outputs: &mut [StagedDirectory]) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
+    for output in outputs.iter_mut().rev() {
+        if let Err(error) = StagedChange::restore(output) { diagnostics.extend(map_staging_error(&error)); }
     }
+    diagnostics
 }
 
 fn map_staging_error(error: &coflow_staging::StagingError) -> DiagnosticSet {

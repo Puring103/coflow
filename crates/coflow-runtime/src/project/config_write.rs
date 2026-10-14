@@ -238,8 +238,10 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
         file_error(&target, "PROJECT-FILE-DELETE", "PROJECT", error.to_string())
     })?;
     if removed_config {
-        if let Err(error) = publish_config(config_path, &project) {
-            removal.restore();
+        if let Err(mut error) = publish_config(config_path, &project) {
+            if let Err(restoration) = removal.restore() {
+                error.extend(file_error(&target, "PROJECT-FILE-RESTORE", "PROJECT", restoration.to_string()));
+            }
             return Err(error);
         }
     }

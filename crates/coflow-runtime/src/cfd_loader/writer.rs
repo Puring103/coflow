@@ -252,10 +252,11 @@ fn publish_workspace(workspace: &mut WriteWorkspace) -> Result<(), DiagnosticSet
             WorkspaceStagedChange::Delete(change) => change.publish(),
         };
         if let Err(error) = result {
+            let mut diagnostics = writer_staging_error(&error);
             for committed in staged[..=index].iter_mut().rev() {
-                StagedChange::restore(committed);
+                if let Err(error) = StagedChange::restore(committed) { diagnostics.extend(writer_staging_error(&error)); }
             }
-            return Err(writer_staging_error(&error));
+            return Err(diagnostics);
         }
     }
     for source in &mut staged {
@@ -285,7 +286,7 @@ impl StagedChange for WorkspaceStagedChange {
         }
     }
 
-    fn restore(&mut self) {
+    fn restore(&mut self) -> Result<(), coflow_staging::StagingError> {
         match self {
             Self::Write(change) => change.restore(),
             Self::Delete(change) => change.restore(),

@@ -3,14 +3,15 @@
 //! A staged change is created beside its destination. Publication verifies the
 //! destination against the caller's expectation, replaces it with a sibling
 //! backup, and can restore that backup until [`StagedChange::finish`] is
-//! called. Dropping an unfinished change restores the previous state and
-//! removes staging residue.
+//! called. Dropping an unfinished change attempts restoration. External changes
+//! remain in place, with the backup retained when restoration cannot complete.
 
 #![forbid(unsafe_code)]
 
 pub mod transaction;
 
 use std::fmt;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -99,8 +100,13 @@ pub trait StagedChange {
     /// Returns [`StagingError`] when verification or a filesystem operation fails.
     fn publish(&mut self) -> Result<(), StagingError>;
 
-    /// Restores the previous destination. Safe to call repeatedly.
-    fn restore(&mut self);
+    /// Restores the previous destination without replacing external changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a conflict if the published destination changed, or an I/O error
+    /// if restoration fails. The backup remains available when restoration fails.
+    fn restore(&mut self) -> Result<(), StagingError>;
 
     /// Marks publication permanent and removes the backup.
     fn finish(&mut self);
@@ -110,10 +116,12 @@ pub trait StagedChange {
 pub struct StagedFile {
     path: PathBuf,
     expected: Option<Vec<u8>>,
+    contents: Vec<u8>,
     staging: PathBuf,
     backup: Option<PathBuf>,
     published: bool,
     finished: bool,
+    restoration_attempted: bool,
 }
 
 impl StagedFile {
@@ -143,10 +151,12 @@ impl StagedFile {
         Ok(Self {
             path: path.to_path_buf(),
             expected,
+            contents: contents.to_vec(),
             staging,
             backup: None,
             published: false,
             finished: false,
+            restoration_attempted: false,
         })
     }
 }
@@ -171,9 +181,15 @@ impl StagedChange for StagedFile {
         )
     }
 
-    fn restore(&mut self) {
-        restore_staged(&self.path, self.published, &mut self.backup, false);
+    fn restore(&mut self) -> Result<(), StagingError> {
+        self.restoration_attempted = true;
+        // 回滚只移除本次发布的内容，发布后的外部修改必须保留。
+        if self.published && read_optional(&self.path)?.as_deref() != Some(self.contents.as_slice()) {
+            return Err(conflict(&self.path));
+        }
+        restore_staged(&self.path, &mut self.published, &mut self.backup, false)?;
         self.published = false;
+        Ok(())
     }
 
     fn finish(&mut self) {
@@ -184,8 +200,8 @@ impl StagedChange for StagedFile {
 
 impl Drop for StagedFile {
     fn drop(&mut self) {
-        if !self.finished {
-            self.restore();
+        if !self.finished && !self.restoration_attempted {
+            let _ = self.restore();
         }
         if self.staging.is_file() {
             let _ = fs::remove_file(&self.staging);
@@ -200,6 +216,8 @@ pub struct StagedDirectory {
     backup: Option<PathBuf>,
     published: bool,
     finished: bool,
+    restoration_attempted: bool,
+    published_contents: Option<DirectoryContents>,
 }
 
 impl StagedDirectory {
@@ -221,6 +239,8 @@ impl StagedDirectory {
             backup: None,
             published: false,
             finished: false,
+            restoration_attempted: false,
+            published_contents: None,
         })
     }
 
@@ -244,6 +264,7 @@ impl StagedChange for StagedDirectory {
 
     fn publish(&mut self) -> Result<(), StagingError> {
         self.verify()?;
+        self.published_contents = Some(directory_contents(&self.staging)?);
         replace_staged(
             &self.path,
             &self.staging,
@@ -253,9 +274,19 @@ impl StagedChange for StagedDirectory {
         )
     }
 
-    fn restore(&mut self) {
-        restore_staged(&self.path, self.published, &mut self.backup, true);
+    fn restore(&mut self) -> Result<(), StagingError> {
+        self.restoration_attempted = true;
+        if self.published {
+            match fs::symlink_metadata(&self.path) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Err(conflict(&self.path)),
+                Err(error) => return Err(io_error(&self.path, "inspect restore destination", error)),
+                Ok(_) => {},
+            }
+            if Some(directory_contents(&self.path)?) != self.published_contents { return Err(conflict(&self.path)); }
+        }
+        restore_staged(&self.path, &mut self.published, &mut self.backup, true)?;
         self.published = false;
+        Ok(())
     }
 
     fn finish(&mut self) {
@@ -266,8 +297,8 @@ impl StagedChange for StagedDirectory {
 
 impl Drop for StagedDirectory {
     fn drop(&mut self) {
-        if !self.finished {
-            self.restore();
+        if !self.finished && !self.restoration_attempted {
+            let _ = self.restore();
         }
         if self.staging.is_dir() {
             let _ = fs::remove_dir_all(&self.staging);
@@ -280,8 +311,8 @@ pub struct StagedRemoval {
     path: PathBuf,
     directory: bool,
     backup: Option<PathBuf>,
-    removed: bool,
     finished: bool,
+    restoration_attempted: bool,
 }
 
 impl StagedRemoval {
@@ -291,8 +322,8 @@ impl StagedRemoval {
             path: path.to_path_buf(),
             directory: path.is_dir(),
             backup: None,
-            removed: false,
             finished: false,
+            restoration_attempted: false,
         }
     }
 }
@@ -310,24 +341,15 @@ impl StagedChange for StagedRemoval {
         fs::rename(&self.path, &backup)
             .map_err(|error| io_error(&self.path, "back up file", error))?;
         self.backup = Some(backup);
-        self.removed = true;
         Ok(())
     }
 
-    fn restore(&mut self) {
-        if self.removed {
-            if self.directory {
-                let _ = fs::remove_dir_all(&self.path);
-            } else {
-                let _ = fs::remove_file(&self.path);
-            }
-        }
-        if let Some(backup) = self.backup.as_ref() {
-            if fs::rename(backup, &self.path).is_ok() {
-                self.backup = None;
-            }
-        }
-        self.removed = false;
+    fn restore(&mut self) -> Result<(), StagingError> {
+        self.restoration_attempted = true;
+        // 删除后的路径必须仍为空；外部重新创建的文件或目录不属于本事务。
+        let mut published = false;
+        restore_staged(&self.path, &mut published, &mut self.backup, self.directory)?;
+        Ok(())
     }
 
     fn finish(&mut self) {
@@ -338,8 +360,8 @@ impl StagedChange for StagedRemoval {
 
 impl Drop for StagedRemoval {
     fn drop(&mut self) {
-        if !self.finished {
-            self.restore();
+        if !self.finished && !self.restoration_attempted {
+            let _ = self.restore();
         }
     }
 }
@@ -357,7 +379,7 @@ fn replace_staged(
         *backup = Some(destination);
     }
     if let Err(error) = fs::rename(staging, path) {
-        restore_staged(path, *published, backup, directory);
+        let _ = restore_staged(path, published, backup, directory);
         *published = false;
         return Err(io_error(path, "publish", error));
     }
@@ -365,19 +387,51 @@ fn replace_staged(
     Ok(())
 }
 
-fn restore_staged(path: &Path, published: bool, backup: &mut Option<PathBuf>, directory: bool) {
-    if published {
+fn restore_staged(path: &Path, published: &mut bool, backup: &mut Option<PathBuf>, directory: bool) -> Result<(), StagingError> {
+    if *published {
         if directory {
-            let _ = fs::remove_dir_all(path);
+            fs::remove_dir_all(path).map_err(|e| io_error(path, "remove published directory", e))?;
         } else {
-            let _ = fs::remove_file(path);
+            fs::remove_file(path).map_err(|e| io_error(path, "remove published file", e))?;
         }
+        *published = false;
     }
     if let Some(backup_path) = backup.as_ref() {
-        if fs::rename(backup_path, path).is_ok() {
-            *backup = None;
+        match fs::symlink_metadata(path) {
+            Ok(_) => return Err(conflict(path)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+            Err(e) => return Err(io_error(path, "inspect restore destination", e)),
         }
+        fs::rename(backup_path, path).map_err(|e| io_error(path, "restore backup", e))?;
+        *backup = None;
     }
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DirectoryEntryContents { Directory, File(Vec<u8>), Symlink(PathBuf) }
+type DirectoryContents = BTreeMap<PathBuf, DirectoryEntryContents>;
+
+fn directory_contents(root: &Path) -> Result<DirectoryContents, StagingError> {
+    fn collect(root: &Path, relative: &Path, result: &mut DirectoryContents) -> Result<(), StagingError> {
+        let path = root.join(relative);
+        let metadata = fs::symlink_metadata(&path).map_err(|e| io_error(&path, "inspect published output", e))?;
+        if metadata.file_type().is_symlink() {
+            result.insert(relative.to_path_buf(), DirectoryEntryContents::Symlink(fs::read_link(&path).map_err(|e| io_error(&path, "read output link", e))?));
+        } else if metadata.is_dir() {
+            result.insert(relative.to_path_buf(), DirectoryEntryContents::Directory);
+            for entry in fs::read_dir(&path).map_err(|e| io_error(&path, "read published directory", e))? {
+                let entry = entry.map_err(|e| io_error(&path, "read published directory entry", e))?;
+                collect(root, &relative.join(entry.file_name()), result)?;
+            }
+        } else {
+            result.insert(relative.to_path_buf(), DirectoryEntryContents::File(fs::read(&path).map_err(|e| io_error(&path, "read published file", e))?));
+        }
+        Ok(())
+    }
+    let mut result = BTreeMap::new();
+    collect(root, Path::new(""), &mut result)?;
+    Ok(result)
 }
 
 fn finish_staged(backup: Option<PathBuf>, directory: bool) {
@@ -484,5 +538,69 @@ mod tests {
         drop(removal);
         assert!(!path.exists());
         assert_eq!(fs::read_dir(root.path()).expect("read root").count(), 0);
+    }
+
+    #[test]
+    fn restoring_a_file_preserves_external_contents_and_its_backup() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file.txt");
+        fs::write(&path, b"old").unwrap();
+        let mut staged = StagedFile::create(&path, Some(b"old".to_vec()), b"new").unwrap();
+        staged.publish().unwrap();
+        fs::write(&path, b"external").unwrap();
+        assert!(staged.restore().unwrap_err().is_conflict());
+        let backup = staged.backup.clone().unwrap();
+        drop(staged);
+        assert_eq!(fs::read(&path).unwrap(), b"external");
+        assert_eq!(fs::read(backup).unwrap(), b"old");
+    }
+
+    #[test]
+    fn restoring_a_removed_file_preserves_external_recreation() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file.txt");
+        fs::write(&path, b"old").unwrap();
+        let mut staged = StagedRemoval::create(&path);
+        staged.publish().unwrap();
+        fs::write(&path, b"external").unwrap();
+        assert!(staged.restore().unwrap_err().is_conflict());
+        let backup = staged.backup.clone().unwrap();
+        drop(staged);
+        assert_eq!(fs::read(&path).unwrap(), b"external");
+        assert_eq!(fs::read(backup).unwrap(), b"old");
+    }
+
+    #[test]
+    fn dropping_a_reported_restoration_failure_does_not_retry_publication() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file.txt");
+        fs::write(&path, b"old").unwrap();
+        let mut staged = StagedFile::create(&path, Some(b"old".to_vec()), b"new").unwrap();
+        staged.publish().unwrap();
+        fs::write(&path, b"external").unwrap();
+        assert!(staged.restore().unwrap_err().is_conflict());
+        let backup = staged.backup.clone().unwrap();
+        // 已经返回恢复失败后，Drop 不得再次改变对外报告的文件状态。
+        fs::write(&path, b"new").unwrap();
+        drop(staged);
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(fs::read(backup).unwrap(), b"old");
+    }
+
+    #[test]
+    fn restoring_output_directories_preserves_external_additions() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("output");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("old.cs"), b"old").unwrap();
+        let mut staged = StagedDirectory::create(&path).unwrap();
+        fs::write(staged.staging().join("new.cs"), b"new").unwrap();
+        staged.publish().unwrap();
+        fs::write(path.join("external.cs"), b"external").unwrap();
+        assert!(staged.restore().unwrap_err().is_conflict());
+        let backup = staged.backup.clone().unwrap();
+        drop(staged);
+        assert_eq!(fs::read(path.join("external.cs")).unwrap(), b"external");
+        assert_eq!(fs::read(backup.join("old.cs")).unwrap(), b"old");
     }
 }
