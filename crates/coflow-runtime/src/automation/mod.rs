@@ -10,7 +10,7 @@ mod project_inspection;
 pub use project_inspection::{SchemaInputs, CodegenTarget, ProjectDimension, ProjectConfiguration, ProjectInspection};
 pub use files::{DataFileRole, FileDimensionSummary, DataFileSummary, ProjectFile, ProjectFiles};
 mod dimension;
-pub use dimension::{DimensionField, DimensionMetadata, DimensionVariant};
+pub use dimension::{DimensionField, DimensionMetadata, DimensionVariant, DimensionOrigin, DimensionState, DimensionValue, DimensionView, DimensionGet, DimensionComparison};
 mod references;
 pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, ReferenceEdge, ReferenceQuery};
 mod statistics;
@@ -178,6 +178,9 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("dimension.list") => response_schema_of::<Option<Vec<DimensionMetadata>>>(),
         Some("dimension.inspect") => response_schema_of::<Option<DimensionMetadata>>(),
         Some("dimension.variants") => response_schema_of::<Option<Page<DimensionVariant>>>(),
+        Some("dimension.get") => response_schema_of::<Option<DimensionGet>>(),
+        Some("dimension.missing") => response_schema_of::<Option<Page<DimensionValue>>>(),
+        Some("dimension.diff") => response_schema_of::<Option<Page<DimensionComparison>>>(),
         _ => response_schema(),
     }
 }

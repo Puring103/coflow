@@ -7,7 +7,7 @@ use crate::{CfdDictKey, CfdValue};
 use super::{Failure, Result};
 
 /// CLI 的可写值协议独立于模型存储格式，渲染结果和来源信息不进入写入值。
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ModelValue {
     Bool { value: bool },
@@ -24,7 +24,7 @@ pub enum ModelValue {
     Fstring { source: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DictionaryEntry {
     pub key: ModelValue,

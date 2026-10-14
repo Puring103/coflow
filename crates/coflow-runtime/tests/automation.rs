@@ -48,9 +48,22 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
     let diff = run(root.path(), "dimension.diff", &[("type", "Item"), ("key", "a"), ("field", "name"),
         ("dimension", "language"), ("from-base", "true"), ("to", "en")], None);
     assert_eq!(diff.result["items"][0]["after"]["location"], *location);
+    let identical = run(root.path(), "dimension.diff", &[("type", "Item"), ("key", "a"), ("field", "name"),
+        ("dimension", "language"), ("from", "en"), ("to", "ja")], None);
+    assert_eq!(identical.result["total"], 0);
+    let inherited = run(root.path(), "dimension.diff", &[("type", "Item"), ("key", "a"), ("field", "name"),
+        ("dimension", "language"), ("from-base", "true"), ("to", "unconfigured")], None);
+    assert_eq!(inherited.result["total"], 0);
     for command in ["dimension.list", "dimension.inspect", "dimension.variants"] {
         let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
         assert!(schema["definitions"].get(if command == "dimension.variants" { "DimensionVariant" } else { "DimensionMetadata" }).is_some());
+    }
+    for (command, result_type) in [("dimension.get", "DimensionGet"), ("dimension.missing", "DimensionValue"), ("dimension.diff", "DimensionComparison")] {
+        let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
+        assert!(schema["definitions"].get(result_type).is_some(), "{command}");
+        assert!(schema["definitions"].get("ModelValue").is_some(), "{command}");
+        let value_type = if command == "dimension.get" { "DimensionGet" } else { "DimensionValue" };
+        assert!(schema["definitions"][value_type]["properties"].get("location").is_some());
     }
 }
 
