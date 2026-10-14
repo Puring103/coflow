@@ -26,10 +26,17 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
         }
         "stats.field" => {
             let field = args.require("field")?;
-            let mut values = Vec::new(); let mut unreachable = 0;
+            let mut values = Vec::new(); let mut encoded_values = Vec::new(); let mut unreachable = 0;
             for record in &records {
                 super::query::validate_field(session, record.actual_type(), field)?;
-                if let Some(value) = value_at(record, field)? { values.push(value); } else { unreachable += 1; }
+                if let Some(value) = value_at(session, record, field)? {
+                    values.push(value);
+                    if args.get("group-by") == Some("value") {
+                        let path = super::query::resolved_path(session, record.actual_type(), field)?;
+                        let expected = crate::write_rules::expected_type_for_record_path(session.schema(), record, &path, "CLI-PATH", "CLI")?;
+                        encoded_values.push(super::model_value::encode(session.schema(), &expected, Some(value))?);
+                    }
+                } else { unreachable += 1; }
             }
             let quantiles = if args.get("quantiles").is_some() { args.csv("quantiles").into_iter().map(|v|v.parse::<f64>().map_err(|_|Failure::request("quantiles must be numbers in [0,1]"))).collect::<Result<Vec<_>>>()? } else { vec![0.5,0.9,0.95,0.99] };
             if quantiles.iter().any(|q|!q.is_finite()||!(0.0..=1.0).contains(q)){return Err(Failure::request("quantiles must be numbers in [0,1]"));}
@@ -38,8 +45,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             result["rejected_records"] = json!(rejected);
             if args.get("group-by") == Some("value") {
                 let mut groups = BTreeMap::<String, (Value, usize)>::new();
-                for value in &values {
-                    let encoded = super::json(value)?;
+                for encoded in encoded_values {
                     let entry = groups.entry(encoded.to_string()).or_insert((encoded, 0)); entry.1 += 1;
                 }
                 result["distribution"] = super::json(paginate(groups.into_values().map(|(value,count)| json!({"value": value, "count": count,

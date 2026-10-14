@@ -21,9 +21,11 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
             let file = snapshot.file(project, args.require("file")?)?;
             let source = String::from_utf8(file.contents.clone()).map_err(|e| Failure::request(e.to_string()))?;
             let start = args.number("start-line", 0)?;
-            let end = args.number("end-line", source.lines().count())?;
+            // 按原始行片段截取，保留 CRLF、空行和选中范围的末尾换行。
+            let lines: Vec<_> = source.split_inclusive('\n').collect();
+            let end = args.number("end-line", lines.len())?;
             if end < start { return Err(Failure::request("end-line precedes start-line")); }
-            let content = if args.get("start-line").is_some() || args.get("end-line").is_some() { source.lines().skip(start).take(end-start).collect::<Vec<_>>().join("\n") } else { source };
+            let content = if args.get("start-line").is_some() || args.get("end-line").is_some() { lines.into_iter().skip(start).take(end-start).collect::<String>() } else { source };
             response.result = json!({"file": file, "source": content, "start_line": start, "end_line": end});
         }
         "schema.inspect" | "schema.check" | "schema.symbols" | "schema.refs" => {
@@ -36,6 +38,9 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
             response.result = match command {
                 "schema.check" => json!({"schema": if response.diagnostics.is_empty() { "passed" } else { "failed" }}),
                 "schema.symbols" => {
+                    if args.get("kind").is_some_and(|kind| !["type", "field", "enum", "const", "rule"].contains(&kind)) {
+                        return Err(Failure::request("kind must be type, field, enum, const or rule"));
+                    }
                     let mut items = Vec::new();
                     for ty in &report.types {
                         items.push(json!({"kind": "type", "name": ty.name, "module": ty.module}));
@@ -85,7 +90,13 @@ fn data_command(command: &str, project: &Project, session: &ReadOnlyProjectSessi
         "data.draft" => {
             let draft = session.session.create_record_draft(args.require("type")?)?;
             let required: Vec<_> = draft.fields.iter().filter(|f| !matches!(f.source, crate::CreateFieldSource::SchemaDefault)).map(|f| &f.name).collect();
-            Ok(json!({"draft": draft, "key": args.get("key"), "complete": required.is_empty(), "required_inputs": required}))
+            let mut encoded = to_json(&draft)?;
+            for (field, entry) in draft.fields.iter().zip(encoded["fields"].as_array_mut().into_iter().flatten()) {
+                let expected = &session.schema().field(&draft.actual_type, &field.name).ok_or_else(|| Failure::missing("draft field schema is missing"))?.value_type;
+                entry["value"] = super::model_value::encode(session.schema(), expected, field.value.as_ref())?;
+                entry["rendered"] = json!(field.value.as_ref().and_then(super::model_value::rendered));
+            }
+            Ok(json!({"draft": encoded, "key": args.get("key"), "complete": required.is_empty(), "required_inputs": required}))
         }
         "dimension.list" => to_json(session.queries().dimensions()),
         command if command.starts_with("dimension.") => super::dimension::query(command, session, args),

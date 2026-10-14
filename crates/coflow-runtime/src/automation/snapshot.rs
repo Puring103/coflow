@@ -43,8 +43,11 @@ impl InputSnapshot {
     pub fn verify(&self, project: &Project) -> Result<()> {
         // 重新发现目录，新增文件与配置修改也必须使前置条件失效。
         let current = Project::open_schema_only(Some(project.config_path()))?;
-        // 写入前重新发现输入，逐文件检查身份与内容，防止覆盖外部修改。
-        let current = Self::capture(&current)?;
+        self.verify_scope(&current)
+    }
+    pub(crate) fn verify_scope(&self, project: &Project) -> Result<()> {
+        // 原始与候选输入范围分别重新发现，候选新增的输入同样检查外部变化。
+        let current = Self::capture(project)?;
         if current.files.len() != self.files.len() || current.files.iter().zip(&self.files).any(|(a, b)| a.absolute != b.absolute || a.contents != b.contents) {
             return Err(Failure::conflict("project inputs changed"));
         }

@@ -10,13 +10,12 @@ use super::{Result,Failure,transaction::Candidate};
 pub struct RecordTarget { #[serde(rename="type")] pub actual_type: String, pub key: String }
 #[derive(Debug,Clone,Serialize,Deserialize,schemars::JsonSchema)]
 #[serde(tag="kind",rename_all="snake_case",deny_unknown_fields)]
-pub enum FieldPath { Field {name:String}, Index {index:usize}, DictKey {key:String} }
-impl FieldPath { fn internal(&self) -> CfdPathSegment { match self {Self::Field{name}=>CfdPathSegment::Field(name.clone()),Self::Index{index}=>CfdPathSegment::Index(*index),Self::DictKey{key}=>CfdPathSegment::DictKey(key.clone())} } }
+pub enum FieldPath { Field {name:String}, Index {index:usize}, DictKey {key:super::ModelValue} }
 #[derive(Debug,Clone,Serialize,Deserialize,schemars::JsonSchema)]
 #[serde(tag="kind",rename_all="snake_case",deny_unknown_fields)]
-pub enum InputValue { Expression {source:String}, Model {#[schemars(with="serde_json::Value")] value:CfdValue} }
+pub enum InputValue { Expression {source:String}, Model {value:super::ModelValue} }
 impl InputValue {
-    fn resolve(&self,schema:&CftSchema,expected:&CftValueType)->Result<CfdValue>{match self{Self::Expression{source}=>super::values::expression(schema,expected,source),Self::Model{value}=>Ok(value.clone())}}
+    fn resolve(&self,schema:&CftSchema,expected:&CftValueType)->Result<CfdValue>{match self{Self::Expression{source}=>super::values::expression(schema,expected,source),Self::Model{value}=>value.resolve(schema,expected)}}
 }
 #[derive(Debug,Clone,Serialize,Deserialize,schemars::JsonSchema)]
 #[serde(tag="op",rename_all="snake_case",deny_unknown_fields)]
@@ -39,8 +38,9 @@ pub enum Operation {
 
 impl Candidate {
     pub fn apply_operations(&mut self,operations:&[Operation])->Result<()> {
+        let encoded=operations.iter().map(super::json).collect::<Result<Vec<_>>>()?;
         for (index,operation) in operations.iter().enumerate() {
-            self.apply_operation(operation)?;
+            if let Err(failure)=self.apply_operation(operation){return Err(self.record_failed(index,&encoded,failure));}
             self.operations.push(json!({"index":index,"status":"success","operation":operation}));
         }
         Ok(())
@@ -67,19 +67,24 @@ impl Candidate {
             }
             Operation::SetField{record,path,value,expected}=>{
                 let (file,ast,text)=find_record(self,record)?;
-                let path=internal_path(path);
+                let path=internal_path(schema,&record.actual_type,path)?;
                 let ty=crate::write_rules::expected_type_for_cfd_path(schema,&record.actual_type,&path,"CLI-PATH","CLI")?;
                 let value=value.resolve(schema,&ty)?;
                 let current=read_value(schema,record,&ast,&text,&path)?;
-                if let Some(expected)=expected {if current.as_ref()!=Some(&expected.resolve(schema,&ty)?){return Err(Failure::conflict("old value precondition failed"));}}
-                if current.as_ref()==Some(&value){return Ok(());}
+                if let Some(expected)=expected {let expected_value=expected.resolve(schema,&ty)?;
+                    if current.as_ref()!=Some(&expected_value){return Err(Failure::conflict("old value precondition failed").with_result(json!({"precondition":{
+                        "view":"effective","expected":super::model_value::encode(schema,&ty,Some(&expected_value))?,
+                        "actual":super::model_value::encode(schema,&ty,current.as_ref())?}})));}}
+                // 只有实际存在的赋值才能作为无变化；与默认值相同也必须建立显式数据。
+                let explicitly_assigned=path.first().is_some_and(|p|matches!(p,CfdPathSegment::Field(name) if ast.fields.iter().any(|f|f.name==*name)));
+                if explicitly_assigned&&current.as_ref()==Some(&value){return Ok(());}
                 let top=materialized_top(schema,record,&ast,&text,&path,&value)?;
                 writer.write_field(&crate::WriteCellRequest{origin:&RecordOrigin::File{path:file,span:None},record_key:&record.key,actual_type:&record.actual_type,field_path:&path,new_value:&value,materialized_top_level:top.as_ref(),schema})?;
                 writer.publish()?;
             }
             Operation::UnsetField{record,path}=>{
                 let(file,_,_)=find_record(self,record)?;
-                writer.unset_field(&RecordOrigin::File{path:file,span:None},&record.key,&record.actual_type,&internal_path(path),schema)?;writer.publish()?;
+                writer.unset_field(&RecordOrigin::File{path:file,span:None},&record.key,&record.actual_type,&internal_path(schema,&record.actual_type,path)?,schema)?;writer.publish()?;
             }
             Operation::RenameRecord{record,new_key}=>{
                 let(file,_,_)=find_record(self,record)?;
@@ -131,7 +136,7 @@ impl Candidate {
             _=>return Err(Failure::request("operation is not a collection edit")),
         };
         let(_,ast,text)=find_record(self,record)?;
-        let internal=internal_path(path);
+        let internal=internal_path(schema,&record.actual_type,path)?;
         let expected=crate::write_rules::expected_type_for_cfd_path(schema,&record.actual_type,&internal,"CLI-PATH","CLI")?;
         let mut value=read_value(schema,record,&ast,&text,&internal)?.ok_or_else(||Failure::missing("collection value is missing"))?;
         match(operation,&mut value,&expected){
@@ -142,7 +147,7 @@ impl Candidate {
             (Operation::DictRemove{key,..},CfdValue::Dict(items),CftValueType::Dict(key_ty,_))=>{let key=as_key(key.resolve(schema,key_ty)?)?;let index=items.iter().position(|(k,_)|k==&key).ok_or_else(||Failure::missing("dictionary key does not exist"))?;items.remove(index);}
             _=>return Err(Failure::request("collection operation does not match the field type")),
         }
-        self.apply_operation(&Operation::SetField{record:record.clone(),path:path.clone(),value:InputValue::Model{value},expected:None})
+        self.apply_operation(&Operation::SetField{record:record.clone(),path:path.clone(),value:InputValue::Model{value:super::ModelValue::from_model(schema,&expected,&value)?},expected:None})
     }
     fn dimension_write(&mut self,schema:&CftSchema,record:&RecordTarget,dimension:&str,variant:&str,field:&str,path:&[FieldPath],value:Option<&InputValue>,file:Option<&str>)->Result<()> {
         let(owner,_,_)=find_record(self,record)?;
@@ -178,13 +183,13 @@ impl Candidate {
         let new_value=if let Some(value)=value{
             if path.is_empty(){Some(value.resolve(schema,&source_field.value_type)?)}else{
                 let mut current=existing.as_ref().map(|(_,v)|v.clone()).ok_or_else(||Failure::missing("set the complete dimension field before editing a nested value"))?;
-                let mut full=vec![CfdPathSegment::Field(field.into())];full.extend(internal_path(path));
+                let mut full=vec![CfdPathSegment::Field(field.into())];let nested=internal_path_from(schema,&record.actual_type,path,full.clone())?;full=nested;
                 let expected=crate::write_rules::expected_type_for_cfd_path(schema,&record.actual_type,&full,"CLI-PATH","CLI")?;
-                replace_nested(&mut current,&internal_path(path),value.resolve(schema,&expected)?)?;Some(current)
+                replace_nested(&mut current,&full[1..],value.resolve(schema,&expected)?)?;Some(current)
             }
         }else{None};
         if existing.as_ref().map(|(_,v)|v)==new_value.as_ref(){return Ok(());}
-        let original=self.unshadow(&destination);self.track(&original)?;
+        let original=self.unshadow(&destination)?;self.track(&original)?;
         let writer=crate::cfd_loader::CfdWriter::new();
         writer.write_dimension_value(&crate::WriteDimensionValueRequest{source:&CfdSource{location:CfdSourcePath::new(destination),display_name:field.into()},
             schema:crate::DimensionSourceSchema{schema,dimension:dimension_schema,source_type,source_field},
@@ -195,7 +200,36 @@ impl Candidate {
 }
 
 fn as_key(value:CfdValue)->Result<crate::CfdDictKey>{Ok(match value{CfdValue::Int(v)=>crate::CfdDictKey::Int(v),CfdValue::String(v)=>crate::CfdDictKey::String(v),CfdValue::Enum(v)=>crate::CfdDictKey::Enum(v),_=>return Err(Failure::request("invalid dictionary key type"))})}
-pub fn internal_path(path:&[FieldPath])->Vec<CfdPathSegment>{path.iter().map(FieldPath::internal).collect()}
+pub fn internal_path(schema:&CftSchema,actual_type:&str,path:&[FieldPath])->Result<Vec<CfdPathSegment>>{
+    internal_path_from(schema,actual_type,path,Vec::new())
+}
+fn internal_path_from(schema:&CftSchema,actual_type:&str,path:&[FieldPath],mut out:Vec<CfdPathSegment>)->Result<Vec<CfdPathSegment>>{
+    for segment in path {
+        let mut parent=if out.is_empty(){CftValueType::Object(crate::TypeName::new(actual_type).map_err(|e|Failure::request(e.to_string()))?)}else{
+            crate::write_rules::expected_type_for_cfd_path(schema,actual_type,&out,"CLI-PATH","CLI")?
+        };
+        while let CftValueType::Option(inner)=parent{parent=*inner;}
+        let next=match segment{
+            FieldPath::Field{name}=>CfdPathSegment::Field(name.clone()),
+            FieldPath::Index{index}=>match &parent{
+                // 文本路径的数字下标根据声明区分数组下标与整数键。
+                CftValueType::Dict(key_type,_)=>{
+                    let key=super::ModelValue::Int{value:index.to_string()}.resolve(schema,key_type)?;
+                    CfdPathSegment::DictKey(crate::data_model::format_cfd_dict_key(&as_key(key)?))
+                }
+                _=>CfdPathSegment::Index(*index),
+            },
+            FieldPath::DictKey{key}=>{
+                let CftValueType::Dict(key_type,_)=&parent else{return Err(Failure::request("dictionary path requires a dictionary"));};
+                let key=as_key(key.resolve(schema,key_type)?)?;
+                CfdPathSegment::DictKey(crate::data_model::format_cfd_dict_key(&key))
+            }
+        };
+        out.push(next);
+        crate::write_rules::expected_type_for_cfd_path(schema,actual_type,&out,"CLI-PATH","CLI")?;
+    }
+    Ok(out)
+}
 
 pub fn find_record(candidate:&Candidate,record:&RecordTarget)->Result<(PathBuf,AstRecord,String)> {
     let project=candidate.project()?;

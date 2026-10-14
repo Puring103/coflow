@@ -22,8 +22,15 @@ pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Argum
                 if source!=formatted{changes.push(coflow_staging::transaction::FileChange{path:file.absolute.clone(),before:Some(file.contents.clone()),after:Some(formatted.into_bytes())});}
             }
             let preview=args.flag("check")||args.flag("dry-run");
-            let written=if preview{Vec::new()}else{snapshot.verify(project)?;coflow_staging::transaction::publish(&changes).map_err(|e|Failure::new(if e.conflict{Status::Conflict}else{Status::Error},"CLI-PUBLISH",e.message))?};
-            response.result=json!({"changed":!changes.is_empty(),"written":!written.is_empty(),"files":changes.iter().map(|c|json!({"path":crate::project_path(project.root_dir(),&c.path),"before":c.before.as_ref().map(|b|String::from_utf8_lossy(b)),"after":c.after.as_ref().map(|b|String::from_utf8_lossy(b))})).collect::<Vec<_>>()});
+            response.result=json!({"changed":!changes.is_empty(),"written":false,"dry_run":args.flag("dry-run"),"check":args.flag("check"),"written_files":[],
+                "files":changes.iter().map(|c|json!({"path":crate::project_path(project.root_dir(),&c.path),"before":c.before.as_ref().map(|b|String::from_utf8_lossy(b)),"after":c.after.as_ref().map(|b|String::from_utf8_lossy(b))})).collect::<Vec<_>>()});
+            if !preview&&!changes.is_empty(){
+                snapshot.verify(project).map_err(|failure|failure.with_result(response.result.clone()))?;
+                let written=coflow_staging::transaction::publish(&changes)
+                    .map_err(|error|super::transaction::publication_failure(project.root_dir(),error,response.result.clone()))?;
+                response.result["written"]=json!(true);
+                response.result["written_files"]=json!(written.iter().map(|path|crate::project_path(project.root_dir(),path)).collect::<Vec<_>>());
+            }
             if args.flag("check")&&!changes.is_empty(){response.status=Status::Invalid;}
         }
         "codegen"|"build"=>{
@@ -49,8 +56,8 @@ pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Argum
             let version=match &request{ChangeSet::Files{protocol_version,..}|ChangeSet::Operations{protocol_version,..}=>*protocol_version};
             if version!=1{return Err(Failure::request("unsupported protocol_version"));}
             let mut candidate=Candidate::new(project,snapshot)?;
-            match request{ChangeSet::Files{changes,..}=>candidate.apply_files(&changes,carrier_dir)?,ChangeSet::Operations{ops,..}=>candidate.apply_operations(&ops)?}
-            let(result,validation)=candidate.finish(args,command!="apply")?;response.set_validation(validation);response.result=result;
+            match request{ChangeSet::Files{changes,..}=>candidate.apply_files(&changes,carrier_dir).map_err(|failure|candidate.failure_result(failure,args))?,ChangeSet::Operations{ops,..}=>candidate.apply_operations(&ops).map_err(|failure|candidate.failure_result(failure,args))?}
+            let(result,validation)=candidate.finish(args,command!="apply").map_err(|failure|candidate.failure_result(failure,args))?;response.set_validation(validation);response.result=result;
         }
         "apply"=>return Err(Failure::request("--input is required")),
         command if is_write(command)=>{
@@ -62,7 +69,7 @@ pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Argum
                     "source.delete"=>FileOperation::Delete{file:args.require("file")?.into(),expected_fingerprint:args.get("expected-fingerprint").map(str::to_string)},
                     "project.add-input"=>FileOperation::AddInput{kind:args.require("kind")?.into(),path:args.require("path")?.into()},
                     _=>FileOperation::RemoveInput{kind:args.require("kind")?.into(),path:args.require("path")?.into()},
-                };candidate.apply_files(&[operation],carrier_dir)?;
+                };candidate.apply_files(&[operation],carrier_dir).map_err(|failure|candidate.failure_result(failure,args))?;
             }else{
                 let record=RecordTarget{actual_type:args.require("type")?.into(),key:args.require("key")?.into()};
                 let path=||->Result<Vec<FieldPath>>{public_path(args.require("path")?)};
@@ -73,16 +80,27 @@ pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Argum
                     "data.rename"=>Operation::RenameRecord{record,new_key:args.require("new-key")?.into()},"data.delete"=>Operation::DeleteRecord{record},"data.transfer"=>Operation::TransferRecord{record,to_file:args.require("to-file")?.into()},
                     "dimension.set"=>Operation::SetDimensionValue{record,dimension:args.require("dimension")?.into(),variant:args.require("variant")?.into(),field:args.require("field")?.into(),path:args.get("path").map(public_path).transpose()?.unwrap_or_default(),value:value()?,file:args.get("file").map(str::to_string)},
                     _=>Operation::ClearDimensionValue{record,dimension:args.require("dimension")?.into(),variant:args.require("variant")?.into(),field:args.require("field")?.into()},
-                };candidate.apply_operations(&[operation])?;
+                };candidate.apply_operations(&[operation]).map_err(|failure|candidate.failure_result(failure,args))?;
             }
-            let(result,validation)=candidate.finish(args,false)?;response.set_validation(validation);response.result=result;
+            let(result,validation)=candidate.finish(args,false).map_err(|failure|candidate.failure_result(failure,args))?;response.set_validation(validation);response.result=result;
         }
         _=>return super::read_command(command,project,snapshot,args),
     }
     Ok(response)
 }
 fn is_write(command:&str)->bool{["source.write","source.create","source.delete","project.add-input","project.remove-input","data.create","data.set","data.unset","data.rename","data.delete","data.transfer","dimension.set","dimension.clear"].contains(&command)}
-fn public_path(path:&str)->Result<Vec<FieldPath>>{Ok(super::query::parse_path(path)?.into_iter().map(|s|match s{crate::CfdPathSegment::Field(name)=>FieldPath::Field{name},crate::CfdPathSegment::Index(index)=>FieldPath::Index{index},crate::CfdPathSegment::DictKey(key)=>FieldPath::DictKey{key}}).collect())}
+pub(crate) fn public_path(path:&str)->Result<Vec<FieldPath>>{
+    super::query::parse_path(path)?.into_iter().map(|s|Ok(match s{
+        crate::CfdPathSegment::Field(name)=>FieldPath::Field{name},
+        crate::CfdPathSegment::Index(index)=>FieldPath::Index{index},
+        crate::CfdPathSegment::DictKey(key)=>FieldPath::DictKey{key:if key.starts_with('"'){
+            super::ModelValue::String{value:serde_json::from_str(&key)?}
+        }else if key.parse::<i64>().is_ok(){super::ModelValue::Int{value:key}}
+        else if let Some((name,variant))=key.split_once("::").or_else(||key.rsplit_once('.')){
+            super::ModelValue::Enum{type_name:name.into(),variant:variant.into()}
+        }else{return Err(Failure::request("dictionary key requires a typed literal"));}},
+    })).collect()
+}
 pub fn format_source(source:&str,language:&str)->Result<String>{match language{"cft"=>Ok(coflow_format::format_cft(source)),"cfd"=>Ok(coflow_format::format_cfd(source)),_=>Err(Failure::request("language must be cft or cfd"))}}
 
 pub fn explain(code:&str)->Result<Value>{
