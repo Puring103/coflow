@@ -23,10 +23,17 @@ pub fn mentions(ty: &CftValueType, symbol: &str) -> bool {
 pub fn references(project: &Project, session: &ProjectSchemaSession, args: &super::Arguments) -> Result<Value> {
     let symbol = args.require("symbol")?;
     let schema = session.schema().ok_or_else(|| Failure::missing("schema is unavailable"))?;
-    if schema.resolve_type(symbol).is_none() && schema.resolve_enum(symbol).is_none() && schema.resolve_const(symbol).is_none() {
+    let field = symbol.rsplit_once('.').and_then(|(owner, name)| schema.field(owner, name));
+    let rule = schema.all_check_statements().any(|info| super::rules::selected(info, symbol));
+    if schema.resolve_type(symbol).is_none() && schema.resolve_enum(symbol).is_none() && schema.resolve_const(symbol).is_none() && field.is_none() && !rule {
         return Err(Failure::missing(format!("unknown symbol `{symbol}`")));
     }
     let mut items = Vec::new();
+    if let Some(field) = field {
+        let source = schema.resolve_type(&field.declaring_type).and_then(|owner| schema.source(&owner.module));
+        items.push(json!({"kind": "declaration", "symbol": format!("{}.{}", field.declaring_type, field.name),
+            "location": source.map(|source| location(&source.path, &source.source, field.span))}));
+    }
     if let Some(declaration) = schema.resolve_enum(symbol) {
         let source = schema.source(&declaration.module);
         items.push(json!({"kind": "declaration", "symbol": symbol, "location": source.map(|source| location(&source.path, &source.source, declaration.span))}));
@@ -44,14 +51,41 @@ pub fn references(project: &Project, session: &ProjectSchemaSession, args: &supe
         }
     }
     for info in schema.all_check_statements() {
-        if info.dependencies.iter().any(|d| match d { coflow_language::cft::CheckDependency::Field(f) => f.owner.as_str() == symbol,
+        if rule && super::rules::selected(info, symbol) {
+            items.push(json!({"kind": "declaration", "symbol": super::rules::identity(info), "rule": super::rules::describe(schema, info)}));
+        }
+        if info.dependencies.iter().any(|d| match d { coflow_language::cft::CheckDependency::Field(f) => f.owner.as_str() == symbol || field.is_some_and(|target|
+                schema.field(&f.owner, &f.field).is_some_and(|dependency| dependency.declaring_type == target.declaring_type && dependency.name == target.name)),
             coflow_language::cft::CheckDependency::RecordSet(t) => t.as_str() == symbol }) {
             items.push(json!({"kind": "rule_expression", "rule": super::rules::describe(schema,info)}));
         }
     }
     let data = crate::Runtime::new().open_data_session(project.clone())?;
+    let mut sources = std::collections::BTreeMap::new();
     for (_,record) in data.model().records() {
         if record.actual_type() == symbol { items.push(json!({"kind": "data", "record": record.coordinate(), "location": record.origin})); }
+        if let Some(target) = field {
+            // 继承字段归属于原始声明；只把源码中的显式赋值作为 CFD 使用位置。
+            if schema.field(record.actual_type(), &target.name).is_some_and(|actual| actual.declaring_type == target.declaring_type) {
+                if let Some(file) = data.queries().file_for_record(record.actual_type(), record.key()) {
+                    let path = project.resolve_path(Path::new(file));
+                    // 同一文件只解析一次，记录数不会放大源码读取与解析成本。
+                    let (source, ast) = match sources.entry(file.to_string()) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            let source = std::fs::read_to_string(&path)?;
+                            let (ast, _) = coflow_language::cfd::parse_cfd(&source);
+                            entry.insert((source, ast))
+                        }
+                    };
+                    if let Some(assignment) = ast.records.iter().find(|entry| entry.key == record.key() && entry.type_name == record.actual_type())
+                        .and_then(|entry| entry.fields.iter().find(|entry| entry.name == target.name.as_str())) {
+                        items.push(json!({"kind": "data", "record": record.coordinate(), "field": target.name,
+                            "location": location(&path, &source, assignment.span)}));
+                    }
+                }
+            }
+        }
     }
     let page = super::query::paginate(items, &args.selector()?)?;
     Ok(json!({"symbol": symbol, "references": page.items, "total": page.total, "truncated": page.truncated, "next_cursor": page.next_cursor}))
