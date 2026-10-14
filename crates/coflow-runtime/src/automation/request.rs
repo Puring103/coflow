@@ -15,6 +15,10 @@ impl Arguments {
     }
     pub fn csv(&self, name: &str) -> Vec<String> { self.all(name).iter().flat_map(|s| s.split(',').map(str::to_string)).collect() }
     pub fn selector(&self) -> Result<Selector> {
+        // 查询身份包含命令专属条件，但不包含分页位置或每页数量，也不绑定文件快照。
+        let mut identity = self.0.clone();
+        identity.remove("cursor");
+        identity.remove("limit");
         let mut dimensions = BTreeMap::new();
         for value in self.all("dimension") {
             if let Some((name, variant)) = value.split_once('=') {
@@ -24,6 +28,7 @@ impl Arguments {
         Ok(Selector { actual_type: self.get("type").map(str::to_string), include_derived: self.flag("include-derived"),
             file: self.get("file").map(|s| s.replace('\\', "/")), key: self.get("key").map(str::to_string), fields: self.csv("fields"),
             dimensions, sort: self.csv("sort"), limit: self.number("limit", 50)?, cursor: self.get("cursor").map(str::to_string),
-            text: self.get("text").map(str::to_string), view: self.get("view").unwrap_or("effective").into(), filter: self.get("where").map(str::to_string) })
+            text: self.get("text").map(str::to_string), view: self.get("view").unwrap_or("effective").into(), filter: self.get("where").map(str::to_string),
+            query_identity: Some(super::snapshot::fingerprint(&serde_json::to_vec(&identity)?)) })
     }
 }

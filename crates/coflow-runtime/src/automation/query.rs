@@ -20,11 +20,13 @@ pub struct Selector {
     pub text: Option<String>,
     pub view: String,
     pub filter: Option<String>,
+    #[serde(skip)]
+    pub(crate) query_identity: Option<String>,
 }
 impl Default for Selector {
     fn default() -> Self { Self { actual_type: None, include_derived: false, file: None,
         key: None, fields: Vec::new(), dimensions: BTreeMap::new(), sort: Vec::new(),
-        limit: 50, cursor: None, text: None, view: "effective".into(), filter: None } }
+        limit: 50, cursor: None, text: None, view: "effective".into(), filter: None, query_identity: None } }
 }
 
 #[derive(Debug, Serialize)]
@@ -34,7 +36,7 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>>
     if selector.limit == 0 { return Err(Failure::request("limit must be greater than zero")); }
     // 游标仅标记同一查询的读取位置，不绑定项目文件状态。
     let mut identity = selector.clone(); identity.cursor = None; identity.limit = 0;
-    let query = fingerprint(&serde_json::to_vec(&identity)?);
+    let query = fingerprint(&serde_json::to_vec(&(&identity, &selector.query_identity))?);
     let offset = match &selector.cursor {
         None => 0,
         Some(cursor) => {
