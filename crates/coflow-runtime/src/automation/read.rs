@@ -26,8 +26,9 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
         "project.files" => {
             let kind = args.get("kind");
             if kind.is_some_and(|k| k != "schema" && k != "data") { return Err(Failure::request("kind must be schema or data")); }
-            let files: Vec<_> = snapshot.files.iter().filter(|f| ["schema", "data"].contains(&f.kind.as_str()) && kind.is_none_or(|k| f.kind == k)).collect();
-            response.result = json!({"files": files});
+            let (files, diagnostics) = super::files::inspect(snapshot, kind)?;
+            response.diagnostics.extend(diagnostics);
+            response.result = to_json(files)?;
         }
         "source.read" => {
             let file = snapshot.file(project, args.require("file")?)?;

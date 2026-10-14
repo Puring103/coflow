@@ -25,6 +25,25 @@ fn call(root: &Path, arguments: &[&str], stdin: Option<&str>) -> (i32, Value, St
 }
 
 #[test]
+fn project_files_contract_describes_roles_and_reports_unavailable_metadata() {
+    let root = fixture();
+    let (exit, description, _) = call(root.path(), &["describe", "project.files"], None);
+    assert_eq!(exit, 0);
+    let definitions = &description["result"]["output_schema"]["definitions"];
+    assert_eq!(definitions["ProjectFiles"]["properties"]["files"]["type"], "array");
+    assert_eq!(definitions["DataFileRole"]["enum"], json!(["base", "dimension", "mixed", "empty"]));
+    assert_eq!(definitions["ProjectFile"]["properties"]["metadata_complete"]["type"], "boolean");
+    fs::write(root.path().join("data/items.cfd"), "a: Item { value: [").unwrap();
+    let (exit, response, _) = call(root.path(), &["project", "files", "--kind", "data"], None);
+    assert_eq!(exit, 1, "{response}");
+    assert_eq!(response["status"], "partial");
+    assert_eq!(response["diagnostics"][0]["location"]["path"], "data/items.cfd");
+    assert!(response["diagnostics"][0]["location"]["range"]["start"]["line"].is_number());
+    assert_eq!(response["result"]["files"][0]["metadata_complete"], false);
+    assert!(response["result"]["files"][0]["data"].is_null());
+}
+
+#[test]
 fn source_read_contract_exposes_metadata_without_internal_snapshot_fields() {
     let root = fixture();
     let (exit, description, _) = call(root.path(), &["describe", "source.read"], None);
