@@ -14,6 +14,7 @@ pub use dimension::{DimensionField, DimensionMetadata, DimensionVariant, Dimensi
 mod references;
 pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, ReferenceEdge, ReferenceQuery};
 mod statistics;
+pub use statistics::{ProjectStatistics, RecordStatistics, DimensionStatistics};
 mod rules;
 mod context;
 mod schema_queries;
@@ -181,6 +182,9 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("dimension.get") => response_schema_of::<Option<DimensionGet>>(),
         Some("dimension.missing") => response_schema_of::<Option<Page<DimensionValue>>>(),
         Some("dimension.diff") => response_schema_of::<Option<Page<DimensionComparison>>>(),
+        Some("stats.project") => response_schema_of::<Option<ProjectStatistics>>(),
+        Some("stats.records") => response_schema_of::<Option<Page<RecordStatistics>>>(),
+        Some("stats.dimension") => response_schema_of::<Option<Page<DimensionStatistics>>>(),
         _ => response_schema(),
     }
 }

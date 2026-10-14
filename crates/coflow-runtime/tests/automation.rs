@@ -16,6 +16,21 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn statistics_contracts_describe_project_counts_groups_and_nullable_coverage() {
+    for (command, name) in [("stats.project", "ProjectStatistics"), ("stats.records", "RecordStatistics"), ("stats.dimension", "DimensionStatistics")] {
+        let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
+        assert!(schema["definitions"].get(name).is_some(), "{command}");
+    }
+    let root = value_fixture();
+    let stats = run(root.path(), "stats.project", &[], None);
+    assert_eq!(stats.result["records"], 2);
+    let empty = run(root.path(), "stats.dimension", &[("dimension", "language"), ("variant", "en"), ("key", "absent")], None);
+    assert_eq!(empty.result["items"][0]["eligible_fields"], 0);
+    assert_eq!(empty.result["items"][0]["zero_denominator"], true);
+    assert!(empty.result["items"][0]["coverage"].is_null());
+}
+
+#[test]
 fn dimension_metadata_and_variant_pages_use_public_locations() {
     let root = value_fixture();
     for variant in ["en", "ja"] {

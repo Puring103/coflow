@@ -3,17 +3,44 @@ use serde_json::{json, Value};
 use crate::{CfdValue, ReadOnlyProjectSession};
 use super::{Arguments, InputSnapshot, Result, Failure, query::{selected_records, value_at, paginate}};
 
+/// 项目统计与分组统计使用公共 DTO，数值指标的动态筛选单独处理。
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct ProjectStatistics {
+    pub types: usize,
+    pub records: usize,
+    pub files: usize,
+    pub dimensions: usize,
+    pub variants: usize,
+    pub references: usize,
+    pub diagnostics: usize,
+    pub rejected_records: usize,
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct RecordStatistics { pub group: String, pub count: usize }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct DimensionStatistics {
+    pub group: String,
+    pub eligible_fields: usize,
+    pub explicit: usize,
+    pub fallback: usize,
+    pub explicit_none: usize,
+    pub zero_denominator: bool,
+    pub coverage: Option<f64>,
+}
+
 pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &Arguments) -> Result<Value> {
     let selector = args.selector()?;
     let records = selected_records(session, &selector)?;
     let rejected = session.queries().rejected_records().len();
     let dimensions = session.queries().dimensions();
     match command {
-        "stats.project" => Ok(json!({"types": session.schema().all_types().count(), "records": records.len(),
-            "files": snapshot.files.iter().filter(|f| f.kind == "data" || f.kind == "schema").count(),
-            "dimensions": dimensions.len(), "variants": dimensions.iter().map(|d| d.variants.len()).sum::<usize>(),
-            "references": super::references::edges(session).len(), "diagnostics": session.queries().diagnostics().as_set().diagnostics.len(),
-            "rejected_records": rejected})),
+        "stats.project" => super::json(ProjectStatistics { types: session.schema().all_types().count(), records: records.len(),
+            files: snapshot.files.iter().filter(|f| f.kind == "data" || f.kind == "schema").count(),
+            dimensions: dimensions.len(), variants: dimensions.iter().map(|d| d.variants.len()).sum::<usize>(),
+            references: super::references::edges(session).len(), diagnostics: session.queries().diagnostics().as_set().diagnostics.len(),
+            rejected_records: rejected }),
         "stats.records" => {
             let group = args.get("group-by").unwrap_or("type");
             if !["type", "file"].contains(&group) { return Err(Failure::request("records group-by must be type or file")); }
@@ -22,7 +49,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                 let key = if group == "file" { session.queries().file_for_record(record.actual_type(), record.key()).unwrap_or_default() } else { record.actual_type() };
                 *groups.entry(key.into()).or_default() += 1;
             }
-            super::json(paginate(groups.into_iter().map(|(key, count)| json!({"group": key, "count": count})).collect(), &selector)?)
+            super::json(paginate(groups.into_iter().map(|(group, count)| RecordStatistics { group, count }).collect(), &selector)?)
         }
         "stats.field" => {
             let field = args.require("field")?;
@@ -76,9 +103,9 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                 }
             }
             if groups.is_empty() { groups.insert("all".into(), [0;3]); }
-            let items = groups.into_iter().map(|(group, [eligible, explicit, none])| json!({"group": group, "eligible_fields": eligible,
-                "explicit": explicit, "fallback": eligible-explicit, "explicit_none": none, "zero_denominator": eligible == 0,
-                "coverage": if eligible == 0 { None } else { Some(explicit as f64 / eligible as f64) }})).collect();
+            let items = groups.into_iter().map(|(group, [eligible, explicit, none])| DimensionStatistics { group, eligible_fields: eligible,
+                explicit, fallback: eligible-explicit, explicit_none: none, zero_denominator: eligible == 0,
+                coverage: if eligible == 0 { None } else { Some(explicit as f64 / eligible as f64) } }).collect();
             super::json(paginate(items, &selector)?)
         }
         "stats.refs" => {
