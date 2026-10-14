@@ -161,6 +161,7 @@ export function ViewEditorDialog({
         onMouseDown={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === 'Escape') onClose() }}
       >
+        <header className="view-editor-heading"><div><h2>{initial ? '视图设置' : '新建视图'}</h2><p>选择字段、调整顺序，保存常用的工作视图。</p></div><button className="btn btn-icon" aria-label="关闭视图设置" onClick={onClose}><Icon name="close" size={16} /></button></header>
         <div className="view-editor-body">
           {/* Name + type */}
           <label className="view-editor-field">
@@ -228,7 +229,7 @@ export function ViewEditorDialog({
           {/* Fields (columns for table; card fields for graph). Drag the grip
               handle to reorder; the row order is independent of checked state. */}
           <div className="view-editor-field">
-            <span>{kind === 'graph' ? '显示字段' : '显示列'}（拖动排序）</span>
+            <div className="view-field-tools"><span>{kind === 'graph' ? '显示字段' : '显示列'} · {fieldRows.filter(field => selected.has(field)).length} / {fieldRows.length}</span><button className="btn" onClick={() => setSelected(new Set(fieldRows))}>全选</button><button className="btn" onClick={() => setSelected(new Set())}>清空</button></div><span className="view-field-hint">勾选需要显示的字段，拖动右侧手柄调整顺序。</span>
             <ul className="view-field-list" ref={listRef}>
               {fieldRows.map(field => (
                 <li

@@ -1540,7 +1540,7 @@ export function EnumDirectSelect({
       ? input
       : <span className="dc-pill-input-wrap">
         {input}
-        {loadError && <span className="dc-load-error" title={loadError}>!</span>}
+        {loadError && <button type="button" className="dc-load-error" title={loadError} aria-label={`查看加载错误：${loadError}`}>!</button>}
       </span>
   }
   if (isFlag) {
@@ -1765,7 +1765,7 @@ export function RefDirectSelect({
     ? input
     : <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
       {input}
-      {loadError && <span className="dc-load-error" title={loadError}>!</span>}
+      {loadError && <button type="button" className="dc-load-error" title={loadError} aria-label={`查看加载错误：${loadError}`}>!</button>}
     </span>
 }
 
@@ -2558,7 +2558,7 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
     if (variants.length === 0) {
       return (
         <span className="dc-add-form">
-          {loadError && <span className="dc-load-error" title={loadError}>!</span>}
+          {loadError && <button type="button" className="dc-load-error" title={loadError} aria-label={`查看加载错误：${loadError}`}>!</button>}
           <input
             className="dc-input" autoFocus value={text}
             placeholder="枚举变体"

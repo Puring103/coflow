@@ -35,13 +35,13 @@ settings.workspace = workspaceToWire(tabs, tabs[0].id)
 
 function LayoutPreview() {
   const [compact, setCompact] = useState(true)
-  const [fontSize, setFontSize] = useState('13')
+  const [fontSize, setFontSize] = useState('14')
   return (
     <div className="component-preview" style={{ '--preview-font-size': fontSize + 'px' } as React.CSSProperties}>
       <div className="component-preview-bar">
-        <strong>真实组件预览</strong>
+        <strong>布局草案 · 真实组件</strong>
         <div className="component-preview-variants" role="group" aria-label="对比布局">
-          <button aria-pressed={compact} onClick={() => setCompact(true)}>紧凑方案</button>
+          <button aria-pressed={compact} onClick={() => setCompact(true)}>草案布局</button>
           <button aria-pressed={!compact} onClick={() => setCompact(false)}>原布局</button>
         </div>
         <label>字号 <select value={fontSize} onChange={event => setFontSize(event.target.value)}>

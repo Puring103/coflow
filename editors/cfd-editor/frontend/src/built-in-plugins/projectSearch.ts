@@ -183,7 +183,10 @@ function mountProjectSearch(
       resultList.append(state(`没有找到“${query}”`))
       return
     }
-    if (!results) return
+    if (!results) {
+      resultList.append(state('输入关键词开始搜索。按 Key 定位记录，或选择全文搜索字段内容。', 'project-search-empty'))
+      return
+    }
 
     for (const fileGroup of groupSearchHits(results.data.hits)) {
       const fileKey = `file:${fileGroup.filePath}`

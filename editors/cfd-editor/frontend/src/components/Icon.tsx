@@ -8,15 +8,24 @@ interface IconProps {
     | 'jump' | 'open' | 'dot' | 'edit'
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
     | 'download' | 'refresh' | 'build' | 'copy' | 'paste'
-    | 'sparkles' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
+    | 'sparkles' | 'gear' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
     | 'extensions' | 'code' | 'git-branch' | 'save' | 'trash'
-    | 'layout' | 'overview' | 'center'
+    | 'key' | 'panel-bottom' | 'panel-bottom-closed' | 'panel-left-closed' | 'panel-right-closed' | 'panel-left' | 'panel-right' | 'layout' | 'overview' | 'center'
   size?: number
   className?: string
 }
 
 const PATHS: Record<IconProps['name'], string> = {
-  'folder':        'M3 5a2 2 0 012-2h3.586a1 1 0 01.707.293l1.414 1.414A1 1 0 0011.414 5H17a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V5z',
+  // Lucide KeyRound：圆头钥匙。
+  'key': 'M2.586 17.414A2 2 0 002 18.828V21a1 1 0 001 1h3a1 1 0 001-1v-1a1 1 0 011-1h1a1 1 0 001-1v-1a1 1 0 011-1h.172a2 2 0 001.414-.586l.814-.814a6.5 6.5 0 10-4-4zM16.5 7.5h.01',
+  'panel-left-closed': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM9 3v18',
+  'panel-right-closed': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM15 3v18',
+  'panel-bottom': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM3 15h18',
+  'panel-bottom-closed': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM3 15h18',
+  'panel-right': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM15 3v18',
+  'panel-left': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM9 3v18',
+  'gear': 'M9.5 3h5l.6 2.5 2 1.2 2.5-.7 2.5 4.3-1.9 1.7v2l1.9 1.7-2.5 4.3-2.5-.7-2 1.2-.6 2.5h-5l-.6-2.5-2-1.2-2.5.7L1.9 15.7 3.8 14v-2L1.9 10.3 4.4 6l2.5.7 2-1.2L9.5 3zM15 13a3 3 0 11-6 0 3 3 0 016 0z',
+  'folder': 'M3 7V5a2 2 0 012-2h5l2 3h7a2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
   'file':          'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5',
   'file-cfd':      'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5M9 14h6M9 17h4',
   'arrow-left':    'M14 6l-6 6 6 6',
@@ -25,8 +34,8 @@ const PATHS: Record<IconProps['name'], string> = {
   'arrow-down':    'M12 5v14M5 12l7 7 7-7',
   'plus':          'M12 5v14M5 12h14',
   'close':         'M6 6l12 12M6 18L18 6',
-  'search':        'M11 4a7 7 0 105.196 11.804L21 20.5M11 4a7 7 0 016.196 10.196',
-  'help':          'M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 4M12 18h.01',
+  'search': 'M10.5 3a7.5 7.5 0 110 15 7.5 7.5 0 010-15zM16 16l5 5',
+  'help': 'M12 3a9 9 0 110 18 9 9 0 010-18zM9.5 9a2.5 2.5 0 015 0c0 2-2.5 2-2.5 4M12 16.5v.1',
   'chevron-right': 'M9 6l6 6-6 6',
   'chevron-down':  'M6 9l6 6 6-6',
   'chevron-up':    'M6 15l6-6 6 6',
@@ -47,7 +56,7 @@ const PATHS: Record<IconProps['name'], string> = {
   'lock':          'M5 11h14v10H5zM8 11V7a4 4 0 018 0v4',
   'download':      'M12 3v12M7 10l5 5 5-5M5 21h14',
   'refresh':       'M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 006.7 6.7L4 11M5.5 15A7 7 0 0017.3 17.3L20 13',
-  'build':         'M14 4l6 6-3 3-2-2-8.5 8.5-2-2L13 9l-2-2 3-3zM5 17l2 2',
+  'build': 'M4 7l8-4 8 4v10l-8 4-8-4V7zM4 7l8 4 8-4M12 11v10M8 5l8 4',
   'copy':          'M8 8h11v11H8zM5 16H4V5h11v1',
   'paste':         'M9 5h6M9 3h6v4H9zM7 5H5v16h14V5h-2',
   'sparkles':      'M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3zM19 14l.75 2.25L22 17l-2.25.75L19 20l-.75-2.25L16 17l2.25-.75L19 14z',
@@ -56,9 +65,9 @@ const PATHS: Record<IconProps['name'], string> = {
   'localization':  'M3 5h12M9 3v2M5 9c1.5 3 4 5 7 6M12 9c-1.5 3-4 5-7 6M14 21l4-10 4 10M15.5 17h5',
   'dimension':     'M4 19V5M4 19h14M4 19l6-6M10 13h7M10 13V6M10 13l7-7',
   'grip':          'M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01',
-  'extensions':    'M8 3a3 3 0 013 3v2h2V6a3 3 0 116 3 3 3 0 01-3 3h-2v2h2a3 3 0 11-3 3 3 3 0 01-3-3v-2h-2v2a3 3 0 11-3-3 3 3 0 013-3h2v-2H8a3 3 0 11-3-3 3 3 0 013-3z',
+  'extensions': 'M4 4h6v2a2 2 0 004 0V4h6v6h-2a2 2 0 000 4h2v6h-6v-2a2 2 0 00-4 0v2H4v-6h2a2 2 0 000-4H4z',
   'code':          'M8 9l-4 3 4 3M16 9l4 3-4 3M14 5l-4 14',
-  'git-branch':    'M6 3a3 3 0 100 6 3 3 0 000-6zM18 15a3 3 0 100 6 3 3 0 000-6zM6 9v3a6 6 0 006 6h3M18 15V6',
+  'git-branch': 'M6 8v8M6 8a3 3 0 100-6 3 3 0 000 6zM6 22a3 3 0 100-6 3 3 0 000 6zM18 8a3 3 0 100-6 3 3 0 000 6zM18 8v3a8 8 0 01-8 8H9',
   'save':          'M5 3h12l2 2v16H5zM8 3v6h8V3M8 21v-7h8v7',
   'trash':         'M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6',
   // 自动布局：树状层级（父节点连两个子节点）。
@@ -78,12 +87,16 @@ export function Icon({ name, size = 14, className }: IconProps) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={1.7}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
       style={{ flexShrink: 0 }}
     >
+      {/* 收起状态填充对应面板区域，与展开状态保持同一轮廓。 */}
+      {name === 'panel-left-closed' && <path d="M5 3h4v18H5a2 2 0 01-2-2V5a2 2 0 012-2z" fill="currentColor" stroke="none" />}
+      {name === 'panel-right-closed' && <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4z" fill="currentColor" stroke="none" />}
+      {name === 'panel-bottom-closed' && <path d="M3 15h18v4a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="currentColor" stroke="none" />}
       <path d={d} />
     </svg>
   )

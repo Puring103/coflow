@@ -5,6 +5,8 @@ import { Icon } from './Icon'
 export type ActivePane = 'files' | 'changes' | 'plugins' | `plugin:${string}`
 
 interface Props {
+  expanded?: boolean
+  hideUtilities?: boolean
   activePane: ActivePane
   registry: PluginRegistrySnapshot
   theme: 'light' | 'dark'
@@ -16,6 +18,8 @@ interface Props {
 }
 
 export function ActivityBar({
+  expanded = false,
+  hideUtilities = false,
   activePane,
   registry,
   theme,
@@ -53,6 +57,7 @@ export function ActivityBar({
           onClick={() => onSelectPane(pane)}
         >
           <Icon name={sidebar.icon ?? 'extensions'} size={20} />
+          {expanded && <span>{sidebar.title}</span>}
         </button>
       )
     })
@@ -67,6 +72,7 @@ export function ActivityBar({
         onClick={onSelectFiles}
       >
         <Icon name="folder" size={20} />
+        {expanded && <span>项目资源</span>}
       </button>
       <button
         className={`activity-btn${activePane === 'changes' ? ' active' : ''}`}
@@ -76,6 +82,7 @@ export function ActivityBar({
         onClick={onSelectChanges}
       >
         <Icon name="git-branch" size={20} />
+        {expanded && <span>变更检查</span>}
       </button>
       {sidebars(true)}
       <button
@@ -86,9 +93,10 @@ export function ActivityBar({
         onClick={() => onSelectPane('plugins')}
       >
         <Icon name="extensions" size={20} />
+        {expanded && <span>插件</span>}
       </button>
       {sidebars(false)}
-      <div className="activity-bar-bottom" ref={settingsRef}>
+      {!hideUtilities && <div className="activity-bar-bottom" ref={settingsRef}>
         <button
           className="activity-btn"
           title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
@@ -96,6 +104,7 @@ export function ActivityBar({
           onClick={onToggleTheme}
         >
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />
+          {expanded && <span>切换主题</span>}
         </button>
         <button
           className={`activity-btn${settingsOpen ? ' active' : ''}`}
@@ -106,6 +115,7 @@ export function ActivityBar({
           onClick={() => setSettingsOpen(open => !open)}
         >
           <Icon name="settings" size={20} />
+          {expanded && <span>帮助</span>}
         </button>
         {settingsOpen && (
           <div className="settings-dropdown" role="menu">
@@ -122,7 +132,7 @@ export function ActivityBar({
             </button>
           </div>
         )}
-      </div>
+      </div>}
     </nav>
   )
 }
