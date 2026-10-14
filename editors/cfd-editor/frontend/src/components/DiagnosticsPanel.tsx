@@ -7,6 +7,7 @@ import { cssEscape } from '../utils/dom'
 interface Props {
   /** 初始收起完整列表，诊断定位仍会主动展开。 */
   initialCollapsed?: boolean
+  structuredLayout?: boolean
   diagnostics: DiagnosticItem[]
   /** Focus request from outside (e.g. a record/field corner badge click).
    *  When `tick` changes we scroll to and pulse the matching item; if the
@@ -36,7 +37,7 @@ export function diagnosticsHeightFromStorage(value: string | null): number {
   return Number.isFinite(stored) ? Math.max(MIN_HEIGHT, stored) : DEFAULT_HEIGHT
 }
 
-export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, initialCollapsed = false }: Props) {
+export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, initialCollapsed = false, structuredLayout = false }: Props) {
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [height, setHeight] = useState(initialHeight)
   const [resizing, setResizing] = useState(false)
@@ -155,7 +156,7 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, 
         onClick={() => setCollapsed(c => !c)}
       >
         <span className="diag-title">
-          <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={11} aria-hidden />
+          <Icon name={collapsed || isEmpty ? 'panel-bottom-closed' : 'panel-bottom'} size={15} aria-hidden />
           诊断
         </span>
         {errors > 0 && (
@@ -197,10 +198,16 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, 
                       aria-hidden
                     />
                   </span>
-                  <span className="diag-msg">{diagnosticDisplayMessage(d)}</span>
+                  <span className="diag-msg">
+                    {diagnosticDisplayMessage(d)}
+                    {structuredLayout && <span className="diag-location">
+                      {d.target.kind !== 'none' && <span>{d.target.file_path}{d.target.kind === 'table_field' ? ` · ${d.target.field_path}` : ''}</span>}
+                      {d.code && <span className="diag-code">{d.code}</span>}
+                    </span>}
+                  </span>
                   {(d.code || canJump) && (
                     <span className="diag-actions">
-                      {d.code && <span className="diag-code">{d.code}</span>}
+                      {!structuredLayout && d.code && <span className="diag-code">{d.code}</span>}
                       {canJump ? (
                         <button
                           className="diag-jump"

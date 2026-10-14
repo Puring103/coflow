@@ -10,8 +10,8 @@ function getInitial(): Theme {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
-export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(getInitial)
+export function useTheme(initialTheme?: Theme) {
+  const [theme, setTheme] = useState<Theme>(() => initialTheme ?? getInitial())
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)

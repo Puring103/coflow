@@ -1,3 +1,4 @@
+import { recordMatchesKeySearch } from '../value/fieldValue'
 import { useState, useEffect, useMemo, useRef, memo } from 'react'
 
 import { ShortNameColumnMenu } from './ShortNameContext'
@@ -142,6 +143,7 @@ interface Props {
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   /** Pre-populate the search filter from the parent global search bar. */
+  keyOnlySearch?: boolean
   searchQuery?: string
   /** Search nested field values as well as the standard record summary. */
   fullTextSearch?: boolean
@@ -226,7 +228,7 @@ interface TableContextMenu {
   records: RecordCoordinate[]
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, keyOnlySearch = false, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [shortNameMenu, setShortNameMenu] = useState<{ x: number; y: number; field: string } | null>(null)
@@ -697,11 +699,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // Global filter optionally traverses nested collections and object fields.
   const globalFilterFn = useMemo(
     () => (row: { original: RecordRow }, _columnId: string, filterValue: string) => {
-      return fullTextSearch
+      return keyOnlySearch ? recordMatchesKeySearch(row.original, filterValue) : fullTextSearch
         ? recordMatchesFullTextSearch(row.original, filterValue)
         : recordMatchesSearch(row.original, filterValue)
     },
-  [fullTextSearch],
+  [fullTextSearch, keyOnlySearch],
   )
 
   const table = useReactTable({

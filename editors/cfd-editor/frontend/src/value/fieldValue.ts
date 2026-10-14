@@ -213,3 +213,8 @@ function valueKindLabel(value: FieldValue): string {
       : '{}'
   }
 }
+
+/** 仅匹配记录键，不把名称、类型或字段内容纳入搜索。 */
+export function recordMatchesKeySearch(record: RecordRow, query: string): boolean {
+  return record.coordinate.key.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+}

@@ -1,3 +1,4 @@
+import { recordMatchesFullTextSearch, recordMatchesKeySearch } from '../value/fieldValue'
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import { ShortNameMenuItem } from './ShortNameContext'
@@ -61,6 +62,8 @@ interface Props {
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   /** Filters the sidebar record list (shared global search). */
+  fullTextSearch?: boolean
+  keyOnlySearch?: boolean
   recordSearch?: string
   /** Hide the left record list entirely (singleton types have one record). */
   hideRecordList?: boolean
@@ -107,7 +110,7 @@ interface Props {
   onToggleExpandedPath?: (path: string, expanded: boolean) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths, expandedPaths: controlledExpandedPaths, onToggleExpandedPath }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, keyOnlySearch = false, fullTextSearch = false, hideRecordList, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, highlightField, onHighlightConsumed, onOpenRecord, onSelectRecord, selection, onSelectValue, onRenderCellText, onParseCellText, onWriteField, onWriteFields, onCollectionEdit, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, onExitLeft, onExitUp, firstRecordFocusRequest, onFirstRecordFocusConsumed, diffChangedPaths, expandedPaths: controlledExpandedPaths, onToggleExpandedPath }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -182,7 +185,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     : data.records
 
   const sidebarRecords = recordSearch
-    ? allSidebarRecords.filter(record => recordMatchesSearch(record, recordSearch))
+    ? allSidebarRecords.filter(record => (keyOnlySearch ? recordMatchesKeySearch : fullTextSearch ? recordMatchesFullTextSearch : recordMatchesSearch)(record, recordSearch))
     : allSidebarRecords
   const organizedRecords = useMemo(
     () => organizeRecordRows(sidebarRecords, recordGroups ?? []),
