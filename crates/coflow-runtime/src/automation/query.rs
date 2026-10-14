@@ -55,7 +55,9 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>>
 }
 
 pub(crate) fn selected_records(session: &ReadOnlyProjectSession, selector: &Selector) -> Result<Vec<CfdRecord>> {
+    if !["source", "effective", "both"].contains(&selector.view.as_str()) { return Err(Failure::request("view must be source, effective or both")); }
     let types = selected_types(session, selector)?;
+    let filters = selector.filter.as_deref().map(|expression| super::filter::compile(session, &types, expression)).transpose()?;
     for field in &selector.fields { if field != "key" { super::execute::public_path(field)?; } }
     // 验证范围取自 Schema，不能让空项目或后续筛选掩盖不合法的投影与排序字段。
     for ty in &types {
@@ -101,8 +103,9 @@ pub(crate) fn selected_records(session: &ReadOnlyProjectSession, selector: &Sele
         if let Some(text) = &selector.text {
             if !record.key().contains(text) && !record.fields().values().any(|v| crate::value_summary(v).contains(text)) { continue; }
         }
-        if let Some(filter) = &selector.filter {
-            if !super::filter::matches(session, &record, filter)? { continue; }
+        if let Some(filters) = &filters {
+            let filter = filters.get(record.actual_type()).ok_or_else(|| Failure::request("filter type is outside the selected range"))?;
+            if !filter.matches(&record) { continue; }
         }
         records.push(record);
     }

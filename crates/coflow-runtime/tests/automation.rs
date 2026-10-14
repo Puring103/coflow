@@ -127,6 +127,60 @@ fn related_schema_collects_transitive_constants_and_shares_symbol_limits() {
 }
 
 #[test]
+fn typed_filters_support_functions_precedence_and_unreachable_values() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "data Details { value: Option<int>; }\ntable Item { active: bool; text: string; numbers: [int]; labels: {string: int}; details: Option<Details>; }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { active: true, text: \"a, && )\", numbers: [1, 2], labels: {\"red\": 1}, details: Some({ value: None }) }\nb: Item { active: false, text: \"hello\", numbers: [], labels: {}, details: None }\nc: Item { active: true, text: \"hello\", numbers: [3], labels: {\"blue\": 1}, details: Some({ value: Some(7) }) }\n").unwrap();
+    for (condition, expected) in [
+        ("contains(text, \"a, && )\")", vec!["a"]),
+        ("contains(numbers, 2) && contains(labels, \"red\")", vec!["a"]),
+        ("labels [ \"red\" ] == 1", vec!["a"]),
+        ("is_none(details.value)", vec!["a"]),
+        ("is_some(details.value)", vec!["c"]),
+        ("!is_reachable(details.value)", vec!["b"]),
+        ("details.value != None", vec!["c"]),
+        ("details.value == Some(7)", vec!["c"]),
+        ("!active == true || active && contains(numbers, 2)", vec!["a", "b"]),
+        ("!(active && contains(numbers, 2))", vec!["b", "c"]),
+        ("!!active == true", vec!["a", "c"]),
+        ("true || false && false", vec!["a", "b", "c"]),
+    ] {
+        let result = run(root.path(), "data.list", &[("type", "Item"), ("where", condition)], None);
+        assert_eq!(result.status, Status::Success, "{condition}: {result:?}");
+        let keys: Vec<_> = result.result["items"].as_array().unwrap().iter().map(|item| item["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, expected, "{condition}");
+    }
+}
+
+#[test]
+fn filter_type_checks_cover_empty_data_and_both_boolean_branches() {
+    let root = fixture();
+    fs::write(root.path().join("data/items.cfd"), "").unwrap();
+    let project = Project::open_schema_only(Some(root.path())).unwrap();
+    let snapshot = InputSnapshot::capture(&project).unwrap();
+    for expression in ["false && absent == 1", "true || value == \"bad\"", "is_none(value)", "contains(value, 1)",
+        "contains(numbers, \"bad\")", "value is none", "is_empty(numbers)", "value > 1)", "true && (false", "!value > 1"] {
+        let args = Arguments([("type".into(), vec!["Item".into()]), ("where".into(), vec![expression.into()])].into());
+        let failure = execute("data.list", &project, &snapshot, &args, None, root.path()).unwrap_err();
+        assert!(matches!(failure.error_category, Some(coflow_runtime::automation::ErrorCategory::Request)), "{expression}: {failure:?}");
+    }
+}
+
+#[test]
+fn filter_dictionary_keys_keep_integer_precision_and_enum_identity() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ntable Item { weights: {int: string}; palette: {Color: int}; caption: fstring = f\"Hello\"; }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { weights: {9007199254740993: \"big\"}, palette: {Color::Red: 1} }\nb: Item { weights: {-3: \"small\"}, palette: {Color::Blue: 1} }\n").unwrap();
+    for (condition, expected) in [("contains(weights, 9007199254740993)", vec!["a"]), ("contains(palette, Color::Blue)", vec!["b"]),
+        ("caption == \"Hello\" && contains(caption, \"ell\")", vec!["a", "b"])] {
+        let result = run(root.path(), "data.list", &[("type", "Item"), ("where", condition)], None);
+        assert_eq!(result.status, Status::Success, "{condition}: {result:?}");
+        let keys: Vec<_> = result.result["items"].as_array().unwrap().iter().map(|item| item["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, expected, "{condition}");
+    }
+}
+
+#[test]
 fn cursors_reject_changes_to_command_and_command_specific_filters() {
     let root = fixture();
     let first = run(root.path(), "schema.symbols", &[("limit", "1")], None);
