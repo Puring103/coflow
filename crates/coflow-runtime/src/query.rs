@@ -224,34 +224,24 @@ impl<'a> ProjectQueries<'a> {
         key: &str,
         dimension: &str,
     ) -> Result<String, crate::DiagnosticSet> {
-        let error = |message: String| {
+        let owner = self.file_for_record(actual_type, key).ok_or_else(|| {
             crate::DiagnosticSet::one(crate::Diagnostic::error(
                 "MUTATION-DIMENSION-DESTINATION",
                 "WRITE",
-                message,
+                "dimension owner file not found",
             ))
-        };
-        let project = &self.session.project;
-        let dir = project
-            .config()
-            .dimensions
-            .get(dimension)
-            .and_then(|config| config.dir.as_ref())
-            .ok_or_else(|| {
-                error(format!(
-                    "configure dimensions.{dimension}.dir before creating overrides"
-                ))
-            })?;
-        let owner = self
-            .file_for_record(actual_type, key)
-            .ok_or_else(|| error("dimension owner file not found".into()))?;
-        let absolute = project.resolve_path(std::path::Path::new(owner));
-        let relative = absolute.strip_prefix(project.root_dir()).map_err(|_| {
-            error("automatic dimension files require a project-relative owner file".into())
         })?;
+        let destination = dimension_destination_for_owner(
+            &self.session.project,
+            &self
+                .session
+                .project
+                .resolve_path(std::path::Path::new(owner)),
+            dimension,
+        )?;
         Ok(crate::project_path(
-            project.root_dir(),
-            &project.resolve_path(dir).join(relative),
+            self.session.project.root_dir(),
+            &destination,
         ))
     }
 
@@ -631,4 +621,33 @@ mod tests {
             Some("int")
         );
     }
+}
+
+/// 所有宿主按项目相对路径镜像主体文件，维度目录由项目配置明确指定。
+pub(crate) fn dimension_destination_for_owner(
+    project: &crate::Project,
+    owner: &std::path::Path,
+    dimension: &str,
+) -> Result<std::path::PathBuf, crate::DiagnosticSet> {
+    let error = |message| {
+        crate::DiagnosticSet::one(crate::Diagnostic::error(
+            "MUTATION-DIMENSION-DESTINATION",
+            "WRITE",
+            message,
+        ))
+    };
+    let directory = project
+        .config()
+        .dimensions
+        .get(dimension)
+        .and_then(|configuration| configuration.dir.as_ref())
+        .ok_or_else(|| {
+            error(format!(
+                "configure dimensions.{dimension}.dir before creating overrides"
+            ))
+        })?;
+    let relative = owner.strip_prefix(project.root_dir()).map_err(|_| {
+        error("automatic dimension files require a project-relative owner file".to_string())
+    })?;
+    Ok(project.resolve_path(directory).join(relative))
 }

@@ -218,16 +218,93 @@ fn prepare_project_code<T>(
 }
 
 /// 为自动化宿主提供只读产物差异和统一发布。
-pub fn codegen_automation(project: &Project, preview: bool) -> Result<CommandOutcome<serde_json::Value>, DiagnosticSet> {
-    let snapshot = crate::automation::InputSnapshot::capture(project).map_err(|e| e.diagnostics)?;
-    prepare_project_code(project, |prepared, _| {
-        let report = prepared.preview()?;
+pub fn codegen_automation(
+    project: &Project,
+    preview: bool,
+) -> crate::automation::Result<CommandOutcome<serde_json::Value>> {
+    use serde_json::json;
+    let snapshot = crate::automation::InputSnapshot::capture(project)?;
+    let mut publication_failure = None;
+    let outcome = prepare_project_code(project, |prepared, _| {
+        let mut report = prepared.preview()?;
+        for file in report["files"].as_array_mut().into_iter().flatten() {
+            if let Some(path) = file["path"].as_str() {
+                file["path"] = json!(crate::project_path(project.root_dir(), Path::new(path)));
+            }
+        }
+        report["written"] = json!(false);
+        report["dry_run"] = json!(preview);
+        report["written_files"] = json!([]);
         if !preview {
-            snapshot.verify(project).map_err(|e| e.diagnostics)?;
-            prepared.publish()?;
+            let failure = match snapshot.verify(project) {
+                Err(failure) => Some(failure.with_result(json!({"artifacts":report}))),
+                Ok(()) => match prepared.publish_detailed() {
+                    Ok(paths) => {
+                        report["written"] = json!(!paths.is_empty());
+                        report["written_files"] =
+                            json!(artifact_report_files(project, &report, &paths));
+                        None
+                    }
+                    Err(failure) => {
+                        let failed = if let Some(publication) = failure.publication {
+                            let written =
+                                artifact_report_files(project, &report, &publication.written);
+                            let restored =
+                                artifact_report_files(project, &report, &publication.restored);
+                            let mut failure = crate::automation::publication_failure(
+                                project.root_dir(),
+                                publication,
+                                report.clone(),
+                            );
+                            if let Some(report) = failure.result.as_mut() {
+                                report["written_files"] = json!(written);
+                                report["restored_files"] = json!(restored);
+                            }
+                            failure.result =
+                                failure.result.map(|report| json!({"artifacts":report}));
+                            failure
+                        } else {
+                            let mut failed = crate::automation::Failure::from(failure.diagnostics);
+                            failed.status = crate::automation::Status::Error;
+                            failed.error_category =
+                                Some(crate::automation::ErrorCategory::Execution);
+                            failed.with_result(json!({"artifacts":report}))
+                        };
+                        Some(failed)
+                    }
+                },
+            };
+            if let Some(failure) = failure {
+                let diagnostics = failure.diagnostics.clone();
+                publication_failure = Some(failure);
+                return Err(diagnostics);
+            }
         }
         Ok(report)
-    })
+    });
+    if let Some(failure) = publication_failure {
+        return Err(failure);
+    }
+    outcome.map_err(crate::automation::Failure::from)
+}
+
+fn artifact_report_files(
+    project: &Project,
+    report: &serde_json::Value,
+    paths: &[PathBuf],
+) -> Vec<String> {
+    report["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|file| file["path"].as_str())
+        .filter(|file| {
+            paths.iter().any(|path| {
+                crate::path_is_same_or_descendant(&project.resolve_path(Path::new(file)), path)
+            })
+        })
+        .map(str::to_string)
+        .collect()
 }
 
 fn codegen_report(pending: &[PendingCodegen]) -> CodegenProjectReport {

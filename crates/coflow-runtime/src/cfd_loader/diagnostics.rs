@@ -95,6 +95,35 @@ pub enum CfdTextErrorCode {
     ReferenceNeedsMarker,
 }
 
+impl CfdTextErrorCode {
+    pub const ALL: &[Self] = &[
+        Self::Syntax,
+        Self::UnknownType,
+        Self::AbstractObjectType,
+        Self::ObjectTypeMismatch,
+        Self::UnknownField,
+        Self::DuplicateField,
+        Self::ReservedIdField,
+        Self::TypeMismatch,
+        Self::InvalidEnumVariant,
+        Self::ReferenceNeedsMarker,
+    ];
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Syntax => "CFD-TEXT-Syntax",
+            Self::UnknownType => "CFD-TEXT-UnknownType",
+            Self::AbstractObjectType => "CFD-TEXT-AbstractObjectType",
+            Self::ObjectTypeMismatch => "CFD-TEXT-ObjectTypeMismatch",
+            Self::UnknownField => "CFD-TEXT-UnknownField",
+            Self::DuplicateField => "CFD-TEXT-DuplicateField",
+            Self::ReservedIdField => "CFD-TEXT-ReservedIdField",
+            Self::TypeMismatch => "CFD-TEXT-TypeMismatch",
+            Self::InvalidEnumVariant => "CFD-TEXT-InvalidEnumVariant",
+            Self::ReferenceNeedsMarker => "CFD-TEXT-ReferenceNeedsMarker",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CfdTextSpan {
     pub start: usize,
@@ -122,21 +151,18 @@ pub(super) fn cfd_error_to_diagnostics(
             .into_iter()
             .map(|diagnostic| {
                 let range = byte_range(source, diagnostic.span.start, diagnostic.span.end);
-                Diagnostic::error(
-                    format!("CFD-TEXT-{:?}", diagnostic.code),
-                    "CFD",
-                    diagnostic.message,
-                )
-                .with_primary(Label {
-                    location: SourceLocation::FileSpan {
-                        path: file.to_path_buf(),
-                        start_line: range.start.line,
-                        start_character: range.start.character,
-                        end_line: range.end.line,
-                        end_character: range.end.character,
+                Diagnostic::error(diagnostic.code.as_str(), "CFD", diagnostic.message).with_primary(
+                    Label {
+                        location: SourceLocation::FileSpan {
+                            path: file.to_path_buf(),
+                            start_line: range.start.line,
+                            start_character: range.start.character,
+                            end_line: range.end.line,
+                            end_character: range.end.character,
+                        },
+                        message: None,
                     },
-                    message: None,
-                })
+                )
             })
             .collect(),
     }

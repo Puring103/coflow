@@ -1,6 +1,6 @@
 use crate::codegen::{CodeArtifactFile, IdAsEnumValues};
 use crate::{Diagnostic, DiagnosticSet, Label, Project, SourceLocation};
-use coflow_staging::{StagedChange, StagedDirectory, StagedFile};
+use coflow_staging::{DirectorySnapshot, StagedChange, StagedDirectory, StagedFile};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
@@ -19,10 +19,25 @@ pub(crate) struct CodeOutput {
 #[derive(Debug)]
 pub(crate) struct PreparedCodeRelease {
     outputs: Vec<CodeOutput>,
+    output_snapshots: Vec<DirectorySnapshot>,
     id_as_enum_values: IdAsEnumValues,
     enum_lock_path: PathBuf,
     enum_lock_original: Option<Vec<u8>>,
     enum_lock_changed: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct ArtifactPublicationFailure {
+    pub(crate) diagnostics: DiagnosticSet,
+    pub(crate) publication: Option<coflow_staging::transaction::PublishFailure>,
+}
+impl From<DiagnosticSet> for ArtifactPublicationFailure {
+    fn from(diagnostics: DiagnosticSet) -> Self {
+        Self {
+            diagnostics,
+            publication: None,
+        }
+    }
 }
 
 impl PreparedCodeRelease {
@@ -32,6 +47,13 @@ impl PreparedCodeRelease {
         id_as_enum_values: IdAsEnumValues,
     ) -> Result<Self, DiagnosticSet> {
         validate_outputs(project, &outputs)?;
+        let output_snapshots = outputs
+            .iter()
+            .map(|output| {
+                DirectorySnapshot::capture(&output.directory)
+                    .map_err(|error| map_staging_error(&error))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let enum_lock_path = enum_lockfile_path(project);
         let enum_lock_original = read_optional_file(&enum_lock_path)?;
         let current_values =
@@ -39,6 +61,7 @@ impl PreparedCodeRelease {
         let enum_lock_changed = current_values != id_as_enum_values;
         Ok(Self {
             outputs,
+            output_snapshots,
             id_as_enum_values,
             enum_lock_path,
             enum_lock_original,
@@ -61,7 +84,11 @@ impl PreparedCodeRelease {
     pub(crate) fn preview(&self) -> Result<serde_json::Value, DiagnosticSet> {
         let mut changes = Vec::new();
         for output in &self.outputs {
-            let expected: BTreeMap<_,_> = output.files.iter().map(|f| (f.relative_path.clone(), &f.contents)).collect();
+            let expected: BTreeMap<_, _> = output
+                .files
+                .iter()
+                .map(|f| (f.relative_path.clone(), &f.contents))
+                .collect();
             for (path, contents) in &expected {
                 let absolute = output.directory.join(path);
                 let previous = read_optional_file(&absolute)?;
@@ -71,87 +98,99 @@ impl PreparedCodeRelease {
             }
             if output.directory.exists() {
                 for entry in walkdir::WalkDir::new(&output.directory) {
-                    let entry = entry.map_err(|e| artifact_error(&output.directory,e.to_string()))?;
-                    if entry.file_type().is_file() && entry.path().extension().is_none_or(|e| e != "meta") {
+                    let entry =
+                        entry.map_err(|e| artifact_io_error(&output.directory, e.to_string()))?;
+                    if entry.file_type().is_file()
+                        && entry.path().extension().is_none_or(|e| e != "meta")
+                    {
                         if let Ok(relative) = entry.path().strip_prefix(&output.directory) {
-                            if !expected.contains_key(relative) { changes.push(serde_json::json!({"path":entry.path(),"change":"deleted"})); }
+                            if !expected.contains_key(relative) {
+                                changes.push(
+                                    serde_json::json!({"path":entry.path(),"change":"deleted"}),
+                                );
+                            }
                         }
                     }
                 }
             }
         }
-        if self.enum_lock_changed { changes.push(serde_json::json!({"path":self.enum_lock_path,"change":if self.enum_lock_original.is_some(){"modified"}else{"added"},"mapping":self.id_as_enum_values})); }
+        if self.enum_lock_changed {
+            changes.push(serde_json::json!({"path":self.enum_lock_path,"change":if self.enum_lock_original.is_some(){"modified"}else{"added"},"mapping":self.id_as_enum_values}));
+        }
         Ok(serde_json::json!({"changed":!changes.is_empty(),"files":changes}))
     }
 
     pub(crate) fn publish(self) -> Result<(), DiagnosticSet> {
-        if !self.has_changes()? {
-            return Ok(());
-        }
-        let mut staged = Vec::with_capacity(self.outputs.len());
-        for output in &self.outputs {
+        self.publish_detailed()
+            .map(|_| ())
+            .map_err(|failure| failure.diagnostics)
+    }
+
+    pub(crate) fn publish_detailed(self) -> Result<Vec<PathBuf>, ArtifactPublicationFailure> {
+        let mut staged: Vec<(PathBuf, Box<dyn StagedChange>)> =
+            Vec::with_capacity(self.outputs.len() + 1);
+        for (output, snapshot) in self.outputs.iter().zip(self.output_snapshots) {
+            snapshot
+                .verify(&output.directory)
+                .map_err(ArtifactPublicationFailure::from)?;
             if artifact_files_match(&output.files, &output.directory)? {
                 continue;
             }
-            let directory = StagedDirectory::create(&output.directory)
-                .map_err(|error| map_staging_error(&error))?;
+            let directory = StagedDirectory::create_with_snapshot(&output.directory, snapshot)
+                .map_err(ArtifactPublicationFailure::from)?;
             write_artifacts(directory.staging(), &output.directory, &output.files)
                 .and_then(|()| preserve_unity_meta(&output.directory, directory.staging()))?;
-            staged.push(directory);
+            staged.push((output.directory.clone(), Box::new(directory)));
         }
-        let mut staged_lock = if self.enum_lock_changed {
-            Some(
-                StagedFile::create(
+        if self.enum_lock_changed {
+            let contents = serde_json::to_vec_pretty(&self.id_as_enum_values).map_err(|error| {
+                artifact_error(
                     &self.enum_lock_path,
-                    self.enum_lock_original,
-                    &serde_json::to_vec_pretty(&self.id_as_enum_values).map_err(|error| {
-                        artifact_error(
-                            &self.enum_lock_path,
-                            format!("failed to serialize enum lock: {error}"),
-                        )
-                    })?,
+                    format!("failed to serialize enum lock: {error}"),
                 )
-                .map_err(|error| map_staging_error(&error))?,
-            )
-        } else {
-            None
-        };
-        for output in &mut staged {
-            if let Err(error) = output.publish() {
-                let mut diagnostics = map_staging_error(&error);
-                diagnostics.extend(rollback_requested(&mut staged));
-                return Err(diagnostics);
+            })?;
+            let lock = StagedFile::create(&self.enum_lock_path, self.enum_lock_original, &contents)
+                .map_err(ArtifactPublicationFailure::from)?;
+            staged.push((self.enum_lock_path, Box::new(lock)));
+        }
+        coflow_staging::transaction::publish_staged(staged).map_err(|publication| {
+            let mut diagnostics = artifact_error(Path::new("."), publication.message.clone());
+            for (path, message) in &publication.restoration_errors {
+                diagnostics.extend(artifact_error(path, message));
             }
-        }
-
-        if let Some(lock) = &mut staged_lock {
-            if let Err(error) = lock.publish() {
-                let mut diagnostics = map_staging_error(&error);
-                if let Err(restoration) = lock.restore() { diagnostics.extend(map_staging_error(&restoration)); }
-                diagnostics.extend(rollback_requested(&mut staged));
-                return Err(diagnostics);
+            ArtifactPublicationFailure {
+                diagnostics,
+                publication: Some(publication),
             }
-        }
-        for output in &mut staged {
-            output.finish();
-        }
-        if let Some(lock) = &mut staged_lock {
-            lock.finish();
-        }
-        Ok(())
+        })
     }
-}
-
-fn rollback_requested(outputs: &mut [StagedDirectory]) -> DiagnosticSet {
-    let mut diagnostics = DiagnosticSet::empty();
-    for output in outputs.iter_mut().rev() {
-        if let Err(error) = StagedChange::restore(output) { diagnostics.extend(map_staging_error(&error)); }
-    }
-    diagnostics
 }
 
 fn map_staging_error(error: &coflow_staging::StagingError) -> DiagnosticSet {
-    artifact_error(error.path(), error.to_string())
+    let mut diagnostic = artifact_diagnostic(error.path(), error.to_string());
+    diagnostic.code = if error.is_conflict() {
+        "WRITE-CONFLICT"
+    } else {
+        "ARTIFACT-IO"
+    }
+    .into();
+    DiagnosticSet::one(diagnostic)
+}
+impl From<coflow_staging::StagingError> for ArtifactPublicationFailure {
+    fn from(error: coflow_staging::StagingError) -> Self {
+        Self {
+            diagnostics: map_staging_error(&error),
+            publication: Some(coflow_staging::transaction::PublishFailure {
+                message: error.to_string(),
+                conflict: error.is_conflict(),
+                written: Vec::new(),
+                restored: Vec::new(),
+                restoration_failed: Vec::new(),
+                restoration_conflicts: Vec::new(),
+                restoration_errors: Vec::new(),
+            }),
+        }
+    }
 }
 
 fn validate_outputs(project: &Project, outputs: &[CodeOutput]) -> Result<(), DiagnosticSet> {
@@ -315,15 +354,16 @@ fn compare_tree(
     directory: &Path,
     expected: &mut BTreeMap<PathBuf, &[u8]>,
 ) -> Result<bool, DiagnosticSet> {
-    let entries = fs::read_dir(directory)
-        .map_err(|error| artifact_error(directory, format!("failed to inspect output: {error}")))?;
+    let entries = fs::read_dir(directory).map_err(|error| {
+        artifact_io_error(directory, format!("failed to inspect output: {error}"))
+    })?;
     for entry in entries {
         let entry = entry.map_err(|error| {
-            artifact_error(directory, format!("failed to inspect output: {error}"))
+            artifact_io_error(directory, format!("failed to inspect output: {error}"))
         })?;
         let path = entry.path();
         let file_type = entry.file_type().map_err(|error| {
-            artifact_error(&path, format!("failed to inspect output entry: {error}"))
+            artifact_io_error(&path, format!("failed to inspect output entry: {error}"))
         })?;
         if file_type.is_dir() {
             if !compare_tree(root, &path, expected)? {
@@ -335,7 +375,7 @@ fn compare_tree(
             return Ok(false);
         }
         let relative = path.strip_prefix(root).map_err(|error| {
-            artifact_error(&path, format!("failed to resolve output entry: {error}"))
+            artifact_io_error(&path, format!("failed to resolve output entry: {error}"))
         })?;
         if is_unity_meta(&path) && !expected.contains_key(relative) {
             continue;
@@ -344,7 +384,7 @@ fn compare_tree(
             return Ok(false);
         };
         let actual = fs::read(&path).map_err(|error| {
-            artifact_error(&path, format!("failed to read output entry: {error}"))
+            artifact_io_error(&path, format!("failed to read output entry: {error}"))
         })?;
         if !generated_text_matches(&actual, contents) {
             return Ok(false);
@@ -381,7 +421,7 @@ fn write_artifacts(
         let path = root.join(&file.relative_path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| {
-                artifact_error(
+                artifact_io_error(
                     parent,
                     format!("failed to create artifact directory: {error}"),
                 )
@@ -393,14 +433,14 @@ fn write_artifacts(
             .filter(|contents| generated_text_matches(contents, file.contents.as_bytes()))
             .unwrap_or(file.contents.as_bytes());
         let mut output = fs::File::create(&path).map_err(|error| {
-            artifact_error(&path, format!("failed to create artifact: {error}"))
+            artifact_io_error(&path, format!("failed to create artifact: {error}"))
         })?;
-        output
-            .write_all(contents)
-            .map_err(|error| artifact_error(&path, format!("failed to write artifact: {error}")))?;
-        output
-            .sync_all()
-            .map_err(|error| artifact_error(&path, format!("failed to sync artifact: {error}")))?;
+        output.write_all(contents).map_err(|error| {
+            artifact_io_error(&path, format!("failed to write artifact: {error}"))
+        })?;
+        output.sync_all().map_err(|error| {
+            artifact_io_error(&path, format!("failed to sync artifact: {error}"))
+        })?;
     }
     Ok(())
 }
@@ -410,15 +450,15 @@ fn preserve_unity_meta(source: &Path, destination: &Path) -> Result<(), Diagnost
         return Ok(());
     }
     for entry in fs::read_dir(source).map_err(|error| {
-        artifact_error(source, format!("failed to inspect Unity metadata: {error}"))
+        artifact_io_error(source, format!("failed to inspect Unity metadata: {error}"))
     })? {
         let entry = entry.map_err(|error| {
-            artifact_error(source, format!("failed to inspect Unity metadata: {error}"))
+            artifact_io_error(source, format!("failed to inspect Unity metadata: {error}"))
         })?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
         let file_type = entry.file_type().map_err(|error| {
-            artifact_error(
+            artifact_io_error(
                 &source_path,
                 format!("failed to inspect Unity metadata: {error}"),
             )
@@ -426,7 +466,7 @@ fn preserve_unity_meta(source: &Path, destination: &Path) -> Result<(), Diagnost
         if file_type.is_dir() {
             if !destination_path.exists() {
                 fs::create_dir_all(&destination_path).map_err(|error| {
-                    artifact_error(
+                    artifact_io_error(
                         &destination_path,
                         format!("failed to stage Unity metadata directory: {error}"),
                     )
@@ -437,7 +477,7 @@ fn preserve_unity_meta(source: &Path, destination: &Path) -> Result<(), Diagnost
             }
         } else if file_type.is_file() && is_unity_meta(&source_path) && !destination_path.exists() {
             fs::copy(&source_path, &destination_path).map_err(|error| {
-                artifact_error(
+                artifact_io_error(
                     &source_path,
                     format!("failed to preserve Unity metadata: {error}"),
                 )
@@ -457,7 +497,7 @@ fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>, DiagnosticSet> {
     match fs::read(path) {
         Ok(contents) => Ok(Some(contents)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(artifact_error(
+        Err(error) => Err(artifact_io_error(
             path,
             format!("failed to read file: {error}"),
         )),
@@ -498,4 +538,10 @@ fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Diagnostic {
 
 pub(crate) fn artifact_error(path: &Path, message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(artifact_diagnostic(path, message))
+}
+
+fn artifact_io_error(path: &Path, message: impl Into<String>) -> DiagnosticSet {
+    let mut diagnostic = artifact_diagnostic(path, message);
+    diagnostic.code = "ARTIFACT-IO".into();
+    DiagnosticSet::one(diagnostic)
 }

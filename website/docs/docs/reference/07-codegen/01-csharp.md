@@ -11,7 +11,7 @@ codegen:
     namespace: Game.Config
 ```
 
-运行 `coflow codegen .` 后，将 `runtimes/csharp/Coflow.Loader` 与生成文件加入同一 C# 项目。
+运行 `coflow codegen --project .` 后，将 `runtimes/csharp/Coflow.Loader` 与生成文件加入同一 C# 项目。
 
 ```csharp
 using Coflow.Loader;

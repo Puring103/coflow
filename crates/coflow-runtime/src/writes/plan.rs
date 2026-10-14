@@ -81,13 +81,11 @@ pub(crate) struct ReorderPlan {
 
 pub(crate) struct TransferPlan {
     pub(super) coordinate: RecordCoordinate,
-    pub(super) fields: std::collections::BTreeMap<String, CfdValue>,
     pub(super) source_origin: RecordOrigin,
     pub(super) source_display_path: String,
     pub(super) source_writer: Arc<CfdWriter>,
     pub(super) destination_display_path: String,
     pub(super) destination: CfdSource,
-    pub(super) destination_writer: Arc<CfdWriter>,
     pub(super) before: Option<ResolvedRecordPosition>,
 }
 
@@ -261,13 +259,8 @@ fn prepare_transfer_record(
             "record has no writable source origin",
         )));
     }
-    let model_record = session
-        .model
-        .record(record_ref.id)
-        .ok_or_else(|| reorder_invariant("record is missing from the data model"))?;
     let source_writer = lookup_source_writer(catalog);
     let destination = source_for_file(session, destination_file)?;
-    let destination_writer = lookup_source_writer(catalog);
 
     let order = session
         .records
@@ -287,20 +280,13 @@ fn prepare_transfer_record(
         )));
     }
     let before = order.get(target_index).copied().map(resolved_position);
-    let fields = model_record
-        .fields()
-        .iter()
-        .map(|(name, value)| (name.as_str().to_string(), value.clone()))
-        .collect();
     Ok(MutationExecutionPlan::Transfer(TransferPlan {
         coordinate: record_ref.coordinate.clone(),
-        fields,
         source_origin: record_ref.origin.clone(),
         source_display_path: record_ref.display_path.clone(),
         source_writer,
         destination_display_path: destination_file.to_string(),
         destination,
-        destination_writer,
         before,
     }))
 }

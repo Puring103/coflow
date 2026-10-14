@@ -168,3 +168,75 @@ coflow explain REF-001 --json
 | `CLI-SORT` | 排序字段无效 |
 | `CLI-FILTER` | 筛选条件无效 |
 | `CLI-VALUE` | 写入值无效 |
+| `ARTIFACT-001` | 代码产物处理失败 |
+| `ARTIFACT-IO` | 代码产物读写失败 |
+| `CFD-TEXT-Syntax` | CFD 源码语法无效 |
+| `CHECK-BUDGET` | 规则规划预算耗尽 |
+| `CLI-LSP` | 语言服务启动失败 |
+| `DIM-CONFIG-002` | 维度目录配置无效 |
+| `GIT-DIFF` | Git 差异读取失败 |
+| `GIT-EXTERNAL-SOURCE` | 历史外部输入不可还原 |
+| `PROJECT-001` | 项目配置或生成目标无效 |
+| `RUNTIME-INTERNAL` | 运行时内部状态无效 |
+| `SCHEMA-STDIN-PATH` | 标准输入声明路径无效 |
+| `MUTATION-COORDINATE` | 记录坐标无效 |
+| `MUTATION-DEFAULT` | 默认值物化失败 |
+| `MUTATION-DIMENSION` | 维度修改目标无效 |
+| `MUTATION-DIMENSION-DESTINATION` | 维度目标文件无效 |
+| `MUTATION-DIMENSION-PATH` | 维度值路径无效 |
+| `MUTATION-DIMENSION-STALE` | 维度旧值条件冲突 |
+| `MUTATION-FILE` | 修改文件无效 |
+| `MUTATION-FILE-GUARD` | 来源文件条件冲突 |
+| `MUTATION-INSERT` | 记录创建请求无效 |
+| `MUTATION-INSERT-CONFLICT` | 创建记录身份冲突 |
+| `MUTATION-PATH` | 修改路径无效 |
+| `MUTATION-RENAME` | 记录改名请求无效 |
+| `MUTATION-RENAME-CONFLICT` | 改名记录身份冲突 |
+| `MUTATION-REORDER` | 记录排序请求无效 |
+| `MUTATION-REORDER-BATCH` | 批量排序组合无效 |
+| `MUTATION-REORDER-CONTAINER` | 记录排序容器不一致 |
+| `MUTATION-SHAPE` | 修改值结构无效 |
+| `MUTATION-TRANSFER` | 记录迁移请求无效 |
+| `MUTATION-TRANSFER-FILE` | 迁移目标文件无效 |
+| `MUTATION-TXN-INVARIANT` | 修改事务状态不一致 |
+| `MUTATION-TYPE` | 修改值类型无效 |
+| `MUTATION-VALUE` | 修改值无效 |
+| `WRITE-AMBIGUOUS-SOURCE` | 写入来源有歧义 |
+| `WRITE-NO-SOURCE` | 写入来源不存在 |
+| `WRITE-NOT-FOUND` | 写入记录不存在 |
+| `WRITE-RENAME` | 记录键写入值无效 |
+| `WRITE-REORDER-CONTAINER` | 排序来源容器不一致 |
+| `WRITE-REORDER-INDEX` | 排序位置越界 |
+| `WRITE-REORDER-ORIGIN` | 排序来源不可写 |
+| `WRITE-REORDER-TYPE` | 排序来源类型无效 |
+| `WRITE-SHAPE` | 写入数据结构无效 |
+| `WRITE-TRANSFER-FILE` | 记录迁移文件无效 |
+| `WRITE-TRANSFER-INDEX` | 记录迁移位置越界 |
+| `WRITE-TRANSFER-ORIGIN` | 记录迁移来源不可写 |
+| `SELF-UPDATE-CONFIG` | 更新服务配置无效 |
+| `SELF-UPDATE-CONFIRM` | 更新确认读取失败 |
+| `SELF-UPDATE-INSTALL` | CLI 更新安装失败 |
+| `SELF-UPDATE-OUTPUT` | 更新提示输出失败 |
+| `SELF-UPDATE-PLATFORM` | 更新平台不受支持 |
+| `SELF-UPDATE-RELEASE` | 更新版本查询失败 |
+| `SELF-UPDATE-VERSION` | 更新版本信息无效 |
+| `SKILL-HOME` | 技能安装目录无法确定 |
+| `SKILL-DIR-CREATE` | 技能目录创建失败 |
+| `SKILL-REMOVE` | 技能移除失败 |
+| `SKILL-BUNDLE` | 技能包无效 |
+| `SKILL-SWAP` | 技能包替换失败 |
+| `SKILL-CLEANUP` | 技能临时文件清理失败 |
+| `SKILL-FILE-WRITE` | 技能文件写入失败 |
+| `SKILL-MANIFEST` | 技能安装清单无效 |
+| `SKILL-DIR-READ` | 技能目录读取失败 |
+| `SKILL-DIR-REMOVE` | 技能目录删除失败 |
+| `CFD-TEXT-UnknownType` | CFD 记录或对象类型未定义 |
+| `CFD-TEXT-AbstractObjectType` | CFD 对象使用抽象类型 |
+| `CFD-TEXT-ObjectTypeMismatch` | CFD 对象类型不匹配 |
+| `CFD-TEXT-UnknownField` | CFD 赋值字段未声明 |
+| `CFD-TEXT-DuplicateField` | CFD 字段重复赋值 |
+| `CFD-TEXT-ReservedIdField` | CFD 保留身份字段被赋值 |
+| `CFD-TEXT-TypeMismatch` | CFD 表达式类型不匹配 |
+| `CFD-TEXT-InvalidEnumVariant` | CFD 枚举表达式无效 |
+| `CFD-TEXT-ReferenceNeedsMarker` | CFD 引用缺少标记 |
+| `WRITE-CONFLICT` | 写入来源内容冲突 |

@@ -9,4 +9,4 @@ sword: Item {
 }
 ```
 
-编辑 `.cfd` 后运行 `coflow check <project>`。需要更新绑定时运行 `coflow codegen <project>`。不要把生成目录当作数据输入。
+编辑 `.cfd` 后运行 `coflow check --project <project>`。需要更新绑定时运行 `coflow codegen --project <project>`。不要把生成目录当作数据输入。

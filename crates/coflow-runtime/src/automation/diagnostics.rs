@@ -10,32 +10,32 @@ use crate::{Diagnostic, DiagnosticLogicalLocation, Label, SourceLocation};
 
 use super::RecordTarget;
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandPosition {
     pub line: usize,
     pub character: usize,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandRange {
     pub start: CommandPosition,
     pub end: CommandPosition,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandLocation {
     pub path: String,
     pub range: Option<CommandRange>,
     pub config_path: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandLabel {
     pub location: CommandLocation,
     pub message: Option<String>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandContext {
     pub kind: String,
     pub name: Option<String>,
@@ -47,7 +47,7 @@ pub struct CommandContext {
     pub variant: Option<String>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandDiagnostic {
     pub code: String,
     pub stage: String,
@@ -85,7 +85,10 @@ impl CommandLocation {
             _ => None,
         };
         Self {
-            path: root.map_or_else(|| crate::path_to_slash(path), |root| crate::project_path(root, path)),
+            path: root.map_or_else(
+                || crate::path_to_slash(path),
+                |root| crate::project_path(root, path),
+            ),
             range,
             config_path: match source {
                 SourceLocation::ProjectConfig { key_path, .. } => Some(key_path.clone()),
@@ -118,25 +121,39 @@ impl CommandDiagnostic {
                 crate::Severity::Error => "error",
                 crate::Severity::Warning => "warning",
                 crate::Severity::Info => "info",
-            }.into(),
+            }
+            .into(),
             message: diagnostic.message.clone(),
-            location: diagnostic.primary.as_ref().map(|label| CommandLocation::from_source(&label.location, root)),
-            record: logical.and_then(|location| Some(RecordTarget {
-                actual_type: location.actual_type.clone()?,
-                key: location.record_key.clone()?,
-            })),
+            location: diagnostic
+                .primary
+                .as_ref()
+                .map(|label| CommandLocation::from_source(&label.location, root)),
+            record: logical.and_then(|location| {
+                Some(RecordTarget {
+                    actual_type: location.actual_type.clone()?,
+                    key: location.record_key.clone()?,
+                })
+            }),
             field_path: logical.and_then(|location| location.field_path.clone()),
-            related: diagnostic.related.iter().map(|label| CommandLabel::from_label(label, root)).collect(),
-            contexts: diagnostic.contexts.iter().map(|context| CommandContext {
-                kind: context.kind.clone(),
-                name: context.name.clone(),
-                expression: context.expression.clone(),
-                quantifier: context.quantifier.clone(),
-                binding: context.binding.clone(),
-                item: context.item.clone(),
-                dimension: context.dimension.clone(),
-                variant: context.variant.clone(),
-            }).collect(),
+            related: diagnostic
+                .related
+                .iter()
+                .map(|label| CommandLabel::from_label(label, root))
+                .collect(),
+            contexts: diagnostic
+                .contexts
+                .iter()
+                .map(|context| CommandContext {
+                    kind: context.kind.clone(),
+                    name: context.name.clone(),
+                    expression: context.expression.clone(),
+                    quantifier: context.quantifier.clone(),
+                    binding: context.binding.clone(),
+                    item: context.item.clone(),
+                    dimension: context.dimension.clone(),
+                    variant: context.variant.clone(),
+                })
+                .collect(),
             explanation: explanation.cloned(),
         }
     }

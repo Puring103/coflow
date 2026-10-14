@@ -19,7 +19,7 @@ pub struct SchemaFilesReport {
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct SchemaTypeInfo {
     pub kind: String,
@@ -34,7 +34,7 @@ pub struct SchemaTypeInfo {
     pub fields: Vec<SchemaFieldInfo>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaFieldInfo {
     pub name: String,
     pub ty: SchemaTypeRefInfo,
@@ -44,12 +44,12 @@ pub struct SchemaFieldInfo {
     pub dimension: Option<SchemaFieldDimensionInfo>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaFieldDimensionInfo {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaEnumInfo {
     pub module: String,
     pub name: String,
@@ -57,26 +57,27 @@ pub struct SchemaEnumInfo {
     pub variants: Vec<SchemaEnumVariantInfo>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaEnumVariantInfo {
     pub name: String,
     #[serde(with = "crate::data_model::serde_i64")]
+    #[schemars(with = "String")]
     pub value: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaDimensionInfo {
     pub name: String,
     pub fields: Vec<SchemaDimensionFieldInfo>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaDimensionFieldInfo {
     pub declaring_type: String,
     pub field: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SchemaTypeRefInfo {
     Int,
@@ -91,12 +92,16 @@ pub enum SchemaTypeRefInfo {
     Option { inner: Box<Self> },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaDefaultValueInfo {
     OptionNone,
     OptionSome(Box<Self>),
-    Int(#[serde(with = "crate::data_model::serde_i64")] i64),
+    Int(
+        #[serde(with = "crate::data_model::serde_i64")]
+        #[schemars(with = "String")]
+        i64,
+    ),
     Float(f64),
     Bool(bool),
     String(String),
@@ -105,6 +110,7 @@ pub enum SchemaDefaultValueInfo {
         enum_name: String,
         variant: String,
         #[serde(with = "crate::data_model::serde_i64")]
+        #[schemars(with = "String")]
         value: i64,
     },
     EmptyArray,
@@ -121,17 +127,21 @@ pub enum SchemaDefaultValueInfo {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaConstInfo {
     pub module: String,
     pub name: String,
     pub value: SchemaConstValueInfo,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaConstValueInfo {
-    Int(#[serde(with = "crate::data_model::serde_i64")] i64),
+    Int(
+        #[serde(with = "crate::data_model::serde_i64")]
+        #[schemars(with = "String")]
+        i64,
+    ),
     Float(f64),
     Bool(bool),
     String(String),
@@ -140,6 +150,7 @@ pub enum SchemaConstValueInfo {
         enum_name: String,
         variant: String,
         #[serde(with = "crate::data_model::serde_i64")]
+        #[schemars(with = "String")]
         value: i64,
     },
     OptionNone,
@@ -156,7 +167,7 @@ pub enum SchemaConstValueInfo {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaFileInfo {
     pub module: String,
     pub source: String,

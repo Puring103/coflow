@@ -1,6 +1,6 @@
 # 程序员接入
 
-在 coflow.yaml 中指定 schema、CFD 数据路径和代码生成目标，使用 `coflow check .` 校验声明与数据，使用 `coflow codegen .` 生成业务类型。
+在 coflow.yaml 中指定 schema、CFD 数据路径和代码生成目标，使用 `coflow check --project .` 校验声明与数据，使用 `coflow codegen --project .` 生成业务类型。
 
 ```yaml
 schema: schema/
