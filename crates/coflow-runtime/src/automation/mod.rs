@@ -16,6 +16,7 @@ pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, Re
 mod statistics;
 pub use statistics::{ProjectStatistics, RecordStatistics, DimensionStatistics, FieldStatistics, StatisticNumber, StatisticMean, StatisticQuantile, LengthFrequency, ValueFrequency};
 mod rules;
+pub use rules::{RuleOwnerKind, DependencyScope, RuleDependency, RuleDescription, RuleQuery};
 mod context;
 mod schema_queries;
 mod schema_inspection;
@@ -186,6 +187,7 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("stats.records") => response_schema_of::<Option<Page<RecordStatistics>>>(),
         Some("stats.dimension") => response_schema_of::<Option<Page<DimensionStatistics>>>(),
         Some("stats.field") => response_schema_of::<Option<FieldStatistics>>(),
+        Some("rule.list" | "rule.inspect") => response_schema_of::<Option<RuleQuery>>(),
         _ => response_schema(),
     }
 }

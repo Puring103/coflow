@@ -16,6 +16,25 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn rule_queries_share_typed_dependencies_and_project_relative_locations() {
+    let root = fixture();
+    let list = run(root.path(), "rule.list", &[], None);
+    let rule = &list.result["rules"][0];
+    let inspect = run(root.path(), "rule.inspect", &[("rule", rule["id"].as_str().unwrap())], None);
+    assert_eq!(list.result, inspect.result);
+    assert_eq!(rule["location"]["path"], "schema.cft");
+    assert!(rule["location"]["range"]["start"]["character"].is_number());
+    assert!(rule["expression"].as_str().unwrap().contains("value > 0"));
+    assert!(rule["dependencies"].as_array().unwrap().iter().any(|dependency|
+        dependency["kind"] == "field" && dependency["field"] == "value" && dependency["scope"] == "exact"));
+    for command in ["rule.list", "rule.inspect"] {
+        let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
+        assert!(schema["definitions"].get("RuleQuery").is_some());
+        assert!(schema["definitions"].get("RuleDependency").is_some());
+    }
+}
+
+#[test]
 fn statistics_contracts_describe_project_counts_groups_and_nullable_coverage() {
     for (command, name) in [("stats.project", "ProjectStatistics"), ("stats.records", "RecordStatistics"), ("stats.dimension", "DimensionStatistics")] {
         let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
