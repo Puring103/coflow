@@ -1,9 +1,8 @@
 /// Deterministic work counters for the latest immutable project generation.
 ///
-/// These counters describe actual runtime work. They are deliberately kept
-/// outside editor and mutation wire DTOs so observability does not alter
-/// serialized compatibility contracts.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// These counters describe actual runtime work and are returned separately
+/// from configuration statistics when a host requests performance information.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct ProjectExecutionStats {
     pub sources_resolved: usize,
     pub sources_reloaded: usize,

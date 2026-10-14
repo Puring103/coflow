@@ -13,22 +13,22 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
         }
         "project.files" => {
             let kind = args.get("kind");
-            if kind.is_some_and(|k| k != "schema" && k != "data") { return Err(Failure::invalid("kind must be schema or data")); }
+            if kind.is_some_and(|k| k != "schema" && k != "data") { return Err(Failure::request("kind must be schema or data")); }
             let files: Vec<_> = snapshot.files.iter().filter(|f| ["schema", "data"].contains(&f.kind.as_str()) && kind.is_none_or(|k| f.kind == k)).collect();
             response.result = json!({"files": files});
         }
         "source.read" => {
             let file = snapshot.file(project, args.require("file")?)?;
-            let source = String::from_utf8(file.contents.clone()).map_err(|e| Failure::invalid(e.to_string()))?;
+            let source = String::from_utf8(file.contents.clone()).map_err(|e| Failure::request(e.to_string()))?;
             let start = args.number("start-line", 0)?;
             let end = args.number("end-line", source.lines().count())?;
-            if end < start { return Err(Failure::invalid("end-line precedes start-line")); }
+            if end < start { return Err(Failure::request("end-line precedes start-line")); }
             let content = if args.get("start-line").is_some() || args.get("end-line").is_some() { source.lines().skip(start).take(end-start).collect::<Vec<_>>().join("\n") } else { source };
             response.result = json!({"file": file, "source": content, "start_line": start, "end_line": end});
         }
         "schema.inspect" | "schema.check" | "schema.symbols" | "schema.refs" => {
             let schema = Runtime::open_schema_session(project.clone())?;
-            response.diagnostics = schema.diagnostics().as_set().diagnostics.clone();
+            response.set_session_diagnostics(schema.diagnostics());
             if let Some(ty) = args.get("type") {
                 if schema.schema().is_some_and(|s| s.resolve_type(ty).is_none()) { return Err(Failure::missing(format!("unknown type `{ty}`"))); }
             }
@@ -64,11 +64,11 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
         }
         _ => {
             let session = Runtime::new().open_data_session(project.clone())?;
-            response.diagnostics = session.queries().diagnostics().as_set().diagnostics.clone();
+            response.set_session_diagnostics(session.queries().diagnostics());
             response.result = data_command(command, project, &session, snapshot, args)?;
         }
     }
-    if !response.diagnostics.is_empty() { response.status = Status::Partial; }
+    if response.diagnostics.iter().any(|diagnostic| diagnostic.severity == crate::Severity::Error) { response.status = if command == "schema.check" { Status::Invalid } else { Status::Partial }; }
     Ok(response)
 }
 
@@ -93,6 +93,6 @@ fn data_command(command: &str, project: &Project, session: &ReadOnlyProjectSessi
         "data.refs" => super::references::query(session, args),
         "rule.list" | "rule.inspect" => super::rules::query(command, session, args),
         "context" => super::context::query(project, session, args),
-        _ => Err(Failure::invalid(format!("unknown read command `{command}`"))),
+        _ => Err(Failure::request(format!("unknown read command `{command}`"))),
     }
 }

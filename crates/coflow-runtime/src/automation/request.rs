@@ -7,18 +7,18 @@ use super::{Failure, Result, Selector};
 pub struct Arguments(pub BTreeMap<String, Vec<String>>);
 impl Arguments {
     pub fn get(&self, name: &str) -> Option<&str> { self.0.get(name).and_then(|v| v.first()).map(String::as_str) }
-    pub fn require(&self, name: &str) -> Result<&str> { self.get(name).ok_or_else(|| Failure::invalid(format!("--{name} is required"))) }
+    pub fn require(&self, name: &str) -> Result<&str> { self.get(name).ok_or_else(|| Failure::request(format!("--{name} is required"))) }
     pub fn flag(&self, name: &str) -> bool { self.get(name) == Some("true") }
     pub fn all(&self, name: &str) -> Vec<String> { self.0.get(name).cloned().unwrap_or_default() }
     pub fn number(&self, name: &str, default: usize) -> Result<usize> {
-        self.get(name).map_or(Ok(default), |v| v.parse().map_err(|_| Failure::invalid(format!("--{name} requires a nonnegative integer"))))
+        self.get(name).map_or(Ok(default), |v| v.parse().map_err(|_| Failure::request(format!("--{name} requires a nonnegative integer"))))
     }
     pub fn csv(&self, name: &str) -> Vec<String> { self.all(name).iter().flat_map(|s| s.split(',').map(str::to_string)).collect() }
     pub fn selector(&self) -> Result<Selector> {
         let mut dimensions = BTreeMap::new();
         for value in self.all("dimension") {
             if let Some((name, variant)) = value.split_once('=') {
-                if dimensions.insert(name.into(), variant.into()).is_some() { return Err(Failure::invalid(format!("dimension `{name}` is selected twice"))); }
+                if dimensions.insert(name.into(), variant.into()).is_some() { return Err(Failure::request(format!("dimension `{name}` is selected twice"))); }
             }
         }
         Ok(Selector { actual_type: self.get("type").map(str::to_string), include_derived: self.flag("include-derived"),

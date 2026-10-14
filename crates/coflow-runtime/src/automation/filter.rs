@@ -7,7 +7,7 @@ pub fn matches(session: &ReadOnlyProjectSession, record: &CfdRecord, expression:
 }
 
 fn evaluate(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &str, depth: usize) -> Result<bool> {
-    if depth > 64 || expression.len() > 65536 { return Err(Failure::invalid("filter structural budget exceeded")); }
+    if depth > 64 || expression.len() > 65536 { return Err(Failure::request("filter structural budget exceeded")); }
     for operator in ["||", "&&"] {
         if let Some((left, right)) = split(expression, operator) {
             // 两侧均做类型检查，不能由短路掩盖错误字段或错误常量。
@@ -47,12 +47,12 @@ fn evaluate(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &s
                         let item = super::values::expression(session.schema(),inner,literal.trim())?;
                         Ok(items.contains(&item))
                     }
-                    _ => Err(Failure::invalid("contains requires a string or array field")),
+                    _ => Err(Failure::request("contains requires a string or array field")),
                 };
             }
             let other = super::values::expression(session.schema(),&expected,literal.trim())?;
             if !["==","!="].contains(&operator) && !matches!(other,CfdValue::Int(_)|CfdValue::Float(_)|CfdValue::String(_)|CfdValue::Enum(_)) {
-                return Err(Failure::invalid("ordered comparison requires a number, enum or string"));
+                return Err(Failure::request("ordered comparison requires a number, enum or string"));
             }
             let order = compare_values(value, Some(&other));
             return Ok(match operator {
@@ -66,7 +66,7 @@ fn evaluate(session: &ReadOnlyProjectSession, record: &CfdRecord, expression: &s
     if expression == "false" { return Ok(false); }
     match value_at(record, expression)? {
         Some(CfdValue::Bool(value)) => Ok(*value),
-        _ => Err(Failure::invalid("filter requires a boolean expression")),
+        _ => Err(Failure::request("filter requires a boolean expression")),
     }
 }
 

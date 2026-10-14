@@ -54,7 +54,7 @@ impl Candidate {
             Operation::CreateRecord{record,file,fields}=>{
                 if find_record(self,record).is_ok(){return Err(Failure::conflict("record already exists"));}
                 let meta=schema.resolve_type(&record.actual_type).ok_or_else(||Failure::missing("unknown record type"))?;
-                if meta.is_abstract || meta.is_data(){return Err(Failure::invalid("record requires a concrete table or singleton type"));}
+                if meta.is_abstract || meta.is_data(){return Err(Failure::request("record requires a concrete table or singleton type"));}
                 let path=self.resolve(file,true)?;self.track(&path)?;
                 if !self.shadow(&path).exists() { self.write(&path,b"")?; }
                 let source=CfdSource{location:CfdSourcePath::new(self.shadow(&path)),display_name:file.clone()};
@@ -128,19 +128,19 @@ impl Candidate {
     fn collection(&mut self,schema:&CftSchema,operation:&Operation)->Result<()> {
         let(record,path)=match operation{
             Operation::ArrayInsert{record,path,..}|Operation::ArrayRemove{record,path,..}|Operation::ArrayMove{record,path,..}|Operation::DictSet{record,path,..}|Operation::DictRemove{record,path,..}=>(record,path),
-            _=>return Err(Failure::invalid("operation is not a collection edit")),
+            _=>return Err(Failure::request("operation is not a collection edit")),
         };
         let(_,ast,text)=find_record(self,record)?;
         let internal=internal_path(path);
         let expected=crate::write_rules::expected_type_for_cfd_path(schema,&record.actual_type,&internal,"CLI-PATH","CLI")?;
         let mut value=read_value(schema,record,&ast,&text,&internal)?.ok_or_else(||Failure::missing("collection value is missing"))?;
         match(operation,&mut value,&expected){
-            (Operation::ArrayInsert{index,value,..},CfdValue::Array(items),CftValueType::Array(inner))=>{if *index>items.len(){return Err(Failure::invalid("array index out of bounds"));}items.insert(*index,value.resolve(schema,inner)?);}
-            (Operation::ArrayRemove{index,..},CfdValue::Array(items),_)=>{if *index>=items.len(){return Err(Failure::invalid("array index out of bounds"));}items.remove(*index);}
-            (Operation::ArrayMove{from,to,..},CfdValue::Array(items),_)=>{if *from>=items.len()||*to>=items.len(){return Err(Failure::invalid("array index out of bounds"));}let item=items.remove(*from);items.insert(*to,item);}
+            (Operation::ArrayInsert{index,value,..},CfdValue::Array(items),CftValueType::Array(inner))=>{if *index>items.len(){return Err(Failure::request("array index out of bounds"));}items.insert(*index,value.resolve(schema,inner)?);}
+            (Operation::ArrayRemove{index,..},CfdValue::Array(items),_)=>{if *index>=items.len(){return Err(Failure::request("array index out of bounds"));}items.remove(*index);}
+            (Operation::ArrayMove{from,to,..},CfdValue::Array(items),_)=>{if *from>=items.len()||*to>=items.len(){return Err(Failure::request("array index out of bounds"));}let item=items.remove(*from);items.insert(*to,item);}
             (Operation::DictSet{key,value,..},CfdValue::Dict(items),CftValueType::Dict(key_ty,value_ty))=>{let key=as_key(key.resolve(schema,key_ty)?)?;let value=value.resolve(schema,value_ty)?;if let Some((_,v))=items.iter_mut().find(|(k,_)|k==&key){*v=value;}else{items.push((key,value));}}
             (Operation::DictRemove{key,..},CfdValue::Dict(items),CftValueType::Dict(key_ty,_))=>{let key=as_key(key.resolve(schema,key_ty)?)?;let index=items.iter().position(|(k,_)|k==&key).ok_or_else(||Failure::missing("dictionary key does not exist"))?;items.remove(index);}
-            _=>return Err(Failure::invalid("collection operation does not match the field type")),
+            _=>return Err(Failure::request("collection operation does not match the field type")),
         }
         self.apply_operation(&Operation::SetField{record:record.clone(),path:path.clone(),value:InputValue::Model{value},expected:None})
     }
@@ -148,13 +148,13 @@ impl Candidate {
         let(owner,_,_)=find_record(self,record)?;
         let source_type=schema.resolve_type(&record.actual_type).ok_or_else(||Failure::missing("unknown record type"))?;
         let source_field=schema.field(&record.actual_type,field).ok_or_else(||Failure::missing("unknown field"))?;
-        if !source_field.dimension.as_ref().is_some_and(|d|d.dimension.as_str()==dimension){return Err(Failure::invalid("field is not bound to this dimension"));}
+        if !source_field.dimension.as_ref().is_some_and(|d|d.dimension.as_str()==dimension){return Err(Failure::request("field is not bound to this dimension"));}
         let dimension_schema=schema.all_dimensions().find(|d|d.name.as_str()==dimension).ok_or_else(||Failure::missing("unknown dimension"))?;
         let project=self.project()?;
         let snapshot=super::InputSnapshot::capture(&project)?;
         let mut existing=None;
         for source in snapshot.files.iter().filter(|s|s.kind=="data"){
-            let text=String::from_utf8(source.contents.clone()).map_err(|e|Failure::invalid(e.to_string()))?;
+            let text=String::from_utf8(source.contents.clone()).map_err(|e|Failure::request(e.to_string()))?;
             let(ast,_)=parse_cfd(&text);
             for block in ast.dimensions.iter().filter(|b|b.dimension==dimension&&b.variant==variant){
                 for target in block.records.iter().filter(|r|r.key==record.key&&schema.inheritance_root(&r.type_name)==schema.inheritance_root(&record.actual_type)){
@@ -171,8 +171,8 @@ impl Candidate {
         let destination=if let Some((path,_))=&existing{path.clone()}else if let Some(file)=file{
             let original=self.resolve(file,true)?;self.track(&original)?;self.shadow(&original)
         }else{
-            let dir=project.config().dimensions.get(dimension).and_then(|d|d.dir.as_ref()).ok_or_else(||Failure::invalid(format!("configure dimensions.{dimension}.dir before creating overrides")))?;
-            let relative=owner.strip_prefix(project.root_dir()).map_err(|_|Failure::invalid("automatic dimension files require a project-relative owner"))?;
+            let dir=project.config().dimensions.get(dimension).and_then(|d|d.dir.as_ref()).ok_or_else(||Failure::request(format!("configure dimensions.{dimension}.dir before creating overrides")))?;
+            let relative=owner.strip_prefix(project.root_dir()).map_err(|_|Failure::request("automatic dimension files require a project-relative owner"))?;
             project.resolve_path(dir).join(relative)
         };
         let new_value=if let Some(value)=value{
@@ -188,13 +188,13 @@ impl Candidate {
         let writer=crate::cfd_loader::CfdWriter::new();
         writer.write_dimension_value(&crate::WriteDimensionValueRequest{source:&CfdSource{location:CfdSourcePath::new(destination),display_name:field.into()},
             schema:crate::DimensionSourceSchema{schema,dimension:dimension_schema,source_type,source_field},
-            source_key:&crate::RecordKey::new(&record.key).map_err(|e|Failure::invalid(e.to_string()))?,
-            variant:&crate::VariantName::new(variant).map_err(|e|Failure::invalid(e.to_string()))?,new_value:new_value.as_ref()})?;
+            source_key:&crate::RecordKey::new(&record.key).map_err(|e|Failure::request(e.to_string()))?,
+            variant:&crate::VariantName::new(variant).map_err(|e|Failure::request(e.to_string()))?,new_value:new_value.as_ref()})?;
         writer.publish()?;self.include(&original)?;Ok(())
     }
 }
 
-fn as_key(value:CfdValue)->Result<crate::CfdDictKey>{Ok(match value{CfdValue::Int(v)=>crate::CfdDictKey::Int(v),CfdValue::String(v)=>crate::CfdDictKey::String(v),CfdValue::Enum(v)=>crate::CfdDictKey::Enum(v),_=>return Err(Failure::invalid("invalid dictionary key type"))})}
+fn as_key(value:CfdValue)->Result<crate::CfdDictKey>{Ok(match value{CfdValue::Int(v)=>crate::CfdDictKey::Int(v),CfdValue::String(v)=>crate::CfdDictKey::String(v),CfdValue::Enum(v)=>crate::CfdDictKey::Enum(v),_=>return Err(Failure::request("invalid dictionary key type"))})}
 pub fn internal_path(path:&[FieldPath])->Vec<CfdPathSegment>{path.iter().map(FieldPath::internal).collect()}
 
 pub fn find_record(candidate:&Candidate,record:&RecordTarget)->Result<(PathBuf,AstRecord,String)> {
@@ -202,9 +202,9 @@ pub fn find_record(candidate:&Candidate,record:&RecordTarget)->Result<(PathBuf,A
     let snapshot=super::InputSnapshot::capture(&project)?;
     let mut found=None;
     for file in snapshot.files.iter().filter(|f|f.kind=="data"){
-        let text=String::from_utf8(file.contents.clone()).map_err(|e|Failure::invalid(e.to_string()))?;
+        let text=String::from_utf8(file.contents.clone()).map_err(|e|Failure::request(e.to_string()))?;
         let(ast,errors)=parse_cfd(&text);
-        if !errors.is_empty(){return Err(Failure::invalid(format!("cannot edit malformed CFD `{}`",file.path)));}
+        if !errors.is_empty(){return Err(Failure::request(format!("cannot edit malformed CFD `{}`",file.path)));}
         for item in ast.records{
             if item.type_name==record.actual_type&&item.key==record.key{
                 if found.is_some(){return Err(Failure::conflict("record identity is ambiguous"));}
@@ -216,7 +216,7 @@ pub fn find_record(candidate:&Candidate,record:&RecordTarget)->Result<(PathBuf,A
 }
 
 pub fn read_value(schema:&CftSchema,record:&RecordTarget,ast:&AstRecord,text:&str,path:&[CfdPathSegment])->Result<Option<CfdValue>> {
-    let Some(CfdPathSegment::Field(name))=path.first()else{return Err(Failure::invalid("path must start with a field"));};
+    let Some(CfdPathSegment::Field(name))=path.first()else{return Err(Failure::request("path must start with a field"));};
     let field=schema.field(&record.actual_type,name).ok_or_else(||Failure::missing("unknown field"))?;
     let mut value=if let Some(f)=ast.fields.iter().find(|f|&f.name==name){let span=super::query::ast_value_span(&f.value);super::values::expression(schema,&field.value_type,&text[span.start..span.end])?}
         else {if field.default.is_none()&&!matches!(field.value_type,CftValueType::Option(_)){return Ok(None);}
@@ -243,8 +243,8 @@ pub fn replace_nested(current:&mut CfdValue,path:&[CfdPathSegment],value:CfdValu
 
 fn rewrite_dimensions(candidate:&Candidate,writer:&crate::cfd_loader::CfdWriter,schema:&CftSchema,record:&RecordTarget,new_key:Option<&str>)->Result<()> {
     let snapshot=super::InputSnapshot::capture(&candidate.project()?)?;
-    let old=crate::RecordKey::new(&record.key).map_err(|e|Failure::invalid(e.to_string()))?;
-    let new=new_key.map(crate::RecordKey::new).transpose().map_err(|e|Failure::invalid(e.to_string()))?;
+    let old=crate::RecordKey::new(&record.key).map_err(|e|Failure::request(e.to_string()))?;
+    let new=new_key.map(crate::RecordKey::new).transpose().map_err(|e|Failure::request(e.to_string()))?;
     for file in snapshot.files.iter().filter(|f|f.kind=="data"){
         writer.rewrite_dimension_record(&crate::RewriteDimensionRecordRequest{source:&CfdSource{location:CfdSourcePath::new(file.absolute.clone()),display_name:file.path.clone()},schema,actual_type:&record.actual_type,old_key:&old,new_key:new.as_ref()})?;
     }Ok(())

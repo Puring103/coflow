@@ -21,7 +21,7 @@ fn writes_are_previewed_and_invalid_candidates_never_publish(){
     let result=run(root.path(),"data.set",&[("type","Item"),("key","a"),("path","value"),("value-cfd","30"),("dry-run","true")],None);
     assert_eq!(result.status,Status::Success);assert_eq!(result.result["changed"],true);assert_eq!(fs::read(&file).unwrap(),before);
     let result=run(root.path(),"data.set",&[("type","Item"),("key","a"),("path","value"),("value-cfd","-1"),("rules","true")],None);
-    assert_eq!(result.status,Status::Partial);assert_eq!(result.result["written"],false);assert_eq!(fs::read(&file).unwrap(),before);
+    assert_eq!(result.status,Status::Invalid);assert_eq!(result.result["written"],false);assert_eq!(fs::read(&file).unwrap(),before);
     let result=run(root.path(),"data.set",&[("type","Item"),("key","a"),("path","value"),("value-cfd","30")],None);
     assert_eq!(result.status,Status::Success);assert!(fs::read_to_string(&file).unwrap().contains("30"));
 }
@@ -52,7 +52,7 @@ fn cursor_reads_current_data_and_default_check_skips_business_rules(){
     assert_eq!(page.result["items"][0]["key"],"b");
     assert!(serde_json::to_value(&page).unwrap().get("snapshot").is_none());
     assert_eq!(run(root.path(),"check",&[],None).status,Status::Success);
-    assert_eq!(run(root.path(),"check",&[("rules","true")],None).status,Status::Partial);
+    assert_eq!(run(root.path(),"check",&[("rules","true")],None).status,Status::Invalid);
 }
 
 #[test]
@@ -83,5 +83,5 @@ fn cursors_allow_page_size_changes_but_reject_another_query() {
     let project = Project::open_schema_only(Some(root.path())).unwrap();
     let inputs = InputSnapshot::capture(&project).unwrap();
     let args = Arguments([("cursor".into(), vec![cursor.into()]), ("type".into(), vec!["Item".into()])].into());
-    assert_eq!(execute("data.list", &project, &inputs, &args, None, root.path()).unwrap_err().status, Status::Invalid);
+    assert_eq!(execute("data.list", &project, &inputs, &args, None, root.path()).unwrap_err().status, Status::Error);
 }

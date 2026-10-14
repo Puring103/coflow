@@ -16,7 +16,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             "rejected_records": rejected})),
         "stats.records" => {
             let group = args.get("group-by").unwrap_or("type");
-            if !["type", "file"].contains(&group) { return Err(Failure::invalid("records group-by must be type or file")); }
+            if !["type", "file"].contains(&group) { return Err(Failure::request("records group-by must be type or file")); }
             let mut groups = BTreeMap::<String, usize>::new();
             for record in records {
                 let key = if group == "file" { session.queries().file_for_record(record.actual_type(), record.key()).unwrap_or_default() } else { record.actual_type() };
@@ -31,8 +31,8 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                 super::query::validate_field(session, record.actual_type(), field)?;
                 if let Some(value) = value_at(record, field)? { values.push(value); } else { unreachable += 1; }
             }
-            let quantiles = if args.get("quantiles").is_some() { args.csv("quantiles").into_iter().map(|v|v.parse::<f64>().map_err(|_|Failure::invalid("quantiles must be numbers in [0,1]"))).collect::<Result<Vec<_>>>()? } else { vec![0.5,0.9,0.95,0.99] };
-            if quantiles.iter().any(|q|!q.is_finite()||!(0.0..=1.0).contains(q)){return Err(Failure::invalid("quantiles must be numbers in [0,1]"));}
+            let quantiles = if args.get("quantiles").is_some() { args.csv("quantiles").into_iter().map(|v|v.parse::<f64>().map_err(|_|Failure::request("quantiles must be numbers in [0,1]"))).collect::<Result<Vec<_>>>()? } else { vec![0.5,0.9,0.95,0.99] };
+            if quantiles.iter().any(|q|!q.is_finite()||!(0.0..=1.0).contains(q)){return Err(Failure::request("quantiles must be numbers in [0,1]"));}
             let mut result = aggregate(&values, args.number("option-layer", 1)?, &quantiles)?;
             result["path_unreachable"] = json!(unreachable);
             result["rejected_records"] = json!(rejected);
@@ -47,7 +47,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             }
             if args.get("metrics").is_some(){
                 let metrics=args.csv("metrics");
-                for metric in &metrics{if !["count","min","max","sum","mean","quantiles","some","none","empty_count","length_distribution"].contains(&metric.as_str()){return Err(Failure::invalid(format!("unknown metric `{metric}`")));}}
+                for metric in &metrics{if !["count","min","max","sum","mean","quantiles","some","none","empty_count","length_distribution"].contains(&metric.as_str()){return Err(Failure::request(format!("unknown metric `{metric}`")));}}
                 if let Some(object)=result.as_object_mut(){object.retain(|name,_|metrics.contains(name)||["numeric_count","path_unreachable","rejected_records","option_layer","precision","quantile_method","length_unit","distribution"].contains(&name.as_str()));}
             }
             Ok(result)
@@ -85,12 +85,12 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             }).collect();
             super::json(paginate(items, &selector)?)
         }
-        _ => Err(Failure::invalid("unknown statistics command")),
+        _ => Err(Failure::request("unknown statistics command")),
     }
 }
 
 fn aggregate(values: &[&CfdValue], option_layer: usize, quantiles:&[f64]) -> Result<Value> {
-    if option_layer==0 {return Err(Failure::invalid("option-layer starts at 1"));}
+    if option_layer==0 {return Err(Failure::request("option-layer starts at 1"));}
     let mut none = 0; let mut some = 0; let mut lengths = Vec::new(); let mut numeric = Vec::new();
     let mut int_sum = 0i128; let mut all_int = true;let mut integers=Vec::new();
     for value in values {
@@ -104,7 +104,7 @@ fn aggregate(values: &[&CfdValue], option_layer: usize, quantiles:&[f64]) -> Res
         }
         while let CfdValue::OptionSome(inner)=current{current=inner;}
         match current {
-            CfdValue::Int(v) => { int_sum = int_sum.checked_add(i128::from(*v)).ok_or_else(|| Failure::invalid("integer aggregate overflow"))?; integers.push(*v);numeric.push(*v as f64); }
+            CfdValue::Int(v) => { int_sum = int_sum.checked_add(i128::from(*v)).ok_or_else(|| Failure::request("integer aggregate overflow"))?; integers.push(*v);numeric.push(*v as f64); }
             CfdValue::Float(v) => { all_int = false; numeric.push(*v); }
             CfdValue::String(v) => lengths.push(v.chars().count()),
             CfdValue::FormattedString(v) => lengths.push(v.rendered.chars().count()),
@@ -113,7 +113,7 @@ fn aggregate(values: &[&CfdValue], option_layer: usize, quantiles:&[f64]) -> Res
     }
     numeric.sort_by(f64::total_cmp); lengths.sort_unstable();integers.sort_unstable();
     let sum: f64 = numeric.iter().sum();
-    if !sum.is_finite() { return Err(Failure::invalid("floating aggregate overflow")); }
+    if !sum.is_finite() { return Err(Failure::request("floating aggregate overflow")); }
     let mut result = json!({"count": values.len(), "some": some, "none": none, "option_layer": option_layer,
         "numeric_count": numeric.len(), "min": numeric.first(), "max": numeric.last(),
         "sum": if all_int { json!(int_sum.to_string()) } else { json!(sum) },

@@ -7,6 +7,7 @@
 
 use coflow_runtime::DiagnosticSet;
 use std::io::{self, Write};
+use serde_json::{json,Value};
 
 use crate::cli::SelfUpdateArgs;
 use crate::diagnostics::cli_error;
@@ -30,7 +31,7 @@ fn asset_identifier_for(os: &str, arch: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
+pub(crate) fn run(args: &SelfUpdateArgs) -> Result<Value, DiagnosticSet> {
     let Some(identifier) = asset_identifier() else {
         return Err(cli_error(
             "SELF-UPDATE-PLATFORM",
@@ -52,8 +53,9 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
         .target(identifier)
         .identifier(identifier)
         .current_version(current_version)
-        .no_confirm(args.yes)
-        .show_download_progress(!args.check);
+        .no_confirm(true)
+        .show_output(false)
+        .show_download_progress(false);
 
     let updater = builder.build().map_err(|error| {
         cli_error(
@@ -78,18 +80,20 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
         })?;
 
     if up_to_date {
-        println!("coflow {current_version} is already the latest release.");
-        return Ok(true);
+        return Ok(json!({"current_version":current_version,"latest_version":latest.version,"update_available":false,"updated":false}));
     }
 
-    println!(
-        "A newer release is available: {current_version} -> {}",
-        latest.version
-    );
-
     if args.check {
-        println!("Run `coflow self-update` to install it.");
-        return Ok(true);
+        return Ok(json!({"current_version":current_version,"latest_version":latest.version,"update_available":true,"updated":false}));
+    }
+
+    // 更新库保持静默，交互确认写到 stderr，结构化结果独占 stdout。
+    if !args.yes {
+        eprint!("Install coflow {} (current {current_version})? [y/N] ",latest.version);
+        io::stderr().flush().map_err(|error|cli_error("SELF-UPDATE-CONFIRM",error.to_string()))?;
+        let mut answer=String::new();
+        io::stdin().read_line(&mut answer).map_err(|error|cli_error("SELF-UPDATE-CONFIRM",error.to_string()))?;
+        if !matches!(answer.trim(),"y"|"Y"|"yes"|"YES") {return Ok(json!({"current_version":current_version,"latest_version":latest.version,"update_available":true,"updated":false}));}
     }
 
     let status = updater.update().map_err(|error| {
@@ -99,9 +103,7 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<bool, DiagnosticSet> {
         )
     })?;
 
-    let _ = io::stdout().flush();
-    println!("Updated coflow to {}.", status.version());
-    Ok(true)
+    Ok(json!({"current_version":current_version,"latest_version":status.version(),"update_available":true,"updated":true}))
 }
 
 #[cfg(test)]

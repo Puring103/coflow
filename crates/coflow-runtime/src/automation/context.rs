@@ -19,6 +19,6 @@ pub fn query(project: &Project, session: &ReadOnlyProjectSession, args: &Argumen
         if let Some(omitted) = result["omitted"].as_array_mut() { omitted.push(json!({"section": name, "query": match name {
             "examples" => format!("data list --type {ty}"), "rules" => format!("rule list --type {ty}"), _ => "dimension list".into() }})); }
     }
-    if result.to_string().chars().count() > budget { return Err(Failure::invalid("context budget is too small for the core type declaration")); }
+    if result.to_string().chars().count() > budget { return Err(Failure::request("context budget is too small for the core type declaration")); }
     Ok(result)
 }
