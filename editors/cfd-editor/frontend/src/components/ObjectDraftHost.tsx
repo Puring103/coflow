@@ -8,12 +8,14 @@ export function ObjectDraftHost({
   generationKey,
   sessionId = 0,
   onOpenReference,
+  onLookupError,
   children,
 }: {
   lookups: EditorLookupController
   generationKey: string
   sessionId?: number
   onOpenReference: (targetType: string, recordKey: string) => void
+  onLookupError?: (key: string) => void
   children: ReactNode
 }) {
   const lookupAccess = useMemo(() => ({
@@ -28,7 +30,7 @@ export function ObjectDraftHost({
 
   return (
     <EditorLookupContext.Provider value={lookupAccess}>
-      <EditorNavigationContext.Provider value={{ openReference: onOpenReference }}>
+      <EditorNavigationContext.Provider value={{ openReference: onOpenReference, focusLookupError: onLookupError }}>
         {children}
       </EditorNavigationContext.Provider>
     </EditorLookupContext.Provider>

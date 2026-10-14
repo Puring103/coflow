@@ -7,7 +7,7 @@ import { cssEscape } from '../utils/dom'
 interface Props {
   /** 初始收起完整列表，诊断定位仍会主动展开。 */
   initialCollapsed?: boolean
-  structuredLayout?: boolean
+  currentFile?: string
   diagnostics: DiagnosticItem[]
   /** Focus request from outside (e.g. a record/field corner badge click).
    *  When `tick` changes we scroll to and pulse the matching item; if the
@@ -37,13 +37,18 @@ export function diagnosticsHeightFromStorage(value: string | null): number {
   return Number.isFinite(stored) ? Math.max(MIN_HEIGHT, stored) : DEFAULT_HEIGHT
 }
 
-export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, initialCollapsed = false, structuredLayout = false }: Props) {
+export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsumed, onJump, initialCollapsed = true }: Props) {
+  const [severity, setSeverity] = useState('all')
+  const [onlyCurrentFile, setOnlyCurrentFile] = useState(false)
+  const filtered = diagnostics.filter(item => (severity === 'all' || item.severity === severity) && (!onlyCurrentFile || !currentFile || (item.target.kind !== 'none' && item.target.file_path === currentFile)))
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [height, setHeight] = useState(initialHeight)
   const [resizing, setResizing] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const flashTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(flashTimer.current), [])
   const [flashKey, setFlashKey] = useState<string | null>(null)
 
   const errors   = diagnostics.filter(d => d.severity === 'error').length
@@ -89,27 +94,30 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, 
     if (!focus) return
     const target = diagnostics.find(d => diagnosticKey(d) === focus.key)
     if (!target) return
+    setSeverity('all')
+    setOnlyCurrentFile(false)
     setCollapsed(false)
   }, [focus, diagnostics])
 
   // Scroll to and pulse the focused item after the reveal effect above has
   // expanded the panel and React has re-rendered.
   useEffect(() => {
-    if (!focus) return
+    if (!focus || collapsed || severity !== 'all' || onlyCurrentFile) return
     const el = listRef.current?.querySelector<HTMLElement>(
       `[data-diag-key="${cssEscape(focus.key)}"]`,
     )
     if (el) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
       setFlashKey(focus.key)
-      const t = window.setTimeout(() => {
+      window.clearTimeout(flashTimer.current)
+      flashTimer.current = window.setTimeout(() => {
         setFlashKey(prev => (prev === focus.key ? null : prev))
       }, 1600)
       onFocusConsumed?.()
-      return () => window.clearTimeout(t)
+      return
     }
     onFocusConsumed?.()
-  }, [focus, diagnostics, onFocusConsumed])
+  }, [focus, diagnostics, onFocusConsumed, collapsed, severity, onlyCurrentFile])
 
   return (
     <div
@@ -180,8 +188,13 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, 
       </button>
       {!collapsed && !isEmpty && (
         <div className="diag-body" id="diag-list-region">
+          <div className="diag-filters">
+            <select aria-label="诊断级别" value={severity} onChange={event => setSeverity(event.target.value)}><option value="all">所有级别</option><option value="error">错误</option><option value="warning">警告</option><option value="info">信息</option></select>
+            <label><input type="checkbox" checked={onlyCurrentFile} disabled={!currentFile} onChange={event => setOnlyCurrentFile(event.target.checked)} />当前文件</label>
+            <span>{filtered.length} / {diagnostics.length}</span>
+          </div>
           <div className="diag-list" role="list" ref={listRef}>
-            {diagnostics.map((d, i) => {
+            {filtered.map((d, i) => {
               const key = diagnosticKey(d)
               const canJump = d.target.kind !== 'none' && !!onJump
               return (
@@ -200,14 +213,13 @@ export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, onJump, 
                   </span>
                   <span className="diag-msg">
                     {diagnosticDisplayMessage(d)}
-                    {structuredLayout && <span className="diag-location">
+                    {<span className="diag-location">
                       {d.target.kind !== 'none' && <span>{d.target.file_path}{d.target.kind === 'table_field' ? ` · ${d.target.field_path}` : ''}</span>}
                       {d.code && <span className="diag-code">{d.code}</span>}
                     </span>}
                   </span>
                   {(d.code || canJump) && (
                     <span className="diag-actions">
-                      {!structuredLayout && d.code && <span className="diag-code">{d.code}</span>}
                       {canJump ? (
                         <button
                           className="diag-jump"

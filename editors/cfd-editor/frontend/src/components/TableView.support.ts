@@ -20,14 +20,14 @@ import { valueSelectionRange, type CellAnchor, type ValueSelection } from '../st
 import type { PasteCell } from '../state/clipboard'
 import type { AxisRange } from '../state/scrollVisibility'
 
-/** Approximate visual width in pixels for `text` at 12px UI font. Uses a
+/** Approximate visual width in pixels for `text` at 14px UI font. Uses a
  *  codepoint scan (East Asian Wide ≈ 2 ASCII cells) instead of canvas
  *  measurement — deterministic across webview builds and cheap enough to
  *  run over every cell. Not pixel-perfect, but the caller adds chrome
  *  padding and clamps to a max, so approximate is enough. */
 export function estimateTextWidth(text: string, monospace = false): number {
-  const narrow = monospace ? 7.3 : 6.6
-  const wide = monospace ? 13.6 : 13.2
+  const narrow = monospace ? 8.6 : 7.7
+  const wide = monospace ? 15.9 : 15.4
   let w = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!

@@ -26,6 +26,8 @@ codegen:
 
 编辑器在维度目录内保留基础文件相对项目根目录的完整路径：`data/equipment/items.cfd` 对应 `dimensions/language/data/equipment/items.cfd`。同一文件、同一维度的记录、字段和变体集中保存，已有覆盖始终写回原来源。
 
-`codegen` 是唯一产物列表。每项必须有 `language` 和 `dir`。C# 目标支持可选的 `namespace`，例如 `namespace: Game.Config`；未配置或为空字符串时生成类型位于全局命名空间。命名空间由点分隔的合法 C# 标识符组成。目标目录必须互不重叠并位于项目根目录内。
+`codegen` 是唯一产物列表。每项必须有 `language` 和 `dir`。C# 目标支持可选的 `namespace`，例如 `namespace: Game.Config`；未配置或为空字符串时生成类型位于全局命名空间。命名空间由点分隔的合法 C# 标识符组成。目标目录可以位于项目目录内或目录外，使用相对项目根目录的路径配置，例如 `../Scripts/Config`。目标目录必须互不重叠，并与 schema、data 和维度输入目录分离。
+
+schema、data、dimensions 和 codegen 的路径统一使用相对项目根目录的路径保存，项目外目录使用 `../`。
 
 配置解析拒绝未知字段，输入和产物合同不会隐式转换。

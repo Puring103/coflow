@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../bindings/ViewConfig'
 import type { ViewKind } from '../bindings/ViewKind'
-import { newViewId } from '../state/views'
+import { DEFAULT_TABLE_VIEW_ID, newViewId } from '../state/views'
 import { Icon } from './Icon'
 
 interface Props {
@@ -15,7 +15,7 @@ interface Props {
   availableRelations: string[]
   /** Record groups available for the group filter. */
   groups: readonly EditorRecordGroup[]
-  onSubmit: (view: ViewConfig) => void
+  onSubmit: (view: ViewConfig) => Promise<void> | void
   onClose: () => void
 }
 
@@ -32,6 +32,10 @@ export function ViewEditorDialog({
   onSubmit,
   onClose,
 }: Props) {
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [fieldSearch, setFieldSearch] = useState('')
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [name, setName] = useState(initial?.name ?? '')
   const [kind, setKind] = useState<ViewKind>(initial?.kind ?? 'table')
   // Which fields are checked (membership only; ordering is separate).
@@ -65,11 +69,18 @@ export function ViewEditorDialog({
     [order, availableFields, kind, relationSet],
   )
 
-  function submit() {
+  const visibleFieldRows = fieldRows.filter(field => field.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase()))
+  const draftSignature = JSON.stringify([name, kind, fieldRows.filter(field => selected.has(field)), relations, groupFilter])
+  const initialSignature = useRef(draftSignature)
+  const requestClose = () => saving ? undefined : draftSignature === initialSignature.current ? onClose() : setConfirmDiscard(true)
+
+  async function submit() {
     if (!trimmedName) return
     // Output only checked fields, in display order.
     const cleanFields = fieldRows.filter(f => selected.has(f))
-    onSubmit({
+    setSaving(true)
+    setSaveError(null)
+    try { await onSubmit({
       id: initial?.id ?? newViewId(),
       name: trimmedName,
       kind,
@@ -80,6 +91,7 @@ export function ViewEditorDialog({
       fields: kind === 'graph' ? cleanFields : [],
     })
     onClose()
+    } catch (error) { setSaveError(String(error)) } finally { setSaving(false) }
   }
 
   function toggleSelected(field: string) {
@@ -151,7 +163,7 @@ export function ViewEditorDialog({
     <div
       className="create-record-backdrop"
       role="presentation"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+      onMouseDown={e => { if (e.target === e.currentTarget) requestClose() }}
     >
       <section
         className="create-record-dialog view-editor"
@@ -159,14 +171,15 @@ export function ViewEditorDialog({
         aria-modal="true"
         aria-label={initial ? '编辑视图' : '新建视图'}
         onMouseDown={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+        onKeyDown={e => { if (e.key === 'Escape') requestClose() }}
       >
-        <header className="view-editor-heading"><div><h2>{initial ? '视图设置' : '新建视图'}</h2><p>选择字段、调整顺序，保存常用的工作视图。</p></div><button className="btn btn-icon" aria-label="关闭视图设置" onClick={onClose}><Icon name="close" size={16} /></button></header>
+        <header className="view-editor-heading"><div><h2>{initial ? '视图设置' : '新建视图'}</h2><p>选择字段、调整顺序，保存常用的工作视图。</p></div><button className="btn btn-icon" aria-label="关闭视图设置" onClick={requestClose}><Icon name="close" size={16} /></button></header>
         <div className="view-editor-body">
           {/* Name + type */}
           <label className="view-editor-field">
             <span>视图名称</span>
             <input
+              readOnly={initial?.id === DEFAULT_TABLE_VIEW_ID}
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="输入视图名称"
@@ -230,8 +243,9 @@ export function ViewEditorDialog({
               handle to reorder; the row order is independent of checked state. */}
           <div className="view-editor-field">
             <div className="view-field-tools"><span>{kind === 'graph' ? '显示字段' : '显示列'} · {fieldRows.filter(field => selected.has(field)).length} / {fieldRows.length}</span><button className="btn" onClick={() => setSelected(new Set(fieldRows))}>全选</button><button className="btn" onClick={() => setSelected(new Set())}>清空</button></div><span className="view-field-hint">勾选需要显示的字段，拖动右侧手柄调整顺序。</span>
+            <input aria-label="查找字段" placeholder="查找字段…" value={fieldSearch} onChange={event => setFieldSearch(event.target.value)} />
             <ul className="view-field-list" ref={listRef}>
-              {fieldRows.map(field => (
+              {visibleFieldRows.map(field => (
                 <li
                   key={field}
                   data-field={field}
@@ -275,9 +289,11 @@ export function ViewEditorDialog({
           </label>
         </div>
 
+        {saveError && <div className="view-save-error" role="alert">{saveError}</div>}
+        {confirmDiscard && <div className="view-discard-confirm" role="alert"><span>放弃尚未保存的视图设置？</span><button className="btn" onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="btn" onClick={onClose}>放弃更改</button></div>}
         <div className="view-editor-actions">
-          <button className="btn btn-outlined" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={submit} disabled={!trimmedName}>
+          <button className="btn btn-outlined" onClick={requestClose}>取消</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!trimmedName || saving}>
             {initial ? '保存' : '创建'}
           </button>
         </div>

@@ -1,3 +1,5 @@
+import { DEFAULT_TABLE_VIEW_ID, DEFAULT_RECORD_VIEW_ID, DEFAULT_SOURCE_VIEW_ID } from './state/views'
+import { defaultWorkspaceTab, workspaceToWire } from './state/workspaceTabs'
 // Mock data for UI prototype — no Tauri backend required.
 import type { FileRecords } from './bindings/FileRecords'
 import type { GraphData } from './bindings/GraphData'
@@ -11,7 +13,6 @@ import {
   boolValue,
   enumValue,
   intValue,
-  nullValue,
   refValue,
   stringValue,
   type FieldValue,
@@ -73,26 +74,7 @@ export const MOCK_PROJECT: ProjectBootstrap = {
       { name: 'Item', display_name: 'Items', record_count: 0, is_singleton: false, dimension_fields: {} },
     ],
   },
-  diagnostics: [
-    {
-      id: 'mock-ref-missing',
-      severity: 'error',
-      code: 'ref_missing',
-      stage: 'check',
-      message: 'npc.cfd: record Npc_001 references missing item ItemXxx',
-      target: { kind: 'table_field', file_path: 'data/npc.cfd', coordinate: { actual_type: 'Npc', key: 'Npc_001' }, field_path: 'reward_item' },
-      contexts: [],
-    },
-    {
-      id: 'mock-unused-field',
-      severity: 'warning',
-      code: 'unused_field',
-      stage: 'check',
-      message: 'item.cfd: field "unknown_id" is not in schema',
-      target: { kind: 'table_field', file_path: 'data/item.cfd', coordinate: { actual_type: 'Item', key: 'Item_001' }, field_path: 'unknown_id' },
-      contexts: [],
-    },
-  ],
+  diagnostics: [],
 }
 
 const strVal = stringValue
@@ -121,7 +103,6 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'max_stack', value: intVal(99), annotation: null },
         { name: 'quality', value: enumVal('Quality', 'Common', 0), annotation: null },
         { name: 'stackable', value: boolVal(true), annotation: null },
-        { name: 'unknown_id', value: nullValue(), annotation: null },
       ]),
       row('Item', 'Item_002', [
         { name: 'name', value: strVal('中级药水'), annotation: null },
@@ -129,7 +110,6 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'max_stack', value: intVal(50), annotation: null },
         { name: 'quality', value: enumVal('Quality', 'Uncommon', 1), annotation: null },
         { name: 'stackable', value: boolVal(true), annotation: null },
-        { name: 'unknown_id', value: nullValue(), annotation: null },
       ]),
       row('Weapon', 'Sword_001', [
         { name: 'name', value: strVal('铁剑'), annotation: null },
@@ -324,3 +304,26 @@ function mockGraphNode(row: RecordRow, filePath: string, inFocusFile: boolean): 
     diagnostic_severity: row.diagnostic_severity,
   }
 }
+
+MOCK_EDITOR_SETTINGS.views = {
+  'data/item.cfd': {
+    Item: [
+      { id: 'sample-basic', name: '基础属性', kind: 'table', columns: ['name', 'quality', 'max_stack', 'stackable'],
+        column_widths: {}, relations: [], fields: [], group_filter: null },
+      { id: 'sample-potions', name: '药水分组', kind: 'table', columns: ['name', 'max_stack'],
+        column_widths: {}, relations: [], fields: [], group_filter: 'mock-potions' },
+    ],
+  },
+  'data/npc.cfd': {
+    Npc: [
+      { id: 'sample-relations', name: '掉落与奖励', kind: 'graph', columns: [], column_widths: {},
+        relations: ['drops', 'reward_item'], fields: ['name', 'level', 'faction'], group_filter: null },
+    ],
+  },
+}
+MOCK_EDITOR_SETTINGS.view_order = {
+  'data/item.cfd': { Item: [DEFAULT_TABLE_VIEW_ID, 'sample-basic', 'sample-potions', DEFAULT_RECORD_VIEW_ID, DEFAULT_SOURCE_VIEW_ID] },
+  'data/npc.cfd': { Npc: [DEFAULT_TABLE_VIEW_ID, 'sample-relations', DEFAULT_RECORD_VIEW_ID, DEFAULT_SOURCE_VIEW_ID] },
+}
+const tabs = [defaultWorkspaceTab('data/item.cfd', 'Item'), defaultWorkspaceTab('data/npc.cfd', 'Npc')]
+MOCK_EDITOR_SETTINGS.workspace = workspaceToWire(tabs, tabs[0].id)

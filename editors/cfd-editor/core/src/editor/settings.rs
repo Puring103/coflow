@@ -317,7 +317,7 @@ mod tests {
         let views = sanitized_views(
             vec![
                 ViewConfig {
-                    id: "__default_table".to_string(),
+                    id: "__default_record".to_string(),
                     name: "Sneaky".to_string(),
                     kind: ViewKind::Table,
                     group_filter: None,
@@ -358,6 +358,20 @@ mod tests {
         assert!(views[0].relations.is_empty());
         assert!(views[0].fields.is_empty());
     }
+    #[test]
+    fn default_table_view_settings_are_preserved() {
+        let view = ViewConfig {
+            id: "__default_table".to_string(), name: "表格".to_string(), kind: ViewKind::Table,
+            group_filter: None, columns: vec!["name".to_string()], column_widths: BTreeMap::new(),
+            relations: vec![], fields: vec![],
+        };
+        let saved = sanitized_views(vec![view.clone()], &BTreeSet::new());
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].columns, vec!["name"]);
+        let invalid = ViewConfig { kind: ViewKind::Graph, ..view };
+        assert!(sanitized_views(vec![invalid], &BTreeSet::new()).is_empty());
+    }
+
 
     #[test]
     fn views_clear_dangling_group_filter_and_graph_fields() {

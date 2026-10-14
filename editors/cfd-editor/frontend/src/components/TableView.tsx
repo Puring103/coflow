@@ -455,14 +455,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const MIN = 90
       // Only value columns are capped, so a rogue 5000-char string doesn't
       // stretch its column across the whole viewport. The user can still drag
-      // wider. Key column is never capped — keys must render in full.
+      // wider. Key columns reserve room for dragging and diagnostics.
       const VALUE_MAX = 600
       // Key column: measure the longest key so it never truncates unless the
-      // user shrinks it manually. No cap.
+      // user shrinks it manually, up to the automatic width limit.
       let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
-        keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM)
+        keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM + 18 /* 拖动手柄与间距 */)
       }
       const KEY_MAX = 500
       const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }

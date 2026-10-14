@@ -18,6 +18,7 @@ export interface EditorLookupAccess {
 export const EditorLookupContext = createContext<EditorLookupAccess | null>(null)
 
 export interface EditorNavigationAccess {
+  focusLookupError?: (key: string) => void
   openReference: (targetType: string, recordKey: string) => void
 }
 

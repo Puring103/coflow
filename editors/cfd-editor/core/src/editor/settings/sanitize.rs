@@ -171,7 +171,12 @@ pub(crate) fn sanitized_views(
         .into_iter()
         .filter_map(|view| {
             let id = view.id.trim().to_string();
-            if id.is_empty() || id.starts_with(RESERVED_VIEW_ID_PREFIX) || !ids.insert(id.clone()) {
+            // 默认表格允许保存显示配置，其余内置视图 ID 不接受用户配置。
+            let default_table = id == "__default_table" && view.kind == ViewKind::Table;
+            if id.is_empty()
+                || (id.starts_with(RESERVED_VIEW_ID_PREFIX) && !default_table)
+                || !ids.insert(id.clone())
+            {
                 return None;
             }
             let name = view

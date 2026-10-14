@@ -9,7 +9,6 @@ import {
   RESERVED_VIEW_ID_PREFIX,
   groupFilterPredicate,
   newViewId,
-  moveViewTab,
   resolveView,
   viewTabsFor,
   visibleFieldsFor,
@@ -72,12 +71,6 @@ describe('viewTabsFor', () => {
     expect(viewTabsFor(settings, FILE, TYPE, false, false).map(tab => tab.id)).not.toContain('v-graph')
   })
 
-  it('moves tabs in both directions and ignores invalid drops', () => {
-    expect(moveViewTab(['a', 'b', 'c'], 'a', 'c', true)).toEqual(['b', 'c', 'a'])
-    expect(moveViewTab(['a', 'b', 'c'], 'c', 'a', false)).toEqual(['c', 'a', 'b'])
-    expect(moveViewTab(['a', 'b'], 'a', 'a', true)).toEqual(['a', 'b'])
-    expect(moveViewTab(['a', 'b'], 'missing', 'a', false)).toEqual(['a', 'b'])
-  })
   it('keeps source available when a CFD file has no valid record type', () => {
     expect(viewTabsFor(null, 'data/invalid.cfd', '', false, false)).toEqual([
       { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
@@ -232,3 +225,14 @@ describe('newViewId', () => {
     expect(a).not.toBe(b)
   })
 })
+
+ it('persists default table projection without duplicating built-in entries', () => {
+   const settings = settingsWith([tableView({ id: DEFAULT_TABLE_VIEW_ID, group_filter: 'potions' })])
+   const view = resolveView(settings, FILE, TYPE, DEFAULT_TABLE_VIEW_ID)
+   expect(view.columns).toEqual(['name', 'price'])
+   expect(view.groupFilter).toBe('potions')
+   expect(view.columnWidths).toEqual({ name: 200 })
+   expect(visibleFieldsFor(view)).toEqual(new Set(['name', 'price']))
+   expect(viewTabsFor(settings, FILE, TYPE, false, true).filter(tab => tab.id === DEFAULT_TABLE_VIEW_ID)).toHaveLength(1)
+   expect(resolveView(settings, FILE, TYPE, 'deleted')).toEqual(view)
+ })

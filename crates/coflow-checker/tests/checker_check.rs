@@ -52,6 +52,25 @@ fn explicit_task_executes_only_the_selected_root_statement() {
 }
 
 #[test]
+fn project_checks_query_singleton_fields_and_table_records_together() {
+    let schema = compile_schema("table Item {} singleton Settings { count: int; } check Coverage { records(Settings).len() == 1; all settings in records(Settings) { settings.id == \"Settings\"; settings.count == records(Item).len(): \"incomplete coverage\"; } }");
+    for count in [1_i64, 2_i64] {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("item", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
+        builder.add_record("Settings", "Settings", [("count", LoadedValueDraft::from(count))]);
+        let model = builder.build().expect("model");
+        let result = run_model_checks(&model, &schema);
+        if count == 1 {
+            result.expect("complete coverage");
+        } else {
+            let diagnostics = result.expect_err("incomplete coverage");
+            assert_eq!(diagnostics.diagnostics.len(), 1);
+            assert_eq!(diagnostics.diagnostics[0].message, "incomplete coverage");
+        }
+    }
+}
+
+#[test]
 fn project_statement_runs_for_an_empty_model() {
     let schema = compile_schema(
         "table Item {} check Required { records(Item).len() > 0: \"missing item\"; }",

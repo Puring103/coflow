@@ -1,3 +1,4 @@
+import { LookupErrorBadge } from './LookupErrorBadge'
 import {
   useState,
   useEffect,
@@ -1540,7 +1541,7 @@ export function EnumDirectSelect({
       ? input
       : <span className="dc-pill-input-wrap">
         {input}
-        {loadError && <button type="button" className="dc-load-error" title={loadError} aria-label={`查看加载错误：${loadError}`}>!</button>}
+        {loadError && <LookupErrorBadge message={loadError} lookupKey={`enum:${enumName}`} />}
       </span>
   }
   if (isFlag) {
@@ -1765,7 +1766,7 @@ export function RefDirectSelect({
     ? input
     : <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
       {input}
-      {loadError && <button type="button" className="dc-load-error" title={loadError} aria-label={`查看加载错误：${loadError}`}>!</button>}
+      {loadError && <LookupErrorBadge message={loadError} lookupKey={`ref:${targetType}`} />}
     </span>
 }
 
@@ -2558,7 +2559,7 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
     if (variants.length === 0) {
       return (
         <span className="dc-add-form">
-          {loadError && <button type="button" className="dc-load-error" title={loadError} aria-label={`查看加载错误：${loadError}`}>!</button>}
+          {loadError && <LookupErrorBadge message={loadError} lookupKey={`enum:${sampleKey.value.enum_name}`} />}
           <input
             className="dc-input" autoFocus value={text}
             placeholder="枚举变体"
