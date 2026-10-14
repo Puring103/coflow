@@ -25,6 +25,24 @@ fn call(root: &Path, arguments: &[&str], stdin: Option<&str>) -> (i32, Value, St
 }
 
 #[test]
+fn describe_reference_query_exposes_edges_paths_locations_and_truncation() {
+    let root = tempfile::tempdir().unwrap();
+    let (exit, response, _) = call(root.path(), &["describe", "data.refs"], None);
+    assert_eq!(exit, 0, "{response}");
+    let definitions = &response["result"]["output_schema"]["definitions"];
+    let query = &definitions["ReferenceQuery"];
+    for field in ["items", "total", "truncated", "depth_truncated"] {
+        assert!(query["required"].as_array().unwrap().contains(&json!(field)), "{field}");
+    }
+    let edge = &definitions["ReferenceEdge"]["properties"];
+    for field in ["host", "target", "path", "dimension", "location"] { assert!(edge.get(field).is_some(), "{field}"); }
+    assert_eq!(definitions["ReferencePath"]["properties"]["segments"]["type"], "array");
+    assert_eq!(definitions["ReferencePathSegment"]["oneOf"].as_array().unwrap().len(), 3);
+    assert_eq!(definitions["ReferenceDimension"]["properties"]["variant"]["type"], "string");
+    assert_eq!(definitions["CommandLocation"]["properties"]["path"]["type"], "string");
+}
+
+#[test]
 fn invalid_arguments_return_json_before_project_loading() {
     let root = tempfile::tempdir().unwrap();
     for arguments in [vec!["data", "set"], vec!["data", "list", "--limit", "oops"],

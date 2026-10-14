@@ -85,8 +85,8 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             let edges = super::references::edges(session);
             let items = records.iter().map(|record| {
                 let id = (record.actual_type().to_string(), record.key().to_string());
-                let incoming = edges.iter().filter(|e| super::references::pair(&e["target"]) == id).count();
-                let outgoing = edges.iter().filter(|e| super::references::pair(&e["host"]) == id).count();
+                let incoming = edges.iter().filter(|e| super::references::pair(&e.target) == id).count();
+                let outgoing = edges.iter().filter(|e| super::references::pair(&e.host) == id).count();
                 json!({"type": record.actual_type(), "key": record.key(), "incoming": incoming, "outgoing": outgoing, "zero_incoming": incoming == 0})
             }).collect();
             super::json(paginate(items, &selector)?)
