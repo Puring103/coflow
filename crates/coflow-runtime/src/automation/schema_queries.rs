@@ -41,6 +41,21 @@ pub fn references(project: &Project, session: &ProjectSchemaSession, args: &supe
     if let Some(declaration) = schema.resolve_const(symbol) {
         let source = schema.source(&declaration.module);
         items.push(json!({"kind": "declaration", "symbol": symbol, "location": source.map(|source| location(&source.path, &source.source, declaration.span))}));
+        for (_, module) in session.modules().modules() {
+            let Some(ast) = module.ast() else { continue; };
+            for item in &ast.items {
+                let coflow_language::cft::syntax::ast::Item::Type(ty) = item else { continue; };
+                for field in &ty.fields {
+                    let Some(default) = &field.default else { continue; };
+                    let mut uses = Vec::new();
+                    default_static_paths(default, &mut uses);
+                    for (_, span) in uses.into_iter().filter(|(name, _)| name == symbol) {
+                        items.push(json!({"kind": "default_value", "symbol": format!("{}.{}", ty.name, field.name),
+                            "location": location(module.path(), module.source(), span)}));
+                    }
+                }
+            }
+        }
     }
     for ty in schema.all_types() {
         let source = schema.source(&ty.module);
@@ -106,5 +121,19 @@ fn default_mentions(value: &coflow_language::cft::CftSchemaDefaultValue, symbol:
         V::Array(values) => values.iter().any(|value| default_mentions(value, symbol)),
         V::Dictionary(entries) => entries.iter().any(|(key, value)| default_mentions(key, symbol) || default_mentions(value, symbol)),
         _ => false,
+    }
+}
+
+pub(super) fn default_static_paths(expression: &coflow_language::cft::syntax::ast::DefaultExpr, uses: &mut Vec<(String, coflow_language::source::Span)>) {
+    use coflow_language::cft::syntax::ast::DefaultExprKind as E;
+    // 编译会折叠常量值；源码 AST 保留实际常量路径和精确位置，字符串不参与匹配。
+    match &expression.kind {
+        E::StaticPath(path) => uses.push((path.canonical(), path.span)),
+        E::OptionSome(value) => default_static_paths(value, uses),
+        E::BitExpr { lhs, rhs, .. } => { default_static_paths(lhs, uses); default_static_paths(rhs, uses); }
+        E::Array(values) => { for value in values { default_static_paths(value, uses); } }
+        E::Object(fields) | E::TypedObject { fields, .. } => { for (_, value) in fields { default_static_paths(value, uses); } }
+        E::Dictionary(entries) => { for (key, value) in entries { default_static_paths(key, uses); default_static_paths(value, uses); } }
+        _ => {}
     }
 }
