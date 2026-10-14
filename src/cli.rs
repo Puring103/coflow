@@ -195,7 +195,7 @@ pub(crate) fn describe(target: Option<&str>) -> Result<Value> {
     }
     Ok(json!({"protocol_version": 1, "definition": description(selected, target.unwrap_or("coflow")),
         "exit_codes": {"0": "success", "1": "validation or incomplete result", "2": "invalid request", "3": "conflict", "4": "execution failure"},
-        "input_schema": target.map(input_schema), "output_schema": coflow_runtime::automation::response_schema()}))
+        "input_schema": target.map(input_schema), "output_schema": coflow_runtime::automation::response_schema_for(target)}))
 }
 
 fn input_schema(name: &str) -> Value {
@@ -226,7 +226,7 @@ fn example(command: &Command, name: &str) -> String {
             let value = match argument.get_id().as_str() {
                 "type" | "symbol" => "Item", "key" => "sword", "new-key" => "sword2", "path" | "field" => "value",
                 "file" => "data/items.cfd", "to-file" => "data/other.cfd", "input" => "request.json", "value-cfd" => "1",
-                "dimension" => "language", "variant" => "en", "kind" => "data", "rule" => "Item#0", "code" => "CFD-SEM-001",
+                "dimension" => "language", "variant" => "en", "kind" => "data", "rule" => "Item#0", "code" => "DATA-006",
                 "text" => "sword", "from" => "en", "to" => "zh", _ => "example",
             };
             result.push(' '); result.push_str(value);

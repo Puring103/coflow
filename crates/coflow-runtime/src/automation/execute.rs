@@ -106,9 +106,5 @@ pub(crate) fn public_path(path:&str)->Result<Vec<FieldPath>>{
 pub fn format_source(source:&str,language:&str)->Result<String>{match language{"cft"=>Ok(coflow_format::format_cft(source)),"cfd"=>Ok(coflow_format::format_cfd(source)),_=>Err(Failure::request("language must be cft or cfd"))}}
 
 pub fn explain(code:&str)->Result<Value>{
-    // 诊断索引与公开参考使用同一来源，避免维护第二套错误码清单。
-    let reference=include_str!("../../../../website/docs/docs/reference/09-diagnostics/02-codes.md");
-    let matching:Vec<_>=reference.lines().filter(|line|line.contains(code)).collect();
-    if matching.is_empty(){return Err(Failure::missing(format!("unknown diagnostic code `{code}`")));}
-    Ok(json!({"code":code,"description":matching.join("\n"),"queries":["check --explain","schema inspect","data get"]}))
+    super::json(super::explanations::explain(code)?)
 }
