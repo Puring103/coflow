@@ -5,6 +5,8 @@ mod query;
 mod filter;
 mod request;
 mod read;
+mod files;
+pub use files::{DataFileRole, FileDimensionSummary, DataFileSummary, ProjectFile, ProjectFiles};
 mod dimension;
 mod references;
 pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, ReferenceEdge, ReferenceQuery};
@@ -168,6 +170,7 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("explain") => response_schema_of::<Option<DiagnosticExplanation>>(),
         Some("data.refs") => response_schema_of::<Option<ReferenceQuery>>(),
         Some("source.read") => response_schema_of::<Option<SourceRead>>(),
+        Some("project.files") => response_schema_of::<Option<ProjectFiles>>(),
         _ => response_schema(),
     }
 }

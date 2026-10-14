@@ -16,6 +16,36 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn project_file_summaries_work_without_schema_compilation_and_mark_syntax_failures() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "broken schema").unwrap();
+    fs::write(root.path().join("data/overlay.cfd"), "language[en] { a: Item { name: \"A\" } }\n").unwrap();
+    fs::write(root.path().join("data/mixed.cfd"), "x: Other {}\nlanguage[ja] { a: Item {} }\n").unwrap();
+    fs::write(root.path().join("data/empty.cfd"), "\n").unwrap();
+    fs::write(root.path().join("data/broken.cfd"), "a: Item { value: [").unwrap();
+    let result = run(root.path(), "project.files", &[("kind", "data")], None);
+    assert_eq!(result.status, Status::Partial, "{result:?}");
+    let files = result.result["files"].as_array().unwrap();
+    assert_eq!(files.len(), 5);
+    let find = |name: &str| files.iter().find(|file| file["path"] == format!("data/{name}.cfd")).unwrap();
+    assert_eq!(find("items")["data"]["role"], "base");
+    assert_eq!(find("items")["data"]["base_records"], 2);
+    assert_eq!(find("overlay")["data"]["role"], "dimension");
+    assert_eq!(find("overlay")["data"]["dimensions"], json!([{ "dimension": "language", "variant": "en", "records": 1, "types": ["Item"] }]));
+    assert_eq!(find("mixed")["data"]["role"], "mixed");
+    assert_eq!(find("mixed")["data"]["types"], json!(["Item", "Other"]));
+    assert_eq!(find("empty")["data"]["role"], "empty");
+    assert_eq!(find("broken")["metadata_complete"], false);
+    assert!(find("broken")["data"].is_null());
+    assert!(!result.diagnostics.is_empty());
+    assert!(result.diagnostics.iter().all(|diagnostic| diagnostic.code == "CFD-TEXT-Syntax"));
+    let schema = run(root.path(), "project.files", &[("kind", "schema")], None);
+    assert_eq!(schema.status, Status::Success);
+    assert_eq!(schema.result["files"].as_array().unwrap().len(), 1);
+    assert_eq!(schema.result["files"][0]["inputs"], json!(["schema.cft"]));
+}
+
+#[test]
 fn reference_graph_reports_depth_and_pagination_truncation_independently() {
     let root = fixture();
     fs::write(root.path().join("data/items.cfd"), "a: Item { value: 10, next: Some(&b) }\nb: Item { value: 20, next: Some(&c) }\nc: Item { value: 30, next: Some(&a) }\nd: Item { value: 40 }\n").unwrap();
