@@ -7,8 +7,8 @@ use super::{Failure, Result, Status, InputSnapshot, Arguments};
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChangeSet {
-    Files { protocol_version: u32, changes: Vec<FileOperation> },
-    Operations { protocol_version: u32, ops: Vec<super::operations::Operation> },
+    Files { #[schemars(range(min = 1, max = 1))] protocol_version: u32, changes: Vec<FileOperation> },
+    Operations { #[schemars(range(min = 1, max = 1))] protocol_version: u32, ops: Vec<super::operations::Operation> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

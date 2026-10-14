@@ -14,13 +14,14 @@ pub enum FieldPath { Field {name:String}, Index {index:usize}, DictKey {key:supe
 #[derive(Debug,Clone,Serialize,Deserialize,schemars::JsonSchema)]
 #[serde(tag="kind",rename_all="snake_case",deny_unknown_fields)]
 pub enum InputValue { Expression {source:String}, Model {value:super::ModelValue} }
+pub type RecordFields = BTreeMap<String, InputValue>;
 impl InputValue {
     fn resolve(&self,schema:&CftSchema,expected:&CftValueType)->Result<CfdValue>{match self{Self::Expression{source}=>super::values::expression(schema,expected,source),Self::Model{value}=>value.resolve(schema,expected)}}
 }
 #[derive(Debug,Clone,Serialize,Deserialize,schemars::JsonSchema)]
 #[serde(tag="op",rename_all="snake_case",deny_unknown_fields)]
 pub enum Operation {
-    CreateRecord {record:RecordTarget,file:String,#[serde(default)]fields:BTreeMap<String,InputValue>},
+    CreateRecord {record:RecordTarget,file:String,#[serde(default)]fields:RecordFields},
     SetField {record:RecordTarget,path:Vec<FieldPath>,value:InputValue,#[serde(default)]expected:Option<InputValue>},
     UnsetField {record:RecordTarget,path:Vec<FieldPath>},
     RenameRecord {record:RecordTarget,new_key:String},
