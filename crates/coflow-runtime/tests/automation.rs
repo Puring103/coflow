@@ -16,6 +16,22 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn inherited_field_symbols_locate_the_original_declaration() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "table Base { value: int; }\ntable Child: Base { extra: int = 1; }\n").unwrap();
+    let symbols = run(root.path(), "schema.symbols", &[], None);
+    let fields = symbols.result["items"].as_array().unwrap();
+    let base = fields.iter().find(|field| field["name"] == "Base.value").unwrap();
+    let inherited = fields.iter().find(|field| field["name"] == "Child.value").unwrap();
+    let own = fields.iter().find(|field| field["name"] == "Child.extra").unwrap();
+    assert_eq!(inherited["declaring_type"], "Base");
+    assert_eq!(inherited["location"], base["location"]);
+    assert_eq!(base["location"]["path"], "schema.cft");
+    assert_eq!(base["location"]["range"]["start"]["line"], 0);
+    assert_eq!(own["location"]["range"]["start"]["line"], 1);
+}
+
+#[test]
 fn schema_symbols_contract_covers_all_kinds_and_preserves_filtered_pages() {
     let root = fixture();
     fs::write(root.path().join("schema.cft"), "enum Quality { Common, Rare }\nconst Limit: int = 10;\ntable Item { value: int; check { value < Limit; } }\n").unwrap();
@@ -25,6 +41,7 @@ fn schema_symbols_contract_covers_all_kinds_and_preserves_filtered_pages() {
         assert_eq!(selected.result["items"].as_array().unwrap().len(), 1, "{kind}: {selected:?}");
         assert_eq!(selected.result["items"][0]["kind"], kind);
         assert!(all.result["items"].as_array().unwrap().contains(&selected.result["items"][0]));
+        if kind != "rule" { assert_eq!(selected.result["items"][0]["location"]["path"], "schema.cft"); }
     }
     let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some("schema.symbols"))).unwrap();
     assert_eq!(schema["definitions"]["SchemaSymbol"]["oneOf"].as_array().unwrap().len(), 5);

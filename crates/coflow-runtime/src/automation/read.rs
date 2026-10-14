@@ -15,10 +15,10 @@ pub struct SourceRead {
 #[derive(Debug, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SchemaSymbol {
-    Type { name: String, module: String },
-    Field { name: String, #[serde(rename = "type")] actual_type: String },
-    Enum { name: String, module: String },
-    Const { name: String, module: String },
+    Type { name: String, module: String, location: Option<super::diagnostics::CommandLocation> },
+    Field { name: String, #[serde(rename = "type")] actual_type: String, declaring_type: String, location: Option<super::diagnostics::CommandLocation> },
+    Enum { name: String, module: String, location: Option<super::diagnostics::CommandLocation> },
+    Const { name: String, module: String, location: Option<super::diagnostics::CommandLocation> },
     Rule { name: String, definition: super::RuleDescription },
 }
 
@@ -82,12 +82,27 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
                         return Err(Failure::request("kind must be type, field, enum, const or rule"));
                     }
                     let mut items = Vec::new();
+                    let view = schema.schema();
+                    let locate = |module, span: coflow_language::source::Span| view.and_then(|view| view.source(module)).map(|source| {
+                        let range = crate::TextRange::from_byte_offsets(&source.source, span.start, span.end);
+                        super::diagnostics::CommandLocation::from_source(&crate::SourceLocation::FileSpan {
+                            path: source.path.clone(), start_line: range.start.line, start_character: range.start.character,
+                            end_line: range.end.line, end_character: range.end.character,
+                        }, Some(project.root_dir()))
+                    });
                     for ty in &report.types {
-                        items.push(SchemaSymbol::Type { name: ty.name.clone(), module: ty.module.clone() });
-                        for field in &ty.fields { items.push(SchemaSymbol::Field { name: format!("{}.{}", ty.name, field.name), actual_type: ty.name.clone() }); }
+                        let declaration = view.and_then(|view| view.resolve_type(&ty.name));
+                        items.push(SchemaSymbol::Type { name: ty.name.clone(), module: ty.module.clone(), location: declaration.and_then(|ty| locate(&ty.module, ty.span)) });
+                        for field in &ty.fields {
+                            // 继承字段的查询名称属于当前类型，源码位置始终属于实际声明类型。
+                            let declaration = view.and_then(|view| view.field(&ty.name, &field.name));
+                            let declaring_type = declaration.map(|field| field.declaring_type.to_string()).ok_or_else(|| Failure::missing("symbol field declaration is unavailable"))?;
+                            let location = declaration.and_then(|field| view.and_then(|view| view.resolve_type(&field.declaring_type)).and_then(|ty| locate(&ty.module, field.span)));
+                            items.push(SchemaSymbol::Field { name: format!("{}.{}", ty.name, field.name), actual_type: ty.name.clone(), declaring_type, location });
+                        }
                     }
-                    for item in &report.enums { items.push(SchemaSymbol::Enum { name: item.name.clone(), module: item.module.clone() }); }
-                    for item in &report.consts { items.push(SchemaSymbol::Const { name: item.name.clone(), module: item.module.clone() }); }
+                    for item in &report.enums { items.push(SchemaSymbol::Enum { name: item.name.clone(), module: item.module.clone(), location: view.and_then(|view| view.resolve_enum(&item.name)).and_then(|item| locate(&item.module, item.span)) }); }
+                    for item in &report.consts { items.push(SchemaSymbol::Const { name: item.name.clone(), module: item.module.clone(), location: view.and_then(|view| view.resolve_const(&item.name)).and_then(|item| locate(&item.module, item.span)) }); }
                     if let Some(view)=schema.schema(){for info in view.all_check_statements(){items.push(SchemaSymbol::Rule { name:super::rules::identity(info), definition:super::rules::describe(view,info,project.root_dir()) });}}
                     if let Some(kind) = args.get("kind") { items.retain(|value| value.kind() == kind); }
                     items.sort_by(|a,b| a.name().cmp(b.name()));
