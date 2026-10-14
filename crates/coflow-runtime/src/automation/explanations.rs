@@ -48,6 +48,13 @@ pub fn explain(code: &str) -> Result<DiagnosticExplanation> {
         queries: queries.into_iter().map(String::from).collect() })
 }
 
+pub(crate) fn for_diagnostic(diagnostic: &crate::Diagnostic) -> Option<serde_json::Value> {
+    let mut explanation = super::json(explain(&diagnostic.code).ok()?).ok()?;
+    // 目录说明描述错误类别；当前消息保留实际失败的类型、字段与原因。
+    explanation["message"] = serde_json::json!(diagnostic.message);
+    Some(explanation)
+}
+
 fn cft_info(code: CftErrorCode) -> (&'static str, &'static str, &'static str) {
     use CftErrorCode as C;
     match code {

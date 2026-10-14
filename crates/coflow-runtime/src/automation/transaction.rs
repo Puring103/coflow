@@ -279,6 +279,7 @@ impl Candidate {
         let session = Runtime::open_schema_session(self.project()?)?;
         let mut validation = super::rules::check_schema(&session, args);
         self.remap_diagnostics(&mut validation.diagnostics)?;
+        Self::refresh_explanation_messages(&mut validation);
         let changes = self.changes()?;
         let report = json!({"changed":!changes.is_empty(),"written":false,"dry_run":true,"validation":&validation.report,
             "operations":self.operations,"files":self.file_report(&changes),"written_files":[]});
@@ -300,6 +301,7 @@ impl Candidate {
             }
         };
         self.remap_diagnostics(&mut validation.diagnostics)?;
+        Self::refresh_explanation_messages(&mut validation);
         let changes = self.changes()?;
         let dry_run = force_preview || args.flag("dry-run");
         let mut report = json!({"changed":!changes.is_empty(),"written":false,"dry_run":dry_run,"validation":&validation.report,
@@ -320,6 +322,15 @@ impl Candidate {
             report["written_files"] = json!(written.iter().map(|path|crate::project_path(self.original.root_dir(),path)).collect::<Vec<_>>());
         }
         Ok((report, validation))
+    }
+
+    fn refresh_explanation_messages(validation: &mut super::rules::Validation) {
+        // 候选路径映射之后同步上下文消息，不把临时执行路径留在公开解释中。
+        for (index, explanation) in &mut validation.explanations {
+            if let Some(diagnostic) = validation.diagnostics.diagnostics.get(*index) {
+                explanation["message"] = json!(diagnostic.message);
+            }
+        }
     }
 
 }
