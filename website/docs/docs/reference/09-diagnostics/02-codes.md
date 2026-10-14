@@ -135,3 +135,36 @@ coflow explain REF-001 --json
 | `CHECK-018` | none 规则未通过 |
 | `CHECK-019` | all 规则未通过 |
 | `CHECK-020` | 规则执行预算耗尽 |
+
+## 项目、文件与命令执行
+
+| 错误码 | 含义 |
+| --- | --- |
+| `PROJECT-CONFIG-NOT-FOUND` | 项目配置未找到 |
+| `PROJECT-CONFIG-AMBIGUOUS` | 项目配置有歧义 |
+| `PROJECT-CONFIG-PATH` | 项目配置路径无效 |
+| `PROJECT-CONFIG-READ` | 项目配置读取失败 |
+| `PROJECT-CONFIG-PARSE` | 项目配置解析失败 |
+| `PROJECT-CONFIG-WRITE` | 项目配置写入失败 |
+| `PROJECT-CONFIG-OVERLAP` | 项目输入范围重叠 |
+| `PROJECT-SCHEMA-PATH` | Schema 输入路径无效 |
+| `PROJECT-SCHEMA-READ` | Schema 输入读取失败 |
+| `PROJECT-CWD` | 当前目录无法读取 |
+| `PROJECT-INIT-IO` | 项目初始化失败 |
+| `PROJECT-FILE-CREATE` | 项目文件创建失败 |
+| `PROJECT-FILE-DELETE` | 项目文件删除失败 |
+| `PROJECT-FILE-RESTORE` | 项目文件恢复失败 |
+| `CFD-READ` | CFD 写入来源读取失败 |
+| `CFD-WRITE` | CFD 源码修改失败 |
+| `CFD-SOURCE` | CFD 输入来源无效 |
+| `CLI-REQUEST` | 命令请求无效 |
+| `CLI-TARGET` | 查询或修改目标不存在 |
+| `CLI-CONFLICT` | 输入或前置条件冲突 |
+| `CLI-IO` | 请求载体读写失败 |
+| `CLI-PUBLISH` | 候选发布失败 |
+| `CLI-CANDIDATE` | 候选项目处理失败 |
+| `CLI-FIELD` | 字段投影无效 |
+| `CLI-PATH` | 值路径无效 |
+| `CLI-SORT` | 排序字段无效 |
+| `CLI-FILTER` | 筛选条件无效 |
+| `CLI-VALUE` | 写入值无效 |
