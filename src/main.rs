@@ -46,8 +46,7 @@ fn run(command:&str,args:&Arguments,response:&mut Response)->Result<()> {
         _=>{}
     }
     let project=Project::open_schema_only(args.get("project").map(Path::new))?;response.project=Some(coflow_runtime::path_to_slash(project.root_dir()));
-    let snapshot=InputSnapshot::capture(&project)?;response.snapshot=Some(snapshot.id.clone());
-    if let Some(expected)=args.get("expected-snapshot"){if expected!=snapshot.id{return Err(Failure::conflict("input snapshot changed"));}}
+    let snapshot=InputSnapshot::capture(&project)?;
     let input=if let Some(path)=args.get("input"){Some(read_input(path)?)}else{None};
     let input_dir=if let Some(path)=args.get("input").filter(|p|*p!="-"){std::env::current_dir()?.join(path).parent().map(Path::to_path_buf).unwrap_or(std::env::current_dir()?)}else{std::env::current_dir()?};
     let mut args=args.clone();if let Some(path)=args.get("value-file"){let value=read_input(path)?;args.0.insert("value-cfd".into(),vec![value]);}

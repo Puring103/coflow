@@ -7,8 +7,8 @@ use super::{Failure, Result, Status, InputSnapshot, Arguments};
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChangeSet {
-    Files { protocol_version: u32, #[serde(default)] expected_snapshot: Option<String>, changes: Vec<FileOperation> },
-    Operations { protocol_version: u32, #[serde(default)] expected_snapshot: Option<String>, ops: Vec<super::operations::Operation> },
+    Files { protocol_version: u32, changes: Vec<FileOperation> },
+    Operations { protocol_version: u32, ops: Vec<super::operations::Operation> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -211,10 +211,8 @@ impl Candidate {
             written = coflow_staging::transaction::publish(&changes).map_err(|e| Failure::new(if e.conflict { Status::Conflict } else { Status::Error }, "CLI-PUBLISH",
                 format!("{}; written={:?}; restoration_failed={:?}",e.message,e.written,e.restoration_failed)))?;
         }
-        let after_snapshot = if written.is_empty() { self.snapshot.id.clone() } else { InputSnapshot::capture(&Project::open_schema_only(Some(self.original.config_path()))?)?.id };
         Ok((json!({"changed": !changes.is_empty(), "written": !written.is_empty(), "dry_run": dry_run, "validation": validation,
-            "operations": self.operations, "files": files, "written_files": written.iter().map(|p| crate::project_path(self.original.root_dir(),p)).collect::<Vec<_>>(),
-            "before_snapshot": self.snapshot.id, "after_snapshot": after_snapshot}), diagnostics))
+            "operations": self.operations, "files": files, "written_files": written.iter().map(|p| crate::project_path(self.original.root_dir(),p)).collect::<Vec<_>>()}), diagnostics))
     }
 }
 

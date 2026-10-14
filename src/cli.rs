@@ -6,7 +6,7 @@ use serde_json::{Value,json};
 pub(crate) struct SelfUpdateArgs { pub check: bool, pub yes: bool }
 const FLAGS: &[&str] = &["include-derived","related","dry-run","check","rules","explain","summary","include-source","stdin","global","yes","performance"];
 const QUERY: &str = "type include-derived file key fields where dimension sort limit cursor";
-const WRITE: &str = "dry-run rules expected-snapshot";
+const WRITE: &str = "dry-run rules";
 
 fn option(name: &'static str) -> Arg {
     let arg=Arg::new(name).long(name);
@@ -48,8 +48,8 @@ pub(crate) fn command()->Command {
         group("stats",vec![leaf("project","Report project counts",&[QUERY]),leaf("records","Count records by type or file",&[QUERY,"group-by"]),
             leaf("field","Compute field distributions and numeric statistics",&[QUERY,"field metrics group-by option-layer quantiles"]),
             leaf("dimension","Compute explicit coverage",&[QUERY,"variant group-by field"]),leaf("refs","Compute reference counts",&[QUERY,"direction"])]),
-        leaf("check","Validate data and optionally business rules",&["rules rule input limit explain performance expected-snapshot"]),
-        group("rule",vec![leaf("list","List rules and static dependencies",&["type"]),leaf("inspect","Inspect a rule",&["rule expected-snapshot"])]),
+        leaf("check","Validate data and optionally business rules",&["rules rule input limit explain performance"]),
+        group("rule",vec![leaf("list","List rules and static dependencies",&["type"]),leaf("inspect","Inspect a rule",&["rule"])]),
         leaf("explain","Explain a diagnostic code",&[]).arg(Arg::new("code").required(true)),
         leaf("apply","Validate and publish a change set atomically",&["input",WRITE]),
         leaf("diff","Compare Git or candidate project sources and data",&["base input summary include-source type view"]).mut_arg("input",|a|a.conflicts_with("base")),

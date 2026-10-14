@@ -22,7 +22,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                 let key = if group == "file" { session.queries().file_for_record(record.actual_type(), record.key()).unwrap_or_default() } else { record.actual_type() };
                 *groups.entry(key.into()).or_default() += 1;
             }
-            super::json(paginate(groups.into_iter().map(|(key, count)| json!({"group": key, "count": count})).collect(), &selector, &snapshot.id)?)
+            super::json(paginate(groups.into_iter().map(|(key, count)| json!({"group": key, "count": count})).collect(), &selector)?)
         }
         "stats.field" => {
             let field = args.require("field")?;
@@ -43,7 +43,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                     let entry = groups.entry(encoded.to_string()).or_insert((encoded, 0)); entry.1 += 1;
                 }
                 result["distribution"] = super::json(paginate(groups.into_values().map(|(value,count)| json!({"value": value, "count": count,
-                    "ratio": if values.is_empty() { None } else { Some(count as f64 / values.len() as f64) }})).collect(), &selector, &snapshot.id)?)?;
+                    "ratio": if values.is_empty() { None } else { Some(count as f64 / values.len() as f64) }})).collect(), &selector)?)?;
             }
             if args.get("metrics").is_some(){
                 let metrics=args.csv("metrics");
@@ -73,7 +73,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             let items = groups.into_iter().map(|(group, [eligible, explicit, none])| json!({"group": group, "eligible_fields": eligible,
                 "explicit": explicit, "fallback": eligible-explicit, "explicit_none": none, "zero_denominator": eligible == 0,
                 "coverage": if eligible == 0 { None } else { Some(explicit as f64 / eligible as f64) }})).collect();
-            super::json(paginate(items, &selector, &snapshot.id)?)
+            super::json(paginate(items, &selector)?)
         }
         "stats.refs" => {
             let edges = super::references::edges(session);
@@ -83,7 +83,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
                 let outgoing = edges.iter().filter(|e| super::references::pair(&e["host"]) == id).count();
                 json!({"type": record.actual_type(), "key": record.key(), "incoming": incoming, "outgoing": outgoing, "zero_incoming": incoming == 0})
             }).collect();
-            super::json(paginate(items, &selector, &snapshot.id)?)
+            super::json(paginate(items, &selector)?)
         }
         _ => Err(Failure::invalid("unknown statistics command")),
     }
