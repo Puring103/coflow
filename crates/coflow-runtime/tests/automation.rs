@@ -16,6 +16,46 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn reference_graph_reports_depth_and_pagination_truncation_independently() {
+    let root = fixture();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { value: 10, next: Some(&b) }\nb: Item { value: 20, next: Some(&c) }\nc: Item { value: 30, next: Some(&a) }\nd: Item { value: 40 }\n").unwrap();
+    for (direction, host, target) in [("outgoing", "a", "b"), ("incoming", "c", "a")] {
+        let one = run(root.path(), "data.refs", &[("type", "Item"), ("key", "a"), ("direction", direction)], None);
+        assert_eq!(one.result["total"], 1);
+        assert_eq!(one.result["items"][0]["host"]["key"], host);
+        assert_eq!(one.result["items"][0]["target"]["key"], target);
+        assert_eq!(one.result["depth_truncated"], true);
+        assert_eq!(one.result["truncated"], false);
+        let two = run(root.path(), "data.refs", &[("type", "Item"), ("key", "a"), ("direction", direction), ("depth", "2")], None);
+        assert_eq!(two.result["total"], 2);
+        assert_eq!(two.result["depth_truncated"], true);
+        let all = run(root.path(), "data.refs", &[("type", "Item"), ("key", "a"), ("direction", direction), ("depth", "3")], None);
+        assert_eq!(all.result["total"], 3);
+        assert_eq!(all.result["depth_truncated"], false);
+        let mut collected = Vec::new();
+        let mut cursor = None::<String>;
+        loop {
+            let mut options = vec![("type", "Item"), ("key", "a"), ("direction", direction), ("depth", "3"), ("limit", "1")];
+            if let Some(cursor) = cursor.as_deref() { options.push(("cursor", cursor)); }
+            let page = run(root.path(), "data.refs", &options, None);
+            assert_eq!(page.result["total"], 3);
+            assert_eq!(page.result["depth_truncated"], false);
+            collected.extend(page.result["items"].as_array().unwrap().iter().cloned());
+            cursor = page.result["next_cursor"].as_str().map(str::to_string);
+            assert_eq!(page.result["truncated"], cursor.is_some());
+            if cursor.is_none() { break; }
+        }
+        assert_eq!(collected, *all.result["items"].as_array().unwrap());
+    }
+    let both = run(root.path(), "data.refs", &[("type", "Item"), ("key", "a"), ("direction", "both"), ("depth", "2")], None);
+    assert_eq!(both.result["total"], 3);
+    assert_eq!(both.result["depth_truncated"], false);
+    let isolated = run(root.path(), "data.refs", &[("type", "Item"), ("key", "d"), ("depth", "64")], None);
+    assert_eq!(isolated.result["total"], 0);
+    assert_eq!(isolated.result["depth_truncated"], false);
+}
+
+#[test]
 fn reference_edges_locate_base_and_dimension_sources_separately() {
     let root = fixture();
     fs::write(root.path().join("schema.cft"), "table Item { value: int; @dimension(\"language\") next: Option<&Item>; }\n").unwrap();

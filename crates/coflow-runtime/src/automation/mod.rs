@@ -7,6 +7,7 @@ mod request;
 mod read;
 mod dimension;
 mod references;
+pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, ReferenceEdge, ReferenceQuery};
 mod statistics;
 mod rules;
 mod context;
@@ -165,6 +166,7 @@ pub fn response_schema() -> schemars::schema::RootSchema { response_schema_of::<
 pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchema {
     match command {
         Some("explain") => response_schema_of::<Option<DiagnosticExplanation>>(),
+        Some("data.refs") => response_schema_of::<Option<ReferenceQuery>>(),
         _ => response_schema(),
     }
 }

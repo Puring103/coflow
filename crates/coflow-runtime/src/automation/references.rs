@@ -1,9 +1,48 @@
 use std::collections::BTreeSet;
-use serde_json::{Value, json};
+use serde::Serialize;
+use schemars::JsonSchema;
+use serde_json::Value;
 use crate::ReadOnlyProjectSession;
-use super::{Arguments, Result, Failure, query::paginate};
+use super::{Arguments, Result, Failure, RecordTarget, query::paginate, diagnostics::CommandLocation};
 
-pub fn edges(session: &ReadOnlyProjectSession) -> Vec<Value> {
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ReferenceDimension {
+    pub dimension: String,
+    pub variant: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ReferencePathSegment {
+    Field(String),
+    Index(usize),
+    DictKey(String),
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ReferencePath {
+    pub segments: Vec<ReferencePathSegment>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ReferenceEdge {
+    pub host: RecordTarget,
+    pub target: RecordTarget,
+    pub path: ReferencePath,
+    pub dimension: Option<ReferenceDimension>,
+    pub location: Option<CommandLocation>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ReferenceQuery {
+    pub items: Vec<ReferenceEdge>,
+    pub total: usize,
+    pub truncated: bool,
+    pub next_cursor: Option<String>,
+    pub depth_truncated: bool,
+}
+
+pub fn edges(session: &ReadOnlyProjectSession) -> Vec<ReferenceEdge> {
     let mut result = Vec::new();
     for (_, record) in session.model().records() {
         for edge in session.queries().record_references(&record.coordinate()) {
@@ -19,12 +58,20 @@ pub fn edges(session: &ReadOnlyProjectSession) -> Vec<Value> {
                 },
             };
             let location = origin.and_then(|origin| origin.location_for_path(&edge.path))
-                .map(|source| super::diagnostics::CommandLocation::from_source(
+                .map(|source| CommandLocation::from_source(
                     &source.into(), Some(session.session.project.root_dir())));
-            result.push(json!({"host": {"type": record.actual_type(), "key": record.key()},
-                "target": {"type": edge.target.actual_type, "key": edge.target.key},
-                "path": edge.path, "dimension": edge.dimension.map(|d| json!({"dimension": d.dimension, "variant": d.variant})),
-                "location": location}));
+            result.push(ReferenceEdge {
+                host: RecordTarget { actual_type: record.actual_type().to_string(), key: record.key().to_string() },
+                target: RecordTarget { actual_type: edge.target.actual_type.to_string(), key: edge.target.key.to_string() },
+                // 公共路径契约独立于数据模型内部类型，保留字典键的 CFD 表达式。
+                path: ReferencePath { segments: edge.path.segments.into_iter().map(|segment| match segment {
+                    crate::CfdPathSegment::Field(name) => ReferencePathSegment::Field(name),
+                    crate::CfdPathSegment::Index(index) => ReferencePathSegment::Index(index),
+                    crate::CfdPathSegment::DictKey(key) => ReferencePathSegment::DictKey(key),
+                }).collect() },
+                dimension: edge.dimension.map(|d| ReferenceDimension { dimension: d.dimension.to_string(), variant: d.variant.to_string() }),
+                location,
+            });
         }
     }
     result
@@ -43,20 +90,22 @@ pub fn query(session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value
     for _ in 0..depth {
         let mut next = BTreeSet::new();
         for (index, edge) in all.iter().enumerate() {
-            let host = pair(&edge["host"]); let target = pair(&edge["target"]);
-            if direction != "incoming" && frontier.contains(&host) { included.insert(index); if seen.insert(target.clone()) { next.insert(target); } }
-            if direction != "outgoing" && frontier.contains(&pair(&edge["target"])) { included.insert(index); if seen.insert(host.clone()) { next.insert(host); } }
+            let host = pair(&edge.host); let target = pair(&edge.target);
+            let outgoing = direction != "incoming" && frontier.contains(&host);
+            let incoming = direction != "outgoing" && frontier.contains(&target);
+            if outgoing { included.insert(index); if seen.insert(target.clone()) { next.insert(target); } }
+            if incoming { included.insert(index); if seen.insert(host.clone()) { next.insert(host); } }
         }
         frontier = next;
     }
     let depth_truncated = all.iter().enumerate().any(|(i, edge)| !included.contains(&i) &&
-        (direction != "incoming" && frontier.contains(&pair(&edge["host"])) || direction != "outgoing" && frontier.contains(&pair(&edge["target"]))));
+        (direction != "incoming" && frontier.contains(&pair(&edge.host)) || direction != "outgoing" && frontier.contains(&pair(&edge.target))));
     let items = all.into_iter().enumerate().filter_map(|(i,v)| included.contains(&i).then_some(v)).collect();
-    let mut result = super::json(paginate(items, &args.selector()?)?)?;
-    result["depth_truncated"] = json!(depth_truncated);
-    Ok(result)
+    let page = paginate(items, &args.selector()?)?;
+    super::json(ReferenceQuery { items: page.items, total: page.total, truncated: page.truncated,
+        next_cursor: page.next_cursor, depth_truncated })
 }
 
-pub fn pair(value: &Value) -> (String, String) {
-    (value["type"].as_str().unwrap_or_default().into(), value["key"].as_str().unwrap_or_default().into())
+pub fn pair(value: &RecordTarget) -> (String, String) {
+    (value.actual_type.clone(), value.key.clone())
 }
