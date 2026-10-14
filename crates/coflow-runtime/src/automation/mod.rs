@@ -29,7 +29,7 @@ pub use transaction::{ChangeSet, FileOperation};
 pub(crate) use transaction::Candidate;
 pub use operations::{Operation, RecordTarget, FieldPath, InputValue, RecordFields};
 pub use request::Arguments;
-pub use read::read_command;
+pub use read::{read_command, SourceRead};
 pub use snapshot::{InputSnapshot, InputFile};
 pub use query::{Selector, Page, query_records};
 
@@ -167,6 +167,7 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
     match command {
         Some("explain") => response_schema_of::<Option<DiagnosticExplanation>>(),
         Some("data.refs") => response_schema_of::<Option<ReferenceQuery>>(),
+        Some("source.read") => response_schema_of::<Option<SourceRead>>(),
         _ => response_schema(),
     }
 }
