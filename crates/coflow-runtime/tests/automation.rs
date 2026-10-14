@@ -77,6 +77,19 @@ fn schema_references_resolve_field_and_rule_symbols_from_the_symbol_index() {
 }
 
 #[test]
+fn schema_references_distinguish_nested_defaults_from_string_mentions() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ntable Item { colors: [Color] = [Color::Red]; selected: Option<Color> = Some(Color::Blue); text: string = \"Color\"; }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item {}\n").unwrap();
+    let result = run(root.path(), "schema.refs", &[("symbol", "Color")], None);
+    assert_eq!(result.status, Status::Success, "{result:?}");
+    let uses = result.result["references"].as_array().unwrap();
+    let defaults: Vec<_> = uses.iter().filter(|item| item["kind"] == "default_value").map(|item| item["symbol"].as_str().unwrap()).collect();
+    assert_eq!(defaults, ["Item.colors", "Item.selected"]);
+    assert!(!uses.iter().any(|item| item["symbol"] == "Item.text"));
+}
+
+#[test]
 fn cursors_reject_changes_to_command_and_command_specific_filters() {
     let root = fixture();
     let first = run(root.path(), "schema.symbols", &[("limit", "1")], None);

@@ -48,6 +48,10 @@ pub fn references(project: &Project, session: &ProjectSchemaSession, args: &supe
         if ty.parent.as_ref().is_some_and(|p| p.as_str() == symbol) { items.push(json!({"kind": "type_reference", "symbol": ty.name, "location": source.map(|s| location(&s.path, &s.source, ty.span))})); }
         for field in ty.all_fields().filter(|f| f.declaring_type == ty.name) {
             if mentions(&field.value_type,symbol) { items.push(json!({"kind": "type_reference", "symbol": format!("{}.{}",ty.name,field.name), "location": source.map(|s| location(&s.path, &s.source, field.span))})); }
+            if field.default.as_ref().is_some_and(|value| default_mentions(value, symbol)) {
+                items.push(json!({"kind": "default_value", "symbol": format!("{}.{}", ty.name, field.name),
+                    "location": source.map(|source| location(&source.path, &source.source, field.span))}));
+            }
         }
     }
     for info in schema.all_check_statements() {
@@ -89,4 +93,18 @@ pub fn references(project: &Project, session: &ProjectSchemaSession, args: &supe
     }
     let page = super::query::paginate(items, &args.selector()?)?;
     Ok(json!({"symbol": symbol, "references": page.items, "total": page.total, "truncated": page.truncated, "next_cursor": page.next_cursor}))
+}
+
+fn default_mentions(value: &coflow_language::cft::CftSchemaDefaultValue, symbol: &str) -> bool {
+    use coflow_language::cft::CftSchemaDefaultValue as V;
+    // 遍历已解析的类型身份，字符串内容与同名标识符不构成符号引用。
+    match value {
+        V::Enum { enum_name, .. } => enum_name.as_str() == symbol,
+        V::RecordReference { type_name, .. } => type_name.as_str() == symbol,
+        V::Object { type_name, fields } => type_name.as_str() == symbol || fields.iter().any(|(_, value)| default_mentions(value, symbol)),
+        V::OptionSome(value) => default_mentions(value, symbol),
+        V::Array(values) => values.iter().any(|value| default_mentions(value, symbol)),
+        V::Dictionary(entries) => entries.iter().any(|(key, value)| default_mentions(key, symbol) || default_mentions(value, symbol)),
+        _ => false,
+    }
 }
