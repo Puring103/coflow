@@ -124,17 +124,19 @@ export function useProjectSettings(
     )
   }, [generation, setError])
 
-  const saveViews = useCallback((
-    filePath: string,
-    actualType: string,
-    views: ViewConfig[],
-  ) => {
-    setSettings(current => withViews(current, filePath, actualType, views))
-    persistLatestSettings(
-      viewsSaveSequence, generation, setSettings, setError, '保存视图失败',
-      sessionId => api.setViews(sessionId, filePath, actualType, views),
-    )
-  }, [generation, setError])
+  const saveViews = useCallback(async (filePath: string, actualType: string, views: ViewConfig[]) => {
+    const sequence = ++viewsSaveSequence.current
+    const identity = generation.currentIdentity()
+    if (!api.isTauri) {
+      setSettings(current => withViews(current, filePath, actualType, views))
+      return
+    }
+    if (!identity) throw new Error('项目尚未打开')
+    // 成功后发布设置；失败保留对话框草稿，避免把未保存的配置显示为已保存。
+    const next = await api.setViews(identity.sessionId, filePath, actualType, views)
+    if (generation.currentSession() !== identity.sessionId) throw new Error('项目已切换')
+    if (viewsSaveSequence.current === sequence) setSettings(next)
+  }, [generation])
 
   return { settings, setSettings, saveRecordGroups, saveViews, saveViewOrder }
 }

@@ -18,7 +18,7 @@ check ItemPrices {
 }
 ```
 
-类型中的匿名 check 位于全部字段之后，顶层规则必须命名。每条条件返回 bool；可选消息使用普通字符串或 fstring。`when condition { ... }` 控制内部规则，`all`、`any`、`none` 对集合逐项验证；空集合满足 all 和 none，不满足 any。
+类型中的匿名 check 位于全部字段之后，顶层规则必须命名。顶层规则使用 `records(TypeName)` 获取 table 或 singleton 的记录集合；data 不提供记录集合。每条条件返回 bool；可选消息使用普通字符串或 fstring。`when condition { ... }` 控制内部规则，`all`、`any`、`none` 对集合逐项验证；空集合满足 all 和 none，不满足 any。
 
 `is Some(value)` 解包一层 Option；`is None` 判断空态；`is TypeName` 判断实际类型。条件可以使用字段路径、索引、算术、比较、逻辑、位运算及固定检查操作，如 len、contains、isUnique 和 matches。逻辑条件短路求值，越界、溢出和除零产生计算诊断。
 

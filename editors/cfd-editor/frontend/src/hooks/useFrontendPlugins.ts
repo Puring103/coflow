@@ -45,7 +45,7 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
     const sequence = ++loadSequence.current
     setReady(false)
     const sessionId = project?.session_id
-    const projectState = sessionId === undefined
+    const projectState = !api.isTauri || sessionId === undefined
       ? Promise.resolve<api.FrontendPluginProjectState>({
           plugins: [],
           errors: [],
@@ -75,7 +75,7 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
       && projectSessionRef.current === sessionId
     setReady(false)
     try {
-      const state = project
+      const state = api.isTauri && project
         ? await api.listProjectFrontendPlugins(project.session_id)
         : {
             plugins: [],

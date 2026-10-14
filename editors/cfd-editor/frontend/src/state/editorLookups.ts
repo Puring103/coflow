@@ -1,3 +1,4 @@
+import type { FlatDiagnostic } from '../bindings/FlatDiagnostic'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { RefTarget } from '../bindings/RefTarget'
 import type { FieldValue } from '../wire'
@@ -16,6 +17,18 @@ export type LookupResult<T> =
   | { ok: false; reason: 'unavailable' | 'superseded' | 'failed'; error?: string }
 
 export class EditorLookupController {
+  private failures: FlatDiagnostic[] = []
+  private listeners = new Set<() => void>()
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
+  getFailures = () => this.failures
+  private updateFailure(key: string, message?: string) {
+    const next = this.failures.filter(item => item.id !== key)
+    if (message) next.push({ id: key, severity: 'error', code: 'lookup_load_failed', stage: 'editor', message, target: { kind: 'none' }, contexts: [] })
+    if (JSON.stringify(next) === JSON.stringify(this.failures)) return
+    this.failures = next
+    this.listeners.forEach(listener => listener())
+  }
+
   private generation: EditorGenerationIdentity | null = null
   private epoch = 0
   private refEpoch = 0
@@ -34,6 +47,8 @@ export class EditorLookupController {
     this.generation = generation
 
     if (sessionChanged) {
+      this.failures = []
+      this.listeners.forEach(listener => listener())
       this.epoch += 1
       this.refEpoch += 1
       this.values.clear()
@@ -124,14 +139,16 @@ export class EditorLookupController {
       .then<LookupResult<T>>(value => {
         if (!isCurrent()) return { ok: false, reason: 'superseded' }
         if (cache) this.values.set(key, value)
+        this.updateFailure(key)
         options.onSuccess?.()
         return { ok: true, value }
       })
-      .catch((error: unknown): LookupResult<T> => (
-        !isCurrent()
-          ? { ok: false, reason: 'superseded' }
-          : { ok: false, reason: 'failed', error: errorMessage(error) }
-      ))
+      .catch((error: unknown): LookupResult<T> => {
+        if (!isCurrent()) return { ok: false, reason: 'superseded' }
+        const message = errorMessage(error)
+        this.updateFailure(key, `${name}：${message}`)
+        return { ok: false, reason: 'failed', error: message }
+      })
       .finally(() => {
         if (this.requests.get(key) === request) this.requests.delete(key)
       })

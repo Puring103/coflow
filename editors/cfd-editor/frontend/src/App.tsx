@@ -1,3 +1,8 @@
+import { ViewPicker } from './components/ViewPicker'
+import { createMockLookups } from './mockLookups'
+import { Menu } from './components/Menu'
+import { ProjectSearchDialog } from './components/ProjectSearchDialog'
+import { EditorSettingsMenu } from './components/EditorSettingsMenu'
 import { recordMatchesKeySearch } from './value/fieldValue'
 import { afterSourceSave, deferSourceNavigation, flushSourceChanges } from './state/sourceAutosave'
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
@@ -26,7 +31,6 @@ import { useEditorProjections } from './hooks/useEditorProjections'
 import { useWorkspacePersistence } from './hooks/useWorkspacePersistence'
 import { useMutationPublication } from './hooks/useMutationPublication'
 import { emptyProjectSettings, useProjectSettings } from './hooks/useProjectSettings'
-import { ReorderableViewTabs } from './components/ReorderableViewTabs'
 import { searchMockRecords } from './built-in-plugins'
 import {
   PluginContributionMount,
@@ -80,7 +84,7 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
-import { recordMatchesFullTextSearch, recordMatchesSearch } from './value/fieldValue'
+import { recordMatchesFullTextSearch } from './value/fieldValue'
 import { isEditableFile } from './utils/editable'
 import { isNativeEditorTarget } from './utils/dom'
 import { EditorLookupController } from './state/editorLookups'
@@ -177,12 +181,10 @@ const GRAPH_LIMIT = 1_000
 // 共享空数组，避免每次渲染产生新引用而让下游 useMemo 失效。
 const EMPTY_RECORD_GROUPS: never[] = []
 interface AppProps {
-  /** 独立浏览器预览启用布局实验，正式入口保持原布局。 */
-  layoutPreview?: boolean
   browserSettings?: EditorProjectSettings
 }
 
-export default function App({ layoutPreview = false, browserSettings = MOCK_EDITOR_SETTINGS }: AppProps = {}) {
+export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps = {}) {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
   const {
     settings: pluginSettings,
@@ -201,7 +203,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
   }, [])
   const [generation] = useState(() => new ProjectGenerationController())
   const [history] = useState(() => new MutationHistoryController())
-  const [lookups] = useState(() => new EditorLookupController(api))
+  const [lookups] = useState(() => new EditorLookupController(api.isTauri ? api : createMockLookups(() => fileDataCacheRef.current)))
   const lookupGenerationKey = project ? `${project.session_id}:${project.revision}` : 'none'
   const historySnapshot = useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot)
   const {
@@ -339,7 +341,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     GRAPH_DEPTH,
     GRAPH_LIMIT,
   )
-  const { theme, toggle: toggleTheme } = useTheme(layoutPreview ? 'light' : undefined)
+  const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
   const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
   const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(null)
@@ -391,17 +393,6 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     _fieldPath?: string | null,
   ) => {})
   const [projectSearchOpen, setProjectSearchOpen] = useState(false)
-  const projectSearchDialogRef = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
-    const dialog = projectSearchDialogRef.current
-    if (!dialog) return
-    // 原生模态窗口负责焦点约束与 Escape，关闭后恢复打开前的焦点。
-    if (projectSearchOpen && !dialog.open) dialog.showModal()
-    if (!projectSearchOpen && dialog.open) dialog.close()
-    if (!projectSearchOpen) return
-    const frame = requestAnimationFrame(() => dialog.querySelector<HTMLInputElement>('[data-built-in-project-search-input]')?.focus())
-    return () => cancelAnimationFrame(frame)
-  }, [projectSearchOpen])
   const openPluginSidebar = useCallback((pluginId: string, sidebarId: string) => {
     const sidebar = pluginRegistrySnapshot().sidebars.find(
       item => item.pluginId === pluginId && item.id === sidebarId,
@@ -410,13 +401,13 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
       setErrorMsg(`插件侧栏 ${pluginId}/${sidebarId} 不可用`)
       return
     }
-    if (layoutPreview && pluginId === 'project-search') {
+    if (pluginId === 'project-search') {
       setProjectSearchOpen(true)
       return
     }
-    if (layoutPreview) setNavigationCollapsed(false)
+    setNavigationCollapsed(false)
     setActivePane(`plugin:${sidebar.key}`)
-  }, [layoutPreview])
+  }, [])
   useEffect(() => {
     setPluginUiBridge({
       openPage: openPluginPageTab,
@@ -480,17 +471,15 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     try { localStorage.setItem('cfd-editor-active-pane', activePane) } catch { /* quota */ }
   }, [activePane])
   const [documentSearch, setDocumentSearch] = useState('')
-  const [defaultViewSettingsOpen, setDefaultViewSettingsOpen] = useState(false)
   const [keyOnlySearch, setKeyOnlySearch] = useState(false)
-  const [tableFullTextSearch, setTableFullTextSearch] = useState(false)
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
   const documentSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const viewContainerRef = useRef<HTMLDivElement>(null)
-  const [previewLoadDiagnostics, setPreviewLoadDiagnostics] = useState<FlatDiagnostic[]>([])
+  const lookupDiagnostics = useSyncExternalStore(lookups.subscribe, lookups.getFailures, lookups.getFailures)
   const [navigationCollapsed, setNavigationCollapsed] = useState(false)
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(layoutPreview)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(true)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
   const [tableFocusRequest, setTableFocusRequest] = useState(0)
   const [firstRecordFocusRequest, setFirstRecordFocusRequest] = useState(0)
@@ -514,36 +503,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
   const [viewEditor, setViewEditor] = useState<
     { mode: 'create' } | { mode: 'edit'; view: ViewConfig } | null
   >(null)
-  const [viewMenu, setViewMenu] = useState<
-    { tab: ViewTab; x: number; y: number } | null
-  >(null)
-  const [viewAddMenuOpen, setViewAddMenuOpen] = useState(false)
-  useEffect(() => {
-    if (!viewAddMenuOpen) return
-    const close = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest('.view-tab-add-wrap')) return
-      setViewAddMenuOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [viewAddMenuOpen])
-  const openViewEditor = useCallback((mode: 'create') => {
-    setViewMenu(null)
-    setViewEditor({ mode })
-  }, [])
-  const openViewContextMenu = useCallback((tab: ViewTab, x: number, y: number) => {
-    setViewMenu({ tab, x, y })
-  }, [])
-  useEffect(() => {
-    if (!viewMenu) return
-    const close = () => setViewMenu(null)
-    window.addEventListener('click', close)
-    window.addEventListener('resize', close)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('resize', close)
-    }
-  }, [viewMenu])
+  const openViewEditor = () => setViewEditor({ mode: 'create' })
 
   const {
     dragging: splitterDragging,
@@ -945,15 +905,13 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     if (failure) reportSessionError(project.session_id, failure[0], failure[1])
   }, [dataQueries.dimensionQuery.error, dataQueries.fileQuery.error, dataQueries.graphQuery.error, project, reportSessionError])
 
-  // Auto-collapse inspector when switching to record view; restore for table/graph.
+  // 记录视图使用内置详情，切换时收起独立详情面板。
   useEffect(() => {
     const view = router.current?.view
     if (view === 'record') {
       setInspectorCollapsed(true)
-    } else if (!layoutPreview && (view === 'table' || view === 'graph')) {
-      setInspectorCollapsed(false)
     }
-  }, [router.current?.view, layoutPreview])
+  }, [router.current?.view])
 
   const openFile = useCallback(
     (filePath: string, requestedType = ''): void => {
@@ -1962,8 +1920,8 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
   }, [activeGraph, resolvedView, recordGroups])
   // Choices offered by the view editor dialog.
   const viewEditorFields = useMemo(
-    () => activeFileData?.columns.map(column => column.name) ?? [],
-    [activeFileData],
+    () => activeFileData?.columns.filter(column => column.type_names.includes(activeType)).map(column => column.name) ?? [],
+    [activeFileData, activeType],
   )
   // Relations are derived from record annotations (not the graph, which may
   // not be loaded when the dialog opens from the table view).
@@ -1976,21 +1934,23 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     [activeFileData, activeType],
   )
   // Create or update a custom view: merge into the (file,type) list and save.
-  const submitViewConfig = useCallback((view: ViewConfig) => {
+  const submitViewConfig = useCallback(async (view: ViewConfig) => {
     if (!activeFile || !activeType) return
     const existing = projectSettings?.views[activeFile]?.[activeType] ?? []
     const next = existing.some(v => v.id === view.id)
       ? existing.map(v => (v.id === view.id ? view : v))
       : [...existing, view]
-    saveViews(activeFile, activeType, next)
-  }, [activeFile, activeType, projectSettings, saveViews])
+    await saveViews(activeFile, activeType, next)
+    if (currentRoute?.viewId !== view.id) switchView({ ...view, isDefault: view.id === DEFAULT_TABLE_VIEW_ID })
+  }, [activeFile, activeType, projectSettings, saveViews, currentRoute?.viewId])
 
   // Delete a custom view; if the current route pointed at it, fall back to the
   // default table view (its column widths vanish with the ViewConfig).
-  const deleteView = useCallback((viewId: string) => {
+  const deleteView = useCallback(async (viewId: string) => {
     if (!activeFile || !activeType) return
     const existing = projectSettings?.views[activeFile]?.[activeType] ?? []
-    saveViews(activeFile, activeType, existing.filter(v => v.id !== viewId))
+    try { await saveViews(activeFile, activeType, existing.filter(v => v.id !== viewId)) }
+    catch (error) { setErrorMsg(`删除视图失败：${errorMessage(error)}`); return }
     if (currentRoute?.viewId === viewId) {
       router.replace({ view: 'table', file: activeFile, viewId: DEFAULT_TABLE_VIEW_ID, typeFilter: activeType })
     }
@@ -2002,27 +1962,23 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
   // Table and Record views each filter on so the count stays honest for
   // both).
   const { typeCount, matchedCount } = useMemo(() => {
-    if (!activeFileData) return { typeCount: 0, matchedCount: 0 }
+    if (!viewFilteredFileData) return { typeCount: 0, matchedCount: 0 }
     const inType = activeType
-      ? activeFileData.records.filter(r => recordActualType(r) === activeType)
-      : activeFileData.records
+      ? viewFilteredFileData.records.filter(r => recordActualType(r) === activeType)
+      : viewFilteredFileData.records
     if (!documentSearch.trim()) return { typeCount: inType.length, matchedCount: inType.length }
-    const matchesSearch = keyOnlySearch ? recordMatchesKeySearch : (layoutPreview || (currentRoute?.view === 'table' && tableFullTextSearch))
-      ? recordMatchesFullTextSearch
-      : recordMatchesSearch
+    const matchesSearch = keyOnlySearch ? recordMatchesKeySearch : recordMatchesFullTextSearch
     const matched = inType.filter(record => matchesSearch(record, documentSearch))
     return { typeCount: inType.length, matchedCount: matched.length }
-  }, [activeFileData, activeType, currentRoute?.view, documentSearch, tableFullTextSearch, keyOnlySearch, layoutPreview])
+  }, [viewFilteredFileData, activeType, currentRoute?.view, documentSearch, keyOnlySearch])
 
   // A hidden row must not remain keyboard-selected after search narrows the
   // active set. Close a hidden table inspector, and keep record mode on the
   // first record that is still visible.
   useEffect(() => {
-    if (!activeFileData || !currentRoute || !documentSearch.trim()) return
-    const matchesSearch = keyOnlySearch ? recordMatchesKeySearch : (layoutPreview || (currentRoute.view === 'table' && tableFullTextSearch))
-      ? recordMatchesFullTextSearch
-      : recordMatchesSearch
-    const visible = activeFileData.records.filter(record => (
+    if (!viewFilteredFileData || !currentRoute || !documentSearch.trim()) return
+    const matchesSearch = keyOnlySearch ? recordMatchesKeySearch : recordMatchesFullTextSearch
+    const visible = viewFilteredFileData.records.filter(record => (
       (!activeType || recordActualType(record) === activeType)
       && matchesSearch(record, documentSearch)
     ))
@@ -2059,7 +2015,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     ) {
       router.replace({ view: 'record', file: currentRoute.file, viewId: currentRoute.viewId, coordinate: visible[0].coordinate })
     }
-  }, [activeFileData, activeType, currentRoute, documentSearch, router, tableFullTextSearch, keyOnlySearch, layoutPreview])
+  }, [viewFilteredFileData, activeType, currentRoute, documentSearch, router, keyOnlySearch])
 
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
@@ -2157,7 +2113,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     documentSearchRef.current?.select()
   }, [])
   const focusDocumentTabs = useCallback(() => {
-    document.querySelector<HTMLElement>('.document-view-tabs .tab-btn.active')
+    document.querySelector<HTMLElement>('.view-picker summary, .document-view-tabs .tab-btn.active')
       ?.focus({ preventScroll: true })
   }, [])
   const focusActiveView = useCallback(() => {
@@ -2537,26 +2493,22 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
     if (workspaceTab) openFile(workspaceTab.filePath, workspaceTab.typeName)
   }
 
-  const previewViewPicker = () => (
-    <details className="preview-view-picker">
-      <summary><Icon name="table" size={14} /><span>{viewTabs.find(tab => tab.id === currentRoute?.viewId)?.name ?? '视图'}</span><Icon name="chevron-down" size={12} /></summary>
-      <div className="preview-view-menu">
-        {viewTabs.map(tab => <button key={tab.id} className="btn" aria-current={tab.id === currentRoute?.viewId ? 'true' : undefined}
-          onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); switchView(tab) }}>
-          <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={14} />{tab.id === DEFAULT_TABLE_VIEW_ID ? '全部记录' : tab.name}
-        </button>)}
-        {pluginViews.map(view => <button key={view.key} className="btn" onClick={event => {
-          event.currentTarget.closest('details')?.removeAttribute('open'); switchPluginView(view.key)
-        }}><Icon name="extensions" size={14} />{view.title}</button>)}
-        <button className="btn" onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); openViewEditor('create') }}><Icon name="plus" size={14} />新建视图</button>
-        {!resolvedView?.isDefault && <button className="btn" onClick={event => {
-          event.currentTarget.closest('details')?.removeAttribute('open')
-          const saved = projectSettings?.views[activeFile ?? '']?.[activeType]?.find(view => view.id === currentRoute?.viewId)
-          if (saved) setViewEditor({ mode: 'edit', view: saved })
-        }}><Icon name="settings" size={14} />配置当前视图</button>}
-      </div>
-    </details>
-  )
+  function editCurrentView() {
+    const saved = projectSettings?.views[activeFile ?? '']?.[activeType]?.find(view => view.id === currentRoute?.viewId)
+    if (saved) setViewEditor({ mode: 'edit', view: saved })
+    else if (resolvedView?.id === DEFAULT_TABLE_VIEW_ID) setViewEditor({ mode: 'edit', view: {
+      id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', columns: viewEditorFields,
+      column_widths: {}, relations: [], fields: [], group_filter: null,
+    } })
+  }
+
+  const renderViewPicker = () => <ViewPicker tabs={viewTabs} activeId={currentRoute?.viewId}
+    plugins={pluginViews} activePluginKey={activePluginView?.key} onSelect={switchView} onSelectPlugin={switchPluginView}
+    onCreate={activeType && !isSingletonType ? openViewEditor : undefined}
+    onDelete={resolvedView && !resolvedView.isDefault ? () => void deleteView(resolvedView.id) : undefined}
+    onPin={() => {
+      if (activeFile && currentRoute) saveViewOrder(activeFile, activeType, [currentRoute.viewId, ...viewTabs.filter(tab => tab.id !== currentRoute.viewId).map(tab => tab.id)])
+    }} />
 
   return (
     <ShortNameContext.Provider value={{ fields: projectSettings?.short_name_fields ?? {}, setField: shortNameSaving ? undefined : saveShortNameField }}>
@@ -2566,42 +2518,13 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
       generationKey={`${lookupGenerationKey}:${shortNameRevision}`}
       sessionId={project?.session_id}
       onOpenReference={openReference}
+      onLookupError={key => setDiagFocus(previous => ({ key, tick: (previous?.tick ?? 0) + 1 }))}
     >
-    <div className={layoutPreview ? `app layout-preview${navigationCollapsed ? ' navigation-collapsed' : ''}` : "app"}
-      onClickCapture={layoutPreview ? event => {
-        // 加载失败独立列入底部诊断，不切换视图或伪装成数据校验错误。
-        const badge = (event.target as HTMLElement).closest<HTMLElement>('.dc-load-error')
-        if (!badge) return
-        event.stopPropagation()
-        const field = badge.closest('[data-field]')?.getAttribute('data-field')
-          ?? badge.closest('.dc-row')?.querySelector('.dc-row-label')?.textContent?.trim() ?? ''
-        const id = `lookup:${activeFile}:${field}:${badge.title}`
-        const diagnostic: FlatDiagnostic = { id, severity: 'error', code: 'lookup_load_failed', stage: 'editor',
-          message: `${activeFile ?? ''}${field ? ' · ' + field : ''}：${badge.title}`,
-          target: { kind: 'none' }, contexts: [] }
-        setPreviewLoadDiagnostics(items => [...items.filter(item => item.id !== id), diagnostic])
-        setDiagFocus(previous => ({ key: id, tick: (previous?.tick ?? 0) + 1 }))
-      } : undefined}>
+    <div className={`app${navigationCollapsed ? ' navigation-collapsed' : ''}`}
+>
 
-      {layoutPreview && <dialog ref={projectSearchDialogRef} className="preview-search-dialog"
-        aria-labelledby="preview-search-title"
-        onCancel={() => setProjectSearchOpen(false)}
-        onClose={() => setProjectSearchOpen(false)}
-        onClick={event => {
-          if (event.target === event.currentTarget) {
-            const bounds = event.currentTarget.getBoundingClientRect()
-            if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setProjectSearchOpen(false)
-          }
-        }}>
-        <div className="preview-search-heading">
-          <Icon name="search" size={17} /><strong id="preview-search-title">全局搜索</strong>
-          <span>查找项目中的记录与字段值</span>
-          <button className="btn btn-icon" title="关闭（Esc）" aria-label="关闭全局搜索" onClick={() => setProjectSearchOpen(false)}><Icon name="close" size={16} /></button>
-        </div>
-        {projectSearchOpen && projectSearchContribution && projectSearchContext && <PluginContributionMount
-          contribution={projectSearchContribution} context={projectSearchContext} className="preview-search-content" />}
-        <div className="preview-search-footer"><span>↑ ↓ 选择结果 · Enter 打开</span><span>Esc 关闭</span></div>
-      </dialog>}
+
+      {projectSearchContribution && projectSearchContext && <ProjectSearchDialog open={projectSearchOpen} onClose={() => setProjectSearchOpen(false)} contribution={projectSearchContribution} context={projectSearchContext} />}
       <div
         className="topbar"
         role="toolbar"
@@ -2611,32 +2534,8 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
         <div className="topbar-left">
           <span className="app-title">
             <img className="app-logo" src={coflowLogo} alt="" aria-hidden />
-            {layoutPreview ? 'coflow' : 'CFD Editor'}
+            coflow
           </span>
-          <button className="btn btn-outlined project-open-action" onClick={openProject}>
-            <Icon name="open" size={13} />
-            <span className="btn-label">打开</span>
-          </button>
-          <button
-            className="btn btn-outlined project-new-action"
-            onClick={newProject}
-            title="选一个空目录创建新的 Coflow 工程（等价于 coflow init）"
-          >
-            <Icon name="plus" size={13} />
-            <span className="btn-label">新建</span>
-          </button>
-          {project && (
-            <button
-              className="btn btn-primary btn-icon btn-build"
-              onClick={runBuild}
-              disabled={projectAction !== null}
-              title={buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}
-              aria-label={buildPending ? '构建项目，有待生成的变更' : '构建项目'}
-            >
-              <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={15} className={projectAction === 'build' ? 'icon-spin' : undefined} />
-              {buildPending && <span className="build-pending-indicator" aria-hidden />}
-            </button>
-          )}
           <span className="topbar-divider" />
           <button
             className="btn btn-icon"
@@ -2658,12 +2557,11 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
           </button>
         </div>
         <div className="topbar-center">
-          {layoutPreview && (
-            <button className="layout-preview-project-search"
+          {(
+            <button className="project-search-trigger"
               disabled={!pluginRegistry.sidebars.some(sidebar => sidebar.pluginId === 'project-search')}
               onClick={() => {
                 setProjectSearchOpen(true)
-                requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-built-in-project-search-input]')?.focus())
               }}>
               <Icon name="search" size={14} />
               <span>搜索记录、Key 或字段值</span>
@@ -2672,31 +2570,15 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
           )}
         </div>
         <div className="topbar-right">
-          {layoutPreview && project && (
-            <button className="btn btn-icon preview-build-action" onClick={runBuild} disabled={projectAction !== null}
+          {project && (
+            <button className="btn btn-icon build-action" onClick={runBuild} disabled={!api.isTauri || projectAction !== null}
               aria-label={buildPending ? '构建项目，有待生成的变更' : '构建项目'}
-              title={buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}>
+              title={!api.isTauri ? '构建仅在桌面编辑器中可用' : buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}>
               <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={17} className={projectAction === 'build' ? 'icon-spin' : undefined} />
               {buildPending && <span className="build-pending-indicator" aria-hidden />}
             </button>
           )}
-          {layoutPreview && (
-            <details className="preview-settings" onKeyDown={event => {
-              if (event.key === 'Escape') event.currentTarget.open = false
-            }} onBlur={event => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false
-            }}>
-              <summary className="btn btn-icon" title="设置" aria-label="设置"><Icon name="gear" size={17} /></summary>
-              <div className="preview-settings-menu">
-                <span className="preview-settings-heading">设置</span>
-                <button className="btn" onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />{theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}</button>
-                <button className="btn" onClick={event => {
-                  event.currentTarget.closest('details')?.removeAttribute('open')
-                  setShowHelp(true)
-                }}><Icon name="help" size={15} />快捷键与帮助</button>
-              </div>
-            </details>
-          )}
+          <EditorSettingsMenu theme={theme} onToggleTheme={toggleTheme} onShowHelp={() => setShowHelp(true)} />
           {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
             <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
               {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
@@ -2717,49 +2599,42 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
       )}
 
       <div className="main-layout">
-        {/* 预览把导航入口与原文件树放入同一栏；正式布局用 display: contents 保持结构。 */}
-        <div className="layout-navigation" style={layoutPreview ? undefined : { display: 'contents' }}>
+        {/* 导航入口和资源面板共享宽度，收起时保留图标入口。 */}
+        <div className="layout-navigation">
         <ActivityBar
-          expanded={layoutPreview && !navigationCollapsed}
-          hideUtilities={layoutPreview}
+          expanded={!navigationCollapsed}
           activePane={activePane}
           registry={pluginRegistry}
-          theme={theme}
           onSelectPane={pane => {
             setActivePane(pane)
-            if (layoutPreview) setNavigationCollapsed(false)
+            setNavigationCollapsed(false)
           }}
           onSelectFiles={() => {
-            if (layoutPreview) setNavigationCollapsed(false)
+            setNavigationCollapsed(false)
             setActivePane('files')
             focusFileTree()
           }}
           onSelectChanges={() => {
-            if (layoutPreview) setNavigationCollapsed(false)
+            setNavigationCollapsed(false)
             finishActiveDataEdit()
             setActivePane('changes')
             setGitDiffOpen(true)
             afterSourceSave(() => setGitDiffActive(true))
             setActivePluginPageKey(null)
           }}
-          onToggleTheme={toggleTheme}
-          onShowHelp={() => setShowHelp(true)}
         />
-        {layoutPreview && <div className="navigation-header">
-            <details className="layout-preview-project-menu">
-              <summary><Icon name="folder" size={14} /><span>示例项目</span><Icon name="chevron-down" size={12} /></summary>
-              <div>
+        <div className="navigation-header">
+            <Menu className="project-menu" title="项目" label={<><Icon name="folder" size={14} /><span>{project ? (api.isTauri ? project.project_root.split(/[\\/]/).filter(Boolean).pop() : '示例项目') : '打开项目'}</span><Icon name="chevron-down" size={12} /></>}>
                 <button className="btn" onClick={openProject}><Icon name="open" size={14} />打开项目</button>
                 <button className="btn" onClick={newProject}><Icon name="plus" size={14} />新建工程</button>
-              </div>
-            </details>
+            </Menu>
 
           <button className="btn navigation-toggle" aria-label={navigationCollapsed ? '展开侧栏' : '折叠侧栏'}
             title={navigationCollapsed ? '展开侧栏' : '折叠侧栏'} aria-expanded={!navigationCollapsed}
             onClick={() => setNavigationCollapsed(value => !value)}>
             <Icon name={navigationCollapsed ? "panel-left-closed" : "panel-left"} size={17} />
           </button>
-        </div>}
+        </div>
         <div className="sidebar" ref={sidebarRef}>
           {activePane === 'files' && (
             <>
@@ -2929,119 +2804,9 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
                   ))}
                 </div>
               </div>
-            ) : activeFileData && (
-              <div className={`view-tabs-row${layoutPreview ? ' preview-legacy-views' : ''}`}>
-                {layoutPreview && (activeViewKind === 'source' || activeViewKind === 'plugin') && previewViewPicker()}
-                <ReorderableViewTabs
-                  key={`${activeFile}:${activeType}`}
-                  ids={viewTabs.map(tab => tab.id)}
-                  onReorder={order => {
-                    if (activeFile) saveViewOrder(activeFile, activeType, order)
-                  }}
-                >
-                  {viewTabs.map(tab => (
-                    <button
-                      key={tab.id}
-                      className={`tab-btn tab-view${currentRoute.viewId === tab.id ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={currentRoute.viewId === tab.id}
-                      data-tab-id={tab.id}
-                      onClick={() => switchView(tab)}
-                      onContextMenu={tab.isDefault ? undefined : event => {
-                        event.preventDefault()
-                        openViewContextMenu(tab, event.clientX, event.clientY)
-                      }}
-                    >
-                      <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={13} aria-hidden />
-                      {layoutPreview && tab.id === DEFAULT_TABLE_VIEW_ID ? '全部记录' : tab.name}
-                      {layoutPreview && !tab.isDefault && (
-                        <span className="layout-preview-view-kind">{tab.kind === 'graph' ? '图谱' : '表格'}</span>
-                      )}
-                    </button>
-                  ))}
-                  {activePluginView && (
-                    <button
-                      className="tab-btn tab-view active"
-                      role="tab"
-                      aria-selected="true"
-                      data-tab-id={activePluginView.key}
-                    >
-                      <Icon name="extensions" size={13} aria-hidden />
-                      {activePluginView.title}
-                    </button>
-                  )}
-                </ReorderableViewTabs>
-                {!!activeType && (pluginViews.length > 0 || !isSingletonType) && (
-                  <div className="view-tab-add-wrap">
-                    <button
-                      className="btn btn-icon view-tab-add"
-                      onClick={() => setViewAddMenuOpen(open => !open)}
-                      title="添加视图"
-                      aria-label="添加视图"
-                      aria-expanded={viewAddMenuOpen}
-                    >
-                      <Icon name="plus" size={13} aria-hidden />
-                    </button>
-                    {viewAddMenuOpen && (
-                      <div className="view-add-menu" role="menu">
-                        {pluginViews.map(view => (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            key={view.key}
-                            className={activePluginView?.key === view.key ? 'active' : undefined}
-                            onClick={() => {
-                              switchPluginView(view.key)
-                              setViewAddMenuOpen(false)
-                            }}
-                          >
-                            <Icon name="extensions" size={13} aria-hidden />
-                            <span>{view.title}</span>
-                          </button>
-                        ))}
-                        {!isSingletonType && (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                              openViewEditor('create')
-                              setViewAddMenuOpen(false)
-                            }}
-                          >
-                            <Icon name="plus" size={13} aria-hidden />
-                            <span>新建自定义视图</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {layoutPreview && !activePluginView && !!activeType && (
-                  <div className="layout-preview-view-actions">
-                    <span className="layout-preview-view-summary">
-                      {resolvedView?.isDefault ? '全部字段' : (
-                        String(visibleFields?.size ?? 0) + ' 个字段' + (resolvedView?.groupFilter ? ' · 已按分组过滤' : '')
-                      )}
-                    </span>
-                    <button
-                      className="btn btn-outlined"
-                      onClick={() => {
-                        const saved = projectSettings?.views[activeFile ?? '']?.[activeType]
-                          ?.find(view => view.id === currentRoute.viewId)
-                        if (saved) setViewEditor({ mode: 'edit', view: saved })
-                        else openViewEditor('create')
-                      }}
-                      aria-label={resolvedView?.isDefault ? '自定义视图' : '视图选项'}
-                      title={resolvedView?.isDefault ? '新建自定义视图，选择显示字段与分组' : '配置当前视图的字段、顺序、关系与分组'}
-                    >
-                      <Icon name="settings" size={13} />
-
-                    </button>
-                  </div>
-                )}
-
-              </div>
-            )
+            ) : activeFileData && (activeViewKind === 'source' || activeViewKind === 'plugin') ? (
+              <div className="view-toolbar">{renderViewPicker()}</div>
+            ) : null
           )}
           {gitDiffActive ? (
             <div className="view-container">
@@ -3108,17 +2873,13 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
 
               {/* Record search bar — shared by structured views. */}
               {activeViewKind !== 'source' && activeViewKind !== 'plugin' && <div className="global-search-bar">
-                {layoutPreview && previewViewPicker()}
-                {layoutPreview && <button className="btn btn-icon preview-view-settings" aria-label="视图设置" title="视图设置" onClick={() => {
-                  const saved = projectSettings?.views[activeFile ?? '']?.[activeType]?.find(view => view.id === currentRoute?.viewId)
-                  if (saved) setViewEditor({ mode: 'edit', view: saved })
-                  else setDefaultViewSettingsOpen(true)
-                }}><Icon name="settings" size={15} /></button>}
-                <div className={layoutPreview ? "preview-record-search" : "legacy-record-search"}>
+                {renderViewPicker()}
+                {resolvedView && (resolvedView.kind === 'table' || resolvedView.kind === 'graph') && <button className="btn btn-icon view-settings" aria-label="视图设置" title="视图设置" onClick={editCurrentView}><Icon name="settings" size={15} /></button>}
+                <div className="record-search">
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
                   ref={documentSearchRef}
-                  placeholder={layoutPreview ? "筛选记录…" : "筛选当前类型… (Ctrl+F)"}
+                  placeholder="筛选记录…"
                   value={documentSearch}
                   onChange={e => setDocumentSearch(e.target.value)}
                   onKeyDown={e => {
@@ -3138,29 +2899,19 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
                     <Icon name="close" size={13} aria-hidden />
                   </button>
                 )}
-                {layoutPreview && <button className="preview-key-only" aria-label="只搜索键" aria-pressed={keyOnlySearch}
+                <button className="key-only-toggle" aria-label="只搜索键" aria-pressed={keyOnlySearch}
                   title={keyOnlySearch ? '只搜索键：已开启' : '只搜索键：未开启，当前搜索所有字段（含嵌套）'}
-                  onClick={() => setKeyOnlySearch(value => !value)}><Icon name="key" size={14} /></button>}
+                  onClick={() => setKeyOnlySearch(value => !value)}><Icon name="key" size={14} /></button>
                 </div>
-                {!layoutPreview && activeViewKind === 'table' && (
-                  <label className="table-full-text-toggle" title="搜索数组、字典和对象中的嵌套内容">
-                    <input
-                      type="checkbox"
-                      checked={tableFullTextSearch}
-                      disabled={keyOnlySearch}
-                      onChange={e => setTableFullTextSearch(e.target.checked)}
-                    />
-                    {layoutPreview ? '含嵌套字段' : '全文'}
-                  </label>
-                )}
+
                 <span
                   className="global-search-count"
                   title={documentSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
                 >
-                  {documentSearch && matchedCount !== typeCount ? `${matchedCount} / ${typeCount}` : typeCount} 条
+                  {matchedCount} / {typeCount} 条
                 </span>
-                {layoutPreview && (
-                  <div className="layout-preview-edit-actions">
+                {(
+                  <div className="record-edit-actions">
                     <button className="btn btn-primary"
                       disabled={readOnly || !activeFileData.capabilities.can_insert_record || !activeType}
                       onClick={() => void createRecordFromTree(currentRoute.file, activeType)}>
@@ -3186,7 +2937,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
                     diagnostics={fileDiagnostics}
                     searchQuery={documentSearch}
                     keyOnlySearch={keyOnlySearch}
-                    fullTextSearch={layoutPreview || tableFullTextSearch}
+                    fullTextSearch={true}
                     recordGroups={resolvedView?.groupFilter ? [] : recordGroups}
                     collapsedGroupKeys={collapsedRecordGroups}
                     onToggleGroup={toggleRecordGroup}
@@ -3217,7 +2968,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
                     onDiagnosticBadgeClick={tableOnBadgeClick}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}
-                    visibleColumns={resolvedView?.kind === 'table' && !resolvedView.isDefault ? resolvedView.columns : undefined}
+                    visibleColumns={resolvedView?.kind === 'table' ? resolvedView.columns : undefined}
                     onEnterInspector={tableOnEnterInspector}
                     focusRequest={tableFocusRequest}
                     firstRecordFocusRequest={firstRecordFocusRequest}
@@ -3238,7 +2989,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     recordSearch={documentSearch}
-                    fullTextSearch={layoutPreview}
+                    fullTextSearch={true}
                     keyOnlySearch={keyOnlySearch}
                     hideRecordList={isSingletonType}
                     recordGroups={recordGroups}
@@ -3367,7 +3118,7 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
         </div>
         <InspectorPanel
           open={!gitDiffActive && !activePluginPage && activeViewKind !== 'record'
-            && (inspectorOpen || ((activeViewKind === 'table' || activeViewKind === 'graph') && !!activeFileData))}
+            && inspectorOpen}
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
@@ -3396,9 +3147,9 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
         </div>
         {project && (
           <DiagnosticsPanel
-            initialCollapsed={layoutPreview}
-            structuredLayout={layoutPreview}
-            diagnostics={layoutPreview ? [...project.diagnostics, ...previewLoadDiagnostics] : project.diagnostics}
+            initialCollapsed={true}
+            diagnostics={[...project.diagnostics, ...lookupDiagnostics]}
+            currentFile={activeFile ?? undefined}
             focus={diagFocus}
             onFocusConsumed={() => setDiagFocus(null)}
             onJump={jumpToDiagnostic}
@@ -3417,47 +3168,6 @@ export default function App({ layoutPreview = false, browserSettings = MOCK_EDIT
         </div>
       )}
 
-      {viewMenu && (
-        <div
-          className="context-menu view-tab-menu"
-          style={{ left: viewMenu.x, top: viewMenu.y }}
-          role="menu"
-          onClick={e => e.stopPropagation()}
-        >
-          <button
-            className="ctx-item"
-            role="menuitem"
-            onClick={() => {
-              const view = projectSettings?.views[activeFile ?? '']?.[activeType]
-                ?.find(v => v.id === viewMenu.tab.id)
-              setViewMenu(null)
-              if (view) setViewEditor({ mode: 'edit', view })
-            }}
-          >
-            <Icon name="edit" size={13} aria-hidden />
-            编辑视图
-          </button>
-          <button
-            className="ctx-item danger"
-            role="menuitem"
-            onClick={() => {
-              deleteView(viewMenu.tab.id)
-              setViewMenu(null)
-            }}
-          >
-            <Icon name="close" size={13} aria-hidden />
-            删除视图
-          </button>
-        </div>
-      )}
-
-      {defaultViewSettingsOpen && <div className="create-record-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setDefaultViewSettingsOpen(false) }}>
-        <section className="create-record-dialog view-editor" role="dialog" aria-modal="true" aria-label="视图设置" onKeyDown={event => { if (event.key === 'Escape') setDefaultViewSettingsOpen(false) }}>
-          <header className="view-editor-heading"><div><h2>视图设置</h2><p>{resolvedView?.kind === 'record' ? '记录' : resolvedView?.kind === 'source' ? '源码' : '表格'} · 默认视图</p></div><button autoFocus className="btn btn-icon" aria-label="关闭视图设置" onClick={() => setDefaultViewSettingsOpen(false)}><Icon name="close" size={16} /></button></header>
-          <div className="view-editor-body"><p>默认视图显示全部字段，不限定分组。</p><p className="view-field-hint">默认视图的字段范围固定；需要选择字段和分组时，可从视图下拉菜单新建自定义视图。</p></div>
-          <div className="view-editor-actions"><button className="btn btn-primary" onClick={() => setDefaultViewSettingsOpen(false)}>完成</button></div>
-        </section>
-      </div>}
       {viewEditor && activeFile && activeType && (
         <ViewEditorDialog
           initial={viewEditor.mode === 'edit' ? viewEditor.view : null}

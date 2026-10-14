@@ -30,7 +30,7 @@ pub fn add_project_input(
             format!("failed to resolve selected source: {error}"),
         )
     })?;
-    let configured = portable_config_path(project.root_dir(), &selected);
+    let configured = portable_config_path(project.root_dir(), &selected)?;
 
     let configured_roots = project
         .config
@@ -283,7 +283,23 @@ fn publish_config(config_path: &Path, project: &Project) -> Result<(), Diagnosti
             format!("failed to read project config: {error}"),
         )
     })?;
-    let output = serde_yaml::to_string(&project.config).map_err(|error| {
+    // 所有配置路径统一相对项目根保存，项目外目录使用 ..，避免绑定本机绝对路径。
+    let mut config = project.config.clone();
+    for path in &mut config.schema.paths {
+        *path = portable_config_path(project.root_dir(), path)?;
+    }
+    for source in &mut config.data {
+        *source = SourceConfig::from_path(portable_config_path(project.root_dir(), source.path())?);
+    }
+    for output in &mut config.codegen {
+        output.dir = portable_config_path(project.root_dir(), &output.dir)?;
+    }
+    for dimension in config.dimensions.values_mut() {
+        if let Some(path) = &mut dimension.dir {
+            *path = portable_config_path(project.root_dir(), path)?;
+        }
+    }
+    let output = serde_yaml::to_string(&config).map_err(|error| {
         file_error(
             config_path,
             "PROJECT-CONFIG-WRITE",
@@ -312,8 +328,24 @@ fn publish_config(config_path: &Path, project: &Project) -> Result<(), Diagnosti
     Ok(())
 }
 
-fn portable_config_path(project_root: &Path, selected: &Path) -> PathBuf {
-    selected
-        .strip_prefix(project_root)
-        .map_or_else(|_| selected.to_path_buf(), Path::to_path_buf)
+fn portable_config_path(project_root: &Path, selected: &Path) -> Result<PathBuf, DiagnosticSet> {
+    let root = super::normalize_path(project_root);
+    let selected = super::resolve_project_relative(&root, selected);
+    let root_parts = root.components().collect::<Vec<_>>();
+    let selected_parts = selected.components().collect::<Vec<_>>();
+    let common = root_parts.iter().zip(&selected_parts)
+        .take_while(|(left, right)| left == right).count();
+    if common == 0 {
+        return Err(file_error(&selected, "PROJECT-CONFIG-WRITE", "PROJECT",
+            "configured path must share a filesystem root with the project to be stored relatively"));
+    }
+    let mut relative = PathBuf::new();
+    for _ in &root_parts[common..] {
+        relative.push("..");
+    }
+    for part in &selected_parts[common..] {
+        relative.push(part.as_os_str());
+    }
+    if relative.as_os_str().is_empty() { relative.push("."); }
+    Ok(PathBuf::from(crate::path_to_slash(&relative)))
 }

@@ -23,13 +23,12 @@ export interface ViewTab {
   isDefault: boolean
 }
 
-/** A view resolved to everything the renderer needs. Default views resolve
- *  with `isDefault: true` and no field/relation restrictions. */
+/** A view resolved to everything the renderer needs. Built-in views use `isDefault: true`; the default table can persist its projection. */
 export interface ResolvedView {
   id: string
   kind: ViewRenderKind
   isDefault: boolean
-  /** Ordered visible columns (custom table view only). */
+  /** Ordered visible columns for any table view. */
   columns?: string[]
   /** Column widths (default table view: from settings; custom: from config). */
   columnWidths?: { [key: string]: number | undefined }
@@ -46,7 +45,7 @@ function customViews(
   file: string,
   type: string,
 ): ViewConfig[] {
-  return settings?.views?.[file]?.[type] ?? []
+  return (settings?.views?.[file]?.[type] ?? []).filter(view => !view.id.startsWith(RESERVED_VIEW_ID_PREFIX))
 }
 
 /**
@@ -85,13 +84,6 @@ export function orderViewTabs<T extends { id: string }>(tabs: T[], order: string
   return [...tabs].sort((a, b) => (positions.get(a.id) ?? order.length) - (positions.get(b.id) ?? order.length))
 }
 
-export function moveViewTab(order: string[], source: string, target: string, after: boolean): string[] {
-  if (source === target || !order.includes(source) || !order.includes(target)) return order
-  const next = order.filter(id => id !== source)
-  next.splice(next.indexOf(target) + (after ? 1 : 0), 0, source)
-  return next
-}
-
 /** Resolve a viewId (default reserved id or custom uuid) to a ResolvedView.
  *  Unknown custom ids fall back to the default table view. */
 export function resolveView(
@@ -105,7 +97,10 @@ export function resolveView(
     return { id: viewId, kind: 'record', isDefault: true }
   }
   if (viewId === DEFAULT_TABLE_VIEW_ID) {
+    const saved = settings?.views?.[file]?.[type]?.find(view => view.id === viewId)
     return {
+      columns: saved?.columns,
+      groupFilter: saved?.group_filter ?? undefined,
       id: viewId,
       kind: 'table',
       isDefault: true,
@@ -117,12 +112,7 @@ export function resolveView(
   }
   const view = isSingleton ? undefined : customViews(settings, file, type).find(v => v.id === viewId)
   if (!view) {
-    return {
-      id: DEFAULT_TABLE_VIEW_ID,
-      kind: 'table',
-      isDefault: true,
-      columnWidths: settings?.default_table_column_widths?.[file]?.[type] ?? {},
-    }
+    return resolveView(settings, file, type, DEFAULT_TABLE_VIEW_ID, isSingleton)
   }
   if (view.kind === 'table') {
     return {
@@ -147,7 +137,6 @@ export function resolveView(
 /** The set of fields the inspector/card should show, or undefined for "all"
  *  (default views, and table views where columns act as the visible set). */
 export function visibleFieldsFor(view: ResolvedView): Set<string> | undefined {
-  if (view.isDefault) return undefined
   if (view.kind === 'table') return view.columns ? new Set(view.columns) : undefined
   if (view.kind === 'graph') return view.fields ? new Set(view.fields) : undefined
   return undefined

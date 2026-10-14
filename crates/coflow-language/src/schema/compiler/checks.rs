@@ -490,7 +490,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             .schema
             .types
             .get(&resolved_name)
-            .is_some_and(|info| info.def.kind == crate::syntax::ast::TypeKind::Table)
+            // 单例同样拥有模型记录身份，顶层规则可统一遍历 table 和 singleton。
+            .is_some_and(|info| matches!(info.def.kind,
+                crate::syntax::ast::TypeKind::Table | crate::syntax::ast::TypeKind::Singleton))
         {
             Some(resolved_name.clone())
         } else {
@@ -507,7 +509,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             self.diag(
                 CftErrorCode::InvalidRecordSetQuery,
                 type_name.span,
-                format!("`{resolved_name}` is not a table"),
+                format!("`{resolved_name}` is neither a table nor a singleton"),
             );
             return InferredType::Unknown;
         };

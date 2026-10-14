@@ -25,6 +25,7 @@ describe('diagnostics panel height', () => {
 describe('diagnostics panel list', () => {
   it('renders diagnostics directly without filters or file grouping', () => {
     const html = renderToStaticMarkup(createElement(DiagnosticsPanel, {
+      initialCollapsed: false,
       diagnostics: [{
         id: 'invalid-value',
         severity: 'error',

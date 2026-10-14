@@ -177,6 +177,20 @@ fn codegen_rejects_outputs_that_overlap_project_inputs() {
     }
 }
 
+#[test]
+fn codegen_publishes_to_an_external_relative_directory() {
+    let parent = tempfile::tempdir().expect("parent");
+    let root = parent.path().join("project");
+    fs::create_dir(&root).expect("root");
+    fs::write(root.join("schema.cft"), "table Item { name: string; }\n").expect("schema");
+    fs::write(root.join("data.cfd"), "Item { sword { name: \"Sword\" } }\n").expect("data");
+    fs::write(root.join("coflow.yaml"), "schema: schema.cft\ndata: data.cfd\ncodegen: [{language: csharp, dir: ../generated}]\n").expect("config");
+    let opened = Project::open(Some(&root.join("coflow.yaml"))).expect("open");
+    coflow_runtime::commands::generate_project_code(&opened).expect("external codegen");
+    assert!(parent.path().join("generated/Item.cs").is_file());
+    coflow_runtime::commands::generate_project_code(&opened).expect("repeat external codegen");
+}
+
 #[cfg(unix)]
 #[test]
 fn codegen_rejects_symlink_aliases_into_input_directories() {

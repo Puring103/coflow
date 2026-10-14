@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
 import type { PluginRegistrySnapshot } from '../plugins'
 import { Icon } from './Icon'
 
@@ -6,41 +5,21 @@ export type ActivePane = 'files' | 'changes' | 'plugins' | `plugin:${string}`
 
 interface Props {
   expanded?: boolean
-  hideUtilities?: boolean
   activePane: ActivePane
   registry: PluginRegistrySnapshot
-  theme: 'light' | 'dark'
   onSelectPane: (pane: ActivePane) => void
   onSelectFiles: () => void
   onSelectChanges: () => void
-  onToggleTheme: () => void
-  onShowHelp: () => void
 }
 
 export function ActivityBar({
   expanded = false,
-  hideUtilities = false,
   activePane,
   registry,
-  theme,
   onSelectPane,
   onSelectFiles,
   onSelectChanges,
-  onToggleTheme,
-  onShowHelp,
 }: Props) {
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const settingsRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!settingsOpen) return
-    const close = (event: MouseEvent) => {
-      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [settingsOpen])
-
   const sidebars = (builtIn: boolean) => registry.sidebars
     .filter(sidebar => registry.plugins.some(plugin => (
       plugin.id === sidebar.pluginId && (plugin.origin === 'built-in') === builtIn
@@ -96,43 +75,6 @@ export function ActivityBar({
         {expanded && <span>插件</span>}
       </button>
       {sidebars(false)}
-      {!hideUtilities && <div className="activity-bar-bottom" ref={settingsRef}>
-        <button
-          className="activity-btn"
-          title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-          aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-          onClick={onToggleTheme}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />
-          {expanded && <span>切换主题</span>}
-        </button>
-        <button
-          className={`activity-btn${settingsOpen ? ' active' : ''}`}
-          title="设置"
-          aria-label="设置"
-          aria-haspopup="true"
-          aria-expanded={settingsOpen}
-          onClick={() => setSettingsOpen(open => !open)}
-        >
-          <Icon name="settings" size={20} />
-          {expanded && <span>帮助</span>}
-        </button>
-        {settingsOpen && (
-          <div className="settings-dropdown" role="menu">
-            <button
-              className="settings-item"
-              role="menuitem"
-              onClick={() => {
-                onShowHelp()
-                setSettingsOpen(false)
-              }}
-            >
-              <Icon name="help" size={14} />
-              <span>键盘快捷键 / 帮助</span>
-            </button>
-          </div>
-        )}
-      </div>}
     </nav>
   )
 }
