@@ -3,7 +3,7 @@ use serde::Serialize;
 use super::{Failure, Result};
 use crate::{Project, project_path, normalize_path};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct InputFile {
     pub path: String,
     pub kind: String,

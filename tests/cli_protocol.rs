@@ -25,6 +25,27 @@ fn call(root: &Path, arguments: &[&str], stdin: Option<&str>) -> (i32, Value, St
 }
 
 #[test]
+fn source_read_contract_exposes_metadata_without_internal_snapshot_fields() {
+    let root = fixture();
+    let (exit, description, _) = call(root.path(), &["describe", "source.read"], None);
+    assert_eq!(exit, 0);
+    let definitions = &description["result"]["output_schema"]["definitions"];
+    let required = definitions["SourceRead"]["required"].as_array().unwrap();
+    for field in ["file", "source", "start_line", "end_line"] { assert!(required.contains(&json!(field))); }
+    let properties = definitions["InputFile"]["properties"].as_object().unwrap();
+    for field in ["path", "kind", "inputs", "fingerprint"] { assert!(properties.contains_key(field)); }
+    assert!(!properties.contains_key("absolute"));
+    assert!(!properties.contains_key("contents"));
+    fs::write(root.path().join("schema.cft"), "broken schema\r\nsecond line\r\n").unwrap();
+    let (exit, response, _) = call(root.path(), &["source", "read", "--file", "schema.cft", "--start-line", "1", "--end-line", "2"], None);
+    assert_eq!(exit, 0, "{response}");
+    assert_eq!(response["result"]["source"], "second line\r\n");
+    assert_eq!(response["result"]["file"]["path"], "schema.cft");
+    assert_eq!(response["result"]["file"]["kind"], "schema");
+    assert_eq!(response["result"]["file"]["fingerprint"].as_str().unwrap().len(), 64);
+}
+
+#[test]
 fn describe_reference_query_exposes_edges_paths_locations_and_truncation() {
     let root = tempfile::tempdir().unwrap();
     let (exit, response, _) = call(root.path(), &["describe", "data.refs"], None);

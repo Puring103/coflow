@@ -2,6 +2,15 @@ use serde_json::{Value, json};
 use crate::{Project, Runtime, ReadOnlyProjectSession};
 use super::{Arguments, Failure, Result, InputSnapshot, Response, Status, query, json as to_json};
 
+/// 源码读取结果直接使用原始文件元数据，不依赖 Schema 或数据模型加载。
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct SourceRead {
+    pub file: super::InputFile,
+    pub source: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
 pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, args: &Arguments) -> Result<Response> {
     let mut scoped_args = args.clone();
     scoped_args.0.insert("_command".into(), vec![command.into()]);
@@ -29,7 +38,7 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
             let end = args.number("end-line", lines.len())?;
             if end < start { return Err(Failure::request("end-line precedes start-line")); }
             let content = if args.get("start-line").is_some() || args.get("end-line").is_some() { lines.into_iter().skip(start).take(end-start).collect::<String>() } else { source };
-            response.result = json!({"file": file, "source": content, "start_line": start, "end_line": end});
+            response.result = to_json(SourceRead { file: file.clone(), source: content, start_line: start, end_line: end })?;
         }
         "schema.inspect" | "schema.check" | "schema.symbols" | "schema.refs" => {
             let schema = Runtime::open_schema_session(project.clone())?;
