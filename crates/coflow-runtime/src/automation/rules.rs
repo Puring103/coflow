@@ -72,8 +72,8 @@ pub(crate) fn check_schema(session: &crate::ProjectSchemaSession, args: &Argumen
     let diagnostics = session.diagnostics().as_set().clone();
     let passed = session.schema().is_some() && !super::has_errors(&diagnostics);
     let explanations = if args.flag("explain") {
-        diagnostics.diagnostics.iter().enumerate().map(|(index, diagnostic)|
-            (index, json!({"code":diagnostic.code,"message":diagnostic.message,"queries":["schema inspect","schema symbols"]}))).collect()
+        diagnostics.diagnostics.iter().enumerate().filter_map(|(index, diagnostic)|
+            super::explanations::for_diagnostic(diagnostic).map(|explanation| (index, explanation))).collect()
     } else { Default::default() };
     Validation {
         report: json!({"schema": if passed { "passed" } else { "failed" }, "structure":"not_executed", "rules":"not_executed",
@@ -150,7 +150,7 @@ pub(crate) fn check_with_limits(session: &ReadOnlyProjectSession, args: &Argumen
 
 fn explain_diagnostics(session: &ReadOnlyProjectSession, validation: &mut Validation) {
     for (index, diagnostic) in validation.diagnostics.iter().enumerate() {
-        let mut explanation = super::explain(&diagnostic.code).ok().unwrap_or_else(|| json!({"code":diagnostic.code}));
+        let Some(mut explanation) = super::explanations::for_diagnostic(diagnostic) else { continue; };
         if let Some(location) = validation.logical_locations.get(&index) {
             if let (Some(ty), Some(path)) = (&location.actual_type, &location.field_path) {
                 if let Ok(segments) = super::query::parse_path(path) {

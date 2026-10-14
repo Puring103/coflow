@@ -158,6 +158,9 @@ fn candidate_schema_diagnostic_limits_preserve_total_count_and_failure_status() 
     assert!(checked.result["validation"]["diagnostic_count"].as_u64().unwrap() >= 2);
     let encoded = serde_json::to_value(&checked).unwrap();
     assert!(encoded["diagnostics"][0]["explanation"].is_object());
+    for field in ["meaning", "trigger", "repair", "message"] {
+        assert!(encoded["diagnostics"][0]["explanation"][field].is_string(), "{field}: {encoded}");
+    }
     assert!(!encoded["diagnostics"][0]["location"]["path"].as_str().unwrap().contains("inputs/"));
 }
 
