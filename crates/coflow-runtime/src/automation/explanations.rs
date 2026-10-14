@@ -10,7 +10,8 @@ mod tests {
     fn every_language_and_model_code_has_an_exact_explanation_and_public_index_entry() {
         let reference = include_str!("../../../../website/docs/docs/reference/09-diagnostics/02-codes.md");
         let codes = coflow_language::diagnostics::CftErrorCode::ALL.iter().map(|code| code.as_str())
-            .chain(crate::CfdErrorCode::ALL.iter().map(|code| code.as_str()));
+            .chain(crate::CfdErrorCode::ALL.iter().map(|code| code.as_str()))
+            .chain(super::RUNTIME_CODES.iter().map(|entry| entry.code));
         let mut seen = std::collections::BTreeSet::new();
         for code in codes {
             assert!(seen.insert(code), "duplicate code {code}");
@@ -40,6 +41,8 @@ pub fn explain(code: &str) -> Result<DiagnosticExplanation> {
         (code.stage().to_string(), cft_info(code), vec!["schema check --explain", "schema inspect", "schema symbols"])
     } else if let Some(code) = CfdErrorCode::ALL.iter().copied().find(|entry| entry.as_str() == code) {
         (code.stage().to_string(), cfd_info(code), vec!["check --explain", "schema inspect", "data get"])
+    } else if let Some(entry) = RUNTIME_CODES.iter().find(|entry| entry.code == code) {
+        (entry.stage.into(), (entry.meaning, entry.trigger, entry.repair), vec!["describe", "project inspect", "project files"])
     } else { return Err(Failure::missing(format!("unknown diagnostic code `{code}`"))); };
     Ok(DiagnosticExplanation { code: code.into(), stage, meaning: info.0.into(), trigger: info.1.into(), repair: info.2.into(),
         queries: queries.into_iter().map(String::from).collect() })
@@ -173,3 +176,43 @@ fn cfd_info(code: CfdErrorCode) -> (&'static str, &'static str, &'static str) {
         C::CheckBudgetExceeded => ("规则执行预算耗尽", "规则执行工作量达到预算上限", "减少规则工作量或调整执行计划；重新检查完成状态。"),
     }
 }
+
+struct RuntimeCode {
+    code: &'static str,
+    stage: &'static str,
+    meaning: &'static str,
+    trigger: &'static str,
+    repair: &'static str,
+}
+
+// 项目与命令执行的错误身份由精确目录匹配，诊断消息只承载具体失败上下文。
+const RUNTIME_CODES: &[RuntimeCode] = &[
+    RuntimeCode { code: "PROJECT-CONFIG-NOT-FOUND", stage: "PROJECT", meaning: "项目配置未找到", trigger: "指定目录及父目录没有可用项目配置", repair: "用 --project 指定项目目录或配置文件。" },
+    RuntimeCode { code: "PROJECT-CONFIG-AMBIGUOUS", stage: "PROJECT", meaning: "项目配置有歧义", trigger: "项目目录同时存在多个受支持的配置文件名", repair: "明确保留要使用的配置文件或指定配置文件路径。" },
+    RuntimeCode { code: "PROJECT-CONFIG-PATH", stage: "PROJECT", meaning: "项目配置路径无效", trigger: "配置路径不存在、类型不正确或无法解析", repair: "检查 --project 路径及文件访问条件。" },
+    RuntimeCode { code: "PROJECT-CONFIG-READ", stage: "PROJECT", meaning: "项目配置读取失败", trigger: "配置文件不能读取", repair: "检查路径、访问权限和文件状态。" },
+    RuntimeCode { code: "PROJECT-CONFIG-PARSE", stage: "PROJECT", meaning: "项目配置解析失败", trigger: "coflow.yaml 不符合配置语法或字段类型", repair: "按项目配置参考修正诊断位置的内容。" },
+    RuntimeCode { code: "PROJECT-CONFIG-WRITE", stage: "PROJECT", meaning: "项目配置写入失败", trigger: "更新配置文件时写入失败", repair: "检查目标路径和写入条件。" },
+    RuntimeCode { code: "PROJECT-CONFIG-OVERLAP", stage: "PROJECT", meaning: "项目输入范围重叠", trigger: "Schema 与数据输入包含或覆盖同一来源", repair: "调整输入路径以分离 Schema 与数据范围。" },
+    RuntimeCode { code: "PROJECT-SCHEMA-PATH", stage: "PROJECT", meaning: "Schema 输入路径无效", trigger: "Schema 输入不存在或路径形式不合法", repair: "检查 Schema 输入路径和文件类别。" },
+    RuntimeCode { code: "PROJECT-SCHEMA-READ", stage: "PROJECT", meaning: "Schema 输入读取失败", trigger: "Schema 文件或目录无法读取", repair: "检查输入路径及访问条件。" },
+    RuntimeCode { code: "PROJECT-CWD", stage: "PROJECT", meaning: "当前目录无法读取", trigger: "项目定位无法获得调用目录", repair: "从可访问的目录调用或明确指定项目路径。" },
+    RuntimeCode { code: "PROJECT-INIT-IO", stage: "PROJECT", meaning: "项目初始化失败", trigger: "创建项目文件时发生读写错误", repair: "检查目标目录及文件创建条件。" },
+    RuntimeCode { code: "PROJECT-FILE-CREATE", stage: "PROJECT", meaning: "项目文件创建失败", trigger: "项目文件不能创建", repair: "检查目标是否已存在及目录写入条件。" },
+    RuntimeCode { code: "PROJECT-FILE-DELETE", stage: "PROJECT", meaning: "项目文件删除失败", trigger: "项目文件不能删除", repair: "检查目标文件及删除条件。" },
+    RuntimeCode { code: "PROJECT-FILE-RESTORE", stage: "PROJECT", meaning: "项目文件恢复失败", trigger: "文件操作失败后的恢复未完成", repair: "根据诊断路径核实实际内容并完成恢复。" },
+    RuntimeCode { code: "CFD-READ", stage: "CFD", meaning: "CFD 写入来源读取失败", trigger: "编辑所需的 CFD 文件或来源结构不能读取", repair: "检查来源文件、记录位置和诊断消息。" },
+    RuntimeCode { code: "CFD-WRITE", stage: "CFD", meaning: "CFD 源码修改失败", trigger: "请求不能安全地应用到 CFD 来源结构", repair: "检查字段路径、记录来源和请求操作。" },
+    RuntimeCode { code: "CFD-SOURCE", stage: "CFD", meaning: "CFD 输入来源无效", trigger: "输入来源不能作为有效的 CFD 数据来源", repair: "检查数据输入配置与文件类别。" },
+    RuntimeCode { code: "CLI-REQUEST", stage: "CLI", meaning: "命令请求无效", trigger: "参数或结构化请求不符合命令协议", repair: "使用 describe 查询命令要求并修正请求。" },
+    RuntimeCode { code: "CLI-TARGET", stage: "CLI", meaning: "查询或修改目标不存在", trigger: "类型、记录、字段或其他请求目标不能找到", repair: "重新查询目标身份并使用已有目标。" },
+    RuntimeCode { code: "CLI-CONFLICT", stage: "CLI", meaning: "输入或前置条件冲突", trigger: "输入已变化或请求的预期条件未满足", repair: "重新读取当前内容并重新准备请求。" },
+    RuntimeCode { code: "CLI-IO", stage: "CLI", meaning: "请求载体读写失败", trigger: "请求文件、标准输入或其他文件操作失败", repair: "检查诊断中的路径与读写条件。" },
+    RuntimeCode { code: "CLI-PUBLISH", stage: "CLI", meaning: "候选发布失败", trigger: "候选文件发布或失败恢复没有完成", repair: "根据 written_files、restored_files 和 restoration_failed 核实文件状态后重新准备请求。" },
+    RuntimeCode { code: "CLI-CANDIDATE", stage: "CLI", meaning: "候选项目处理失败", trigger: "候选项目构建、路径映射或来源识别失败", repair: "检查项目输入路径、候选配置和诊断消息。" },
+    RuntimeCode { code: "CLI-FIELD", stage: "CLI", meaning: "字段投影无效", trigger: "所选类型范围内字段路径无法解析", repair: "查询 Schema 并选择范围内有效字段。" },
+    RuntimeCode { code: "CLI-PATH", stage: "CLI", meaning: "值路径无效", trigger: "请求的字段或集合路径不符合目标结构", repair: "按字段类型修正字段名、索引或字典键。" },
+    RuntimeCode { code: "CLI-SORT", stage: "CLI", meaning: "排序字段无效", trigger: "字段无法作为所选范围的排序键", repair: "选择有效且类型一致的可排序字段。" },
+    RuntimeCode { code: "CLI-FILTER", stage: "CLI", meaning: "筛选条件无效", trigger: "筛选表达式的字段或值类型不合法", repair: "按 --where 语法和字段声明类型修正条件。" },
+    RuntimeCode { code: "CLI-VALUE", stage: "CLI", meaning: "写入值无效", trigger: "CFD 表达式或模型值不符合目标类型", repair: "按目标字段类型提供有效写入值。" },
+];

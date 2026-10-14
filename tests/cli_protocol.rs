@@ -111,7 +111,7 @@ fn describe_distinguishes_record_fields_change_sets_and_source_carriers() {
 #[test]
 fn explain_uses_real_diagnostic_codes_and_describes_its_typed_result() {
     let root = tempfile::tempdir().unwrap();
-    for code in ["CFT-SCHEMA-006", "DATA-006", "REF-001", "CHECK-020"] {
+    for code in ["CFT-SCHEMA-006", "DATA-006", "REF-001", "CHECK-020", "PROJECT-CONFIG-NOT-FOUND", "CLI-PUBLISH"] {
         let (exit, response, _) = call(root.path(), &["explain", code], None);
         assert_eq!(exit, 0, "{response}");
         assert_eq!(response["result"]["code"], code);
