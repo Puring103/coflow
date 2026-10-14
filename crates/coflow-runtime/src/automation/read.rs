@@ -21,7 +21,7 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
         "project.inspect" => {
             response.diagnostics.extend(project.schema_diagnostic_set().diagnostics);
             response.diagnostics.extend(project.data_diagnostic_set().diagnostics);
-            response.result = json!({"config": project.config(), "config_path": crate::project_path(project.root_dir(), project.config_path()), "input_roots": project.source_roots()});
+            response.result = to_json(super::project_inspection::inspect(project)?)?;
         }
         "project.files" => {
             let kind = args.get("kind");

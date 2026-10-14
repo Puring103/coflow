@@ -25,6 +25,32 @@ fn call(root: &Path, arguments: &[&str], stdin: Option<&str>) -> (i32, Value, St
 }
 
 #[test]
+fn project_inspection_contract_preserves_configuration_shape_and_generator_options() {
+    let root = fixture();
+    let (exit, scalar, _) = call(root.path(), &["project", "inspect"], None);
+    assert_eq!(exit, 0);
+    assert_eq!(scalar["result"]["config"]["schema"], "schema.cft");
+    assert!(scalar["result"]["config"].get("dimensions").is_none());
+    fs::write(root.path().join("coflow.yaml"), "schema: [schema.cft]\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n    namespace: Game.Config\ndimensions:\n  language:\n    dir: translations/\n    display_name: Language\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "broken schema").unwrap();
+    let (exit, response, _) = call(root.path(), &["project", "inspect"], None);
+    assert_eq!(exit, 0, "{response}");
+    assert_eq!(response["result"]["config"]["schema"], json!(["schema.cft"]));
+    assert_eq!(response["result"]["config"]["data"], json!(["data/"]));
+    assert_eq!(response["result"]["config"]["codegen"][0]["namespace"], "Game.Config");
+    assert_eq!(response["result"]["config"]["dimensions"]["language"]["display_name"], "Language");
+    assert_eq!(response["result"]["config_path"], "coflow.yaml");
+    assert!(response["result"]["input_roots"].as_array().unwrap().iter().all(|path| !path.as_str().unwrap().contains('\\')));
+    let (exit, description, _) = call(root.path(), &["describe", "project.inspect"], None);
+    assert_eq!(exit, 0);
+    let definitions = &description["result"]["output_schema"]["definitions"];
+    assert_eq!(definitions["SchemaInputs"]["anyOf"].as_array().unwrap().len(), 2);
+    assert_eq!(definitions["ProjectConfiguration"]["properties"]["data"]["type"], "array");
+    assert_eq!(definitions["ProjectDimension"]["properties"]["display_name"]["type"], json!(["string", "null"]));
+    assert!(definitions["CodegenTarget"]["properties"].get("options").is_none());
+}
+
+#[test]
 fn project_files_contract_describes_roles_and_reports_unavailable_metadata() {
     let root = fixture();
     let (exit, description, _) = call(root.path(), &["describe", "project.files"], None);

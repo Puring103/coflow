@@ -6,6 +6,8 @@ mod filter;
 mod request;
 mod read;
 mod files;
+mod project_inspection;
+pub use project_inspection::{SchemaInputs, CodegenTarget, ProjectDimension, ProjectConfiguration, ProjectInspection};
 pub use files::{DataFileRole, FileDimensionSummary, DataFileSummary, ProjectFile, ProjectFiles};
 mod dimension;
 mod references;
@@ -171,6 +173,7 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("data.refs") => response_schema_of::<Option<ReferenceQuery>>(),
         Some("source.read") => response_schema_of::<Option<SourceRead>>(),
         Some("project.files") => response_schema_of::<Option<ProjectFiles>>(),
+        Some("project.inspect") => response_schema_of::<Option<ProjectInspection>>(),
         _ => response_schema(),
     }
 }
