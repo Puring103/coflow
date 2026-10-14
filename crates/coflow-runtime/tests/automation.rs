@@ -16,6 +16,35 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn dimension_metadata_and_variant_pages_use_public_locations() {
+    let root = value_fixture();
+    for variant in ["en", "ja"] {
+        let write = run(root.path(), "dimension.set", &[("type", "Item"), ("key", "a"), ("field", "name"),
+            ("dimension", "language"), ("variant", variant), ("value-cfd", "\"translated\"")], None);
+        assert_eq!(write.status, Status::Success);
+    }
+    let list = run(root.path(), "dimension.list", &[], None);
+    let inspect = run(root.path(), "dimension.inspect", &[("dimension", "language")], None);
+    assert_eq!(list.result.as_array().unwrap().iter().find(|dimension| dimension["name"] == "language").unwrap(), &inspect.result);
+    assert_eq!(inspect.result["variants"], json!(["en", "ja"]));
+    let first = run(root.path(), "dimension.variants", &[("dimension", "language"), ("limit", "1")], None);
+    assert_eq!(first.result["total"], 2);
+    assert_eq!(first.result["items"][0]["name"], "en");
+    assert_eq!(first.result["items"][0]["overrides"], 1);
+    let location = &first.result["items"][0]["locations"][0];
+    assert_eq!(location["path"], "translations/data/items.cfd");
+    assert!(location["range"]["start"]["character"].is_number());
+    let cursor = first.result["next_cursor"].as_str().unwrap();
+    let second = run(root.path(), "dimension.variants", &[("dimension", "language"), ("limit", "1"), ("cursor", cursor)], None);
+    assert_eq!(second.result["items"][0]["name"], "ja");
+    assert_eq!(second.result["truncated"], false);
+    for command in ["dimension.list", "dimension.inspect", "dimension.variants"] {
+        let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
+        assert!(schema["definitions"].get(if command == "dimension.variants" { "DimensionVariant" } else { "DimensionMetadata" }).is_some());
+    }
+}
+
+#[test]
 fn project_file_summaries_work_without_schema_compilation_and_mark_syntax_failures() {
     let root = fixture();
     fs::write(root.path().join("schema.cft"), "broken schema").unwrap();
