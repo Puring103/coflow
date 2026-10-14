@@ -45,12 +45,15 @@ pub fn field_value(session: &ReadOnlyProjectSession, record: &CfdRecord, field: 
         .and_then(|f| f.variants.get(variant));
     let effective = explicit.map(|v| &v.value).or(base);
     let expected = &session.schema().field(record.actual_type(), field).ok_or_else(|| Failure::missing("unknown dimension field"))?.value_type;
+    // 覆盖位置使用公共定位契约，不向调用方暴露模型的 RecordOrigin 枚举。
+    let location = explicit.and_then(|value| value.origin.location_for_path(&crate::CfdPath::root().field(field)))
+        .map(|source| super::diagnostics::CommandLocation::from_source(&source.into(), Some(session.session.project.root_dir())));
     Ok(json!({"type": record.actual_type(), "key": record.key(), "field": field,
         "dimension": dimension, "variant": variant, "base": super::model_value::encode(session.schema(), expected, base)?, "explicit": explicit.is_some(),
         "override": super::model_value::encode(session.schema(), expected, explicit.map(|v| &v.value))?, "effective": super::model_value::encode(session.schema(), expected, effective)?,
         "rendered": effective.and_then(super::model_value::rendered),
         "origin": if explicit.is_some() { "dimension_override" } else { "base" },
-        "location": explicit.map(|v| &v.origin)}))
+        "location": location}))
 }
 
 pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {

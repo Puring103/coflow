@@ -38,6 +38,16 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
     let second = run(root.path(), "dimension.variants", &[("dimension", "language"), ("limit", "1"), ("cursor", cursor)], None);
     assert_eq!(second.result["items"][0]["name"], "ja");
     assert_eq!(second.result["truncated"], false);
+    let get = run(root.path(), "dimension.get", &[("type", "Item"), ("key", "a"), ("field", "name"),
+        ("dimension", "language"), ("variant", "en")], None);
+    assert_eq!(get.result["location"], *location);
+    let missing = run(root.path(), "dimension.missing", &[("type", "Item"), ("key", "a"), ("field", "name"),
+        ("dimension", "language"), ("variant", "unconfigured")], None);
+    assert_eq!(missing.result["items"][0]["explicit"], false);
+    assert!(missing.result["items"][0]["location"].is_null());
+    let diff = run(root.path(), "dimension.diff", &[("type", "Item"), ("key", "a"), ("field", "name"),
+        ("dimension", "language"), ("from-base", "true"), ("to", "en")], None);
+    assert_eq!(diff.result["items"][0]["after"]["location"], *location);
     for command in ["dimension.list", "dimension.inspect", "dimension.variants"] {
         let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some(command))).unwrap();
         assert!(schema["definitions"].get(if command == "dimension.variants" { "DimensionVariant" } else { "DimensionMetadata" }).is_some());
