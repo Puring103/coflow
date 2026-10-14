@@ -59,6 +59,24 @@ fn schema_reference_pages_preserve_all_uses_and_bind_the_symbol() {
 }
 
 #[test]
+fn schema_references_resolve_field_and_rule_symbols_from_the_symbol_index() {
+    let root = fixture();
+    let symbols = run(root.path(), "schema.symbols", &[], None);
+    for kind in ["field", "rule"] {
+        for symbol in symbols.result["items"].as_array().unwrap().iter().filter(|item| item["kind"] == kind) {
+            let result = run(root.path(), "schema.refs", &[("symbol", symbol["name"].as_str().unwrap())], None);
+            assert_eq!(result.status, Status::Success, "{result:?}");
+            assert!(result.result["references"].as_array().unwrap().iter().any(|item| item["kind"] == "declaration"));
+        }
+    }
+    let result = run(root.path(), "schema.refs", &[("symbol", "Item.value")], None);
+    let uses = result.result["references"].as_array().unwrap();
+    assert_eq!(uses.iter().filter(|item| item["kind"] == "data").count(), 2);
+    assert!(uses.iter().any(|item| item["kind"] == "rule_expression"));
+    assert!(uses.iter().filter(|item| item["kind"] == "data").all(|item| item["location"]["start_line"].is_number()));
+}
+
+#[test]
 fn cursors_reject_changes_to_command_and_command_specific_filters() {
     let root = fixture();
     let first = run(root.path(), "schema.symbols", &[("limit", "1")], None);
