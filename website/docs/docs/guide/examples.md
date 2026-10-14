@@ -4,14 +4,14 @@
 同编号 CFD 文件展示对应的数据写法。
 
 ```powershell
-coflow cft check examples/showcase
-coflow check examples/showcase
-coflow codegen examples/showcase
+coflow schema check --project examples/showcase
+coflow check --rules --project examples/showcase
+coflow codegen --project examples/showcase
 ```
 
-- `cft check` 只检查 CFT schema。
-- `check` 加载 `.cfd`，构建数据模型并执行业务规则。
-- `codegen` 发布 C# 等目标语言源文件，不执行 `check {}`；交付前先运行 `check`。
+- `schema check` 只检查 CFT schema。
+- `check --rules` 加载 `.cfd`，构建数据模型并执行业务规则。
+- `codegen` 发布 C# 等目标语言源文件，不执行 `check {}`；交付前先运行 `check --rules`。
 
 输出目录是 `examples/showcase/generated/csharp`。该目录由 Coflow 整体接管，不要放入手写文件。
 

@@ -541,6 +541,7 @@ dependencies = [
  "coflow-runtime",
  "dirs",
  "include_dir",
+ "schemars 0.8.22",
  "self_update",
  "serde",
  "serde_json",

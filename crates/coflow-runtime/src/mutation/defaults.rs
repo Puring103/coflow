@@ -44,6 +44,63 @@ pub fn default_value_for_value_type(
     DefaultValueMaterializer::new(schema).zero_for_ty(ty, materialization)
 }
 
+/// 语义修改只补齐声明默认值及 Option 的 None，不把编辑器形状初值写成业务数据。
+pub(crate) fn declared_field_default(
+    schema: &CftSchema,
+    field: &CftField,
+) -> Result<Option<CfdValue>, DiagnosticSet> {
+    let mut materializer = DefaultValueMaterializer::new(schema);
+    materializer.schema_only = true;
+    match &field.default {
+        Some(default) => materializer
+            .materialize_schema_default(
+                &field.value_type,
+                default,
+                DefaultMaterialization::EditableShape,
+            )
+            .map(Some),
+        None if matches!(field.value_type, CftValueType::Option(_)) => {
+            Ok(Some(CfdValue::OptionNone))
+        }
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn complete_declared_defaults(
+    schema: &CftSchema,
+    value: &mut CfdValue,
+) -> Result<(), DiagnosticSet> {
+    match value {
+        CfdValue::Object(object) => {
+            let provided = object.fields.keys().map(ToString::to_string).collect();
+            let mut materializer = DefaultValueMaterializer::new(schema);
+            materializer.schema_only = true;
+            let defaults = materializer.fields_for_type(
+                object.actual_type(),
+                DefaultMaterialization::EditableShape,
+                Some(&provided),
+            )?;
+            object.fields.extend(defaults);
+            for value in object.fields.values_mut() {
+                complete_declared_defaults(schema, value)?;
+            }
+        }
+        CfdValue::OptionSome(value) => complete_declared_defaults(schema, value)?,
+        CfdValue::Array(values) => {
+            for value in values {
+                complete_declared_defaults(schema, value)?;
+            }
+        }
+        CfdValue::Dict(values) => {
+            for (_, value) in values {
+                complete_declared_defaults(schema, value)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub(super) fn default_missing_fields_for_type(
     schema: &CftSchema,
     type_name: &str,
@@ -91,6 +148,7 @@ pub(crate) fn create_record_draft_for_type(
 struct DefaultValueMaterializer<'a> {
     schema: &'a CftSchema,
     memo: BTreeMap<(ValueDependencyMode, TypeName), BTreeMap<FieldName, CfdValue>>,
+    schema_only: bool,
 }
 
 impl<'a> DefaultValueMaterializer<'a> {
@@ -98,6 +156,7 @@ impl<'a> DefaultValueMaterializer<'a> {
         Self {
             schema,
             memo: BTreeMap::new(),
+            schema_only: false,
         }
     }
 
@@ -108,7 +167,11 @@ impl<'a> DefaultValueMaterializer<'a> {
         skip_fields: Option<&BTreeSet<String>>,
     ) -> Result<BTreeMap<FieldName, CfdValue>, DiagnosticSet> {
         ensure_type_can_materialize(self.schema, type_name)?;
-        let mode = dependency_mode(materialization);
+        let mode = if self.schema_only {
+            ValueDependencyMode::SchemaDefaults
+        } else {
+            dependency_mode(materialization)
+        };
         let Some(schema_type) = self.schema.resolve_type(type_name) else {
             return Err(one_mutation_error(
                 "MUTATION-TYPE",
@@ -128,9 +191,23 @@ impl<'a> DefaultValueMaterializer<'a> {
             if skip_fields.is_some_and(|skip| skip.contains(field.name.as_str())) {
                 continue;
             }
-            let value = match materialization {
-                DefaultMaterialization::Minimal => self.minimal_for_field(field)?,
-                DefaultMaterialization::EditableShape => self.editable_for_field(field)?,
+            let value = if self.schema_only {
+                match &field.default {
+                    Some(default) => Some(self.materialize_schema_default(
+                        &field.value_type,
+                        default,
+                        materialization,
+                    )?),
+                    None if matches!(field.value_type, CftValueType::Option(_)) => {
+                        Some(CfdValue::OptionNone)
+                    }
+                    None => None,
+                }
+            } else {
+                match materialization {
+                    DefaultMaterialization::Minimal => self.minimal_for_field(field)?,
+                    DefaultMaterialization::EditableShape => self.editable_for_field(field)?,
+                }
             };
             if let Some(value) = value {
                 fields.insert(field.name.clone(), value);

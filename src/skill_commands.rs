@@ -19,7 +19,7 @@ const MANIFEST_RELATIVE_PATH: &str = ".coflow/skill-installs.json";
 static BUNDLED_SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/skills");
 
 /// Result of installing, uninstalling, or inspecting bundled skills.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct SkillReport {
     pub operation: String,
     pub scope: String,
@@ -28,7 +28,7 @@ pub struct SkillReport {
 }
 
 /// Status of one agent skill directory.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct SkillTargetReport {
     pub path: PathBuf,
     pub agents: Vec<String>,

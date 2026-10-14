@@ -10,8 +10,8 @@
 
 pub mod transaction;
 
-use std::fmt;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -184,7 +184,8 @@ impl StagedChange for StagedFile {
     fn restore(&mut self) -> Result<(), StagingError> {
         self.restoration_attempted = true;
         // 回滚只移除本次发布的内容，发布后的外部修改必须保留。
-        if self.published && read_optional(&self.path)?.as_deref() != Some(self.contents.as_slice()) {
+        if self.published && read_optional(&self.path)?.as_deref() != Some(self.contents.as_slice())
+        {
             return Err(conflict(&self.path));
         }
         restore_staged(&self.path, &mut self.published, &mut self.backup, false)?;
@@ -212,6 +213,7 @@ impl Drop for StagedFile {
 #[derive(Debug)]
 pub struct StagedDirectory {
     path: PathBuf,
+    original: DirectorySnapshot,
     staging: PathBuf,
     backup: Option<PathBuf>,
     published: bool,
@@ -228,6 +230,15 @@ impl StagedDirectory {
     ///
     /// Returns [`StagingError`] when the staging directory cannot be created.
     pub fn create(path: &Path) -> Result<Self, StagingError> {
+        Self::create_with_snapshot(path, DirectorySnapshot::capture(path)?)
+    }
+
+    /// Uses the read-only snapshot captured while preparing the output.
+    pub fn create_with_snapshot(
+        path: &Path,
+        original: DirectorySnapshot,
+    ) -> Result<Self, StagingError> {
+        original.verify(path)?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         fs::create_dir_all(parent).map_err(|error| io_error(parent, "create parent for", error))?;
         let staging = unique_sibling(path, "staging");
@@ -235,6 +246,7 @@ impl StagedDirectory {
             .map_err(|error| io_error(&staging, "create staging directory", error))?;
         Ok(Self {
             path: path.to_path_buf(),
+            original,
             staging,
             backup: None,
             published: false,
@@ -252,6 +264,7 @@ impl StagedDirectory {
 
 impl StagedChange for StagedDirectory {
     fn verify(&self) -> Result<(), StagingError> {
+        self.original.verify(&self.path)?;
         if self.path.exists() && !self.path.is_dir() {
             return Err(io_error(
                 &self.path,
@@ -278,11 +291,17 @@ impl StagedChange for StagedDirectory {
         self.restoration_attempted = true;
         if self.published {
             match fs::symlink_metadata(&self.path) {
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Err(conflict(&self.path)),
-                Err(error) => return Err(io_error(&self.path, "inspect restore destination", error)),
-                Ok(_) => {},
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    return Err(conflict(&self.path))
+                }
+                Err(error) => {
+                    return Err(io_error(&self.path, "inspect restore destination", error))
+                }
+                Ok(_) => {}
             }
-            if Some(directory_contents(&self.path)?) != self.published_contents { return Err(conflict(&self.path)); }
+            if Some(directory_contents(&self.path)?) != self.published_contents {
+                return Err(conflict(&self.path));
+            }
         }
         restore_staged(&self.path, &mut self.published, &mut self.backup, true)?;
         self.published = false;
@@ -387,10 +406,16 @@ fn replace_staged(
     Ok(())
 }
 
-fn restore_staged(path: &Path, published: &mut bool, backup: &mut Option<PathBuf>, directory: bool) -> Result<(), StagingError> {
+fn restore_staged(
+    path: &Path,
+    published: &mut bool,
+    backup: &mut Option<PathBuf>,
+    directory: bool,
+) -> Result<(), StagingError> {
     if *published {
         if directory {
-            fs::remove_dir_all(path).map_err(|e| io_error(path, "remove published directory", e))?;
+            fs::remove_dir_all(path)
+                .map_err(|e| io_error(path, "remove published directory", e))?;
         } else {
             fs::remove_file(path).map_err(|e| io_error(path, "remove published file", e))?;
         }
@@ -399,7 +424,7 @@ fn restore_staged(path: &Path, published: &mut bool, backup: &mut Option<PathBuf
     if let Some(backup_path) = backup.as_ref() {
         match fs::symlink_metadata(path) {
             Ok(_) => return Err(conflict(path)),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(io_error(path, "inspect restore destination", e)),
         }
         fs::rename(backup_path, path).map_err(|e| io_error(path, "restore backup", e))?;
@@ -408,24 +433,69 @@ fn restore_staged(path: &Path, published: &mut bool, backup: &mut Option<PathBuf
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum DirectoryEntryContents { Directory, File(Vec<u8>), Symlink(PathBuf) }
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DirectoryEntryContents {
+    Directory,
+    File(Vec<u8>),
+    Symlink(PathBuf),
+}
 type DirectoryContents = BTreeMap<PathBuf, DirectoryEntryContents>;
 
+/// A directory content snapshot captured without creating staging files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectorySnapshot {
+    contents: Option<DirectoryContents>,
+}
+impl DirectorySnapshot {
+    pub fn capture(path: &Path) -> Result<Self, StagingError> {
+        let contents = match fs::symlink_metadata(path) {
+            Ok(_) => Some(directory_contents(path)?),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(io_error(path, "inspect output snapshot", error)),
+        };
+        Ok(Self { contents })
+    }
+    pub fn verify(&self, path: &Path) -> Result<(), StagingError> {
+        // 比较文件、目录与链接的内容身份，新增、删除和外部改写均使发布前置条件失效。
+        if *self != Self::capture(path)? {
+            return Err(conflict(path));
+        }
+        Ok(())
+    }
+}
+
 fn directory_contents(root: &Path) -> Result<DirectoryContents, StagingError> {
-    fn collect(root: &Path, relative: &Path, result: &mut DirectoryContents) -> Result<(), StagingError> {
+    fn collect(
+        root: &Path,
+        relative: &Path,
+        result: &mut DirectoryContents,
+    ) -> Result<(), StagingError> {
         let path = root.join(relative);
-        let metadata = fs::symlink_metadata(&path).map_err(|e| io_error(&path, "inspect published output", e))?;
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|e| io_error(&path, "inspect published output", e))?;
         if metadata.file_type().is_symlink() {
-            result.insert(relative.to_path_buf(), DirectoryEntryContents::Symlink(fs::read_link(&path).map_err(|e| io_error(&path, "read output link", e))?));
+            result.insert(
+                relative.to_path_buf(),
+                DirectoryEntryContents::Symlink(
+                    fs::read_link(&path).map_err(|e| io_error(&path, "read output link", e))?,
+                ),
+            );
         } else if metadata.is_dir() {
             result.insert(relative.to_path_buf(), DirectoryEntryContents::Directory);
-            for entry in fs::read_dir(&path).map_err(|e| io_error(&path, "read published directory", e))? {
-                let entry = entry.map_err(|e| io_error(&path, "read published directory entry", e))?;
+            for entry in
+                fs::read_dir(&path).map_err(|e| io_error(&path, "read published directory", e))?
+            {
+                let entry =
+                    entry.map_err(|e| io_error(&path, "read published directory entry", e))?;
                 collect(root, &relative.join(entry.file_name()), result)?;
             }
         } else {
-            result.insert(relative.to_path_buf(), DirectoryEntryContents::File(fs::read(&path).map_err(|e| io_error(&path, "read published file", e))?));
+            result.insert(
+                relative.to_path_buf(),
+                DirectoryEntryContents::File(
+                    fs::read(&path).map_err(|e| io_error(&path, "read published file", e))?,
+                ),
+            );
         }
         Ok(())
     }

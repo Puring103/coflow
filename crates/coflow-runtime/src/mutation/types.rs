@@ -195,7 +195,7 @@ pub struct CreateRecordFieldDraft {
     pub required: Option<CreateRequiredInput>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
@@ -214,6 +214,7 @@ pub enum CreateFieldSource {
     feature = "ts-export",
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
+#[derive(schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CreateRequiredInput {
     Ref {

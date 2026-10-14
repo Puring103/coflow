@@ -1,6 +1,7 @@
 mod dimensions;
 mod edges;
 mod ids;
+mod projection;
 mod tables;
 mod value;
 

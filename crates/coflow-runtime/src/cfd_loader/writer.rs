@@ -254,7 +254,9 @@ fn publish_workspace(workspace: &mut WriteWorkspace) -> Result<(), DiagnosticSet
         if let Err(error) = result {
             let mut diagnostics = writer_staging_error(&error);
             for committed in staged[..=index].iter_mut().rev() {
-                if let Err(error) = StagedChange::restore(committed) { diagnostics.extend(writer_staging_error(&error)); }
+                if let Err(error) = StagedChange::restore(committed) {
+                    diagnostics.extend(writer_staging_error(&error));
+                }
             }
             return Err(diagnostics);
         }
@@ -482,6 +484,66 @@ impl CfdWriter {
             append_record_source(&source, &fragment)
         };
         self.write_source(path, &new_source)?;
+        Ok(WriteOutcome::default())
+    }
+
+    /// 迁移沿用记录源码，只补齐分组省略的类型标记；不把默认值物化为新赋值。
+    pub(crate) fn transfer_record(
+        &self,
+        record: &crate::WriteRecordRef<'_>,
+        destination: &crate::CfdSource,
+        before: Option<&crate::WriteRecordRef<'_>>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let RecordOrigin::File { path, .. } = record.origin else {
+            return Err(DiagnosticSet::one(diag(
+                "WRITE-TRANSFER-ORIGIN",
+                "record has no writable source origin",
+            )));
+        };
+        let target = destination.location.path();
+        if crate::normalized_path_identity(path) == crate::normalized_path_identity(target) {
+            return Err(DiagnosticSet::one(diag(
+                "WRITE-TRANSFER-FILE",
+                "record transfer requires different source and destination files",
+            )));
+        }
+        let (source, ast) = self.read_or_parse(path)?;
+        let declaration =
+            find_record(&ast, record.actual_type, record.record_key).ok_or_else(|| {
+                DiagnosticSet::one(diag("CFD-WRITE", "transfer source record does not exist"))
+            })?;
+        let mut fragment = source[declaration.span.start..declaration.span.end].to_string();
+        if declaration.group_type.is_some() && declaration.type_span.start < declaration.span.start
+        {
+            fragment.insert_str(
+                declaration.key_span.end - declaration.span.start,
+                &format!(": {}", record.actual_type),
+            );
+        }
+        let (target_source, target_ast) = self.read_or_parse(target)?;
+        if find_record(&target_ast, record.actual_type, record.record_key).is_some() {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "transfer destination already contains the record",
+            )));
+        }
+        let target_source = if let Some(before) = before {
+            ensure_cfd_origin_path(before.origin, target)?;
+            let anchor = find_record(&target_ast, before.actual_type, before.record_key)
+                .ok_or_else(|| {
+                    DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        "transfer destination anchor does not exist",
+                    ))
+                })?;
+            insert_record_before(&target_source, &fragment, anchor.span.start)?
+        } else {
+            append_record_source(&target_source, &fragment)
+        };
+        let removed = delete_record_span(&source, declaration.span);
+        let remaining = format!("{}{}", &source[..removed.start], &source[removed.end..]);
+        self.write_source(target, &target_source)?;
+        self.write_source(path, &remaining)?;
         Ok(WriteOutcome::default())
     }
 

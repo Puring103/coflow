@@ -7,7 +7,7 @@
 `coflow` CLI 内置两个 skills，不依赖 Node.js。安装到当前 Coflow 项目：
 
 ```powershell
-coflow skill install <project>
+coflow skill install --project <project>
 ```
 
 安装到当前用户的通用和已检测 agent 目录：
@@ -31,18 +31,18 @@ coflow skill install -g
 给 agent 任务时，尽量提供项目路径和目标，例如“在 `examples/showcase` 中新增一个字段并更新 CFD 记录”。agent 应先读取 schema 和 CFD 文件，再修改：
 
 ```powershell
-coflow schema inspect <project>
-coflow schema files <project>
+coflow schema inspect --project <project>
+coflow project files --kind schema --project <project>
 ```
 
 修改 schema 后运行：
 
 ```powershell
-coflow schema write-file <project> --file schema/main.cft --check
-coflow check <project>
+coflow source write --project <project> --file schema/main.cft --input candidates/main.cft --dry-run
+coflow check --project <project>
 ```
 
-修改 CFD 后运行 `coflow check <project>`，需要目标语言源文件时运行 `coflow codegen <project>`。
+修改 CFD 后运行 `coflow check --project <project>`，需要目标语言源文件时运行 `coflow codegen --project <project>`。
 
 ## 文档引用
 

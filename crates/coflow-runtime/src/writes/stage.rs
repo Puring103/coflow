@@ -479,28 +479,19 @@ fn stage_reorder_records(plan: &ReorderPlan) -> Result<WriteOutcome, DiagnosticS
 }
 
 fn stage_transfer_record(
-    session: &ProjectSession,
+    _session: &ProjectSession,
     plan: &TransferPlan,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    let schema = session.schema();
     let before = plan.before.as_ref().map(write_record_ref);
-    let inserted = plan
-        .destination_writer
-        .insert_record(&InsertRecordRequest {
-            source: &plan.destination,
+    let outcome = plan.source_writer.transfer_record(
+        &WriteRecordRef {
+            origin: &plan.source_origin,
             record_key: &plan.coordinate.key,
             actual_type: &plan.coordinate.actual_type,
-            fields: &plan.fields,
-            schema,
-            before,
-        })?;
-    let deleted = plan.source_writer.delete_record(&DeleteRecordRequest {
-        origin: &plan.source_origin,
-        record_key: &plan.coordinate.key,
-        actual_type: &plan.coordinate.actual_type,
-    })?;
-    let mut diagnostics = inserted.diagnostics;
-    diagnostics.extend(deleted.diagnostics);
+        },
+        &plan.destination,
+        before.as_ref(),
+    )?;
     Ok(WriteOutcome {
         touched: vec![plan.coordinate.clone()],
         inserted: None,
@@ -511,7 +502,7 @@ fn stage_transfer_record(
             plan.source_display_path.clone(),
             plan.destination_display_path.clone(),
         ],
-        diagnostics,
+        diagnostics: outcome.diagnostics,
     })
 }
 

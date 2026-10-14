@@ -9,17 +9,17 @@ description: "Coflow CFT schema 与配置数据结构建模：当用户需要设
 
 ## 建模流程
 
-1. 先读取现有项目：`coflow schema inspect <project>` 获取结构化视图；`coflow schema files <project>` 获取原始注释、字段顺序和 `check`。
+1. 先读取现有项目：`coflow schema inspect --project <project>` 获取结构化视图；`coflow project files --kind schema --project <project>` 获取原始注释、字段顺序和 `check`。
 2. 明确数据形态：顶层记录、内联对象、枚举、引用、数组、字典、`Option<T>` 和多态边界。
 3. 先设计字段类型和默认值，再设计 `check {}`；不要用 CFD 文件约定替代 schema 约束。
 4. 修改 `.cft` 时优先使用：
 
 ```powershell
-coflow schema write-file <project> --file schema/main.cft --check
+coflow source write --project <project> --file schema/main.cft --input candidates/main.cft --dry-run
 ```
 
 5. 如果字段变化影响 CFD 顶层字段，更新对应 `.cfd` 记录并运行 `coflow check`。
-6. 完成后运行 `coflow check <project>`。
+6. 完成后运行 `coflow check --project <project>`。
 
 ## 快速规则
 

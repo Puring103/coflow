@@ -6,8 +6,8 @@
 //! nor wanted there.
 
 use coflow_runtime::DiagnosticSet;
+use serde_json::Value;
 use std::io::{self, Write};
-use serde_json::{json,Value};
 
 use crate::cli::SelfUpdateArgs;
 use crate::diagnostics::cli_error;
@@ -80,20 +80,29 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<Value, DiagnosticSet> {
         })?;
 
     if up_to_date {
-        return Ok(json!({"current_version":current_version,"latest_version":latest.version,"update_available":false,"updated":false}));
+        return update_result(current_version, &latest.version, false, false);
     }
 
     if args.check {
-        return Ok(json!({"current_version":current_version,"latest_version":latest.version,"update_available":true,"updated":false}));
+        return update_result(current_version, &latest.version, true, false);
     }
 
     // 更新库保持静默，交互确认写到 stderr，结构化结果独占 stdout。
     if !args.yes {
-        eprint!("Install coflow {} (current {current_version})? [y/N] ",latest.version);
-        io::stderr().flush().map_err(|error|cli_error("SELF-UPDATE-CONFIRM",error.to_string()))?;
-        let mut answer=String::new();
-        io::stdin().read_line(&mut answer).map_err(|error|cli_error("SELF-UPDATE-CONFIRM",error.to_string()))?;
-        if !matches!(answer.trim(),"y"|"Y"|"yes"|"YES") {return Ok(json!({"current_version":current_version,"latest_version":latest.version,"update_available":true,"updated":false}));}
+        eprint!(
+            "Install coflow {} (current {current_version})? [y/N] ",
+            latest.version
+        );
+        io::stderr()
+            .flush()
+            .map_err(|error| cli_error("SELF-UPDATE-CONFIRM", error.to_string()))?;
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .map_err(|error| cli_error("SELF-UPDATE-CONFIRM", error.to_string()))?;
+        if !matches!(answer.trim(), "y" | "Y" | "yes" | "YES") {
+            return update_result(current_version, &latest.version, true, false);
+        }
     }
 
     let status = updater.update().map_err(|error| {
@@ -103,7 +112,22 @@ pub(crate) fn run(args: &SelfUpdateArgs) -> Result<Value, DiagnosticSet> {
         )
     })?;
 
-    Ok(json!({"current_version":current_version,"latest_version":status.version(),"update_available":true,"updated":true}))
+    update_result(current_version, status.version(), true, true)
+}
+
+fn update_result(
+    current_version: &str,
+    latest_version: &str,
+    update_available: bool,
+    updated: bool,
+) -> Result<Value, DiagnosticSet> {
+    serde_json::to_value(crate::cli::SelfUpdateResult {
+        current_version: current_version.into(),
+        latest_version: latest_version.into(),
+        update_available,
+        updated,
+    })
+    .map_err(|error| cli_error("SELF-UPDATE-OUTPUT", error.to_string()))
 }
 
 #[cfg(test)]

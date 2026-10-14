@@ -21,8 +21,8 @@ coflow --help
 ## 快速开始
 
 ```powershell
-coflow check examples/showcase
-coflow codegen examples/showcase
+coflow check --rules --project examples/showcase
+coflow codegen --project examples/showcase
 ```
 
 最小项目配置如下：

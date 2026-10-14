@@ -193,10 +193,15 @@ pub(crate) fn diff_against_revision(
 ) -> Result<ProjectDiff, DiagnosticSet> {
     let mut git = GitProject::open(&session.project)?;
     if revision != "HEAD" {
-        git.head_oid = git.repo.rev_parse_single(revision)
+        git.head_oid = git
+            .repo
+            .rev_parse_single(revision)
             .map_err(|error| git_error(format!("无法解析比较基线 `{revision}`：{error}")))?
-            .object().map_err(|error| git_error(error.to_string()))?
-            .peel_to_commit().map_err(|error| git_error(error.to_string()))?.id;
+            .object()
+            .map_err(|error| git_error(error.to_string()))?
+            .peel_to_commit()
+            .map_err(|error| git_error(error.to_string()))?
+            .id;
     }
     let head = git.materialize_head()?;
     let mut diagnostics = Vec::new();
@@ -303,6 +308,144 @@ fn filter_ignored_additions(
     records.retain(|_, record| {
         head_sources.contains_key(&record.file_path) || !ignored.contains(&record.file_path)
     });
+}
+
+/// CLI 差异独立于桌面 DTO，以公共 ModelValue 表达有效值与显式赋值。
+/// 即使任一端模型无法构建，源码快照仍可比较。
+pub(crate) fn automation_diff(
+    project: &Project,
+    current: &crate::automation::InputSnapshot,
+    args: &crate::automation::Arguments,
+) -> crate::automation::Result<serde_json::Value> {
+    use crate::automation::{
+        semantic_diff::{compare, select, SemanticSnapshot},
+        InputSnapshot,
+    };
+    use serde_json::json;
+    let mut git = GitProject::open(project)?;
+    let revision = args.get("base").unwrap_or("HEAD");
+    git.head_oid = git
+        .repo
+        .rev_parse_single(revision)
+        .map_err(|error| git_error(error.to_string()))?
+        .object()
+        .map_err(|error| git_error(error.to_string()))?
+        .peel_to_commit()
+        .map_err(|error| git_error(error.to_string()))?
+        .id;
+    let head = git.materialize_head()?;
+    let paths = git.diff_paths();
+    let current_sources = current
+        .files
+        .iter()
+        .map(|file| {
+            (
+                file.path.clone(),
+                String::from_utf8_lossy(&file.contents).into_owned(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut head_sources = head.sources.clone();
+    let mut endpoint_errors = Vec::new();
+    let mut missing_inputs = Vec::new();
+    let comparison_root = git.repo_root.join(&git.project_relative);
+    let historical = Project::open_schema_only(Some(&head.config_path)).and_then(|mut project| {
+        // 未还原输入映射为快照内的缺失路径，既保留其他输入，也不读取工作区补全历史。
+        let mut rebase = |path: &Path| {
+            let original = crate::normalize_path(&git.repo_root.join(&git.project_relative).join(path));
+            match original.strip_prefix(&git.repo_root) {
+                Ok(relative) => {
+                    let restored = head.temp.path().join(relative);
+                    if !restored.exists() { missing_inputs.push(json!({"path":crate::project_path(&comparison_root,&original),"reason":"input is not present in the selected revision"})); }
+                    restored
+                }
+                Err(_) => {
+                    missing_inputs.push(json!({"path":crate::project_path(&comparison_root,&original),"reason":"input is outside the selected repository"}));
+                    head.temp.path().join("unavailable-inputs").join(format!("input-{}",missing_inputs.len()))
+                }
+            }
+        };
+        for path in &mut project.config.schema.paths { *path = rebase(path); }
+        for source in &mut project.config.data { *source = crate::SourceConfig::from_path(rebase(source.path())); }
+        for dimension in project.config.dimensions.values_mut() { if let Some(dir) = &mut dimension.dir { *dir = rebase(dir); } }
+        Ok(project)
+    });
+    let before = match historical {
+        Ok(historical) => {
+            let capture = InputSnapshot::capture(&historical)?;
+            head_sources = capture
+                .files
+                .iter()
+                .filter_map(|file| {
+                    paths
+                        .diff_path(historical.root_dir(), &file.path, Some(head.temp.path()))
+                        .map(|path| (path, String::from_utf8_lossy(&file.contents).into_owned()))
+                })
+                .collect();
+            SemanticSnapshot::capture(&historical, |path| {
+                paths
+                    .diff_path(
+                        historical.root_dir(),
+                        &crate::project_path(historical.root_dir(), path),
+                        Some(head.temp.path()),
+                    )
+                    .ok_or_else(|| {
+                        crate::automation::Failure::request(
+                            "historical source has no repository identity",
+                        )
+                    })
+            })?
+        }
+        Err(error) => {
+            endpoint_errors.extend(
+                error.diagnostics.into_iter().map(
+                    |error| json!({"endpoint":"base","code":error.code,"message":error.message}),
+                ),
+            );
+            SemanticSnapshot::default()
+        }
+    };
+    let after = SemanticSnapshot::capture(project, |path| {
+        Ok(crate::project_path(project.root_dir(), path))
+    })?;
+    for (endpoint, snapshot) in [("base", &before), ("current", &after)] {
+        endpoint_errors.extend(snapshot.diagnostics.diagnostics.iter().map(|error| {
+            let message = if endpoint == "base" {
+                error.message.replace(
+                    &head.temp.path().to_string_lossy().to_string(),
+                    &git.repo_root.to_string_lossy(),
+                )
+            } else {
+                error.message.clone()
+            };
+            json!({"endpoint":endpoint,"code":error.code,"message":message})
+        }));
+    }
+    let mut difference = compare(&before, &after);
+    if !missing_inputs.is_empty() {
+        difference.semantic_available = false;
+    }
+    let mut result = select(difference, args)?;
+    let mut files = source_diffs(&BTreeSet::new(), &head_sources, &current_sources)?;
+    if !args.flag("include-source") || args.flag("summary") {
+        for file in &mut files {
+            file.before = None;
+            file.after = None;
+        }
+    }
+    if args.flag("summary") {
+        result["files"] = json!(files
+            .iter()
+            .map(|file| json!({"path":file.path,"change":file.change}))
+            .collect::<Vec<_>>());
+    } else if args.get("view").is_none_or(|view| view == "source") {
+        result["files"] = json!(files);
+    }
+    result["base"] = json!(git.head_oid.to_string());
+    result["endpoints"] = json!({"base":{"config":crate::project_path(project.root_dir(), project.config_path()),"complete":before.available&&missing_inputs.is_empty(),"missing_inputs":missing_inputs},
+        "current":{"config":crate::project_path(project.root_dir(),project.config_path()),"complete":after.available}});
+    result["diagnostics"] = json!(endpoint_errors);
+    Ok(result)
 }
 
 fn append_diagnostics(
@@ -754,7 +897,7 @@ fn source_diffs(
     Ok(files)
 }
 
-fn unified_hunks(before: &str, after: &str) -> Result<String, DiagnosticSet> {
+pub(crate) fn unified_hunks(before: &str, after: &str) -> Result<String, DiagnosticSet> {
     // 直接比较 session 文本，不经过工作区过滤器或外部 diff 驱动。
     let input = InternedInput::new(before, after);
     let diff = diff_with_slider_heuristics(Algorithm::Myers, &input);
@@ -1045,10 +1188,12 @@ impl GitDiffPaths {
 }
 
 fn is_project_text_path(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(OsStr::to_str),
-        Some("yaml" | "yml" | "cft" | "cfd")
-    )
+    path.file_name()
+        .is_some_and(|name| name == "coflow.enum.lock.json")
+        || matches!(
+            path.extension().and_then(OsStr::to_str),
+            Some("yaml" | "yml" | "cft" | "cfd")
+        )
 }
 
 fn safe_git_path(path: &str) -> Result<PathBuf, DiagnosticSet> {
