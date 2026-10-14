@@ -29,7 +29,7 @@ impl Default for Selector {
         limit: 50, cursor: None, text: None, view: "effective".into(), filter: None, query_identity: None } }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct Page<T> { pub items: Vec<T>, pub total: usize, pub truncated: bool, pub next_cursor: Option<String> }
 
 pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>> {

@@ -10,6 +10,7 @@ mod project_inspection;
 pub use project_inspection::{SchemaInputs, CodegenTarget, ProjectDimension, ProjectConfiguration, ProjectInspection};
 pub use files::{DataFileRole, FileDimensionSummary, DataFileSummary, ProjectFile, ProjectFiles};
 mod dimension;
+pub use dimension::{DimensionField, DimensionMetadata, DimensionVariant};
 mod references;
 pub use references::{ReferenceDimension, ReferencePathSegment, ReferencePath, ReferenceEdge, ReferenceQuery};
 mod statistics;
@@ -174,6 +175,9 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
         Some("source.read") => response_schema_of::<Option<SourceRead>>(),
         Some("project.files") => response_schema_of::<Option<ProjectFiles>>(),
         Some("project.inspect") => response_schema_of::<Option<ProjectInspection>>(),
+        Some("dimension.list") => response_schema_of::<Option<Vec<DimensionMetadata>>>(),
+        Some("dimension.inspect") => response_schema_of::<Option<DimensionMetadata>>(),
+        Some("dimension.variants") => response_schema_of::<Option<Page<DimensionVariant>>>(),
         _ => response_schema(),
     }
 }

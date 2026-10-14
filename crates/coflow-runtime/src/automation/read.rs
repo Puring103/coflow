@@ -116,7 +116,7 @@ fn data_command(command: &str, project: &Project, session: &ReadOnlyProjectSessi
             }
             Ok(json!({"draft": encoded, "key": args.get("key"), "complete": required.is_empty(), "required_inputs": required}))
         }
-        "dimension.list" => to_json(session.queries().dimensions()),
+        "dimension.list" => to_json(super::dimension::list(session)),
         command if command.starts_with("dimension.") => super::dimension::query(command, session, args),
         command if command.starts_with("stats.") => super::statistics::query(command, session, snapshot, args),
         "data.refs" => super::references::query(session, args),

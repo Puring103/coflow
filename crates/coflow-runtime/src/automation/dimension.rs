@@ -2,6 +2,43 @@ use serde_json::{Value, json};
 use crate::{ReadOnlyProjectSession, CfdRecord};
 use super::{Arguments, Result, Failure, query::{selected_records, paginate}};
 
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct DimensionField {
+    pub source_type: String,
+    pub source_field: String,
+    pub is_singleton: bool,
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct DimensionMetadata {
+    pub name: String,
+    pub display_name: String,
+    pub variants: Vec<String>,
+    pub dir: Option<String>,
+    pub files: Vec<String>,
+    pub fields: Vec<DimensionField>,
+}
+
+impl From<crate::DimensionInfo> for DimensionMetadata {
+    fn from(value: crate::DimensionInfo) -> Self {
+        Self { name: value.name, display_name: value.display_name, variants: value.variants,
+            dir: value.dir, files: value.files, fields: value.fields.into_iter().map(|field| DimensionField {
+                source_type: field.source_type, source_field: field.source_field, is_singleton: field.is_singleton,
+            }).collect() }
+    }
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct DimensionVariant {
+    pub name: String,
+    pub overrides: usize,
+    pub locations: Vec<Option<super::diagnostics::CommandLocation>>,
+}
+
+pub(super) fn list(session: &ReadOnlyProjectSession) -> Vec<DimensionMetadata> {
+    session.queries().dimensions().into_iter().map(DimensionMetadata::from).collect()
+}
+
 pub fn field_value(session: &ReadOnlyProjectSession, record: &CfdRecord, field: &str, dimension: &str, variant: &str) -> Result<Value> {
     let base = record.field(field);
     let explicit = record.dimension_field(field).filter(|f| f.dimension.as_str() == dimension)
@@ -20,17 +57,22 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) 
     let name = args.require("dimension")?;
     let dimension = session.queries().dimensions().into_iter().find(|d| d.name == name)
         .ok_or_else(|| Failure::missing(format!("unknown dimension `{name}`")))?;
-    if command == "dimension.inspect" { return super::json(dimension); }
+    if command == "dimension.inspect" { return super::json(DimensionMetadata::from(dimension)); }
     if command == "dimension.variants" {
         let items: Vec<_> = dimension.variants.iter().map(|variant| {
             let mut count = 0;
             let mut locations = Vec::new();
             for (_, record) in session.model().records() {
                 for values in record.dimension_fields.values().filter(|v| v.dimension.as_str() == name) {
-                    if let Some(value) = values.variants.get(variant.as_str()) { count += 1; locations.push(&value.origin); }
+                    if let Some(value) = values.variants.get(variant.as_str()) {
+                        count += 1;
+                        // 未知来源保留 null，已知来源统一为 CLI 的路径与 UTF-16 行列位置。
+                        locations.push(value.origin.location_for_path(&crate::CfdPath::root()).map(|source|
+                            super::diagnostics::CommandLocation::from_source(&source.into(), Some(session.session.project.root_dir()))));
+                    }
                 }
             }
-            json!({"name": variant, "overrides": count, "locations": locations})
+            DimensionVariant { name: variant.clone(), overrides: count, locations }
         }).collect();
         return super::json(paginate(items, &args.selector()?)?);
     }
