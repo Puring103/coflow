@@ -39,6 +39,42 @@ fn schema_symbols_reject_unknown_kinds_before_returning_an_empty_page() {
 }
 
 #[test]
+fn schema_reference_pages_preserve_all_uses_and_bind_the_symbol() {
+    let root = fixture();
+    let first = run(root.path(), "schema.refs", &[("symbol", "Item"), ("limit", "1")], None);
+    let total = first.result["total"].as_u64().unwrap();
+    assert!(total > 1);
+    assert_eq!(first.result["references"].as_array().unwrap().len(), 1);
+    let mut cursor = first.result["next_cursor"].as_str().unwrap().to_string();
+    let mut collected = first.result["references"].as_array().unwrap().clone();
+    loop {
+        let page = run(root.path(), "schema.refs", &[("symbol", "Item"), ("limit", "2"), ("cursor", &cursor)], None);
+        assert_eq!(page.result["total"], total);
+        collected.extend(page.result["references"].as_array().unwrap().iter().cloned());
+        match page.result["next_cursor"].as_str() { Some(next) => cursor = next.into(), None => break }
+    }
+    assert_eq!(collected.len() as u64, total);
+    let all = run(root.path(), "schema.refs", &[("symbol", "Item"), ("limit", "100")], None);
+    assert_eq!(collected, *all.result["references"].as_array().unwrap());
+}
+
+#[test]
+fn cursors_reject_changes_to_command_and_command_specific_filters() {
+    let root = fixture();
+    let first = run(root.path(), "schema.symbols", &[("limit", "1")], None);
+    let cursor = first.result["next_cursor"].as_str().unwrap();
+    let project = Project::open_schema_only(Some(root.path())).unwrap();
+    let snapshot = InputSnapshot::capture(&project).unwrap();
+    for (command, extra) in [("schema.symbols", ("kind", "field")), ("schema.refs", ("symbol", "Item")), ("data.list", ("type", "Item"))] {
+        let args = Arguments([("cursor".into(), vec![cursor.into()]), ("limit".into(), vec!["1".into()]), (extra.0.into(), vec![extra.1.into()])].into());
+        let error = execute(command, &project, &snapshot, &args, None, root.path()).unwrap_err();
+        assert!(matches!(error.error_category, Some(coflow_runtime::automation::ErrorCategory::Request)), "{command}: {error:?}");
+    }
+    let symbols = run(root.path(), "schema.symbols", &[("limit", "1"), ("cursor", cursor)], None);
+    assert_eq!(symbols.status, Status::Success);
+}
+
+#[test]
 fn context_includes_related_declarations_target_sources_and_bounded_references() {
     let root = fixture();
     fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ndata Details { color: Color = Color::Red; }\ntable Item { value: int = 10; details: Details; next: Option<&Item>; }\n").unwrap();

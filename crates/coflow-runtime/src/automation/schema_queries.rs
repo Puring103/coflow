@@ -20,12 +20,21 @@ pub fn mentions(ty: &CftValueType, symbol: &str) -> bool {
     }
 }
 
-pub fn references(project: &Project, session: &ProjectSchemaSession, symbol: &str) -> Result<Value> {
+pub fn references(project: &Project, session: &ProjectSchemaSession, args: &super::Arguments) -> Result<Value> {
+    let symbol = args.require("symbol")?;
     let schema = session.schema().ok_or_else(|| Failure::missing("schema is unavailable"))?;
     if schema.resolve_type(symbol).is_none() && schema.resolve_enum(symbol).is_none() && schema.resolve_const(symbol).is_none() {
         return Err(Failure::missing(format!("unknown symbol `{symbol}`")));
     }
     let mut items = Vec::new();
+    if let Some(declaration) = schema.resolve_enum(symbol) {
+        let source = schema.source(&declaration.module);
+        items.push(json!({"kind": "declaration", "symbol": symbol, "location": source.map(|source| location(&source.path, &source.source, declaration.span))}));
+    }
+    if let Some(declaration) = schema.resolve_const(symbol) {
+        let source = schema.source(&declaration.module);
+        items.push(json!({"kind": "declaration", "symbol": symbol, "location": source.map(|source| location(&source.path, &source.source, declaration.span))}));
+    }
     for ty in schema.all_types() {
         let source = schema.source(&ty.module);
         if ty.name.as_str() == symbol { items.push(json!({"kind": "declaration", "symbol": ty.name, "location": source.map(|s| location(&s.path, &s.source, ty.span))})); }
@@ -44,5 +53,6 @@ pub fn references(project: &Project, session: &ProjectSchemaSession, symbol: &st
     for (_,record) in data.model().records() {
         if record.actual_type() == symbol { items.push(json!({"kind": "data", "record": record.coordinate(), "location": record.origin})); }
     }
-    Ok(json!({"symbol": symbol, "references": items}))
+    let page = super::query::paginate(items, &args.selector()?)?;
+    Ok(json!({"symbol": symbol, "references": page.items, "total": page.total, "truncated": page.truncated, "next_cursor": page.next_cursor}))
 }

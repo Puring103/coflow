@@ -3,6 +3,9 @@ use crate::{Project, Runtime, ReadOnlyProjectSession};
 use super::{Arguments, Failure, Result, InputSnapshot, Response, Status, query, json as to_json};
 
 pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, args: &Arguments) -> Result<Response> {
+    let mut scoped_args = args.clone();
+    scoped_args.0.insert("_command".into(), vec![command.into()]);
+    let args = &scoped_args;
     let mut response = Response::new(command);
     response.project = Some(crate::path_to_slash(project.root_dir()));
     match command {
@@ -53,7 +56,7 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
                     items.sort_by(|a,b| a["name"].as_str().cmp(&b["name"].as_str()));
                     to_json(query::paginate(items, &args.selector()?)?)?
                 }
-                "schema.refs" => super::schema_queries::references(project, &schema, args.require("symbol")?)?,
+                "schema.refs" => super::schema_queries::references(project, &schema, args)?,
                 _ => {
                     let mut value = super::schema_queries::inspect(&schema,args)?;
                     if let Some(field) = args.get("field") {
