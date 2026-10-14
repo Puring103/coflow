@@ -71,12 +71,12 @@ pub fn references(project: &Project, session: &ProjectSchemaSession, args: &supe
     }
     for info in schema.all_check_statements() {
         if rule && super::rules::selected(info, symbol) {
-            items.push(json!({"kind": "declaration", "symbol": super::rules::identity(info), "rule": super::rules::describe(schema, info)}));
+            items.push(json!({"kind": "declaration", "symbol": super::rules::identity(info), "rule": super::rules::describe(schema, info, project.root_dir())}));
         }
         if info.dependencies.iter().any(|d| match d { coflow_language::cft::CheckDependency::Field(f) => f.owner.as_str() == symbol || field.is_some_and(|target|
                 schema.field(&f.owner, &f.field).is_some_and(|dependency| dependency.declaring_type == target.declaring_type && dependency.name == target.name)),
             coflow_language::cft::CheckDependency::RecordSet(t) => t.as_str() == symbol }) {
-            items.push(json!({"kind": "rule_expression", "rule": super::rules::describe(schema,info)}));
+            items.push(json!({"kind": "rule_expression", "rule": super::rules::describe(schema,info,project.root_dir())}));
         }
     }
     let data = crate::Runtime::new().open_data_session(project.clone())?;

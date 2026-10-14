@@ -66,7 +66,7 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
                     }
                     for item in &report.enums { items.push(json!({"kind": "enum", "name": item.name, "module": item.module})); }
                     for item in &report.consts { items.push(json!({"kind": "const", "name": item.name, "module": item.module})); }
-                    if let Some(view)=schema.schema(){for info in view.all_check_statements(){items.push(json!({"kind":"rule","name":super::rules::identity(info),"definition":super::rules::describe(view,info)}));}}
+                    if let Some(view)=schema.schema(){for info in view.all_check_statements(){items.push(json!({"kind":"rule","name":super::rules::identity(info),"definition":super::rules::describe(view,info,project.root_dir())}));}}
                     if let Some(kind) = args.get("kind") { items.retain(|v| v["kind"] == kind); }
                     items.sort_by(|a,b| a["name"].as_str().cmp(&b["name"].as_str()));
                     to_json(query::paginate(items, &args.selector()?)?)?

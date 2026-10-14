@@ -3,6 +3,35 @@ use coflow_language::cft::{CftSchema, CheckOwner, CheckStatementInfo, CheckDepen
 use crate::ReadOnlyProjectSession;
 use super::{Arguments, Result, Failure, Status};
 
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleOwnerKind { Project, Type }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyScope { Exact, Conservative }
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RuleDependency {
+    Field { #[serde(rename = "type")] actual_type: String, field: String, scope: DependencyScope },
+    RecordSet { #[serde(rename = "type")] actual_type: String, scope: DependencyScope },
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct RuleDescription {
+    pub id: String,
+    pub owner_kind: RuleOwnerKind,
+    pub owner: String,
+    pub location: Option<super::diagnostics::CommandLocation>,
+    pub expression: Option<String>,
+    pub dependencies: Vec<RuleDependency>,
+    pub dimensions: Vec<String>,
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct RuleQuery { pub rules: Vec<RuleDescription> }
+
 pub fn identity(info: &CheckStatementInfo) -> String {
     match &info.owner {
         CheckOwner::Project(name) => format!("{name}#{}", info.root_index),
@@ -13,24 +42,31 @@ pub fn selected(info: &CheckStatementInfo, id: &str) -> bool {
     identity(info) == id || matches!(&info.owner, CheckOwner::Project(name) if name.as_str() == id)
 }
 
-pub fn describe(schema: &CftSchema, info: &CheckStatementInfo) -> Value {
+pub fn describe(schema: &CftSchema, info: &CheckStatementInfo, root: &std::path::Path) -> RuleDescription {
     let (owner, module) = match &info.owner {
-        CheckOwner::Project(name) => ("project", schema.resolve_check(name).map(|r| &r.module)),
-        CheckOwner::Type(name) => ("type", schema.resolve_type(name).map(|r| &r.module)),
+        CheckOwner::Project(name) => (RuleOwnerKind::Project, schema.resolve_check(name).map(|r| &r.module)),
+        CheckOwner::Type(name) => (RuleOwnerKind::Type, schema.resolve_type(name).map(|r| &r.module)),
     };
     let span = schema.check_statement(info.id).map(|r| match r.statement {
         CftSchemaCheckStmt::Expr { span, .. } | CftSchemaCheckStmt::Quantifier { span, .. } | CftSchemaCheckStmt::When { span, .. } => *span
     });
     let source = module.and_then(|m| schema.source(m));
     let text = source.zip(span).and_then(|(s, span)| s.source.get(span.start..span.end));
-    let location = source.zip(span).map(|(s, span)| super::schema_queries::location(&s.path, &s.source, span));
+    // 规则位置与诊断使用同一公共契约，路径相对项目根，范围使用 UTF-16 行列。
+    let location = source.zip(span).map(|(s, span)| {
+        let range = crate::TextRange::from_byte_offsets(&s.source, span.start, span.end);
+        super::diagnostics::CommandLocation::from_source(&crate::SourceLocation::FileSpan {
+            path: s.path.clone(), start_line: range.start.line, start_character: range.start.character,
+            end_line: range.end.line, end_character: range.end.character,
+        }, Some(root))
+    });
     let dependencies: Vec<_> = info.dependencies.iter().map(|d| match d {
-        CheckDependency::Field(f) => json!({"kind": "field", "type": f.owner, "field": f.field,
-            "scope": if schema.check_dependency_is_cross_record(info.id, d) { "conservative" } else { "exact" }}),
-        CheckDependency::RecordSet(ty) => json!({"kind": "record_set", "type": ty, "scope": "conservative"}),
+        CheckDependency::Field(f) => RuleDependency::Field { actual_type: f.owner.to_string(), field: f.field.to_string(),
+            scope: if schema.check_dependency_is_cross_record(info.id, d) { DependencyScope::Conservative } else { DependencyScope::Exact } },
+        CheckDependency::RecordSet(ty) => RuleDependency::RecordSet { actual_type: ty.to_string(), scope: DependencyScope::Conservative },
     }).collect();
-    json!({"id": identity(info), "owner_kind": owner, "owner": match &info.owner { CheckOwner::Type(n) => n.as_str(), CheckOwner::Project(n) => n.as_str() },
-        "location": location, "expression": text, "dependencies": dependencies, "dimensions": info.dimensions})
+    RuleDescription { id: identity(info), owner_kind: owner, owner: match &info.owner { CheckOwner::Type(n) => n.to_string(), CheckOwner::Project(n) => n.to_string() },
+        location, expression: text.map(str::to_string), dependencies, dimensions: info.dimensions.iter().map(ToString::to_string).collect() }
 }
 
 pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {
@@ -38,10 +74,10 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) 
     for info in session.schema().all_check_statements() {
         if args.get("type").is_some_and(|ty| matches!(&info.owner, CheckOwner::Type(owner) if !session.schema().is_assignable(ty, owner))) { continue; }
         if command == "rule.inspect" && !selected(info, args.require("rule")?) { continue; }
-        items.push(describe(session.schema(), info));
+        items.push(describe(session.schema(), info, session.session.project.root_dir()));
     }
     if command == "rule.inspect" && items.is_empty() { return Err(Failure::missing("rule does not exist")); }
-    Ok(json!({"rules": items}))
+    super::json(RuleQuery { rules: items })
 }
 
 
