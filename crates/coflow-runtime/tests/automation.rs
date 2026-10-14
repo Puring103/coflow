@@ -16,6 +16,22 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn schema_symbols_contract_covers_all_kinds_and_preserves_filtered_pages() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "enum Quality { Common, Rare }\nconst Limit: int = 10;\ntable Item { value: int; check { value < Limit; } }\n").unwrap();
+    let all = run(root.path(), "schema.symbols", &[], None);
+    for kind in ["type", "field", "enum", "const", "rule"] {
+        let selected = run(root.path(), "schema.symbols", &[("kind", kind), ("limit", "1")], None);
+        assert_eq!(selected.result["items"].as_array().unwrap().len(), 1, "{kind}: {selected:?}");
+        assert_eq!(selected.result["items"][0]["kind"], kind);
+        assert!(all.result["items"].as_array().unwrap().contains(&selected.result["items"][0]));
+    }
+    let schema = serde_json::to_value(coflow_runtime::automation::response_schema_for(Some("schema.symbols"))).unwrap();
+    assert_eq!(schema["definitions"]["SchemaSymbol"]["oneOf"].as_array().unwrap().len(), 5);
+    assert!(schema["definitions"].get("RuleDescription").is_some());
+}
+
+#[test]
 fn rule_queries_share_typed_dependencies_and_project_relative_locations() {
     let root = fixture();
     let list = run(root.path(), "rule.list", &[], None);
