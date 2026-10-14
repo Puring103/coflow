@@ -16,6 +16,33 @@ fn run(root:&Path,command:&str,options:&[(&str,&str)],input:Option<Value>)->cofl
     execute(command,&project,&snapshot,&args,input.as_ref().map(Value::to_string).as_deref(),root).unwrap()
 }
 #[test]
+fn reference_edges_locate_base_and_dimension_sources_separately() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "table Item { value: int; @dimension(\"language\") next: Option<&Item>; }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { value: 10, next: Some(&b) }\nb: Item { value: 20 }\nc: Item { value: 30 }\n").unwrap();
+    let write = run(root.path(), "dimension.set", &[("type", "Item"), ("key", "a"), ("field", "next"),
+        ("dimension", "language"), ("variant", "en"), ("value-cfd", "Some(&c)")], None);
+    assert_eq!(write.status, Status::Success, "{write:?}");
+    let query = run(root.path(), "data.refs", &[("type", "Item"), ("key", "a"), ("direction", "outgoing")], None);
+    assert_eq!(query.status, Status::Success, "{query:?}");
+    let edges = query.result["items"].as_array().unwrap();
+    assert_eq!(edges.len(), 2);
+    let base = edges.iter().find(|edge| edge["dimension"].is_null()).unwrap();
+    let overlay = edges.iter().find(|edge| !edge["dimension"].is_null()).unwrap();
+    assert_eq!(base["target"]["key"], "b");
+    assert_eq!(base["location"]["path"], "data/items.cfd");
+    assert_eq!(overlay["target"]["key"], "c");
+    let path = overlay["location"]["path"].as_str().unwrap();
+    assert_eq!(path, "translations/data/items.cfd");
+    assert_eq!(overlay["dimension"], json!({"dimension": "language", "variant": "en"}));
+    assert!(root.path().join(path).is_file());
+    for edge in edges {
+        assert!(edge["location"]["range"]["start"]["line"].is_number());
+        assert!(edge["location"]["range"]["start"]["character"].is_number());
+    }
+}
+
+#[test]
 fn source_ranges_preserve_original_line_endings_and_trailing_newlines() {
     let root = fixture();
     fs::write(root.path().join("data/items.cfd"), "a: Item { value: 1 }\r\n\r\nb: Item { value: 2 }\n").unwrap();

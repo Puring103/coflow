@@ -62,7 +62,7 @@ pub struct CommandDiagnostic {
 }
 
 impl CommandLocation {
-    fn from_source(source: &SourceLocation, root: Option<&Path>) -> Self {
+    pub(crate) fn from_source(source: &SourceLocation, root: Option<&Path>) -> Self {
         let path = match source {
             SourceLocation::FileSpan { path, .. }
             | SourceLocation::Artifact { path }

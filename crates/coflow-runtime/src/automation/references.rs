@@ -7,10 +7,24 @@ pub fn edges(session: &ReadOnlyProjectSession) -> Vec<Value> {
     let mut result = Vec::new();
     for (_, record) in session.model().records() {
         for edge in session.queries().record_references(&record.coordinate()) {
+            // 维度引用属于覆盖值的源码，不能使用基础记录的文件位置。
+            let origin = match &edge.dimension {
+                None => Some(&record.origin),
+                Some(dimension) => match edge.path.segments.first() {
+                    Some(crate::CfdPathSegment::Field(field)) => record.dimension_fields.iter()
+                        .find(|(name, values)| name.as_str() == field && values.dimension == dimension.dimension)
+                        .and_then(|(_, values)| values.variants.get(&dimension.variant))
+                        .map(|value| &value.origin),
+                    _ => None,
+                },
+            };
+            let location = origin.and_then(|origin| origin.location_for_path(&edge.path))
+                .map(|source| super::diagnostics::CommandLocation::from_source(
+                    &source.into(), Some(session.session.project.root_dir())));
             result.push(json!({"host": {"type": record.actual_type(), "key": record.key()},
                 "target": {"type": edge.target.actual_type, "key": edge.target.key},
                 "path": edge.path, "dimension": edge.dimension.map(|d| json!({"dimension": d.dimension, "variant": d.variant})),
-                "location": record.origin.location_for_path(&crate::CfdPath::root())}));
+                "location": location}));
         }
     }
     result
