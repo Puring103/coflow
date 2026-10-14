@@ -31,7 +31,7 @@ impl Default for Selector {
 pub struct Page<T> { pub items: Vec<T>, pub total: usize, pub truncated: bool, pub next_cursor: Option<String> }
 
 pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>> {
-    if selector.limit == 0 { return Err(Failure::invalid("limit must be greater than zero")); }
+    if selector.limit == 0 { return Err(Failure::request("limit must be greater than zero")); }
     // 游标仅标记同一查询的读取位置，不绑定项目文件状态。
     let mut identity = selector.clone(); identity.cursor = None; identity.limit = 0;
     let query = fingerprint(&serde_json::to_vec(&identity)?);
@@ -39,13 +39,13 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>>
         None => 0,
         Some(cursor) => {
             let parts: Vec<_> = cursor.split(':').collect();
-            if parts.len() != 2 { return Err(Failure::invalid("malformed cursor")); }
-            if parts[0] != query { return Err(Failure::invalid("cursor belongs to another query")); }
-            parts[1].parse::<usize>().map_err(|_| Failure::invalid("malformed cursor offset"))?
+            if parts.len() != 2 { return Err(Failure::request("malformed cursor")); }
+            if parts[0] != query { return Err(Failure::request("cursor belongs to another query")); }
+            parts[1].parse::<usize>().map_err(|_| Failure::request("malformed cursor offset"))?
         }
     };
     let total = items.len();
-    if offset > total { return Err(Failure::invalid("cursor offset exceeds result count")); }
+    if offset > total { return Err(Failure::request("cursor offset exceeds result count")); }
     let end = offset.saturating_add(selector.limit).min(total);
     let truncated = end < total;
     Ok(Page { items: items.into_iter().skip(offset).take(selector.limit).collect(), total, truncated,
@@ -125,7 +125,7 @@ pub fn query_records(project: &Project, session: &ReadOnlyProjectSession, select
 }
 
 pub(crate) fn record_json(project: &Project, session: &ReadOnlyProjectSession, record: &CfdRecord, selector: &Selector) -> Result<Value> {
-    if !["source", "effective", "both"].contains(&selector.view.as_str()) { return Err(Failure::invalid("view must be source, effective or both")); }
+    if !["source", "effective", "both"].contains(&selector.view.as_str()) { return Err(Failure::request("view must be source, effective or both")); }
     let mut values = serde_json::Map::new();
     let mut sources = serde_json::Map::new();
     let file = session.queries().file_for_record(record.actual_type(), record.key());
@@ -185,7 +185,7 @@ pub fn parse_path(source: &str) -> Result<Vec<CfdPathSegment>> {
     let mut field = String::new();
     while let Some((_, ch)) = chars.next() {
         match ch {
-            '.' => { if !field.is_empty() { out.push(CfdPathSegment::Field(std::mem::take(&mut field))); } else if out.is_empty() { return Err(Failure::invalid("empty field path segment")); } }
+            '.' => { if !field.is_empty() { out.push(CfdPathSegment::Field(std::mem::take(&mut field))); } else if out.is_empty() { return Err(Failure::request("empty field path segment")); } }
             '[' => {
                 if !field.is_empty() { out.push(CfdPathSegment::Field(std::mem::take(&mut field))); }
                 let mut key = String::new(); let mut quoted = false; let mut escaped = false; let mut closed = false;
@@ -195,7 +195,7 @@ pub fn parse_path(source: &str) -> Result<Vec<CfdPathSegment>> {
                     escaped = c == '\\' && !escaped;
                     key.push(c);
                 }
-                if !closed { return Err(Failure::invalid("unclosed field path subscript")); }
+                if !closed { return Err(Failure::request("unclosed field path subscript")); }
                 let key = key.trim();
                 if key.starts_with('"') { let _: String = serde_json::from_str(key)?; out.push(CfdPathSegment::DictKey(key.into())); }
                 else if let Ok(index) = key.parse() { out.push(CfdPathSegment::Index(index)); }
@@ -205,6 +205,6 @@ pub fn parse_path(source: &str) -> Result<Vec<CfdPathSegment>> {
         }
     }
     if !field.is_empty() { out.push(CfdPathSegment::Field(field)); }
-    if out.is_empty() { return Err(Failure::invalid("field path is empty")); }
+    if out.is_empty() { return Err(Failure::request("field path is empty")); }
     Ok(out)
 }

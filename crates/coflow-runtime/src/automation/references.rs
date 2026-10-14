@@ -20,9 +20,9 @@ pub fn query(session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value
     let ty = args.require("type")?; let key = args.require("key")?;
     let record = session.queries().record_view(ty, key).ok_or_else(|| Failure::missing(format!("record `{ty}::{key}` does not exist")))?;
     let direction = args.get("direction").unwrap_or("both");
-    if !["incoming", "outgoing", "both"].contains(&direction) { return Err(Failure::invalid("direction must be incoming, outgoing or both")); }
+    if !["incoming", "outgoing", "both"].contains(&direction) { return Err(Failure::request("direction must be incoming, outgoing or both")); }
     let depth = args.number("depth", 1)?;
-    if depth == 0 || depth > 64 { return Err(Failure::invalid("reference depth must be in 1..=64")); }
+    if depth == 0 || depth > 64 { return Err(Failure::request("reference depth must be in 1..=64")); }
     let all = edges(session);
     let mut frontier = BTreeSet::from([(record.coordinate.actual_type.to_string(), record.coordinate.key.to_string())]);
     let mut seen = frontier.clone(); let mut included = BTreeSet::new();

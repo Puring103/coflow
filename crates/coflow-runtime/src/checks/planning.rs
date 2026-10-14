@@ -18,6 +18,15 @@ pub(crate) fn plan_full_checks_with_limit(
     model: &CfdDataModel,
     max_tasks: usize,
 ) -> Result<Vec<CheckTask>, CheckPlanningError> {
+    plan_selected_checks_with_limit(schema, model, max_tasks, None)
+}
+
+pub(crate) fn plan_selected_checks_with_limit(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    max_tasks: usize,
+    selected: Option<&BTreeSet<coflow_language::cft::CheckStatementId>>,
+) -> Result<Vec<CheckTask>, CheckPlanningError> {
     let mut tasks = CheckTaskBuilder::new(max_tasks);
     for (record, value) in model.records() {
         if tasks.overflowed() {
@@ -25,6 +34,7 @@ pub(crate) fn plan_full_checks_with_limit(
         }
         for statement in schema.check_statements_for_actual_type(value.actual_type()) {
             if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
+                if selected.is_some_and(|selected| !selected.contains(&info.id)) { continue; }
                 insert_statement_task(schema, info, CheckTarget::Record(record), &mut tasks);
             }
         }
@@ -33,6 +43,7 @@ pub(crate) fn plan_full_checks_with_limit(
         .all_check_statements()
         .filter(|info| matches!(info.owner, CheckOwner::Project(_)))
     {
+        if selected.is_some_and(|selected| !selected.contains(&info.id)) { continue; }
         if tasks.overflowed() {
             break;
         }

@@ -1,0 +1,99 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use serde_json::{json, Value};
+use std::{fs, io::Write, path::Path, process::{Command, Stdio}};
+
+fn fixture() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("data")).unwrap();
+    fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "table Item { value: int; check { value > 0; } }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { value: -1 }\n").unwrap();
+    root
+}
+
+fn call(root: &Path, arguments: &[&str], stdin: Option<&str>) -> (i32, Value, String) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_coflow"));
+    command.current_dir(root).args(arguments).arg("--json").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    if let Some(input) = stdin { child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap(); } else { drop(child.stdin.take()); }
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    let result = serde_json::from_str(&text).unwrap_or_else(|error| panic!("invalid JSON: {error}; stdout={text}; stderr={stderr}"));
+    (output.status.code().unwrap(), result, stderr)
+}
+
+#[test]
+fn invalid_arguments_return_json_before_project_loading() {
+    let root = tempfile::tempdir().unwrap();
+    for arguments in [vec!["data", "set"], vec!["data", "list", "--limit", "oops"],
+        vec!["codegen", "--check", "--dry-run"], vec!["check", "--rules", "--rule", "Item#0"],
+        vec!["format", "--stdin"], vec!["data", "list", "--dimension", "language"]] {
+        let (code, response, stderr) = call(root.path(), &arguments, None);
+        assert_eq!(code, 2, "{response}");
+        assert_eq!(response["status"], "error");
+        assert_eq!(response["error_category"], "request");
+        assert!(!response["diagnostics"][0]["message"].as_str().unwrap().contains("no coflow"));
+        assert!(stderr.is_empty(), "{stderr}");
+    }
+}
+
+#[test]
+fn validation_and_request_errors_have_different_exit_codes() {
+    let root = fixture();
+    let (code, response, _) = call(root.path(), &["check"], None);
+    assert_eq!(code, 0);
+    assert_eq!(response["result"]["rules"], "not_executed");
+    let (code, response, _) = call(root.path(), &["check", "--rules", "--limit", "1"], None);
+    assert_eq!(code, 1);
+    assert_eq!(response["status"], "invalid");
+    assert_eq!(response["error_category"], Value::Null);
+    assert_eq!(response["diagnostics"][0]["record"], json!({"type":"Item","key":"a"}));
+    assert_eq!(response["diagnostics"][0]["location"]["path"], "data/items.cfd");
+    assert!(response.get("snapshot").is_none());
+}
+
+#[test]
+fn missing_targets_and_unreadable_request_files_return_complete_results() {
+    let root = fixture();
+    let (code, response, _) = call(root.path(), &["data", "get", "--type", "Item", "--key", "missing"], None);
+    assert_eq!(code, 1);
+    assert_eq!(response["status"], "invalid");
+    let (code, response, _) = call(root.path(), &["apply", "--input", "missing.json"], None);
+    assert_eq!(code, 4);
+    assert_eq!(response["error_category"], "execution");
+}
+
+#[test]
+fn describe_reports_canonical_names_and_required_value_groups() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, response, _) = call(root.path(), &["describe", "data.set"], None);
+    assert_eq!(code, 0);
+    assert_eq!(response["result"]["definition"]["command"], "data.set");
+    let groups = response["result"]["definition"]["groups"].as_array().unwrap();
+    assert!(groups.iter().any(|group| group["name"] == "value" && group["required"] == true && group["multiple"] == false));
+    let parameters = response["result"]["definition"]["parameters"].as_array().unwrap();
+    assert!(parameters.iter().any(|argument| argument["name"] == "path" && argument["required"] == true));
+}
+
+#[test]
+fn stdin_format_check_reports_changes_without_returning_source() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, response, _) = call(root.path(), &["format", "--stdin", "--language", "cfd", "--check"], Some("a: Item{value:1}"));
+    assert_eq!(code, 1);
+    assert_eq!(response["result"]["changed"], true);
+    assert_eq!(response["result"]["written"], false);
+    assert_eq!(response["result"]["source"], Value::Null);
+}
+
+#[test]
+fn default_terminal_output_is_text() {
+    let root = fixture();
+    let output = Command::new(env!("CARGO_BIN_EXE_coflow")).current_dir(root.path()).args(["data", "get", "--type", "Item", "--key", "a"]).output().unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.starts_with("data.get:"));
+    assert!(text.contains("key: a"));
+    assert!(serde_json::from_str::<Value>(&text).is_err());
+}

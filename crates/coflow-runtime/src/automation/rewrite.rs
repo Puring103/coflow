@@ -5,7 +5,7 @@ use super::{Result,Failure,Candidate,RecordTarget,InputSnapshot};
 pub fn rename_references(candidate:&Candidate,schema:&CftSchema,record:&RecordTarget,new_key:&str)->Result<()> {
     let snapshot=InputSnapshot::capture(&candidate.project()?)?;
     for file in snapshot.files.iter().filter(|f|f.kind=="data"){
-        let mut text=String::from_utf8(file.contents.clone()).map_err(|e|Failure::invalid(e.to_string()))?;
+        let mut text=String::from_utf8(file.contents.clone()).map_err(|e|Failure::request(e.to_string()))?;
         let(ast,_)=coflow_language::cfd::parse_cfd(&text);
         let mut patches=Vec::new();
         for r in ast.records.iter().chain(ast.dimensions.iter().flat_map(|b|&b.records)){

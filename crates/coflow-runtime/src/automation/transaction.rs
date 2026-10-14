@@ -24,7 +24,7 @@ pub enum FileOperation {
 /// 候选项目在独立目录中执行；绝对和外部输入映射后仍保持相对拓扑。
 /// 正式目录只在最终校验通过且快照一致时，由 staging 一次性发布。
 #[derive(Debug)]
-pub struct Candidate {
+pub(crate) struct Candidate {
     temp: tempfile::TempDir,
     pub original: Project,
     pub snapshot: InputSnapshot,
@@ -78,7 +78,7 @@ impl Candidate {
         config
     }
     fn write_config(&self, config: &ProjectConfig) -> Result<()> {
-        let text = serde_yaml::to_string(config).map_err(|e| Failure::invalid(e.to_string()))?;
+        let text = serde_yaml::to_string(config).map_err(|e| Failure::request(e.to_string()))?;
         if let Some(parent) = self.config_path.parent() { fs::create_dir_all(parent)?; }
         fs::write(&self.config_path, text)?; Ok(())
     }
@@ -94,11 +94,11 @@ impl Candidate {
     pub fn resolve(&self, file: &str, create: bool) -> Result<PathBuf> {
         let original = crate::resolve_existing_or_future_path(&self.original.resolve_path(Path::new(file)))?;
         let inside = crate::path_is_same_or_descendant(&original, self.original.root_dir());
-        if !inside && !self.original.tracks_path(&original) { return Err(Failure::invalid(format!("path `{file}` is outside project input scope"))); }
+        if !inside && !self.original.tracks_path(&original) { return Err(Failure::request(format!("path `{file}` is outside project input scope"))); }
         if self.original.config().codegen.iter().any(|t| crate::path_is_same_or_descendant(&original, &self.original.resolve_path(&t.dir))) {
-            return Err(Failure::invalid("source writes cannot target generated directories"));
+            return Err(Failure::request("source writes cannot target generated directories"));
         }
-        if original != self.original.config_path() && !original.extension().is_some_and(|e| e == "cft" || e == "cfd") { return Err(Failure::invalid("source file must be CFT or CFD")); }
+        if original != self.original.config_path() && !original.extension().is_some_and(|e| e == "cft" || e == "cfd") { return Err(Failure::request("source file must be CFT or CFD")); }
         if !create && !self.shadow(&original).is_file() { return Err(Failure::missing(format!("file `{file}` does not exist in candidate"))); }
         Ok(original)
     }
@@ -114,7 +114,7 @@ impl Candidate {
         self.write_config(project.config())
     }
     pub fn input(&mut self, kind: &str, path: &str, add: bool) -> Result<()> {
-        if !["data", "schema"].contains(&kind) { return Err(Failure::invalid("input kind must be data or schema")); }
+        if !["data", "schema"].contains(&kind) { return Err(Failure::request("input kind must be data or schema")); }
         let original = crate::resolve_existing_or_future_path(&self.original.resolve_path(Path::new(path)))?;
         let mut project = self.project()?;
         let target = self.shadow(&original);
@@ -123,7 +123,7 @@ impl Candidate {
         if add {
             if existing.is_some() || paths.iter().any(|p| {
                 let p = project.resolve_path(p); crate::path_is_same_or_descendant(&p,&target) || crate::path_is_same_or_descendant(&target,&p)
-            }) { return Err(Failure::invalid("duplicate or overlapping input")); }
+            }) { return Err(Failure::request("duplicate or overlapping input")); }
             let extension = if kind == "schema" { "cft" } else { "cfd" };
             if original.is_dir() {
                 fs::create_dir_all(&target)?;
@@ -187,7 +187,7 @@ impl Candidate {
         let config = self.map_config(project.config().clone(),false);
         let config_bytes = if serde_json::to_value(&config)? == serde_json::to_value(self.original.config())? {
             self.snapshot.files.iter().find(|f| f.absolute == self.original.config_path()).map(|f| f.contents.clone()).unwrap_or_default()
-        } else { serde_yaml::to_string(&config).map_err(|e| Failure::invalid(e.to_string()))?.into_bytes() };
+        } else { serde_yaml::to_string(&config).map_err(|e| Failure::request(e.to_string()))?.into_bytes() };
         let mut changes = Vec::new();
         for (path,before) in &self.originals {
             let after = if path == self.original.config_path() { Some(config_bytes.clone()) } else { optional_read(&self.shadow(path))? };
@@ -195,30 +195,30 @@ impl Candidate {
         }
         Ok(changes)
     }
-    pub fn finish(&mut self, args: &Arguments, force_preview: bool) -> Result<(Value, crate::DiagnosticSet)> {
+    pub fn finish(&mut self, args: &Arguments, force_preview: bool) -> Result<(Value, super::rules::Validation)> {
         let project = self.project()?;
         let session = Runtime::new().open_data_session(project)?;
-        let (validation, diagnostics) = super::rules::check(&session,args)?;
+        let validation = super::rules::check(&session,args)?;
         let changes = self.changes()?;
         let dry_run = force_preview || args.flag("dry-run");
         let files: Vec<_> = changes.iter().map(|c| json!({"path": crate::project_path(self.original.root_dir(),&c.path),
             "change": if c.before.is_none() { "added" } else if c.after.is_none() { "deleted" } else { "modified" },
             "before": c.before.as_ref().map(|b| String::from_utf8_lossy(b)), "after": c.after.as_ref().map(|b| String::from_utf8_lossy(b))})).collect();
         let mut written = Vec::new();
-        if diagnostics.is_empty() && !dry_run && !changes.is_empty() {
+        if validation.passed() && !dry_run && !changes.is_empty() {
             self.snapshot.verify(&self.original)?;
             for (path,before) in &self.originals { if optional_read(path)? != *before { return Err(Failure::conflict(format!("input changed: {}",path.display()))); } }
             written = coflow_staging::transaction::publish(&changes).map_err(|e| Failure::new(if e.conflict { Status::Conflict } else { Status::Error }, "CLI-PUBLISH",
                 format!("{}; written={:?}; restoration_failed={:?}",e.message,e.written,e.restoration_failed)))?;
         }
-        Ok((json!({"changed": !changes.is_empty(), "written": !written.is_empty(), "dry_run": dry_run, "validation": validation,
-            "operations": self.operations, "files": files, "written_files": written.iter().map(|p| crate::project_path(self.original.root_dir(),p)).collect::<Vec<_>>()}), diagnostics))
+        Ok((json!({"changed": !changes.is_empty(), "written": !written.is_empty(), "dry_run": dry_run, "validation": &validation.report,
+            "operations": self.operations, "files": files, "written_files": written.iter().map(|p| crate::project_path(self.original.root_dir(),p)).collect::<Vec<_>>()}), validation))
     }
 }
 
 fn read_content(content: &Option<String>, file: &Option<String>, base: &Path) -> Result<Vec<u8>> {
     match (content,file) { (Some(content),None) => Ok(content.as_bytes().to_vec()), (None,Some(file)) => Ok(fs::read(base.join(file))?),
-        _ => Err(Failure::invalid("exactly one of content and content_file is required")) }
+        _ => Err(Failure::request("exactly one of content and content_file is required")) }
 }
 fn optional_read(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) { Ok(v) => Ok(Some(v)), Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None), Err(e) => Err(e.into()) }
