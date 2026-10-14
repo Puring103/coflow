@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use crate::{ReadOnlyProjectSession, CfdRecord};
-use super::{Arguments, InputSnapshot, Result, Failure, query::{selected_records, paginate}};
+use super::{Arguments, Result, Failure, query::{selected_records, paginate}};
 
 pub fn field_value(record: &CfdRecord, field: &str, dimension: &str, variant: &str) -> Value {
     let base = record.field(field);
@@ -14,7 +14,7 @@ pub fn field_value(record: &CfdRecord, field: &str, dimension: &str, variant: &s
         "location": explicit.map(|v| &v.origin)})
 }
 
-pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &Arguments) -> Result<Value> {
+pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {
     let name = args.require("dimension")?;
     let dimension = session.queries().dimensions().into_iter().find(|d| d.name == name)
         .ok_or_else(|| Failure::missing(format!("unknown dimension `{name}`")))?;
@@ -30,7 +30,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
             }
             json!({"name": variant, "overrides": count, "locations": locations})
         }).collect();
-        return super::json(paginate(items, &args.selector()?, &snapshot.id)?);
+        return super::json(paginate(items, &args.selector()?)?);
     }
     let variant = if command == "dimension.diff" { args.require("to")? } else { args.require("variant")? };
     let selector = args.selector()?;
@@ -58,5 +58,5 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, snapshot: &InputSn
         value["variant_exists"] = json!(dimension.variants.iter().any(|v| v == variant));
         return Ok(value);
     }
-    super::json(paginate(items, &selector, &snapshot.id)?)
+    super::json(paginate(items, &selector)?)
 }

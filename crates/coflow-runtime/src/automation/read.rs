@@ -5,7 +5,6 @@ use super::{Arguments, Failure, Result, InputSnapshot, Response, Status, query, 
 pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, args: &Arguments) -> Result<Response> {
     let mut response = Response::new(command);
     response.project = Some(crate::path_to_slash(project.root_dir()));
-    response.snapshot = Some(snapshot.id.clone());
     match command {
         "project.inspect" => {
             response.diagnostics.extend(project.schema_diagnostic_set().diagnostics);
@@ -47,7 +46,7 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
                     if let Some(view)=schema.schema(){for info in view.all_check_statements(){items.push(json!({"kind":"rule","name":super::rules::identity(info),"definition":super::rules::describe(view,info)}));}}
                     if let Some(kind) = args.get("kind") { items.retain(|v| v["kind"] == kind); }
                     items.sort_by(|a,b| a["name"].as_str().cmp(&b["name"].as_str()));
-                    to_json(query::paginate(items, &args.selector()?, &snapshot.id)?)?
+                    to_json(query::paginate(items, &args.selector()?)?)?
                 }
                 "schema.refs" => super::schema_queries::references(project, &schema, args.require("symbol")?)?,
                 _ => {
@@ -76,7 +75,7 @@ pub fn read_command(command: &str, project: &Project, snapshot: &InputSnapshot, 
 fn data_command(command: &str, project: &Project, session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &Arguments) -> Result<Value> {
     let selector = args.selector()?;
     match command {
-        "data.list" | "data.search" => to_json(query::query_records(project, session, &selector, &snapshot.id)?),
+        "data.list" | "data.search" => to_json(query::query_records(project, session, &selector)?),
         "data.get" => {
             let ty = args.require("type")?; let key = args.require("key")?;
             let records = query::selected_records(session, &selector)?;
@@ -89,11 +88,11 @@ fn data_command(command: &str, project: &Project, session: &ReadOnlyProjectSessi
             Ok(json!({"draft": draft, "key": args.get("key"), "complete": required.is_empty(), "required_inputs": required}))
         }
         "dimension.list" => to_json(session.queries().dimensions()),
-        command if command.starts_with("dimension.") => super::dimension::query(command, session, snapshot, args),
+        command if command.starts_with("dimension.") => super::dimension::query(command, session, args),
         command if command.starts_with("stats.") => super::statistics::query(command, session, snapshot, args),
-        "data.refs" => super::references::query(session, snapshot, args),
+        "data.refs" => super::references::query(session, args),
         "rule.list" | "rule.inspect" => super::rules::query(command, session, args),
-        "context" => super::context::query(project, session, snapshot, args),
+        "context" => super::context::query(project, session, args),
         _ => Err(Failure::invalid(format!("unknown read command `{command}`"))),
     }
 }

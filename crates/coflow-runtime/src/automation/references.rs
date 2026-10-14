@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use serde_json::{Value, json};
 use crate::ReadOnlyProjectSession;
-use super::{Arguments, InputSnapshot, Result, Failure, query::paginate};
+use super::{Arguments, Result, Failure, query::paginate};
 
 pub fn edges(session: &ReadOnlyProjectSession) -> Vec<Value> {
     let mut result = Vec::new();
@@ -16,7 +16,7 @@ pub fn edges(session: &ReadOnlyProjectSession) -> Vec<Value> {
     result
 }
 
-pub fn query(session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &Arguments) -> Result<Value> {
+pub fn query(session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {
     let ty = args.require("type")?; let key = args.require("key")?;
     let record = session.queries().record_view(ty, key).ok_or_else(|| Failure::missing(format!("record `{ty}::{key}` does not exist")))?;
     let direction = args.get("direction").unwrap_or("both");
@@ -38,7 +38,7 @@ pub fn query(session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &
     let depth_truncated = all.iter().enumerate().any(|(i, edge)| !included.contains(&i) &&
         (direction != "incoming" && frontier.contains(&pair(&edge["host"])) || direction != "outgoing" && frontier.contains(&pair(&edge["target"]))));
     let items = all.into_iter().enumerate().filter_map(|(i,v)| included.contains(&i).then_some(v)).collect();
-    let mut result = super::json(paginate(items, &args.selector()?, &snapshot.id)?)?;
+    let mut result = super::json(paginate(items, &args.selector()?)?)?;
     result["depth_truncated"] = json!(depth_truncated);
     Ok(result)
 }

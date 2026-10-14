@@ -4,7 +4,7 @@ use crate::{Project,Runtime};
 use super::{Arguments,Response,Status,Result,Failure,InputSnapshot,Candidate,ChangeSet,FileOperation,Operation,RecordTarget,InputValue,FieldPath};
 
 pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Arguments,input:Option<&str>,carrier_dir:&Path)->Result<Response>{
-    let mut response=Response::new(command);response.project=Some(crate::path_to_slash(project.root_dir()));response.snapshot=Some(snapshot.id.clone());
+    let mut response=Response::new(command);response.project=Some(crate::path_to_slash(project.root_dir()));
     match command {
         "check" if input.is_none()=>{
             let session=Runtime::new().open_data_session(project.clone())?;
@@ -45,9 +45,8 @@ pub fn execute(command:&str,project:&Project,snapshot:&InputSnapshot,args:&Argum
         }
         "apply"|"check"|"diff"|"schema.check" if input.is_some()=>{
             let request:ChangeSet=serde_json::from_str(input.unwrap_or_default())?;
-            let(version,expected)=match &request{ChangeSet::Files{protocol_version,expected_snapshot,..}|ChangeSet::Operations{protocol_version,expected_snapshot,..}=>(*protocol_version,expected_snapshot)};
+            let version=match &request{ChangeSet::Files{protocol_version,..}|ChangeSet::Operations{protocol_version,..}=>*protocol_version};
             if version!=1{return Err(Failure::invalid("unsupported protocol_version"));}
-            if expected.as_ref().is_some_and(|e|e!=&snapshot.id){return Err(Failure::conflict("input snapshot changed"));}
             let mut candidate=Candidate::new(project,snapshot)?;
             match request{ChangeSet::Files{changes,..}=>candidate.apply_files(&changes,carrier_dir)?,ChangeSet::Operations{ops,..}=>candidate.apply_operations(&ops)?}
             let(result,diagnostics)=candidate.finish(args,command!="apply")?;response.result=result;response.diagnostics=diagnostics.diagnostics;

@@ -1,14 +1,14 @@
 use serde_json::{Value, json};
 use crate::{Project, ReadOnlyProjectSession};
-use super::{Arguments, InputSnapshot, Result, Failure};
+use super::{Arguments, Result, Failure};
 
-pub fn query(project: &Project, session: &ReadOnlyProjectSession, snapshot: &InputSnapshot, args: &Arguments) -> Result<Value> {
+pub fn query(project: &Project, session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {
     let ty = args.require("type")?;
     if session.schema().resolve_type(ty).is_none() { return Err(Failure::missing(format!("unknown type `{ty}`"))); }
     let schema = crate::Runtime::open_schema_session(project.clone())?;
     let mut selector = args.selector()?;
     selector.limit = args.number("examples", 3)?.max(1);
-    let records = super::query::query_records(project,session,&selector,&snapshot.id)?;
+    let records = super::query::query_records(project,session,&selector)?;
     let mut result = json!({"schema": crate::inspect_schema(&schema,Some(ty),false), "rules": super::rules::query("rule.list",session,args)?,
         "examples": if args.number("examples",3)? == 0 { Vec::new() } else { records.items }, "dimensions": session.queries().dimensions(),
         "omitted": [], "queries": [format!("data list --type {ty}"), format!("schema inspect --type {ty} --related")]});

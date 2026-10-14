@@ -41,13 +41,47 @@ fn operations_support_forward_cycles_transfer_and_sequential_arrays(){
     assert_eq!(record.result["fields"]["numbers"]["value"][0]["value"],"2");
 }
 #[test]
-fn cursor_detects_source_changes_and_default_check_skips_business_rules(){
+fn cursor_reads_current_data_and_default_check_skips_business_rules(){
     let root=fixture();let first=run(root.path(),"data.list",&[("limit","1")],None);
     let cursor=first.result["next_cursor"].as_str().unwrap().to_string();
     fs::write(root.path().join("data/items.cfd"),"a: Item { value: -1 }\nb: Item { value: 20 }\n").unwrap();
     let project=Project::open_schema_only(Some(root.path())).unwrap();let snapshot=InputSnapshot::capture(&project).unwrap();
     let args=Arguments([("limit".into(),vec!["1".into()]),("cursor".into(),vec![cursor])].into());
-    assert_eq!(execute("data.list",&project,&snapshot,&args,None,root.path()).unwrap_err().status,Status::Conflict);
+    let page=execute("data.list",&project,&snapshot,&args,None,root.path()).unwrap();
+    assert_eq!(page.status,Status::Success);
+    assert_eq!(page.result["items"][0]["key"],"b");
+    assert!(serde_json::to_value(&page).unwrap().get("snapshot").is_none());
     assert_eq!(run(root.path(),"check",&[],None).status,Status::Success);
     assert_eq!(run(root.path(),"check",&[("rules","true")],None).status,Status::Partial);
+}
+
+#[test]
+fn requests_and_results_do_not_expose_project_snapshots() {
+    let root = fixture();
+    let request = json!({"protocol_version": 1, "kind": "operations", "ops": []});
+    let result = run(root.path(), "apply", &[], Some(request.clone()));
+    let encoded = serde_json::to_value(result).unwrap();
+    assert!(encoded.get("snapshot").is_none());
+    assert!(encoded["result"].get("before_snapshot").is_none());
+    assert!(encoded["result"].get("after_snapshot").is_none());
+
+    let mut legacy = request;
+    legacy["expected_snapshot"] = json!("old");
+    assert!(serde_json::from_value::<coflow_runtime::automation::ChangeSet>(legacy).is_err());
+    assert!(!serde_json::to_string(&coflow_runtime::automation::response_schema()).unwrap().contains("snapshot"));
+    assert!(!serde_json::to_string(&coflow_runtime::automation::change_set_schema()).unwrap().contains("snapshot"));
+}
+
+#[test]
+fn cursors_allow_page_size_changes_but_reject_another_query() {
+    let root = fixture();
+    let first = run(root.path(), "data.list", &[("limit", "1")], None);
+    let cursor = first.result["next_cursor"].as_str().unwrap();
+    let next = run(root.path(), "data.list", &[("limit", "20"), ("cursor", cursor)], None);
+    assert_eq!(next.result["items"].as_array().unwrap().len(), 1);
+    assert_eq!(next.result["items"][0]["key"], "b");
+    let project = Project::open_schema_only(Some(root.path())).unwrap();
+    let inputs = InputSnapshot::capture(&project).unwrap();
+    let args = Arguments([("cursor".into(), vec![cursor.into()]), ("type".into(), vec!["Item".into()])].into());
+    assert_eq!(execute("data.list", &project, &inputs, &args, None, root.path()).unwrap_err().status, Status::Invalid);
 }

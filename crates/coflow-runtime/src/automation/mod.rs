@@ -45,7 +45,6 @@ pub struct Response {
     pub command: String,
     pub status: Status,
     pub project: Option<String>,
-    pub snapshot: Option<String>,
     pub result: Value,
     #[schemars(with="Vec<Value>")]
     pub diagnostics: Vec<Diagnostic>,
@@ -54,7 +53,7 @@ pub struct Response {
 impl Response {
     pub fn new(command: impl Into<String>) -> Self {
         Self { protocol_version: 1, command: command.into(), status: Status::Success,
-            project: None, snapshot: None, result: Value::Null, diagnostics: Vec::new() }
+            project: None, result: Value::Null, diagnostics: Vec::new() }
     }
     pub fn fail(&mut self, failure: Failure) {
         self.status = failure.status;

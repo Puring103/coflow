@@ -30,17 +30,18 @@ impl Default for Selector {
 #[derive(Debug, Serialize)]
 pub struct Page<T> { pub items: Vec<T>, pub total: usize, pub truncated: bool, pub next_cursor: Option<String> }
 
-pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector, snapshot: &str) -> Result<Page<T>> {
+pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>> {
     if selector.limit == 0 { return Err(Failure::invalid("limit must be greater than zero")); }
+    // 游标仅标记同一查询的读取位置，不绑定项目文件状态。
     let mut identity = selector.clone(); identity.cursor = None; identity.limit = 0;
     let query = fingerprint(&serde_json::to_vec(&identity)?);
     let offset = match &selector.cursor {
         None => 0,
         Some(cursor) => {
             let parts: Vec<_> = cursor.split(':').collect();
-            if parts.len() != 3 { return Err(Failure::invalid("malformed cursor")); }
-            if parts[0] != snapshot || parts[1] != query { return Err(Failure::conflict("cursor belongs to another query or input snapshot")); }
-            parts[2].parse::<usize>().map_err(|_| Failure::invalid("malformed cursor offset"))?
+            if parts.len() != 2 { return Err(Failure::invalid("malformed cursor")); }
+            if parts[0] != query { return Err(Failure::invalid("cursor belongs to another query")); }
+            parts[1].parse::<usize>().map_err(|_| Failure::invalid("malformed cursor offset"))?
         }
     };
     let total = items.len();
@@ -48,7 +49,7 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector, snapshot: &str) ->
     let end = offset.saturating_add(selector.limit).min(total);
     let truncated = end < total;
     Ok(Page { items: items.into_iter().skip(offset).take(selector.limit).collect(), total, truncated,
-        next_cursor: truncated.then(|| format!("{snapshot}:{query}:{end}")) })
+        next_cursor: truncated.then(|| format!("{query}:{end}")) })
 }
 
 pub(crate) fn selected_records(session: &ReadOnlyProjectSession, selector: &Selector) -> Result<Vec<CfdRecord>> {
@@ -117,10 +118,10 @@ pub(crate) fn compare_values(a: Option<&CfdValue>, b: Option<&CfdValue>) -> Orde
     }
 }
 
-pub fn query_records(project: &Project, session: &ReadOnlyProjectSession, selector: &Selector, snapshot: &str) -> Result<Page<Value>> {
+pub fn query_records(project: &Project, session: &ReadOnlyProjectSession, selector: &Selector) -> Result<Page<Value>> {
     let records = selected_records(session, selector)?;
     let items = records.iter().map(|record| record_json(project, session, record, selector)).collect::<Result<Vec<_>>>()?;
-    paginate(items, selector, snapshot)
+    paginate(items, selector)
 }
 
 pub(crate) fn record_json(project: &Project, session: &ReadOnlyProjectSession, record: &CfdRecord, selector: &Selector) -> Result<Value> {

@@ -30,7 +30,7 @@ pub fn describe(schema: &CftSchema, info: &CheckStatementInfo) -> Value {
         CheckDependency::RecordSet(ty) => json!({"kind": "record_set", "type": ty, "scope": "conservative"}),
     }).collect();
     json!({"id": identity(info), "owner_kind": owner, "owner": match &info.owner { CheckOwner::Type(n) => n.as_str(), CheckOwner::Project(n) => n.as_str() },
-        "requires_snapshot": owner == "type", "location": location, "expression": text, "dependencies": dependencies, "dimensions": info.dimensions})
+        "location": location, "expression": text, "dependencies": dependencies, "dimensions": info.dimensions})
 }
 
 pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {

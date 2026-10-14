@@ -16,7 +16,7 @@ pub struct InputFile {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct InputSnapshot { pub id: String, pub files: Vec<InputFile> }
+pub struct InputSnapshot { pub files: Vec<InputFile> }
 
 // 固定算法与字节编码保证跨进程游标稳定；文件身份与内容均参与快照。
 pub fn fingerprint(bytes: &[u8]) -> String {
@@ -37,19 +37,17 @@ impl InputSnapshot {
         let lock = project.root_dir().join("coflow.enum.lock.json");
         if lock.exists() { collect(project, &lock, "mapping", "coflow.enum.lock.json", &mut files)?; }
         let files: Vec<_> = files.into_values().collect();
-        let mut bytes = Vec::new();
-        for file in &files {
-            bytes.extend_from_slice(&(file.path.len() as u64).to_le_bytes());
-            bytes.extend_from_slice(file.path.as_bytes());
-            bytes.extend_from_slice(&(file.contents.len() as u64).to_le_bytes());
-            bytes.extend_from_slice(&file.contents);
-        }
-        Ok(Self { id: fingerprint(&bytes), files })
+        Ok(Self { files })
     }
+
     pub fn verify(&self, project: &Project) -> Result<()> {
         // 重新发现目录，新增文件与配置修改也必须使前置条件失效。
         let current = Project::open_schema_only(Some(project.config_path()))?;
-        if Self::capture(&current)?.id != self.id { return Err(Failure::conflict("project inputs changed")); }
+        // 写入前重新发现输入，逐文件检查身份与内容，防止覆盖外部修改。
+        let current = Self::capture(&current)?;
+        if current.files.len() != self.files.len() || current.files.iter().zip(&self.files).any(|(a, b)| a.absolute != b.absolute || a.contents != b.contents) {
+            return Err(Failure::conflict("project inputs changed"));
+        }
         Ok(())
     }
     pub fn file(&self, project: &Project, path: &str) -> Result<&InputFile> {
