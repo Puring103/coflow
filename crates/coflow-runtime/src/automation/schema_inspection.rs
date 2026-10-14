@@ -7,21 +7,39 @@ pub fn inspect(session:&crate::ProjectSchemaSession,args:&Arguments)->Result<Val
     let report=crate::inspect_schema(session,None,false);
     let mut result=super::json(report)?;
     let Some(schema)=session.schema()else{return Ok(result);};
-    let mut selected=BTreeSet::new();let mut related_enums=BTreeSet::new();let mut queue=VecDeque::new();let mut omitted=Vec::new();
+    let mut selected=BTreeSet::new();let mut queue=VecDeque::new();let mut omitted=Vec::new();
+    let syntax_dependencies = constant_dependencies(session, schema);
     if let Some(name)=args.get("type"){
         if schema.resolve_type(name).is_none(){return Err(Failure::missing(format!("unknown type `{name}`")));}
         queue.push_back((name.to_string(),0usize));
         if args.flag("include-derived"){for ty in schema.all_types().filter(|t|schema.is_assignable(&t.name,name)){queue.push_back((ty.name.to_string(),0));}}
-    }else{for ty in schema.all_types(){queue.push_back((ty.name.to_string(),0));}}
+    }else{
+        for ty in schema.all_types(){queue.push_back((ty.name.to_string(),0));}
+        for enumeration in schema.all_enums(){queue.push_back((enumeration.name.to_string(),0));}
+        for constant in schema.all_consts(){queue.push_back((constant.name.to_string(),0));}
+    }
     let depth=args.number("depth",4)?;let limit=args.number("limit",100)?;
     while let Some((name,level))=queue.pop_front(){
         if selected.contains(&name){continue;}
-        if selected.len()>=limit||level>depth{omitted.push(json!({"symbol":name,"query":format!("schema inspect --type {name}")}));continue;}
+        if selected.len()>=limit||level>depth{
+            let query = if schema.resolve_type(&name).is_some() { format!("schema inspect --type {name}") } else { "schema inspect".into() };
+            if !omitted.iter().any(|item: &Value| item["symbol"] == name) { omitted.push(json!({"symbol":name,"query":query})); }
+            continue;
+        }
         selected.insert(name.clone());
         if args.flag("related"){
             if let Some(ty)=schema.resolve_type(&name){
                 if let Some(parent)=&ty.parent{queue.push_back((parent.to_string(),level+1));}
-                for field in ty.all_fields(){dependencies(&field.value_type,&mut queue,&mut related_enums,level+1);}
+                for field in ty.all_fields(){
+                    dependencies(&field.value_type,&mut queue,level+1);
+                    if let Some(default) = &field.default { default_dependencies(default, &mut queue, level+1); }
+                }
+            }
+            if let Some(constant) = schema.resolve_const(&name) {
+                dependencies(&constant.value_type, &mut queue, level+1);
+            }
+            if let Some(constants) = syntax_dependencies.get(&name) {
+                for constant in constants { queue.push_back((constant.clone(), level+1)); }
             }
         }
     }
@@ -47,12 +65,59 @@ pub fn inspect(session:&crate::ProjectSchemaSession,args:&Arguments)->Result<Val
             }}
         }
     }
-    if args.get("type").is_some(){
-        if let Some(enums)=result["enums"].as_array_mut(){enums.retain(|v|v["name"].as_str().is_some_and(|n|related_enums.contains(n)));}
+    for section in ["enums", "consts"] {
+        if let Some(items) = result[section].as_array_mut() {
+            items.retain(|item| item["name"].as_str().is_some_and(|name| selected.contains(name)));
+        }
     }
     result["omitted"]=json!(omitted);Ok(result)
 }
-fn dependencies(ty:&CftValueType,queue:&mut VecDeque<(String,usize)>,enums:&mut BTreeSet<String>,level:usize){match ty{
-    CftValueType::Object(n)|CftValueType::RecordRef(n)=>queue.push_back((n.to_string(),level)),CftValueType::Enum(n)=>{enums.insert(n.to_string());}
-    CftValueType::Array(t)|CftValueType::Option(t)=>dependencies(t,queue,enums,level),CftValueType::Dict(k,v)=>{dependencies(k,queue,enums,level);dependencies(v,queue,enums,level);}_=>{}
+fn dependencies(ty:&CftValueType,queue:&mut VecDeque<(String,usize)>,level:usize){match ty{
+    CftValueType::Object(n)|CftValueType::RecordRef(n)=>queue.push_back((n.to_string(),level)),
+    CftValueType::Enum(n)=>queue.push_back((n.to_string(),level)),
+    CftValueType::Array(t)|CftValueType::Option(t)=>dependencies(t,queue,level),CftValueType::Dict(k,v)=>{dependencies(k,queue,level);dependencies(v,queue,level);}_=>{}
 }}
+
+fn constant_dependencies(session: &crate::ProjectSchemaSession, schema: &coflow_language::cft::CftSchema) -> std::collections::BTreeMap<String, Vec<String>> {
+    use coflow_language::cft::syntax::ast::Item;
+    let mut result = std::collections::BTreeMap::new();
+    // 常量值已在编译中折叠，依赖图从保留的 AST 收集，再由 Schema 确认符号身份。
+    for (_, module) in session.modules().modules() {
+        let Some(ast) = module.ast() else { continue; };
+        for item in &ast.items {
+            let mut paths = Vec::new();
+            let name = match item {
+                Item::Type(ty) => {
+                    for field in &ty.fields {
+                        if let Some(default) = &field.default { super::schema_queries::default_static_paths(default, &mut paths); }
+                    }
+                    &ty.name
+                }
+                Item::Const(constant) => {
+                    super::schema_queries::default_static_paths(&constant.value, &mut paths);
+                    &constant.name
+                }
+                _ => continue,
+            };
+            let constants: BTreeSet<_> = paths.into_iter().map(|(name, _)| name).filter(|name| schema.resolve_const(name).is_some()).collect();
+            result.insert(name.clone(), constants.into_iter().collect());
+        }
+    }
+    result
+}
+
+fn default_dependencies(value: &coflow_language::cft::CftSchemaDefaultValue, queue: &mut VecDeque<(String, usize)>, level: usize) {
+    use coflow_language::cft::CftSchemaDefaultValue as V;
+    match value {
+        V::Enum { enum_name, .. } => queue.push_back((enum_name.to_string(), level)),
+        V::RecordReference { type_name, .. } => queue.push_back((type_name.to_string(), level)),
+        V::Object { type_name, fields } => {
+            queue.push_back((type_name.to_string(), level));
+            for (_, value) in fields { default_dependencies(value, queue, level); }
+        }
+        V::OptionSome(value) => default_dependencies(value, queue, level),
+        V::Array(values) => { for value in values { default_dependencies(value, queue, level); } }
+        V::Dictionary(entries) => { for (key, value) in entries { default_dependencies(key, queue, level); default_dependencies(value, queue, level); } }
+        _ => {}
+    }
+}

@@ -90,6 +90,43 @@ fn schema_references_distinguish_nested_defaults_from_string_mentions() {
 }
 
 #[test]
+fn schema_constant_references_preserve_each_expression_location_after_value_folding() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "const BASE: int = 7;\ntable Item { numbers: [int] = [BASE, BASE]; selected: Option<int> = Some(BASE); text: string = \"BASE\"; }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item {}\n").unwrap();
+    let schema = coflow_runtime::Runtime::open_schema_session(Project::open_schema_only(Some(root.path())).unwrap()).unwrap();
+    assert!(schema.schema().is_some(), "{:?}", schema.diagnostics());
+    let result = run(root.path(), "schema.refs", &[("symbol", "BASE")], None);
+    assert_eq!(result.status, Status::Success, "{result:?}");
+    let uses: Vec<_> = result.result["references"].as_array().unwrap().iter().filter(|item| item["kind"] == "default_value").collect();
+    assert_eq!(uses.len(), 3);
+    assert!(uses.iter().all(|item| item["symbol"] != "Item.text"));
+    assert_ne!(uses[0]["location"], uses[1]["location"]);
+    assert!(uses.iter().all(|item| item["location"]["start_line"] == 1));
+}
+
+#[test]
+fn related_schema_collects_transitive_constants_and_shares_symbol_limits() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), "const BASE: int = 7;\nconst NEXT: int = BASE;\nconst UNUSED: int = 99;\nenum Color { Red, Blue }\nenum OtherColor { Green }\ndata Details { value: int = 1; }\ntable Item { count: int = NEXT; color: Color = Color::Red; details: Option<Details>; }\n").unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item {}\n").unwrap();
+    let result = run(root.path(), "schema.inspect", &[("type", "Item"), ("related", "true")], None);
+    let constants: Vec<_> = result.result["consts"].as_array().unwrap().iter().map(|item| item["name"].as_str().unwrap()).collect();
+    assert_eq!(constants, ["BASE", "NEXT"]);
+    assert_eq!(result.result["enums"].as_array().unwrap().len(), 1);
+    assert!(result.result["types"].as_array().unwrap().iter().any(|item| item["name"] == "Details"));
+    let plain = run(root.path(), "schema.inspect", &[("type", "Item")], None);
+    assert_eq!(plain.result["consts"], json!([]));
+    let shallow = run(root.path(), "schema.inspect", &[("type", "Item"), ("related", "true"), ("depth", "1")], None);
+    assert!(!shallow.result["consts"].as_array().unwrap().iter().any(|item| item["name"] == "BASE"));
+    assert!(shallow.result["omitted"].as_array().unwrap().iter().any(|item| item["symbol"] == "BASE"));
+    let bounded = run(root.path(), "schema.inspect", &[("type", "Item"), ("related", "true"), ("limit", "2")], None);
+    let total: usize = ["types", "enums", "consts"].iter().map(|name| bounded.result[name].as_array().unwrap().len()).sum();
+    assert_eq!(total, 2);
+    assert!(!bounded.result["omitted"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn cursors_reject_changes_to_command_and_command_specific_filters() {
     let root = fixture();
     let first = run(root.path(), "schema.symbols", &[("limit", "1")], None);
