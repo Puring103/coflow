@@ -22,16 +22,25 @@ pub(crate) struct SelfUpdateResult {
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) struct CommandParameter {
     pub name: String,
-    pub long: Option<String>,
-    pub required: bool,
-    pub description: Option<String>,
+    pub description: String,
     pub action: String,
-    pub allowed_values: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub positional: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_values: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defaults: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conflicts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_any: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_constraints: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditional_defaults: Vec<Value>,
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -47,26 +56,39 @@ pub(crate) struct InputFormat {
     pub format: String,
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub(crate) struct CommandSummary {
+    pub command: String,
+    pub description: String,
+    pub writes: bool,
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) struct CommandDescription {
     pub command: String,
-    pub description: Option<String>,
+    pub description: String,
     pub parameters: Vec<CommandParameter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<CommandGroup>,
-    pub read_only: Option<bool>,
-    pub writes: Option<bool>,
+    pub read_only: bool,
+    pub writes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_formats: Vec<InputFormat>,
     pub examples: Vec<String>,
-    pub subcommands: Vec<CommandDescription>,
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) struct DescribeResult {
     pub protocol_version: u32,
-    pub definition: CommandDescription,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition: Option<CommandDescription>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<CommandSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub globals: Vec<CommandParameter>,
     pub exit_codes: std::collections::BTreeMap<String, String>,
-    pub input_schema: Option<Value>,
-    pub output_schema: Value,
+    pub next: String,
 }
 
 fn output_schema(target: Option<&str>) -> schemars::schema::RootSchema {
@@ -100,7 +122,7 @@ const FLAGS: &[&str] = &[
     "to-base",
 ];
 const QUERY: &str = "type include-derived file id fields where dimension sort limit cursor";
-const WRITE: &str = "dry-run rules";
+const WRITE: &str = "dry-run rules if-revision";
 const RECORD: &str = "type id";
 const VALUE: &str = "value-cfd value-file";
 const DIMENSION: &str = "dimension variant type id field";
@@ -126,7 +148,44 @@ fn option(name: &'static str) -> Arg {
         "expected-fingerprint" => "Require the source content fingerprint to match",
         "from-base" => "Compare from the base value",
         "to-base" => "Compare to the base value",
-        _ => "Command option",
+        "include-derived" => "Include types derived from --type",
+        "related" => "Include declarations referenced by the selected type",
+        "explain" => "Include full diagnostic explanations",
+        "summary" => "Return diff counts without individual changes",
+        "include-source" => "Include source text in the diff",
+        "stdin" => "Read source text from stdin",
+        "global" => "Use the global skills installation",
+        "yes" => "Install the update without prompting",
+        "performance" => "Include rule execution timings and work counts",
+        "field" => "Field name; use --path for nested value locations",
+        "path" => "Field path, or project input path for project commands",
+        "variant" => "Variant name within the selected dimension",
+        "kind" => "Filter or select the input or schema symbol kind",
+        "examples" => "Maximum example records in context",
+        "ref-limit" => "Maximum referenced records in context",
+        "depth" => "Maximum nested schema or reference traversal depth",
+        "budget" => "Maximum serialized context characters",
+        "start-line" => "First source line to return (zero-based, inclusive)",
+        "end-line" => "First source line to exclude (zero-based)",
+        "view" => "Select source assignments, effective values, or a diff view",
+        "text" => "Text to find in record ids and values",
+        "new-id" => "New record id; references are updated automatically",
+        "to-file" => "Destination CFD file relative to the project",
+        "direction" => "Reference edge direction relative to the selected record",
+        "from" => "Variant to compare from",
+        "to" => "Variant to compare to",
+        "group-by" => "Group results by the selected property",
+        "metrics" => "Comma-separated statistic names",
+        "option-layer" => "Option wrapper layer to inspect (one-based)",
+        "quantiles" => "Comma-separated quantiles between 0 and 1",
+        "symbol" => "Schema symbol name, for example Item or Item.value",
+        "base" => "Git revision to compare against",
+        "language" => "Source language used when formatting stdin",
+        "if-revision" => "Require the project revision returned by the preceding read",
+        "expected-cfd" => {
+            "Require the current effective field value to equal this typed CFD expression"
+        }
+        _ => unreachable!("missing parameter help for {name}"),
     });
     if FLAGS.contains(&name) {
         return if name == "global" {
@@ -158,7 +217,7 @@ fn option(name: &'static str) -> Arg {
             Ok(raw.into())
         })
     } else {
-        argument.allow_hyphen_values(["value-cfd", "sort"].contains(&name))
+        argument.allow_hyphen_values(["value-cfd", "expected-cfd", "sort"].contains(&name))
     }
 }
 
@@ -233,9 +292,38 @@ pub(crate) fn command() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Write one structured JSON result"),
         )
+        .arg(
+            Arg::new("pretty")
+                .long("pretty")
+                .global(true)
+                .action(ArgAction::SetTrue)
+                .help("Write indented JSON (implies --json)"),
+        )
+        .arg(
+            Arg::new("details")
+                .long("details")
+                .global(true)
+                .action(ArgAction::SetTrue)
+                .help("Include execution details and all diagnostics (unless --limit is set)"),
+        )
         .subcommands(vec![
-            leaf("init", "Create a project", &[]).arg(Arg::new("dir").default_value(".")),
-            leaf("describe", "Describe commands and request formats", &[]).arg(Arg::new("command")),
+            leaf("init", "Create a project", &[]).arg(
+                Arg::new("dir")
+                    .default_value(".")
+                    .help("Directory in which to create the project"),
+            ),
+            leaf("describe", "List commands or describe one command", &[])
+                .arg(
+                    Arg::new("command")
+                        .help("Command or group name using dots, for example data.set"),
+                )
+                .arg(
+                    Arg::new("schema")
+                        .long("schema")
+                        .value_parser(["input", "output", "both"])
+                        .requires("command")
+                        .help("Include the selected JSON Schema once; requires a leaf command"),
+                ),
             group(
                 "project",
                 vec![
@@ -273,7 +361,7 @@ pub(crate) fn command() -> Command {
                     leaf(
                         "check",
                         "Check current or candidate schema",
-                        &["input limit explain"],
+                        &["input limit explain if-revision"],
                     ),
                     leaf(
                         "inspect",
@@ -343,7 +431,7 @@ pub(crate) fn command() -> Command {
                         leaf(
                             "set",
                             "Set an explicit field value",
-                            &[RECORD, "path", VALUE, WRITE],
+                            &[RECORD, "path expected-cfd", VALUE, WRITE],
                         ),
                         "type id path",
                     ),
@@ -476,7 +564,7 @@ pub(crate) fn command() -> Command {
             leaf(
                 "check",
                 "Check data and selected business rules",
-                &["rules rule input limit explain performance"],
+                &["rules rule input limit explain performance if-revision"],
             ),
             group(
                 "rule",
@@ -485,7 +573,11 @@ pub(crate) fn command() -> Command {
                     required(leaf("inspect", "Inspect a rule", &["rule"]), "rule"),
                 ],
             ),
-            leaf("explain", "Explain a diagnostic code", &[]).arg(Arg::new("code").required(true)),
+            leaf("explain", "Explain a diagnostic code", &[]).arg(
+                Arg::new("code")
+                    .required(true)
+                    .help("Diagnostic code returned by a command"),
+            ),
             required(
                 leaf(
                     "apply",
@@ -497,23 +589,29 @@ pub(crate) fn command() -> Command {
             leaf(
                 "diff",
                 "Compare Git or candidate changes",
-                &["base input summary include-source type view"],
+                &["base input summary include-source type view if-revision"],
             )
             .mut_arg("input", |a| a.conflicts_with("base")),
             leaf(
                 "format",
                 "Format source files or stdin",
-                &["file stdin language check dry-run"],
+                &["file stdin language check dry-run if-revision"],
             )
             .mut_arg("file", |a| a.action(ArgAction::Append))
-            .mut_arg("stdin", |a| a.conflicts_with_all(["file", "project"]))
+            .mut_arg("stdin", |a| {
+                a.conflicts_with_all(["file", "project", "if-revision"])
+            })
             .mut_arg("language", |a| a.value_parser(["cft", "cfd"])),
             leaf(
                 "codegen",
                 "Generate, preview or check code",
-                &["dry-run check"],
+                &["dry-run check if-revision"],
             ),
-            leaf("build", "Check all rules and generate code", &[]),
+            leaf(
+                "build",
+                "Check all rules and generate code",
+                &["if-revision"],
+            ),
             leaf("lsp", "Run the language server", &[]),
             group(
                 "skill",
@@ -706,7 +804,7 @@ pub(crate) fn decode(matches: &ArgMatches) -> (String, Arguments) {
     let mut arguments = Arguments::default();
     for id in leaf.ids() {
         let name = id.as_str();
-        if FLAGS.contains(&name) || name == "json" {
+        if FLAGS.contains(&name) || ["json", "pretty", "details"].contains(&name) {
             if leaf.get_flag(name) {
                 arguments.0.insert(name.into(), vec!["true".into()]);
             }
@@ -714,15 +812,19 @@ pub(crate) fn decode(matches: &ArgMatches) -> (String, Arguments) {
             arguments.0.insert(name.into(), values.cloned().collect());
         }
     }
+    if arguments.flag("pretty") {
+        arguments.0.insert("json".into(), vec!["true".into()]);
+    }
     (parts.join("."), arguments)
 }
 
-pub(crate) fn invocation(raw: &[std::ffi::OsString]) -> (String, bool) {
+pub(crate) fn invocation(raw: &[std::ffi::OsString]) -> (String, bool, bool) {
     let mut root = command();
     root.build();
     let mut current = &root;
     let mut parts = Vec::new();
     let mut json = false;
+    let mut pretty = false;
     let mut skip_value = false;
     for token in raw.iter().skip(1) {
         if skip_value {
@@ -733,8 +835,9 @@ pub(crate) fn invocation(raw: &[std::ffi::OsString]) -> (String, bool) {
         if token == "--" {
             break;
         }
-        if token == "--json" {
+        if token == "--json" || token == "--pretty" {
             json = true;
+            pretty |= token == "--pretty";
             continue;
         }
         if let Some(option) = token.strip_prefix("--") {
@@ -752,10 +855,10 @@ pub(crate) fn invocation(raw: &[std::ffi::OsString]) -> (String, bool) {
             current = child;
         }
     }
-    (parts.join("."), json)
+    (parts.join("."), json, pretty)
 }
 
-pub(crate) fn describe(target: Option<&str>) -> Result<Value> {
+pub(crate) fn describe(target: Option<&str>, schema: Option<&str>) -> Result<Value> {
     let mut root = command();
     root.build();
     let mut selected = &root;
@@ -763,55 +866,221 @@ pub(crate) fn describe(target: Option<&str>) -> Result<Value> {
         for name in target.split('.') {
             selected = selected
                 .get_subcommands()
-                .find(|command| command.get_name() == name)
-                .ok_or_else(|| Failure::missing(format!("unknown command `{target}`")))?;
+                .find(|command| command.get_name() == name && name != "help")
+                .ok_or_else(|| {
+                    Failure::missing(format!(
+                        "unknown command `{target}`; run `coflow describe --json`"
+                    ))
+                })?;
         }
     }
-    fn description(command: &Command, name: &str) -> Value {
-        let leaf = command.get_subcommands().next().is_none();
-        // 写入能力由实际命令选项与无预览模式的宿主命令共同决定。
-        let writes = command
+    let is_leaf = selected.get_subcommands().next().is_none();
+    if schema.is_some() && !is_leaf {
+        return Err(Failure::request(
+            "--schema requires a leaf command, for example `describe data.set --schema output`",
+        ));
+    }
+    let name = target.unwrap_or("coflow");
+    let definition = is_leaf.then(|| description(selected, name, schema));
+    let mut commands = Vec::new();
+    if !is_leaf {
+        collect_commands(selected, target.unwrap_or(""), &mut commands);
+    }
+    let report = DescribeResult {
+        protocol_version: 1,
+        definition,
+        commands,
+        globals: if is_leaf {
+            Vec::new()
+        } else {
+            root.get_arguments()
+                .filter(|argument| argument.is_global_set())
+                .map(|argument| parameter(&root, "coflow", argument))
+                .collect()
+        },
+        exit_codes: [
+            ("0", "success"),
+            ("1", "validation or incomplete result"),
+            ("2", "invalid request"),
+            ("3", "conflict"),
+            ("4", "execution failure"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.into(), value.into()))
+        .collect(),
+        next: if is_leaf {
+            format!("coflow describe {name} --schema output --json")
+        } else {
+            "coflow describe <command> --json".into()
+        },
+    };
+    Ok(serde_json::to_value(report)?)
+}
+
+fn writes(command: &Command, name: &str) -> bool {
+    command
+        .get_arguments()
+        .any(|argument| argument.get_id() == "dry-run")
+        || matches!(
+            name,
+            "init" | "build" | "skill.install" | "skill.uninstall" | "self-update"
+        )
+}
+
+/// 命令目录只返回导航所需信息；大体积 Schema 仅在明确请求时生成一次。
+fn collect_commands(command: &Command, prefix: &str, entries: &mut Vec<CommandSummary>) {
+    for child in command
+        .get_subcommands()
+        .filter(|child| child.get_name() != "help")
+    {
+        let name = if prefix.is_empty() {
+            child.get_name().to_string()
+        } else {
+            format!("{prefix}.{}", child.get_name())
+        };
+        if child.get_subcommands().next().is_none() {
+            entries.push(CommandSummary {
+                writes: writes(child, &name),
+                command: name,
+                description: child
+                    .get_about()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+            });
+        } else {
+            collect_commands(child, &name, entries);
+        }
+    }
+}
+
+fn parameter(command: &Command, name: &str, argument: &Arg) -> CommandParameter {
+    let id = argument.get_id().as_str();
+    CommandParameter {
+        name: id.into(),
+        description: argument
+            .get_help()
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        action: match argument.get_action() {
+            ArgAction::SetTrue | ArgAction::SetFalse => "flag",
+            ArgAction::Append => "repeat",
+            _ => "value",
+        }
+        .into(),
+        required: argument.is_required_set(),
+        positional: argument.get_long().is_none(),
+        allowed_values: argument
+            .get_value_parser()
+            .possible_values()
+            .map(|values| values.map(|v| v.get_name().to_string()).collect())
+            .unwrap_or_default(),
+        defaults: argument
+            .get_default_values()
+            .iter()
+            .map(|v| v.to_string_lossy().into_owned())
+            .collect(),
+        conflicts: command
+            .get_arg_conflicts_with(argument)
+            .iter()
+            .map(|a| a.get_id().as_str().into())
+            .collect(),
+        requires: if name == "describe" && id == "schema" {
+            vec!["command".into()]
+        } else {
+            parameter_requires(name, id)
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        },
+        requires_any: if name == "self-update" && ["json", "pretty"].contains(&id) {
+            vec!["check".into(), "yes".into()]
+        } else {
+            Vec::new()
+        },
+        value_constraints: parameter_constraints(name, id),
+        conditional_defaults: if name == "diff" && id == "base" {
+            vec![json!({"when_present":"input","value":null})]
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+fn description(command: &Command, name: &str, schema: Option<&str>) -> CommandDescription {
+    let writes = writes(command, name);
+    CommandDescription {
+        command: name.into(),
+        description: command
+            .get_about()
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        parameters: command
             .get_arguments()
-            .any(|argument| argument.get_id() == "dry-run")
-            || matches!(
-                name,
-                "init" | "build" | "skill.install" | "skill.uninstall" | "self-update"
-            );
-        let parameters: Vec<_> = command.get_arguments().filter(|a| a.get_id() != "help" && a.get_id() != "version").map(|a| json!({
-            "name": a.get_id().as_str(), "long": a.get_long(), "required": a.is_required_set(), "description": a.get_help().map(ToString::to_string),
-            "action": format!("{:?}", a.get_action()),
-            "allowed_values": a.get_value_parser().possible_values().map(|values| values.map(|v| v.get_name().to_string()).collect::<Vec<_>>()),
-            "defaults": a.get_default_values().iter().map(|v| v.to_string_lossy()).collect::<Vec<_>>(),
-            "conflicts": command.get_arg_conflicts_with(a).iter().map(|a| a.get_id().as_str()).collect::<Vec<_>>(),
-            "requires": parameter_requires(name,a.get_id().as_str()),
-            "requires_any": if name=="self-update" && a.get_id()=="json" {vec!["check","yes"]}else{Vec::<&str>::new()},
-            "value_constraints": parameter_constraints(name,a.get_id().as_str()),
-            "conditional_defaults": if name=="diff" && a.get_id()=="base" {vec![json!({"when_present":"input","value":null})]}else{Vec::<Value>::new()}
-        })).collect();
-        let groups: Vec<_> = command.get_groups().map(|g| json!({"name": g.get_id().as_str(), "required": g.is_required_set(), "multiple": g.clone().is_multiple(), "parameters": g.get_args().map(|id| id.as_str()).collect::<Vec<_>>()})).collect();
-        json!({"command": name, "description": command.get_about().map(ToString::to_string), "parameters": parameters, "groups": groups,
-            "read_only": leaf.then_some(!writes), "writes": leaf.then_some(writes),
-            "input_schema": input_schema(name),
-            "output_schema": leaf.then(|| output_schema(Some(name))),
-            "input_formats": command.get_arguments().filter_map(|argument| {
+            .filter(|argument| !["help", "version"].contains(&argument.get_id().as_str()))
+            .map(|argument| parameter(command, name, argument))
+            .collect(),
+        groups: command
+            .get_groups()
+            .map(|group| CommandGroup {
+                name: group.get_id().as_str().into(),
+                required: group.is_required_set(),
+                multiple: group.clone().is_multiple(),
+                parameters: group.get_args().map(|id| id.as_str().into()).collect(),
+            })
+            .collect(),
+        read_only: !writes,
+        writes,
+        input_schema: matches!(schema, Some("input" | "both"))
+            .then(|| input_schema(name))
+            .filter(|value| !value.is_null()),
+        output_schema: matches!(schema, Some("output" | "both"))
+            .then(|| json!(output_schema(Some(name)))),
+        input_formats: command
+            .get_arguments()
+            .filter_map(|argument| {
                 let parameter = argument.get_id().as_str();
                 let format = match (name, parameter) {
                     ("source.write" | "source.create", "input") => "source_text",
-                    (_, "input") if !input_schema(name).is_null() => "json",
-                    (_, "value-cfd" | "value-file") => "cfd_expression",
+                    ("apply" | "check" | "schema.check" | "diff" | "data.create", "input") => {
+                        "json"
+                    }
+                    (_, "value-cfd" | "value-file" | "expected-cfd") => "cfd_expression",
                     ("format", "stdin") => "source_text",
                     _ => return None,
                 };
-                Some(json!({"parameter": parameter, "format": format}))
-            }).collect::<Vec<_>>(),
-            "examples": if leaf { vec![example(command, name)] } else { Vec::new() },
-            "subcommands": command.get_subcommands().filter(|child| child.get_name() != "help").map(|child| description(child, &if name == "coflow" { child.get_name().to_string() } else { format!("{name}.{}", child.get_name()) })).collect::<Vec<_>>()})
+                Some(InputFormat {
+                    parameter: parameter.into(),
+                    format: format.into(),
+                })
+            })
+            .collect(),
+        examples: vec![example(command, name)],
     }
-    let result = json!({"protocol_version": 1, "definition": description(selected, target.unwrap_or("coflow")),
-        "exit_codes": {"0": "success", "1": "validation or incomplete result", "2": "invalid request", "3": "conflict", "4": "execution failure"},
-        "input_schema": target.map(input_schema), "output_schema": output_schema(target)});
-    let result: DescribeResult = serde_json::from_value(result)?;
-    Ok(serde_json::to_value(result)?)
+}
+
+/// Clap 的错误原因包含参数名与冲突信息，重复的完整 Usage 留给定向帮助。
+pub(crate) fn argument_error(error: &clap::Error, invoked: &str) -> (String, String) {
+    let rendered = error.to_string();
+    let message = rendered
+        .split("\nUsage:")
+        .next()
+        .unwrap_or(&rendered)
+        .split("\nFor more information")
+        .next()
+        .unwrap_or(&rendered)
+        .trim()
+        .trim_start_matches("error: ")
+        .trim()
+        .to_string();
+    let help = if invoked.is_empty() {
+        "coflow describe --json".into()
+    } else {
+        format!(
+            "coflow {} --help; coflow describe {invoked} --json",
+            invoked.replace('.', " ")
+        )
+    };
+    (message, help)
 }
 
 fn input_schema(name: &str) -> Value {
@@ -844,6 +1113,12 @@ fn example(command: &Command, name: &str) -> String {
     if name == "self-update" {
         parameters.insert("check");
     }
+    if command
+        .get_arguments()
+        .any(|argument| argument.get_id() == "dry-run")
+    {
+        parameters.insert("dry-run");
+    }
     let mut result = format!("coflow {}", name.replace('.', " "));
     for argument in command
         .get_arguments()
@@ -857,15 +1132,17 @@ fn example(command: &Command, name: &str) -> String {
                 "type" | "symbol" => "Item",
                 "id" => "sword",
                 "new-id" => "sword2",
+                "path" if name.starts_with("project.") => "data/",
                 "path" | "field" => "value",
                 "file" => "data/items.cfd",
                 "to-file" => "data/other.cfd",
+                "input" if name.starts_with("source.") => "updated.cfd",
                 "input" => "request.json",
                 "value-cfd" => "1",
                 "dimension" => "language",
                 "variant" => "en",
                 "kind" => "data",
-                "rule" => "Item#0",
+                "rule" => "Item::Valid",
                 "code" => "DATA-006",
                 "text" => "sword",
                 "from" => "en",
@@ -885,24 +1162,25 @@ fn example(command: &Command, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn every_described_leaf_has_an_example_accepted_by_the_command_parser() {
-        let report = super::describe(None).unwrap();
-        fn check(definition: &serde_json::Value) {
-            let children = definition["subcommands"].as_array().unwrap();
-            if children.is_empty() {
-                assert!(definition["read_only"].is_boolean());
-                for example in definition["examples"].as_array().unwrap() {
-                    let example = example.as_str().unwrap();
-                    super::command()
-                        .try_get_matches_from(example.split_whitespace())
-                        .unwrap_or_else(|error| panic!("{example}: {error}"));
-                }
-            } else {
-                for child in children {
-                    check(child);
-                }
+    fn every_described_leaf_has_documented_parameters_and_an_accepted_example() {
+        let report = super::describe(None, None).unwrap();
+        for summary in report["commands"].as_array().unwrap() {
+            let name = summary["command"].as_str().unwrap();
+            let report = super::describe(Some(name), None).unwrap();
+            let definition = &report["definition"];
+            assert!(definition["read_only"].is_boolean());
+            for parameter in definition["parameters"].as_array().unwrap() {
+                assert!(
+                    !parameter["description"].as_str().unwrap().is_empty(),
+                    "{name}: {parameter}"
+                );
+            }
+            for example in definition["examples"].as_array().unwrap() {
+                let example = example.as_str().unwrap();
+                super::command()
+                    .try_get_matches_from(example.split_whitespace())
+                    .unwrap_or_else(|error| panic!("{example}: {error}"));
             }
         }
-        check(&report["definition"]);
     }
 }

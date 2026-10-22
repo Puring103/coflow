@@ -1,4 +1,4 @@
-//! CLI 诊断保留源码位置和记录坐标，未知位置使用空值。
+//! CLI 诊断保留可获得的源码位置和记录坐标，省略未知位置并提供简短修复建议。
 
 use std::path::Path;
 
@@ -25,25 +25,35 @@ pub struct CommandRange {
 #[derive(Debug, Clone, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandLocation {
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<CommandRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_path: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandLabel {
     pub location: CommandLocation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
 #[derive(Debug, Serialize, serde::Deserialize, JsonSchema)]
 pub struct CommandContext {
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expression: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dimension: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
 }
 
@@ -53,12 +63,20 @@ pub struct CommandDiagnostic {
     pub stage: String,
     pub severity: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<CommandLocation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record: Option<RecordTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<CommandLabel>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contexts: Vec<CommandContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub explanation: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
 }
 
 impl CommandLocation {
@@ -155,6 +173,9 @@ impl CommandDiagnostic {
                 })
                 .collect(),
             explanation: explanation.cloned(),
+            help: super::explanations::explain(&diagnostic.code)
+                .ok()
+                .map(|explanation| explanation.repair),
         }
     }
 }

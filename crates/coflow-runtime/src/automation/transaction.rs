@@ -3,9 +3,11 @@ use crate::{Project, ProjectConfig, Runtime, SchemaConfig, SourceConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -14,11 +16,15 @@ pub enum ChangeSet {
     Files {
         #[schemars(range(min = 1, max = 1))]
         protocol_version: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        if_revision: Option<String>,
         changes: Vec<FileOperation>,
     },
     Operations {
         #[schemars(range(min = 1, max = 1))]
         protocol_version: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        if_revision: Option<String>,
         ops: Vec<super::operations::Operation>,
     },
 }
@@ -57,11 +63,77 @@ pub enum FileOperation {
     },
 }
 
+/// 一次候选事务共享编译结果、文件语法树和身份索引；只更新实际变化的文件。
+#[derive(Debug, Default)]
+struct OperationCache {
+    schema: Option<crate::ProjectSchemaSession>,
+    files: Option<BTreeMap<PathBuf, Arc<CandidateSource>>>,
+    records: BTreeMap<(String, String), Vec<(PathBuf, usize)>>,
+    malformed: BTreeSet<PathBuf>,
+    #[cfg(test)]
+    stats: CacheStats,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct CacheStats {
+    schema_compilations: usize,
+    source_discoveries: usize,
+    cfd_parses: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct CandidateSource {
+    pub absolute: PathBuf,
+    pub path: String,
+    pub text: String,
+    pub ast: coflow_language::cfd::CfdAst,
+    pub malformed: bool,
+}
+
+impl OperationCache {
+    fn replace_source(&mut self, path: PathBuf, source: Option<CandidateSource>) {
+        self.malformed.remove(&path);
+        if source.as_ref().is_some_and(|source| source.malformed) {
+            self.malformed.insert(path.clone());
+        }
+        if let Some(previous) = self.files.as_ref().and_then(|files| files.get(&path)) {
+            for record in &previous.ast.records {
+                let identity = (record.type_name.clone(), record.id.clone());
+                if let Some(locations) = self.records.get_mut(&identity) {
+                    locations.retain(|(file, _)| file != &path);
+                    if locations.is_empty() {
+                        self.records.remove(&identity);
+                    }
+                }
+            }
+        }
+        if let Some(source) = source {
+            for (index, record) in source.ast.records.iter().enumerate() {
+                self.records
+                    .entry((record.type_name.clone(), record.id.clone()))
+                    .or_default()
+                    .push((path.clone(), index));
+            }
+            if let Some(files) = &mut self.files {
+                files.insert(path, Arc::new(source));
+            }
+            #[cfg(test)]
+            {
+                self.stats.cfd_parses += 1;
+            }
+        } else if let Some(files) = &mut self.files {
+            files.remove(&path);
+        }
+    }
+}
+
 /// 候选项目在独立目录中执行；绝对和外部输入映射后仍保持相对拓扑。
 /// 正式目录只在最终校验通过且快照一致时，由 staging 一次性发布。
 #[derive(Debug)]
 pub(crate) struct Candidate {
     temp: tempfile::TempDir,
+    cache: RefCell<OperationCache>,
     pub original: Project,
     pub snapshot: InputSnapshot,
     config_path: PathBuf,
@@ -81,6 +153,7 @@ impl Candidate {
     pub fn new(project: &Project, snapshot: &InputSnapshot) -> Result<Self> {
         let mut candidate = Self {
             temp: tempfile::tempdir()?,
+            cache: RefCell::new(OperationCache::default()),
             original: project.clone(),
             snapshot: snapshot.clone(),
             config_path: PathBuf::new(),
@@ -111,15 +184,167 @@ impl Candidate {
                 )
             })?;
         candidate.set_config_source(config.contents.clone())?;
-        candidate.baseline =
-            super::semantic_diff::SemanticSnapshot::capture(&candidate.project()?, |path| {
+        candidate.baseline = super::semantic_diff::SemanticSnapshot::capture_from_schema(
+            &candidate.schema_session()?,
+            None,
+            |path| {
                 Ok(crate::project_path(
                     candidate.original.root_dir(),
                     &candidate.unshadow(path)?,
                 ))
-            })?;
+            },
+        )?;
         Ok(candidate)
     }
+    pub(crate) fn schema_session(&self) -> Result<crate::ProjectSchemaSession> {
+        let project = self.project()?;
+        let mut cache = self.cache.borrow_mut();
+        if cache.schema.is_none() {
+            cache.schema = Some(Runtime::open_schema_session(project.clone())?);
+            #[cfg(test)]
+            {
+                cache.stats.schema_compilations += 1;
+            }
+        }
+        let mut session = cache.schema.as_ref().expect("schema cached").clone();
+        // 新增数据输入不改变声明，但读取会话必须采用当前候选的输入范围。
+        session.project = project;
+        Ok(session)
+    }
+
+    pub(crate) fn data_session(&self) -> Result<crate::ReadOnlyProjectSession> {
+        Ok(crate::ReadOnlyProjectSession {
+            session: crate::session_build::open_data_session_from_schema(self.schema_session()?)?,
+        })
+    }
+
+    fn ensure_data_sources(&self) -> Result<()> {
+        if self.cache.borrow().files.is_none() {
+            let snapshot = InputSnapshot::capture(&self.project()?)?;
+            let mut cache = self.cache.borrow_mut();
+            cache.files = Some(BTreeMap::new());
+            cache.records.clear();
+            cache.malformed.clear();
+            #[cfg(test)]
+            {
+                cache.stats.source_discoveries += 1;
+            }
+            for file in snapshot
+                .files
+                .into_iter()
+                .filter(|file| file.kind == "data")
+            {
+                let text = String::from_utf8(file.contents)
+                    .map_err(|error| Failure::request(error.to_string()))?;
+                let (ast, errors) = coflow_language::cfd::parse_cfd(&text);
+                cache.replace_source(
+                    file.absolute.clone(),
+                    Some(CandidateSource {
+                        absolute: file.absolute,
+                        path: file.path,
+                        text,
+                        ast,
+                        malformed: !errors.is_empty(),
+                    }),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn data_sources(&self) -> Result<Vec<Arc<CandidateSource>>> {
+        self.ensure_data_sources()?;
+        Ok(self
+            .cache
+            .borrow()
+            .files
+            .as_ref()
+            .expect("data sources cached")
+            .values()
+            .cloned()
+            .collect())
+    }
+
+    pub(crate) fn cached_record(
+        &self,
+        target: &super::RecordTarget,
+    ) -> Result<(PathBuf, coflow_language::cfd::CfdRecord, String)> {
+        self.ensure_data_sources()?;
+        let cache = self.cache.borrow();
+        let files = cache.files.as_ref().expect("data sources cached");
+        if let Some(source) = cache.malformed.first().and_then(|path| files.get(path)) {
+            return Err(Failure::request(format!(
+                "cannot edit malformed CFD `{}`",
+                source.path
+            )));
+        }
+        let locations = cache
+            .records
+            .get(&(target.actual_type.clone(), target.id.clone()));
+        match locations.map(Vec::as_slice) {
+            Some([(path, index)]) => {
+                let source = &files[path];
+                Ok((
+                    path.clone(),
+                    source.ast.records[*index].clone(),
+                    source.text.clone(),
+                ))
+            }
+            Some(_) => Err(Failure::conflict("record identity is ambiguous")),
+            None => Err(Failure::missing(format!(
+                "record `{}::{}` does not exist",
+                target.actual_type, target.id
+            ))),
+        }
+    }
+
+    pub(crate) fn refresh_source(&self, path: &Path, text: Option<String>) -> Result<()> {
+        if path.extension().is_some_and(|extension| extension == "cft") {
+            self.cache.borrow_mut().schema = None;
+            return Ok(());
+        }
+        if self.cache.borrow().files.is_none()
+            || !path.extension().is_some_and(|extension| extension == "cfd")
+        {
+            return Ok(());
+        }
+        let mut cache = self.cache.borrow_mut();
+        if cache
+            .files
+            .as_ref()
+            .and_then(|files| files.get(path))
+            .is_some_and(|source| Some(&source.text) == text.as_ref())
+        {
+            return Ok(());
+        }
+        let source = if let Some(text) = text {
+            let (ast, errors) = coflow_language::cfd::parse_cfd(&text);
+            Some(CandidateSource {
+                absolute: path.into(),
+                path: crate::project_path(self.original.root_dir(), &self.unshadow(path)?),
+                text,
+                ast,
+                malformed: !errors.is_empty(),
+            })
+        } else {
+            None
+        };
+        cache.replace_source(path.into(), source);
+        Ok(())
+    }
+
+    pub(crate) fn publish_writer(&self, writer: &crate::cfd_loader::CfdWriter) -> Result<()> {
+        let updates = writer.source_overrides()?;
+        writer.publish()?;
+        for update in updates {
+            self.refresh_source(
+                &update.normalized_path,
+                (!update.deleted).then_some(update.source),
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn project(&self) -> Result<Project> {
         Ok(Project::open_schema_only(Some(&self.config_path))?)
     }
@@ -216,8 +441,32 @@ impl Candidate {
         // 解析失败的请求不能替换已经建立的候选配置身份。
         let _: ProjectConfig = serde_yaml::from_slice(&contents)
             .map_err(|e| Failure::new(Status::Invalid, "PROJECT-CONFIG-PARSE", e.to_string()))?;
+        let previous_config = self.original_view().ok().map(|project| project.config);
         self.config_contents = contents;
         let project = self.original_view()?;
+        let mut cache = self.cache.borrow_mut();
+        if previous_config
+            .as_ref()
+            .map(|config| {
+                serde_json::to_value((&config.schema, &config.dimensions, &config.codegen))
+            })
+            .transpose()?
+            != Some(serde_json::to_value((
+                &project.config.schema,
+                &project.config.dimensions,
+                &project.config.codegen,
+            ))?)
+            || cache
+                .schema
+                .as_ref()
+                .is_some_and(|schema| schema.has_diagnostics())
+        {
+            cache.schema = None;
+        }
+        cache.files = None;
+        cache.records.clear();
+        cache.malformed.clear();
+        drop(cache);
         let mapped = self.mapped_config(&project);
         let text = serde_yaml::to_string(&mapped).map_err(|e| Failure::request(e.to_string()))?;
         if let Some(parent) = self.config_path.parent() {
@@ -266,7 +515,8 @@ impl Candidate {
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(target, contents)?;
+        fs::write(&target, contents)?;
+        self.refresh_source(&target, String::from_utf8(contents.to_vec()).ok())?;
         Ok(())
     }
     pub fn resolve(&mut self, file: &str, create: bool) -> Result<PathBuf> {
@@ -425,6 +675,7 @@ impl Candidate {
                             ));
                         }
                         fs::remove_file(self.shadow(&path))?;
+                        self.refresh_source(&self.shadow(&path), None)?;
                         let mut project = self.original_view()?;
                         let target = path.clone();
                         project.config.schema.paths = project
@@ -467,11 +718,10 @@ impl Candidate {
             } else {
                 fs::read(self.shadow(path))?
             };
-            if super::snapshot::fingerprint(&contents) != expected {
-                return Err(Failure::conflict(format!(
-                    "content precondition failed: {}",
-                    path.display()
-                )));
+            let actual = super::snapshot::fingerprint(&contents);
+            if actual != expected {
+                return Err(Failure::conflict(format!("content precondition failed: {}", path.display()))
+                    .with_result(json!({"precondition":{"kind":"fingerprint", "expected": expected, "actual": actual}})));
             }
         }
         Ok(())
@@ -525,8 +775,17 @@ impl Candidate {
         &mut self,
         index: usize,
         operations: &[Value],
-        failure: Failure,
+        mut failure: Failure,
     ) -> Failure {
+        let mut details = failure.result.take().unwrap_or_else(|| json!({}));
+        details["operation_index"] = json!(index);
+        details["target"] = operations[index]
+            .get("record")
+            .or_else(|| operations[index].get("file"))
+            .or_else(|| operations[index].get("selector"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        failure.result = Some(details);
         self.operations.push(json!({"index":index,"status":"failed","operation":operations[index],
             "reason":failure.diagnostics.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>(),"details":failure.result}));
         for (index, operation) in operations.iter().enumerate().skip(index + 1) {
@@ -547,12 +806,16 @@ impl Candidate {
             result["written_files"] = json!([]);
         }
         result["dry_run"] = json!(args.flag("dry-run"));
+        result["revision_before"] = json!(self.snapshot.revision());
         result["operations"] = json!(self.operations);
         if result.get("files").is_none() {
-            match self.changes() {
-                Ok(changes) => {
-                    result["changed"] = json!(!changes.is_empty());
-                    result["files"] = self.file_report(&changes);
+            match self
+                .changes()
+                .and_then(|changes| Ok((!changes.is_empty(), self.file_report(&changes, args)?)))
+            {
+                Ok((changed, files)) => {
+                    result["changed"] = json!(changed);
+                    result["files"] = files;
                 }
                 Err(report_failure) => {
                     result["changed"] = Value::Null;
@@ -573,23 +836,50 @@ impl Candidate {
         failure.result = Some(result);
         failure
     }
-    fn file_report(&self, changes: &[coflow_staging::transaction::FileChange]) -> Value {
-        json!(changes.iter().map(|c| json!({"path":crate::project_path(self.original.root_dir(),&c.path),
-            "change":if c.before.is_none() {"added"} else if c.after.is_none() {"deleted"} else {"modified"},
-            "before":c.before.as_ref().map(|b|String::from_utf8_lossy(b)),"after":c.after.as_ref().map(|b|String::from_utf8_lossy(b))})).collect::<Vec<_>>())
+    /// 成功、失败与声明预览共享同一源码报告；默认补丁只保留变化附近的上下文。
+    fn file_report(
+        &self,
+        changes: &[coflow_staging::transaction::FileChange],
+        args: &Arguments,
+    ) -> Result<Value> {
+        let mut files = Vec::with_capacity(changes.len());
+        for change in changes {
+            let mut file = json!({"path":crate::project_path(self.original.root_dir(), &change.path),
+                "change":if change.before.is_none() {"added"} else if change.after.is_none() {"deleted"} else {"modified"}});
+            if !args.flag("summary") {
+                if args.get("view").is_none_or(|view| view == "source") {
+                    file["patch"] = json!(crate::diff::unified_hunks(
+                        &String::from_utf8_lossy(change.before.as_deref().unwrap_or_default()),
+                        &String::from_utf8_lossy(change.after.as_deref().unwrap_or_default())
+                    )?);
+                }
+                if args.flag("include-source") {
+                    file["before"] = json!(change
+                        .before
+                        .as_ref()
+                        .map(|bytes| String::from_utf8_lossy(bytes)));
+                    file["after"] = json!(change
+                        .after
+                        .as_ref()
+                        .map(|bytes| String::from_utf8_lossy(bytes)));
+                }
+            }
+            files.push(file);
+        }
+        Ok(json!(files))
     }
     pub fn preview_schema(
         &mut self,
         args: &Arguments,
     ) -> Result<(Value, super::rules::Validation)> {
         // Schema 候选检查只编译声明；数据与业务规则不参与，也不会发布候选文件。
-        let session = Runtime::open_schema_session(self.project()?)?;
+        let session = self.schema_session()?;
         let mut validation = super::rules::check_schema(&session, args);
         self.remap_diagnostics(&mut validation.diagnostics)?;
         Self::refresh_explanation_messages(&mut validation);
         let changes = self.changes()?;
-        let report = json!({"changed":!changes.is_empty(),"written":false,"dry_run":true,"validation":&validation.report,
-            "operations":self.operations,"files":self.file_report(&changes),"written_files":[]});
+        let report = json!({"revision_before":self.snapshot.revision(),"revision_after":self.snapshot.revision(),"changed":!changes.is_empty(),"written":false,"dry_run":true,"validation":&validation.report,
+            "operations":self.operations,"files":self.file_report(&changes, args)?,"written_files":[]});
         Ok((report, validation))
     }
 
@@ -598,12 +888,12 @@ impl Candidate {
         args: &Arguments,
         force_preview: bool,
     ) -> Result<(Value, super::rules::Validation)> {
-        let project = self.project()?;
-        let mut validation = match Runtime::new().open_data_session(project) {
+        let session = self.data_session().map_err(|failure| failure.diagnostics);
+        let mut validation = match session.as_ref() {
             Ok(session) => {
-                let typed = self.validate_typed_references(&session);
+                let typed = self.validate_typed_references(session);
                 if typed.is_empty() {
-                    super::rules::check(&session, args)?
+                    super::rules::check(session, args)?
                 } else {
                     let store = session.queries().diagnostics();
                     let mut diagnostics = store.as_set().clone();
@@ -627,12 +917,13 @@ impl Candidate {
                         explanations: Default::default(),
                     };
                     if args.flag("explain") {
-                        super::rules::explain_diagnostics(&session, &mut validation);
+                        super::rules::explain_diagnostics(session, &mut validation);
                     }
                     validation
                 }
             }
             Err(diagnostics) => {
+                let diagnostics = diagnostics.clone();
                 let failure = Failure::from(diagnostics.clone());
                 if failure.status == Status::Error {
                     return Err(failure);
@@ -650,14 +941,18 @@ impl Candidate {
         Self::refresh_explanation_messages(&mut validation);
         let changes = self.changes()?;
         let dry_run = force_preview || args.flag("dry-run");
-        let mut report = json!({"changed":!changes.is_empty(),"written":false,"dry_run":dry_run,"validation":&validation.report,
-            "operations":self.operations,"files":self.file_report(&changes),"written_files":[]});
-        let after = super::semantic_diff::SemanticSnapshot::capture(&self.project()?, |path| {
-            Ok(crate::project_path(
-                self.original.root_dir(),
-                &self.unshadow(path)?,
-            ))
-        })?;
+        let mut report = json!({"revision_before":self.snapshot.revision(),"revision_after":self.snapshot.revision(),"changed":!changes.is_empty(),"written":false,"dry_run":dry_run,"validation":&validation.report,
+            "operations":self.operations,"files":self.file_report(&changes, args)?,"written_files":[]});
+        let after = super::semantic_diff::SemanticSnapshot::capture_from_schema(
+            &self.schema_session()?,
+            session.as_ref().ok(),
+            |path| {
+                Ok(crate::project_path(
+                    self.original.root_dir(),
+                    &self.unshadow(path)?,
+                ))
+            },
+        )?;
         let difference = super::semantic_diff::compare(&self.baseline, &after);
         let config = crate::project_path(self.original.root_dir(), self.original.config_path());
         report["endpoints"] = json!({"base":{"config":config,"complete":self.baseline.available},"current":{"config":config,"complete":after.available}});
@@ -677,36 +972,9 @@ impl Candidate {
                 )
             })
             .filter_map(|target| Some((target["type"].as_str()?, target["id"].as_str()?)))
-            .collect::<std::collections::BTreeSet<_>>();
+            .collect::<BTreeSet<_>>();
         report["matched_records"] = json!(matched.len());
         report["diff"] = super::semantic_diff::select(difference, args)?;
-        // 源码差异默认只携带补丁，完整文件必须显式请求。
-        for (file, change) in report["files"]
-            .as_array_mut()
-            .into_iter()
-            .flatten()
-            .zip(&changes)
-        {
-            if args.get("view").is_none_or(|view| view == "source") {
-                file["patch"] = json!(crate::diff::unified_hunks(
-                    &String::from_utf8_lossy(change.before.as_deref().unwrap_or_default()),
-                    &String::from_utf8_lossy(change.after.as_deref().unwrap_or_default())
-                )?);
-            }
-            if !args.flag("include-source") {
-                if let Some(file) = file.as_object_mut() {
-                    file.remove("before");
-                    file.remove("after");
-                }
-            }
-            if args.flag("summary") {
-                if let Some(file) = file.as_object_mut() {
-                    file.remove("patch");
-                    file.remove("before");
-                    file.remove("after");
-                }
-            }
-        }
         if validation.passed() && !dry_run && !changes.is_empty() {
             let verify = (|| -> Result<()> {
                 self.snapshot.verify(&self.original)?;
@@ -723,7 +991,16 @@ impl Candidate {
                 }
                 Ok(())
             })();
-            verify.map_err(|failure| failure.with_result(report.clone()))?;
+            verify.map_err(|mut failure| {
+                let mut details = report.clone();
+                if let Some(Value::Object(extra)) = failure.result.take() {
+                    details
+                        .as_object_mut()
+                        .expect("transaction report is an object")
+                        .extend(extra);
+                }
+                failure.with_result(details)
+            })?;
             let written = coflow_staging::transaction::publish(&changes).map_err(|error| {
                 publication_failure(self.original.root_dir(), error, report.clone())
             })?;
@@ -732,6 +1009,7 @@ impl Candidate {
                 .iter()
                 .map(|path| crate::project_path(self.original.root_dir(), path))
                 .collect::<Vec<_>>());
+            report["revision_after"] = json!(capture_published_revision(&self.original, &report)?);
         }
         Ok((report, validation))
     }
@@ -744,6 +1022,27 @@ impl Candidate {
             }
         }
     }
+}
+
+/// 发布已经完成后，读取修订失败不能把成功写入伪装成未执行，调用方必须保留原发布结果。
+pub(crate) fn capture_published_revision(project: &Project, report: &Value) -> Result<String> {
+    let capture = (|| -> Result<String> {
+        let current = Project::open_schema_only(Some(project.config_path()))?;
+        Ok(InputSnapshot::capture(&current)?.revision())
+    })();
+    capture.map_err(|mut failure| {
+        let mut report = report.clone();
+        report["revision"] = Value::Null;
+        if report.get("revision_after").is_some() {
+            report["revision_after"] = Value::Null;
+        }
+        for diagnostic in &mut failure.diagnostics.diagnostics {
+            diagnostic.message.push_str("; publication completed, but the current revision could not be read; inspect written_files before retrying");
+        }
+        failure.status = Status::Error;
+        failure.error_category = Some(super::ErrorCategory::Execution);
+        failure.with_result(report)
+    })
 }
 
 fn read_content(content: &Option<String>, file: &Option<String>, base: &Path) -> Result<Vec<u8>> {
@@ -803,4 +1102,171 @@ pub(crate) fn publication_failure(
         error.message,
     )
     .with_result(report)
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use crate::automation::{FieldPath, InputValue, Operation, RecordTarget, Selector};
+
+    fn fixture(files: usize) -> (tempfile::TempDir, Project, InputSnapshot) {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("data")).unwrap();
+        fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n").unwrap();
+        fs::write(
+            root.path().join("schema.cft"),
+            "table Item { value: int; }\n",
+        )
+        .unwrap();
+        for index in 0..files {
+            fs::write(
+                root.path().join(format!("data/{index}.cfd")),
+                format!("r{index}: Item {{ value: 1 }}\n"),
+            )
+            .unwrap();
+        }
+        let project = Project::open_schema_only(Some(root.path())).unwrap();
+        let snapshot = InputSnapshot::capture(&project).unwrap();
+        (root, project, snapshot)
+    }
+
+    #[test]
+    fn batch_reuses_schema_and_discovers_sources_once() {
+        let (_root, project, snapshot) = fixture(64);
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        let operations = (0..64)
+            .map(|index| Operation::SetField {
+                record: RecordTarget {
+                    actual_type: "Item".into(),
+                    id: format!("r{index}"),
+                },
+                path: vec![FieldPath::Field {
+                    name: "value".into(),
+                }],
+                value: InputValue::Expression { source: "2".into() },
+                expected: None,
+            })
+            .collect::<Vec<_>>();
+        candidate.apply_operations(&operations).unwrap();
+        candidate.finish(&Arguments::default(), true).unwrap();
+        let stats = &candidate.cache.borrow().stats;
+        assert_eq!(stats.schema_compilations, 1);
+        assert_eq!(stats.source_discoveries, 1);
+        // 64 个初始文件各解析一次，之后只重新解析被修改的 64 个文件。
+        assert_eq!(stats.cfd_parses, 128);
+    }
+
+    #[test]
+    fn repeated_set_where_uses_current_candidate_and_shared_schema() {
+        let (_root, project, snapshot) = fixture(3);
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        let operation = |source: &str, filter: &str| Operation::SetWhere {
+            selector: Selector {
+                filter: Some(filter.into()),
+                ..Default::default()
+            },
+            path: vec![FieldPath::Field {
+                name: "value".into(),
+            }],
+            value: InputValue::Expression {
+                source: source.into(),
+            },
+            expected_count: 3,
+        };
+        candidate
+            .apply_operations(&[operation("2", "value == 1"), operation("3", "value == 2")])
+            .unwrap();
+        let session = candidate.data_session().unwrap();
+        assert!(session
+            .model()
+            .records()
+            .all(|(_, record)| record.field("value") == Some(&crate::CfdValue::Int(3))));
+        let stats = &candidate.cache.borrow().stats;
+        assert_eq!(stats.schema_compilations, 1);
+        assert_eq!(stats.source_discoveries, 1);
+        assert_eq!(stats.cfd_parses, 9);
+    }
+
+    #[test]
+    fn source_edits_invalidate_cached_schema_and_records() {
+        let (root, project, snapshot) = fixture(1);
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        candidate.schema_session().unwrap();
+        candidate.data_sources().unwrap();
+        candidate
+            .apply_files(
+                &[
+                    FileOperation::Write {
+                        file: "schema.cft".into(),
+                        content: Some("table Item { value: string; }".into()),
+                        content_file: None,
+                        expected_fingerprint: None,
+                    },
+                    FileOperation::Write {
+                        file: "data/0.cfd".into(),
+                        content: Some("renamed: Item { value: \"new\" }".into()),
+                        content_file: None,
+                        expected_fingerprint: None,
+                    },
+                ],
+                root.path(),
+            )
+            .unwrap();
+        candidate
+            .apply_operations(&[Operation::SetField {
+                record: RecordTarget {
+                    actual_type: "Item".into(),
+                    id: "renamed".into(),
+                },
+                path: vec![FieldPath::Field {
+                    name: "value".into(),
+                }],
+                value: InputValue::Expression {
+                    source: "\"after\"".into(),
+                },
+                expected: None,
+            }])
+            .unwrap();
+        let session = candidate.data_session().unwrap();
+        assert_eq!(
+            session.model().records().next().unwrap().1.field("value"),
+            Some(&crate::CfdValue::String("after".into()))
+        );
+        assert_eq!(candidate.cache.borrow().stats.schema_compilations, 2);
+    }
+
+    #[test]
+    fn revision_read_failure_preserves_completed_publication() {
+        let (root, project, snapshot) = fixture(1);
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        candidate
+            .apply_operations(&[Operation::SetField {
+                record: RecordTarget {
+                    actual_type: "Item".into(),
+                    id: "r0".into(),
+                },
+                path: vec![FieldPath::Field {
+                    name: "value".into(),
+                }],
+                value: InputValue::Expression { source: "2".into() },
+                expected: None,
+            }])
+            .unwrap();
+        let (report, _) = candidate.finish(&Arguments::default(), false).unwrap();
+        assert_eq!(report["written"], true);
+        // 真实发布后删除配置，稳定复现后续修订读取失败，不依赖线程竞态。
+        fs::remove_file(root.path().join("coflow.yaml")).unwrap();
+        let failure = capture_published_revision(&project, &report).unwrap_err();
+        let failure = candidate.failure_result(failure, &Arguments::default());
+        let failed = failure.result.unwrap();
+        assert_eq!(failure.status, Status::Error);
+        assert_eq!(failed["written"], true);
+        assert_eq!(failed["written_files"], report["written_files"]);
+        assert_eq!(failed["validation"], report["validation"]);
+        assert_eq!(failed["revision"], Value::Null);
+        assert_eq!(failed["revision_after"], Value::Null);
+        assert!(fs::read_to_string(root.path().join("data/0.cfd"))
+            .unwrap()
+            .contains("value: 2"));
+    }
 }

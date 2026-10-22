@@ -135,7 +135,7 @@ impl<'a> CfdModelBuilder<'a> {
             self.structural_limits,
         )
         .build()?;
-        output.model.dimension_variants = self.dimension_variants;
+        output.model.dimension_variants = self.dimension_variants.into();
         Ok(output)
     }
 }
@@ -237,11 +237,11 @@ impl<'a> ModelCompiler<'a> {
         let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_id, self.schema);
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
-                tables: indexes.tables,
-                record_by_domain_id: indexes.record_by_domain_id,
-                records,
-                refs: ref_indexes,
-                dimension_variants: BTreeMap::new(),
+                tables: indexes.tables.into(),
+                record_by_domain_id: indexes.record_by_domain_id.into(),
+                records: records.into(),
+                refs: ref_indexes.into(),
+                dimension_variants: BTreeMap::new().into(),
                 projection: None,
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),

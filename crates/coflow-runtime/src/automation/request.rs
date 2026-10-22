@@ -32,10 +32,14 @@ impl Arguments {
             .collect()
     }
     pub fn selector(&self) -> Result<Selector> {
-        // 查询身份包含命令专属条件，但不包含分页位置或每页数量，也不绑定文件快照。
+        // 查询身份包含命令专属条件，但不包含分页位置或每页数量，修订独立绑定快照。
         let mut identity = self.0.clone();
         identity.remove("cursor");
         identity.remove("limit");
+        identity.remove("_revision");
+        for presentation in ["json", "pretty", "details"] {
+            identity.remove(presentation);
+        }
         let mut dimensions = BTreeMap::new();
         for value in self.all("dimension") {
             if let Some((name, variant)) = value.split_once('=') {
@@ -59,6 +63,7 @@ impl Arguments {
             text: self.get("text").map(str::to_string),
             view: self.get("view").unwrap_or("effective").into(),
             filter: self.get("where").map(str::to_string),
+            revision: self.get("_revision").map(str::to_string),
             query_identity: Some(super::snapshot::fingerprint(&serde_json::to_vec(
                 &identity,
             )?)),

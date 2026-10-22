@@ -11,6 +11,7 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
 - C# 通过 `Coflow.Loader` 将调用方提供的 CFD 直接加载为生成类型。
 - CFT/CFD 的 LSP 和编辑器诊断、补全、跳转与语义高亮。
+- 面向 AI 的精简 JSON、自描述命令、上下文查询、带修订条件的批量修改与诊断修复建议。
 
 ## 安装
 
@@ -38,6 +39,16 @@ codegen:
 ```
 
 `data` 只能是 CFD 文件或包含 `.cfd` 文件的目录。C# 目标可设置 `namespace`。
+
+## AI 与自动化
+
+```powershell
+coflow describe --json
+coflow context --type Item --project <project> --json
+coflow apply --input changes.json --project <project> --rules --if-revision <revision> --json
+```
+
+读取结果的 `revision` 可用于保护后续修改。`apply --rules` 在发布前完成结构、数据与业务校验；需要审阅时加 `--dry-run`。默认 JSON 保留计数与失败信息，完整请求结构用 `describe apply --schema input` 查询，执行明细按需加 `--details`。用 `coflow skill install -g` 安装配套 skills，详见 [AI 使用指南](https://puring103.github.io/coflow/docs/guide/ai-agent)。
 
 ## C# 数据加载
 

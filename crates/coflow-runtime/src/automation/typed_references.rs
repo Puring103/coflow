@@ -19,19 +19,13 @@ fn same_owner(schema: &CftSchema, left: &RecordTarget, right: &RecordTarget) -> 
 
 impl Candidate {
     pub(crate) fn capture_typed_references(&mut self) -> Result<()> {
-        let project = self.project()?;
-        let session = crate::Runtime::open_schema_session(project.clone())?;
+        let session = self.schema_session()?;
         let Some(schema) = session.schema() else {
             return Ok(());
         };
-        for file in super::InputSnapshot::capture(&project)?
-            .files
-            .into_iter()
-            .filter(|file| file.kind == "data")
-        {
-            let text = String::from_utf8(file.contents)
-                .map_err(|error| super::Failure::request(error.to_string()))?;
-            let ast = coflow_language::cfd::parse_cfd(&text).0;
+        for file in self.data_sources()? {
+            let text = &file.text;
+            let ast = &file.ast;
             for (record, dimension) in ast.records.iter().map(|record| (record, None)).chain(
                 ast.dimensions.iter().flat_map(|block| {
                     block.records.iter().map(move |record| {

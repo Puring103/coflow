@@ -118,6 +118,50 @@ public sealed class LoadingTests
         Assert.Equal("A", a.Name);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static (LoadResult<Data> Result, List<WeakReference<Item>> Instances) LoadTrackedVariants()
+    {
+        var instances = new List<WeakReference<Item>>();
+        var type = new CfdType<Item>("Item", CfdTypeKind.Table, new CfdField[] {
+            new CfdField<string>("name", CfdValues.Dimension("language", CfdValues.String)),
+            new CfdField<Option<Item>>("next", CfdValues.Optional(CfdValues.Reference<Item>("Item"))),
+        }, id => {
+            var item = new Item(id);
+            instances.Add(new WeakReference<Item>(item));
+            return item;
+        }, (item, reader) => {
+            item.Name = reader.Get<string>("name");
+            item.Next = reader.Get<Option<Item>>("next");
+        }, construct: null);
+        var result = CfdLoader.Load(new[] { new CfdSource("items.cfd",
+            "a: Item { name: \"A\", next: &Item::b } b: Item { name: \"B\", next: &Item::a } " +
+            "language[ja] { a: Item { name: \"甲\" } b: Item { name: \"乙\" } } " +
+            "language[fr] { a: Item { name: \"Un\" } }") }, new CfdType[] { type }, data => new Data(data));
+        return (result, instances);
+    }
+
+    [Fact]
+    public void ValidationOnlyViewsAreCollectibleAndRequestedViewsKeepReferenceIdentity()
+    {
+        var (result, instances) = LoadTrackedVariants();
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics));
+        Assert.Equal(6, instances.Count);
+        // 使用弱引用验证释放行为，不读取私有缓存，也不依赖具体分配字节数。
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        Assert.Equal(2, instances.FindAll(reference => reference.TryGetTarget(out _)).Count);
+
+        var a = result.Data.Items["a"];
+        var ja = a.For("language", "ja");
+        Assert.Equal("甲", ja.Name);
+        Assert.Equal("乙", ja.Next.Value.Name);
+        Assert.Same(ja, ja.Next.Value.Next.Value);
+        Assert.Same(ja, a.For("language", "ja"));
+        Assert.Equal(8, instances.Count);
+        GC.KeepAlive(result);
+    }
+
     [Fact]
     public void ExplicitVariantPresenceIsIndependentOfValueAndFallback()
     {

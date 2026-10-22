@@ -38,6 +38,14 @@ impl CfdDataModel {
             },
         );
         selections.extend(dimensions.clone());
+        // 相同选择共享已有不可变结果，不重复解析模板与重建引用索引。
+        if self
+            .projection
+            .as_ref()
+            .is_some_and(|view| view.selections == selections)
+        {
+            return Ok(self.clone());
+        }
         let mut builder = CfdModelBuilder::new(schema);
         for (_, record) in source.records() {
             let fields = record
@@ -63,7 +71,7 @@ impl CfdDataModel {
         }
         let mut projected = builder.build()?;
         // 始终重新求值所选来源表达式，同时保留原始单维查询及显式覆盖元数据。
-        for record in &mut projected.records {
+        for record in Arc::make_mut(&mut projected.records) {
             if let Some(original) = source
                 .record_by_type_id(record.actual_type(), record.id())
                 .and_then(|id| source.record(id))

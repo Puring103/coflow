@@ -6,4 +6,4 @@
 4. 需要生成代码时运行 `coflow build`，在全部检查通过后发布产物。
 5. 将 CFT、CFD、项目配置与稳定枚举映射纳入版本管理；生成代码是否提交由应用项目的构建流程决定。
 
-应用项目的 CI 可以直接运行 `coflow build --project <项目目录>`。只验证数据时使用 `coflow check --rules`，只核对生成文件是否最新时使用 `coflow codegen --check`。修改前先查看差异，批量操作使用 `--dry-run` 预览。
+应用项目的 CI 可以直接运行 `coflow build --project <项目目录>`。只验证数据时使用 `coflow check --rules`，只核对生成文件是否最新时使用 `coflow codegen --check`。AI 批量修改推荐 `apply --rules --if-revision <revision> --json`，需要审阅时加 `--dry-run`；成功结果已包含所选校验。

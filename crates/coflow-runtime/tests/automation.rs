@@ -1183,7 +1183,7 @@ fn operations_support_forward_cycles_transfer_and_sequential_arrays() {
     assert_eq!(record.result["fields"]["numbers"]["items"][0]["value"], "2");
 }
 #[test]
-fn cursor_reads_current_data_and_default_check_skips_business_rules() {
+fn cursor_rejects_changed_data_and_default_check_skips_business_rules() {
     let root = fixture();
     let first = run(root.path(), "data.list", &[("limit", "1")], None);
     let cursor = first.result["next_cursor"].as_str().unwrap().to_string();
@@ -1201,13 +1201,9 @@ fn cursor_reads_current_data_and_default_check_skips_business_rules() {
         ]
         .into(),
     );
-    let page = execute("data.list", &project, &snapshot, &args, None, root.path()).unwrap();
-    assert_eq!(page.status, Status::Success);
-    assert_eq!(page.result["items"][0]["id"], "b");
-    assert!(serde_json::to_value(&page)
-        .unwrap()
-        .get("snapshot")
-        .is_none());
+    let failure = execute("data.list", &project, &snapshot, &args, None, root.path()).unwrap_err();
+    assert_eq!(failure.status, Status::Conflict);
+    assert_eq!(failure.result.as_ref().unwrap()["precondition"]["kind"], "cursor_revision");
     assert_eq!(run(root.path(), "check", &[], None).status, Status::Success);
     assert_eq!(
         run(root.path(), "check", &[("rules", "true")], None).status,

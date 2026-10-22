@@ -28,6 +28,8 @@ pub struct ValidationReport {
     pub scope: Option<RuleScope>,
     pub tasks: Option<Vec<RuleExecution>>,
     pub results: Option<Vec<RuleExecution>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_counts: Option<std::collections::BTreeMap<String, usize>>,
     pub requested_tasks: Option<usize>,
     pub executed_tasks: Option<usize>,
     pub rejected_tasks: Option<usize>,
@@ -84,6 +86,33 @@ pub struct ValuePrecondition {
     pub actual: Option<ModelValue>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IdentityPrecondition {
+    Revision { expected: String, actual: String },
+    CursorRevision { expected: String, actual: String },
+    Fingerprint { expected: String, actual: String },
+    Count { expected: usize, actual: usize },
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Precondition {
+    Value(ValuePrecondition),
+    Identity(IdentityPrecondition),
+}
+/// 请求尚未形成候选事务时返回的定位与前置条件，不要求伪造一份事务结果。
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FailureContext {
+    pub written: Option<bool>,
+    pub revision: Option<String>,
+    pub precondition: Option<Precondition>,
+    pub request_path: Option<String>,
+    pub operation_index: Option<usize>,
+    pub target: Option<Value>,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct DiffSelection {
     pub semantic_available: bool,
     pub schema_available: bool,
@@ -103,6 +132,12 @@ pub struct TransactionReport {
     pub dry_run: bool,
     pub validation: ValidationReport,
     pub operations: Vec<OperationOutcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_counts: Option<std::collections::BTreeMap<String, usize>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_after: Option<String>,
     pub files: Option<Vec<SourceDifference>>,
     pub written_files: Vec<String>,
     pub matched_records: Option<usize>,
@@ -115,7 +150,15 @@ pub struct TransactionReport {
     pub restored_files: Option<Vec<String>>,
     pub restoration_failed: Option<Vec<RestorationFailure>>,
     pub failed_operation: Option<usize>,
-    pub precondition: Option<ValuePrecondition>,
+    pub precondition: Option<Precondition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MissingInput {
@@ -173,6 +216,8 @@ pub struct FormatReport {
     pub written_files: Option<Vec<String>>,
     pub restored_files: Option<Vec<String>>,
     pub restoration_failed: Option<Vec<RestorationFailure>>,
+    pub revision: Option<String>,
+    pub precondition: Option<Precondition>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactDifference {
@@ -194,4 +239,10 @@ pub struct ArtifactReport {
 pub struct CodegenResult {
     pub validation: Option<ValidationReport>,
     pub artifacts: Option<ArtifactReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precondition: Option<Precondition>,
 }

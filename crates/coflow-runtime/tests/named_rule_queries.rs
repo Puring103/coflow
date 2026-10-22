@@ -77,7 +77,7 @@ table Item {
             "{refs:?}"
         );
     }
-    let inspect = run(root.path(), "rule.inspect", &[("rule", "Item::Bounds")]);
+    let inspect = run(root.path(), "rule.inspect", &[("rule", "Item::Bounds"), ("details", "true")]);
     assert_eq!(inspect.result, list.result);
     let symbols = run(root.path(), "schema.symbols", &[("kind", "rule")]);
     assert_eq!(symbols.result["items"].as_array().unwrap().len(), 1);
@@ -99,7 +99,7 @@ table Item {
         .collect();
     assert_eq!(locations.len(), 4);
 
-    let checked = run(root.path(), "check", &[("rule", "Item::Bounds")]);
+    let checked = run(root.path(), "check", &[("rule", "Item::Bounds"), ("details", "true")]);
     assert_eq!(checked.status, Status::Success, "{checked:?}");
     assert_eq!(
         checked.result["tasks"].as_array().unwrap().len(),
@@ -126,7 +126,7 @@ table Item { @dimension("mode") rewards: [Reward]; }
     let checked = run(
         root.path(),
         "check",
-        &[("rules", "true"), ("explain", "true")],
+        &[("rules", "true"), ("explain", "true"), ("details", "true")],
     );
     assert_eq!(checked.status, Status::Invalid, "{checked:?}");
     let results = checked.result["results"].as_array().unwrap();

@@ -216,7 +216,19 @@ internal sealed class LoadContext
         // 每个已声明变体都在加载时验证；读取视图不会把无效覆盖隐藏到业务访问之后。
         foreach (var dimension in Variants)
             foreach (var variant in dimension.Value)
-                foreach (var record in Records) Select(record, DimensionSelection.Empty.With(dimension.Key, variant));
+            {
+                var selection = DimensionSelection.Empty.With(dimension.Key, variant);
+                try
+                {
+                    foreach (var record in Records) Select(record, selection);
+                }
+                finally
+                {
+                    // 校验用对象尚未交付业务方，及时释放，避免常驻内存随记录数乘变体数增长。
+                    // 首次 For 再按需建立可复用视图；业务已取得的视图身份不会被逐出。
+                    _views.Remove(selection.Key);
+                }
+            }
     }
     internal T ReadReference<T>(string expected, CfdValueNode node, CfdReader owner) where T : class
     {

@@ -34,6 +34,8 @@ pub(crate) struct CheckDiagnosticStore {
     by_task: BTreeMap<StableCheckTask, Vec<StoredCheckDiagnostic>>,
     request_diagnostics: Vec<CheckDiagnostic>,
     variants: BTreeMap<String, Vec<String>>,
+    model: Option<CfdDataModel>,
+    incomplete: bool,
 }
 
 impl CheckDiagnosticStore {
@@ -43,20 +45,17 @@ impl CheckDiagnosticStore {
         model: &CfdDataModel,
         output: CheckOutput,
     ) {
-        // 内联拥有树每次完整重算时先清除旧任务，删除/移动后的路径不能留下诊断。
-        if schema
-            .all_types()
-            .any(|ty| ty.kind == coflow_language::cft::CftTypeKind::Data && !ty.checks.is_empty())
-        {
-            self.by_task.clear();
-        }
+        self.model = Some(model.clone());
+        self.incomplete = output.diagnostics().any(|diagnostic| {
+            diagnostic.diagnostic.code == coflow_model::CfdErrorCode::CheckBudgetExceeded
+        });
         self.variants = variant_catalog(schema, model);
         self.request_diagnostics = output.request_diagnostics;
         for result in output.results {
             let Some(task) = stable_task(model, &result.task) else {
                 continue;
             };
-            let diagnostics = result
+            let diagnostics: Vec<_> = result
                 .diagnostics
                 .into_iter()
                 .map(|diagnostic| StoredCheckDiagnostic {
@@ -64,8 +63,53 @@ impl CheckDiagnosticStore {
                     diagnostic,
                 })
                 .collect();
-            self.by_task.insert(task, diagnostics);
+            // 通过的任务无需保留空槽；诊断快照的复制成本与错误数量相关。
+            if diagnostics.is_empty() {
+                self.by_task.remove(&task);
+            } else {
+                self.by_task.insert(task, diagnostics);
+            }
         }
+    }
+
+    pub(super) const fn is_incomplete(&self) -> bool {
+        self.incomplete
+    }
+
+    pub(super) fn effective_impact(
+        &self,
+        schema: &CftSchema,
+        model: &CfdDataModel,
+        impact: &super::impact::CheckImpact,
+    ) -> super::impact::CheckImpact {
+        self.model.as_ref().map_or_else(
+            || impact.clone(),
+            |previous| impact.with_model_changes(schema, previous, model),
+        )
+    }
+
+    pub(super) fn remove_changed_data(&mut self, impact: &super::impact::CheckImpact) {
+        self.by_task.retain(|task, _| {
+            let StableCheckTarget::Data {
+                record,
+                path,
+                dimension,
+            } = &task.target
+            else {
+                return true;
+            };
+            let Some(changes) = impact.records.get(record) else {
+                return true;
+            };
+            let (field, variant) = if let Some((field, variant)) = dimension {
+                (field.as_str(), Some(variant.as_str()))
+            } else if let Some(coflow_model::CfdPathSegment::Field(field)) = path.segments.first() {
+                (field.as_str(), None)
+            } else {
+                return true;
+            };
+            !changes.affects_owned_field(field, variant)
+        });
     }
 
     // 新增或删除变体会改变所有字段的 variants()，必须重新检查整个数据集合。
