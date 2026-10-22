@@ -73,18 +73,30 @@ pub(crate) struct SemanticSnapshot {
 
 impl SemanticSnapshot {
     pub fn capture(project: &Project, path: impl Fn(&Path) -> Result<String>) -> Result<Self> {
-        let mut snapshot = Self::default();
         let schema_session = match Runtime::open_schema_session(project.clone()) {
             Ok(session) => session,
             Err(diagnostics) => {
-                snapshot.diagnostics = diagnostics;
-                return Ok(snapshot);
+                return Ok(Self {
+                    diagnostics,
+                    ..Default::default()
+                })
             }
         };
+        Self::capture_from_schema(&schema_session, None, path)
+    }
+
+    /// 候选事务共享声明与最终校验的数据会话，差异计算不重复编译或加载同一后态。
+    pub(crate) fn capture_from_schema(
+        schema_session: &crate::ProjectSchemaSession,
+        loaded: Option<&ReadOnlyProjectSession>,
+        path: impl Fn(&Path) -> Result<String>,
+    ) -> Result<Self> {
+        let project = &schema_session.project;
+        let mut snapshot = Self::default();
         snapshot.diagnostics = schema_session.diagnostics().as_set().clone();
         if schema_session.schema().is_some() {
             snapshot.schema_available = true;
-            let report = super::json(crate::inspect_schema(&schema_session, None, false))?;
+            let report = super::json(crate::inspect_schema(schema_session, None, false))?;
             for section in ["types", "enums", "consts", "dimensions"] {
                 for item in report[section].as_array().into_iter().flatten() {
                     if let Some(name) = item["name"].as_str() {
@@ -105,17 +117,24 @@ impl SemanticSnapshot {
                 }
             }
         }
-        let session = match Runtime::new().open_data_session(project.clone()) {
-            Ok(session) if !session.queries().has_diagnostics() => session,
-            Ok(session) => {
-                snapshot.diagnostics = session.queries().diagnostics().as_set().clone();
-                return Ok(snapshot);
-            }
-            Err(diagnostics) => {
-                snapshot.diagnostics = diagnostics;
-                return Ok(snapshot);
-            }
+        let built;
+        let session = if let Some(loaded) = loaded {
+            loaded
+        } else {
+            built =
+                match crate::session_build::open_data_session_from_schema(schema_session.clone()) {
+                    Ok(session) => ReadOnlyProjectSession { session },
+                    Err(diagnostics) => {
+                        snapshot.diagnostics = diagnostics;
+                        return Ok(snapshot);
+                    }
+                };
+            &built
         };
+        if session.queries().has_diagnostics() {
+            snapshot.diagnostics = session.queries().diagnostics().as_set().clone();
+            return Ok(snapshot);
+        }
         snapshot.available = true;
         let mut sources = super::query::RecordSources::default();
         let selector = Selector {
@@ -133,7 +152,7 @@ impl SemanticSnapshot {
                 .insert((record.actual_type().into(), record.id().into()), file);
             snapshot.capture_record(
                 project,
-                &session,
+                session,
                 record,
                 &selector,
                 None,
@@ -150,7 +169,7 @@ impl SemanticSnapshot {
                     ..Default::default()
                 };
                 let projected =
-                    match super::query::project_dimensions(&session, &selector.dimensions) {
+                    match super::query::project_dimensions(session, &selector.dimensions) {
                         Ok(projected) => projected,
                         Err(failure) => {
                             snapshot.available = false;
@@ -161,7 +180,7 @@ impl SemanticSnapshot {
                 for (_, record) in projected.records() {
                     snapshot.capture_record(
                         project,
-                        &session,
+                        session,
                         record,
                         &selector,
                         Some(&dimension.name),

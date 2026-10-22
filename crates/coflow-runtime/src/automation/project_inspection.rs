@@ -30,7 +30,7 @@ pub struct ProjectConfiguration {
     pub schema: SchemaInputs,
     pub data: Vec<String>,
     pub codegen: Vec<CodegenTarget>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub dimensions: BTreeMap<String, ProjectDimension>,
 }
 

@@ -2,6 +2,8 @@ pub(crate) mod impact;
 pub(crate) mod planning;
 pub(crate) mod render;
 mod store;
+#[cfg(test)]
+mod incremental_tests;
 
 use std::collections::BTreeMap;
 
@@ -65,15 +67,19 @@ pub(crate) fn run_incremental_project_checks(
     previous: &CheckDiagnosticStore,
     impact: &CheckImpact,
 ) -> ProjectCheckOutput {
-    if previous.variant_catalog_changed(schema, model) {
+    // 预算中断后不把未完成的上一代当作可复用检查结果。
+    if previous.is_incomplete() || previous.variant_catalog_changed(schema, model) {
         return run_full_project_checks(schema, model, origins);
     }
     let limits = CheckLimits {
         evaluation: crate::limits::RuntimeLimits::default().evaluation,
         ..CheckLimits::default()
     };
+    let impact = previous.effective_impact(schema, model, impact);
+    let plan = plan_incremental_checks_with_limit(schema, model, &impact, limits.max_tasks);
+    let planned = plan.is_ok();
     let output = execute_plan(
-        plan_incremental_checks_with_limit(schema, model, impact, limits.max_tasks),
+        plan,
         schema,
         model,
         limits,
@@ -81,6 +87,10 @@ pub(crate) fn run_incremental_project_checks(
     let statistics = output.statistics;
     let mut state = previous.clone();
     state.remove_missing_records(model);
+    // 规划失败保留既有诊断；成功规划后，清理拥有字段下已消失或移动的内联路径。
+    if planned {
+        state.remove_changed_data(&impact);
+    }
     state.replace_results(schema, model, output);
     render_check_store(schema, model, origins, state, statistics)
 }
@@ -421,16 +431,7 @@ mod tests {
         previous: &CheckDiagnosticStore,
         impact: &CheckImpact,
     ) -> CheckDiagnosticStore {
-        let output = execute_checks(
-            schema,
-            model,
-            plan_incremental_checks(schema, model, impact),
-            CheckLimits::default(),
-        );
-        let mut state = previous.clone();
-        state.remove_missing_records(model);
-        state.replace_results(schema, model, output);
-        state
+        run_incremental_project_checks(schema, model, &[], previous, impact).state
     }
 
     #[test]

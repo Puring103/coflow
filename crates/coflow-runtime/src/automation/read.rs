@@ -98,9 +98,13 @@ pub fn read_command(
     scoped_args
         .0
         .insert("_command".into(), vec![command.into()]);
+    scoped_args
+        .0
+        .insert("_revision".into(), vec![snapshot.revision()]);
     let args = &scoped_args;
     let mut response = Response::new(command);
     response.project = Some(crate::path_to_slash(project.root_dir()));
+    response.revision = Some(snapshot.revision());
     match command {
         "project.inspect" => {
             response
@@ -306,6 +310,8 @@ pub fn read_command(
             Status::Partial
         };
     }
+    // 返回的修订必须与实际读取的数据一致，查询过程中输入变化时要求重新读取。
+    snapshot.verify(project)?;
     Ok(response)
 }
 

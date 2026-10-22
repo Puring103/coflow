@@ -36,6 +36,13 @@ pub(crate) fn open_data_session(project: Project) -> Result<ProjectSession, Diag
     finish_project_session(open_schema_session(project)?, &[], false).map(|output| output.session)
 }
 
+/// 自动化事务复用已编译的声明；业务规则由最终验证阶段按请求执行。
+pub(crate) fn open_data_session_from_schema(
+    schema_session: ProjectSchemaSession,
+) -> Result<ProjectSession, DiagnosticSet> {
+    finish_project_session(schema_session, &[], false).map(|output| output.session)
+}
+
 pub(crate) fn open_project_session_with_source_overrides(
     project: Project,
     source_overrides: &[DataSourceTextOverride],

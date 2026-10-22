@@ -16,6 +16,8 @@ pub fn execute(
 ) -> Result<Response> {
     let mut response = Response::new(command);
     response.project = Some(crate::path_to_slash(project.root_dir()));
+    response.revision = Some(snapshot.revision());
+    snapshot.require_revision(args.get("if-revision"))?;
     match command {
         "check" if input.is_none() => {
             let session = Runtime::new().open_data_session(project.clone())?;
@@ -57,12 +59,32 @@ pub fn execute(
                 }
             }
             let preview = args.flag("check") || args.flag("dry-run");
+            // 文件格式化与候选修改使用相同的精简补丁，完整源码由 source.read 按需获取。
+            let files = changes
+                .iter()
+                .map(|change| {
+                    Ok(
+                        json!({"path":crate::project_path(project.root_dir(), &change.path),
+                    "change":"modified", "patch":crate::diff::unified_hunks(
+                        &String::from_utf8_lossy(change.before.as_deref().unwrap_or_default()),
+                        &String::from_utf8_lossy(change.after.as_deref().unwrap_or_default())
+                    )?}),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?;
             response.result = json!({"changed":!changes.is_empty(),"written":false,"dry_run":args.flag("dry-run"),"check":args.flag("check"),"written_files":[],
-                "files":changes.iter().map(|c|json!({"path":crate::project_path(project.root_dir(),&c.path),"before":c.before.as_ref().map(|b|String::from_utf8_lossy(b)),"after":c.after.as_ref().map(|b|String::from_utf8_lossy(b))})).collect::<Vec<_>>()});
+                "files":files});
             if !preview && !changes.is_empty() {
-                snapshot
-                    .verify(project)
-                    .map_err(|failure| failure.with_result(response.result.clone()))?;
+                snapshot.verify(project).map_err(|mut failure| {
+                    let mut report = response.result.clone();
+                    if let Some(Value::Object(details)) = failure.result.take() {
+                        report
+                            .as_object_mut()
+                            .expect("format report is an object")
+                            .extend(details);
+                    }
+                    failure.with_result(report)
+                })?;
                 let written = coflow_staging::transaction::publish(&changes).map_err(|error| {
                     super::transaction::publication_failure(
                         project.root_dir(),
@@ -89,12 +111,14 @@ pub fn execute(
                 let passed = validation.passed();
                 response.result = json!({"validation":response.set_validation(validation)});
                 if !passed {
+                    snapshot.verify(project)?;
                     return Ok(response);
                 }
             }
-            let outcome = crate::commands::codegen_automation(
+            let outcome = crate::commands::codegen_automation_with_snapshot(
                 project,
                 args.flag("check") || args.flag("dry-run"),
+                snapshot,
             )
             .map_err(|mut failure| {
                 if let Some(validation) = response.result.get("validation") {
@@ -127,7 +151,19 @@ pub fn execute(
             }
         }
         "apply" | "check" | "diff" | "schema.check" if input.is_some() => {
-            let request: ChangeSet = serde_json::from_str(input.unwrap_or_default())?;
+            let request = parse_change_set(input.unwrap_or_default())?;
+            let if_revision = match &request {
+                ChangeSet::Files { if_revision, .. }
+                | ChangeSet::Operations { if_revision, .. } => if_revision.as_deref(),
+            };
+            if let (Some(argument), Some(request)) = (args.get("if-revision"), if_revision) {
+                if argument != request {
+                    return Err(Failure::request(
+                        "--if-revision and change set if_revision must match",
+                    ));
+                }
+            }
+            snapshot.require_revision(if_revision)?;
             let version = match &request {
                 ChangeSet::Files {
                     protocol_version, ..
@@ -241,7 +277,11 @@ pub fn execute(
                         record,
                         path: path()?,
                         value: value()?,
-                        expected: None,
+                        expected: args
+                            .get("expected-cfd")
+                            .map(|source| InputValue::Expression {
+                                source: source.into(),
+                            }),
                     },
                     "data.unset" => Operation::UnsetField {
                         record,
@@ -288,8 +328,52 @@ pub fn execute(
         }
         _ => return super::read_command(command, project, snapshot, args),
     }
+    if response.result["written"] == true || response.result["artifacts"]["written"] == true {
+        // 事务已经捕获发布后的修订，直接复用；格式化和代码生成也必须保留已发布事实。
+        response.revision = Some(match response.result["revision_after"].as_str() {
+            Some(revision) => revision.to_owned(),
+            None => super::transaction::capture_published_revision(project, &response.result)?,
+        });
+    } else {
+        snapshot.verify(project)?;
+    }
     Ok(response)
 }
+/// 先定位每项请求的错误，再解析完整信封，避免批量请求只返回无位置的 serde 报错。
+fn parse_change_set(source: &str) -> Result<ChangeSet> {
+    let value: Value = serde_json::from_str(source).map_err(|error| {
+        Failure::request(error.to_string()).with_result(json!({"written":false,
+            "request_path":"$", "line":error.line(), "column":error.column()}))
+    })?;
+    let operations = match value.get("kind").and_then(Value::as_str) {
+        Some("operations") => Some(("ops", true)),
+        Some("files") => Some(("changes", false)),
+        _ => None,
+    };
+    if let Some((field, data)) = operations {
+        if let Some(items) = value.get(field).and_then(Value::as_array) {
+            for (index, item) in items.iter().enumerate() {
+                let parsed = if data {
+                    serde_json::from_value::<Operation>(item.clone()).map(|_| ())
+                } else {
+                    serde_json::from_value::<FileOperation>(item.clone()).map(|_| ())
+                };
+                if let Err(error) = parsed {
+                    let path = format!("{field}[{index}]");
+                    return Err(Failure::request(format!("{path}: {error}")).with_result(
+                        json!({"written":false, "request_path":path, "operation_index":index,
+                            "target":item.get("record").or_else(|| item.get("file"))}),
+                    ));
+                }
+            }
+        }
+    }
+    serde_json::from_str(source).map_err(|error| {
+        Failure::request(error.to_string()).with_result(json!({"written":false,
+            "request_path":"$", "line":error.line(), "column":error.column()}))
+    })
+}
+
 fn is_write(command: &str) -> bool {
     [
         "source.write",

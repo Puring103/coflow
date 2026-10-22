@@ -14,7 +14,7 @@ mod skill_commands;
 
 fn main() -> ExitCode {
     let raw: Vec<_> = std::env::args_os().collect();
-    let (invoked, json_output) = cli::invocation(&raw);
+    let (invoked, json_output, pretty) = cli::invocation(&raw);
     let matches = match cli::command().try_get_matches_from(&raw) {
         Ok(matches) => matches,
         Err(error) => {
@@ -25,9 +25,11 @@ fn main() -> ExitCode {
                 let _ = error.print();
                 return ExitCode::SUCCESS;
             }
+            let (message, help) = cli::argument_error(&error, &invoked);
             let mut response = Response::new(invoked);
-            response.fail(Failure::request(error.to_string()));
-            return output(response, json_output);
+            response.fail(Failure::request(message));
+            response.set_diagnostic_help(0, help);
+            return output(response, json_output, pretty, false);
         }
     };
     let (command, args) = cli::decode(&matches);
@@ -64,13 +66,18 @@ fn main() -> ExitCode {
             };
         }
     }
-    output(response, json_output)
+    output(response, json_output, pretty, args.flag("details"))
 }
-fn output(response: Response, json_output: bool) -> ExitCode {
+fn output(mut response: Response, json_output: bool, pretty: bool, details: bool) -> ExitCode {
+    response.prepare_output(details);
     let code = response.exit_code();
     // 先准备完整输出，stdout 只写入结果，错误不会混入 JSON。
     let content = if json_output {
-        match serde_json::to_string_pretty(&response) {
+        match if pretty {
+            serde_json::to_string_pretty(&response)
+        } else {
+            serde_json::to_string(&response)
+        } {
             Ok(text) => text + "\n",
             Err(error) => {
                 eprintln!("output error: {error}");
@@ -92,8 +99,19 @@ fn output(response: Response, json_output: bool) -> ExitCode {
                 }
             }
         }
-        for diagnostic in &response.diagnostics {
-            let _ = writeln!(text, "[{}] {}", diagnostic.code, diagnostic.message);
+        // 文本输出与 JSON 共享公开诊断 DTO 和截断契约，避免丢失逻辑位置。
+        if let Ok(serialized) = serde_json::to_value(&response) {
+            for diagnostic in serialized["diagnostics"].as_array().into_iter().flatten() {
+                render_diagnostic(diagnostic, &mut text);
+            }
+            if serialized["diagnostics_summary"]["truncated"] == true {
+                let _ = writeln!(
+                    text,
+                    "diagnostics: {} of {}; use --details without --limit for all diagnostics",
+                    serialized["diagnostics_summary"]["returned"],
+                    serialized["diagnostics_summary"]["total"]
+                );
+            }
         }
         text
     };
@@ -103,6 +121,80 @@ fn output(response: Response, json_output: bool) -> ExitCode {
     }
     ExitCode::from(code)
 }
+/// 终端位置显示为一基行列；JSON 继续保留协议中的零基源码坐标。
+fn render_diagnostic(value: &serde_json::Value, text: &mut String) {
+    let _ = writeln!(
+        text,
+        "[{}] {}: {}",
+        value["code"].as_str().unwrap_or_default(),
+        value["severity"].as_str().unwrap_or_default(),
+        value["message"].as_str().unwrap_or_default()
+    );
+    if let Some(path) = value["location"]["path"].as_str() {
+        let _ = write!(text, "  at {path}");
+        if let (Some(line), Some(character)) = (
+            value["location"]["range"]["start"]["line"].as_u64(),
+            value["location"]["range"]["start"]["character"].as_u64(),
+        ) {
+            let _ = write!(text, ":{}:{}", line + 1, character + 1);
+        }
+        if let Some(keys) = value["location"]["config_path"].as_array() {
+            let keys = keys
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(".");
+            if !keys.is_empty() {
+                let _ = write!(text, " ({keys})");
+            }
+        }
+        text.push('\n');
+    }
+    if let Some(record_type) = value["record"]["type"].as_str() {
+        let _ = write!(
+            text,
+            "  target {record_type}/{}",
+            value["record"]["id"].as_str().unwrap_or_default()
+        );
+        if let Some(field) = value["field_path"].as_str() {
+            let _ = write!(text, ".{field}");
+        }
+        text.push('\n');
+    } else if let Some(field) = value["field_path"].as_str() {
+        let _ = writeln!(text, "  field {field}");
+    }
+    for context in value["contexts"].as_array().into_iter().flatten() {
+        if context["kind"] == "check" {
+            if let Some(name) = context["name"].as_str() {
+                let _ = writeln!(text, "  rule {name}");
+            }
+        }
+        if let (Some(dimension), Some(variant)) =
+            (context["dimension"].as_str(), context["variant"].as_str())
+        {
+            let _ = writeln!(text, "  dimension {dimension}={variant}");
+        }
+    }
+    for related in value["related"].as_array().into_iter().flatten() {
+        if let Some(path) = related["location"]["path"].as_str() {
+            let _ = write!(text, "  related {path}");
+            if let (Some(line), Some(character)) = (
+                related["location"]["range"]["start"]["line"].as_u64(),
+                related["location"]["range"]["start"]["character"].as_u64(),
+            ) {
+                let _ = write!(text, ":{}:{}", line + 1, character + 1);
+            }
+            if let Some(message) = related["message"].as_str() {
+                let _ = write!(text, ": {message}");
+            }
+            text.push('\n');
+        }
+    }
+    if let Some(help) = value["help"].as_str() {
+        let _ = writeln!(text, "  help: {help}");
+    }
+}
+
 fn render_text(value: &serde_json::Value, indent: usize, output: &mut String) {
     match value {
         serde_json::Value::Object(fields) => {
@@ -137,7 +229,7 @@ fn scalar_text(value: &serde_json::Value) -> String {
 fn run(command: &str, args: &Arguments, response: &mut Response) -> Result<()> {
     match command {
         "describe" => {
-            response.result = cli::describe(args.get("command"))?;
+            response.result = cli::describe(args.get("command"), args.get("schema"))?;
             return Ok(());
         }
         "init" => {
@@ -230,6 +322,12 @@ fn read_input(path: &str) -> Result<String> {
         io::stdin().read_to_string(&mut text)?;
         Ok(text)
     } else {
-        Ok(std::fs::read_to_string(path)?)
+        std::fs::read_to_string(path).map_err(|error| {
+            Failure::new(
+                Status::Error,
+                "CLI-IO",
+                format!("cannot read input `{path}`: {error}"),
+            )
+        })
     }
 }

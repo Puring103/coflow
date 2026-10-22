@@ -10,7 +10,7 @@ Coflow 为游戏配置提供类型定义、数据编辑、业务校验和 C# 接
 - [Schema 建模](./guide/schema.md)与[编写 CFD](./guide/data-authoring.md)：定义结构、填写记录。
 - [编辑器与 LSP](./guide/editor.md)：使用表格、记录、图谱和源码视图。
 - [程序员接入](./guide/for-programmers.md)：生成类型并加载配置。
-- [AI Agent Skills](./guide/ai-agent.md)：通过 CLI 与 agent 维护项目。
+- [使用 AI Agent](./guide/ai-agent.md)：通过 CLI 与 agent 维护项目。
 
 ## 检查与交付
 

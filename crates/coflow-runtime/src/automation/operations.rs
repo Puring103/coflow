@@ -1,7 +1,7 @@
 use super::{transaction::Candidate, Failure, Result};
-use crate::{CfdPathSegment, CfdSource, CfdSourcePath, CfdValue, RecordOrigin, Runtime};
+use crate::{CfdPathSegment, CfdSource, CfdSourcePath, CfdValue, RecordOrigin};
 use coflow_language::{
-    cfd::{parse_cfd, CfdRecord as AstRecord},
+    cfd::CfdRecord as AstRecord,
     cft::{CftSchema, CftValueType},
 };
 use serde::{Deserialize, Serialize};
@@ -138,8 +138,7 @@ impl Candidate {
         Ok(())
     }
     fn apply_operation(&mut self, operation: &Operation) -> Result<()> {
-        let project = self.project()?;
-        let schema_session = Runtime::open_schema_session(project.clone())?;
+        let schema_session = self.schema_session()?;
         let schema = schema_session
             .schema()
             .ok_or_else(|| Failure::from(schema_session.diagnostics().as_set().clone()))?;
@@ -202,7 +201,7 @@ impl Candidate {
                     schema,
                     before: None,
                 })?;
-                writer.publish()?;
+                self.publish_writer(&writer)?;
                 self.include(&path)?;
             }
             Operation::SetField {
@@ -277,7 +276,7 @@ impl Candidate {
                     materialized_top_level: top.as_ref(),
                     schema,
                 })?;
-                writer.publish()?;
+                self.publish_writer(&writer)?;
             }
             Operation::UnsetField { record, path } => {
                 let (file, ast, text) = find_record(self, record)?;
@@ -301,7 +300,7 @@ impl Candidate {
                     &internal,
                     schema,
                 )?;
-                writer.publish()?;
+                self.publish_writer(&writer)?;
             }
             Operation::RenameRecord { record, new_id } => {
                 let (file, _, _) = find_record(self, record)?;
@@ -314,7 +313,7 @@ impl Candidate {
                 )
                 .is_ok()
                 {
-                    return Err(Failure::conflict("new record key already exists"));
+                    return Err(Failure::conflict("new record id already exists"));
                 }
                 super::rewrite::rename_references(self, schema, record, new_id)?;
                 writer.rename_record(&crate::RenameRecordRequest {
@@ -327,7 +326,7 @@ impl Candidate {
                     actual_type: &record.actual_type,
                 })?;
                 rewrite_dimensions(self, &writer, schema, record, Some(new_id))?;
-                writer.publish()?;
+                self.publish_writer(&writer)?;
                 super::rewrite::rename_mapping(self, schema, record, new_id)?;
                 self.rename_typed_references(schema, record, new_id);
             }
@@ -342,7 +341,7 @@ impl Candidate {
                     actual_type: &record.actual_type,
                 })?;
                 rewrite_dimensions(self, &writer, schema, record, None)?;
-                writer.publish()?;
+                self.publish_writer(&writer)?;
             }
             Operation::TransferRecord { record, to_file } => {
                 let (file, _, _) = find_record(self, record)?;
@@ -369,7 +368,7 @@ impl Candidate {
                     },
                     None,
                 )?;
-                writer.publish()?;
+                self.publish_writer(&writer)?;
                 self.include(&target)?;
             }
             Operation::SetDimensionValue {
@@ -406,7 +405,7 @@ impl Candidate {
                 value,
                 expected_count,
             } => {
-                let session = Runtime::new().open_data_session(project)?;
+                let session = self.data_session()?;
                 if session.queries().has_diagnostics() {
                     return Err(session.queries().diagnostics().as_set().clone().into());
                 }
@@ -415,7 +414,7 @@ impl Candidate {
                     return Err(Failure::conflict(format!(
                         "expected {expected_count} records, matched {}",
                         records.len()
-                    )));
+                    )).with_result(json!({"precondition":{"kind":"count","expected":expected_count,"actual":records.len()}})));
                 }
                 self.operation_details = json!({"matched_count":records.len(),"targets":records.iter().map(|record|
                     json!({"type":record.actual_type(),"id":record.id()})).collect::<Vec<_>>()});
@@ -587,12 +586,10 @@ impl Candidate {
             .find(|d| d.name.as_str() == dimension)
             .ok_or_else(|| Failure::missing("unknown dimension"))?;
         let project = self.project()?;
-        let snapshot = super::InputSnapshot::capture(&project)?;
         let mut existing = None;
-        for source in snapshot.files.iter().filter(|s| s.kind == "data") {
-            let text = String::from_utf8(source.contents.clone())
-                .map_err(|e| Failure::request(e.to_string()))?;
-            let (ast, _) = parse_cfd(&text);
+        for source in self.data_sources()? {
+            let text = &source.text;
+            let ast = &source.ast;
             for block in ast
                 .dimensions
                 .iter()
@@ -701,7 +698,7 @@ impl Candidate {
                 .map_err(|e| Failure::request(e.to_string()))?,
             new_value: new_value.as_ref(),
         })?;
-        writer.publish()?;
+        self.publish_writer(&writer)?;
         self.include(&original)?;
         Ok(())
     }
@@ -830,34 +827,7 @@ pub fn find_record(
     candidate: &Candidate,
     record: &RecordTarget,
 ) -> Result<(PathBuf, AstRecord, String)> {
-    let project = candidate.project()?;
-    let snapshot = super::InputSnapshot::capture(&project)?;
-    let mut found = None;
-    for file in snapshot.files.iter().filter(|f| f.kind == "data") {
-        let text = String::from_utf8(file.contents.clone())
-            .map_err(|e| Failure::request(e.to_string()))?;
-        let (ast, errors) = parse_cfd(&text);
-        if !errors.is_empty() {
-            return Err(Failure::request(format!(
-                "cannot edit malformed CFD `{}`",
-                file.path
-            )));
-        }
-        for item in ast.records {
-            if item.type_name == record.actual_type && item.id == record.id {
-                if found.is_some() {
-                    return Err(Failure::conflict("record identity is ambiguous"));
-                }
-                found = Some((file.absolute.clone(), item, text.clone()));
-            }
-        }
-    }
-    found.ok_or_else(|| {
-        Failure::missing(format!(
-            "record `{}::{}` does not exist",
-            record.actual_type, record.id
-        ))
-    })
+    candidate.cached_record(record)
 }
 
 pub fn read_value(
@@ -948,28 +918,28 @@ fn rewrite_dimensions(
     record: &RecordTarget,
     new_id: Option<&str>,
 ) -> Result<()> {
-    let snapshot = super::InputSnapshot::capture(&candidate.project()?)?;
     let old = crate::RecordId::new(&record.id).map_err(|e| Failure::request(e.to_string()))?;
     let new = new_id
         .map(crate::RecordId::new)
         .transpose()
         .map_err(|e| Failure::request(e.to_string()))?;
-    for file in snapshot.files.iter().filter(|f| f.kind == "data") {
-        let source = String::from_utf8(file.contents.clone())
-            .map_err(|error| Failure::request(error.to_string()))?;
-        let ast = parse_cfd(&source).0;
+    for file in candidate.data_sources()? {
+        let ast = &file.ast;
         let count = ast
             .dimensions
             .iter()
             .flat_map(|block| &block.records)
             .filter(|entry| {
-                entry.id == record.id && schema.is_assignable(&record.actual_type, &entry.type_name)
+                entry.id == record.id
+                    && schema.inheritance_root(&record.actual_type)
+                        == schema.inheritance_root(&entry.type_name)
             })
             .count();
-        if count > 0 {
-            candidate.automatic_updates.push(json!({"kind":"dimension_overrides","record":record,"new_id":new_id,"count":count,
-            "file":crate::project_path(candidate.original.root_dir(),&candidate.unshadow(&file.absolute)?)}));
+        if count == 0 {
+            continue;
         }
+        candidate.automatic_updates.push(json!({"kind":"dimension_overrides","record":record,"new_id":new_id,"count":count,
+            "file":crate::project_path(candidate.original.root_dir(),&candidate.unshadow(&file.absolute)?)}));
         writer.rewrite_dimension_record(&crate::RewriteDimensionRecordRequest {
             source: &CfdSource {
                 location: CfdSourcePath::new(file.absolute.clone()),

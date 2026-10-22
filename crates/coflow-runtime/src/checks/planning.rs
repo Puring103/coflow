@@ -32,7 +32,7 @@ pub(crate) fn plan_selected_checks_with_limit(
         if tasks.overflowed() {
             break;
         }
-        insert_data_tasks(schema, model, record, selected, &mut tasks);
+        insert_data_tasks(schema, model, record, selected, None, &mut tasks);
         for statement in schema.check_statements_for_actual_type(value.actual_type()) {
             if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
                 if selected.is_some_and(|selected| !selected.contains(&info.id)) {
@@ -72,13 +72,6 @@ pub(super) fn plan_incremental_checks_with_limit(
     impact: &CheckImpact,
     max_tasks: usize,
 ) -> Result<Vec<CheckTask>, CheckPlanningError> {
-    // 内联对象可能替换、移动或删除；其引用还可读取其他记录，使用完整计划保证诊断不会过期。
-    if schema
-        .all_types()
-        .any(|ty| ty.kind == coflow_language::cft::CftTypeKind::Data && !ty.checks.is_empty())
-    {
-        return plan_full_checks_with_limit(schema, model, max_tasks);
-    }
     let mut tasks = CheckTaskBuilder::new(max_tasks);
     for (coordinate, changes) in &impact.records {
         if tasks.overflowed() {
@@ -86,6 +79,7 @@ pub(super) fn plan_incremental_checks_with_limit(
         }
         let record = model.record_by_type_id(&coordinate.actual_type, &coordinate.id);
         if let Some(record) = record {
+            insert_data_tasks(schema, model, record, None, Some(changes), &mut tasks);
             let is_structural = impact.record_sets.iter().any(|changed| {
                 schema.is_assignable(&coordinate.actual_type, changed)
                     || schema.is_assignable(changed, &coordinate.actual_type)
@@ -143,6 +137,16 @@ pub(super) fn plan_incremental_checks_with_limit(
             }
         }
     }
+    // 多个字段依赖可命中同一 data 规则；汇总后只扫描一次拥有树。
+    if !tasks.data_statements.is_empty() {
+        let selected = std::mem::take(&mut tasks.data_statements);
+        for (record, _) in model.records() {
+            if tasks.overflowed() {
+                break;
+            }
+            insert_data_tasks(schema, model, record, Some(&selected), None, &mut tasks);
+        }
+    }
     tasks.finish(schema)
 }
 
@@ -153,6 +157,7 @@ pub(crate) struct CheckPlanningError {
 
 struct CheckTaskBuilder {
     tasks: BTreeSet<CheckTask>,
+    data_statements: BTreeSet<coflow_language::cft::CheckStatementId>,
     max_tasks: usize,
     overflowed: bool,
 }
@@ -161,6 +166,7 @@ impl CheckTaskBuilder {
     const fn new(max_tasks: usize) -> Self {
         Self {
             tasks: BTreeSet::new(),
+            data_statements: BTreeSet::new(),
             max_tasks,
             overflowed: false,
         }
@@ -262,6 +268,16 @@ fn insert_owner_tasks(
             );
         }
         CheckOwner::Type(owner) => {
+            if schema
+                .resolve_type(owner)
+                .is_some_and(|ty| ty.kind == coflow_language::cft::CftTypeKind::Data)
+            {
+                // data 规则可以经 Ref 读取外部记录；该规则的所有拥有实例都失效。
+                tasks
+                    .data_statements
+                    .extend(schema.check_statements_for_rule(&info.rule_id));
+                return;
+            }
             let records = model
                 .records_assignable_to(schema, owner)
                 .map(|(id, _)| id)
@@ -325,6 +341,7 @@ fn insert_data_tasks(
     model: &CfdDataModel,
     record: CfdRecordHandle,
     selected: Option<&BTreeSet<coflow_language::cft::CheckStatementId>>,
+    changes: Option<&ChangedRecordFields>,
     tasks: &mut CheckTaskBuilder,
 ) {
     use coflow_model::{CfdPath, CfdValue};
@@ -334,10 +351,18 @@ fn insert_data_tasks(
     let mut pending = root
         .fields()
         .iter()
+        .filter(|(field, _)| {
+            changes.is_none_or(|changes| changes.affects_owned_field(field.as_str(), None))
+        })
         .map(|(field, value)| (value, CfdPath::root().field(field.as_str()), None))
         .collect::<Vec<_>>();
     for (field, values) in &root.dimension_fields {
         for (variant, value) in &values.effective_variants {
+            if changes.is_some_and(|changes| {
+                !changes.affects_owned_field(field.as_str(), Some(variant.as_str()))
+            }) {
+                continue;
+            }
             pending.push((
                 value,
                 CfdPath::root(),

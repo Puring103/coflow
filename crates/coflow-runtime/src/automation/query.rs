@@ -23,6 +23,8 @@ pub struct Selector {
     pub filter: Option<String>,
     #[serde(skip)]
     pub(crate) query_identity: Option<String>,
+    #[serde(skip)]
+    pub(crate) revision: Option<String>,
 }
 impl Default for Selector {
     fn default() -> Self {
@@ -40,6 +42,7 @@ impl Default for Selector {
             view: "effective".into(),
             filter: None,
             query_identity: None,
+            revision: None,
         }
     }
 }
@@ -81,22 +84,31 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>>
     if selector.limit == 0 {
         return Err(Failure::request("limit must be greater than zero"));
     }
-    // 游标仅标记同一查询的读取位置，不绑定项目文件状态。
+    // 查询身份与数据修订分别校验；调整页大小不影响游标，但数据变化必须重查。
     let mut identity = selector.clone();
     identity.cursor = None;
     identity.limit = 0;
     let query = fingerprint(&serde_json::to_vec(&(&identity, &selector.query_identity))?);
+    let revision = selector
+        .revision
+        .as_deref()
+        .ok_or_else(|| Failure::request("pagination requires a captured project revision"))?;
     let offset = match &selector.cursor {
         None => 0,
         Some(cursor) => {
             let parts: Vec<_> = cursor.split(':').collect();
-            if parts.len() != 2 {
+            if parts.len() != 3 {
                 return Err(Failure::request("malformed cursor"));
             }
             if parts[0] != query {
                 return Err(Failure::request("cursor belongs to another query"));
             }
-            parts[1]
+            if parts[1] != revision {
+                return Err(Failure::conflict("cursor revision changed; restart the query without --cursor")
+                    .with_result(serde_json::json!({"revision": revision,
+                        "precondition": {"kind": "cursor_revision", "expected": parts[1], "actual": revision}})));
+            }
+            parts[2]
                 .parse::<usize>()
                 .map_err(|_| Failure::request("malformed cursor offset"))?
         }
@@ -115,7 +127,7 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>>
             .collect(),
         total,
         truncated,
-        next_cursor: truncated.then(|| format!("{query}:{end}")),
+        next_cursor: truncated.then(|| format!("{query}:{revision}:{end}")),
     })
 }
 
@@ -407,7 +419,8 @@ pub(crate) fn compare_values(a: Option<&CfdValue>, b: Option<&CfdValue>) -> Orde
     }
 }
 
-pub fn query_records(
+/// 只能经捕获并复核输入快照的读取边界调用，现有会话不能绑定随后捕获的磁盘修订。
+pub(crate) fn query_records(
     project: &Project,
     session: &ReadOnlyProjectSession,
     selector: &Selector,

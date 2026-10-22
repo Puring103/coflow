@@ -371,3 +371,22 @@ fn variant_validation_shares_one_structural_budget_per_record() {
         CfdPath::root().field("second").index(1)
     );
 }
+
+#[test]
+fn model_snapshots_and_repeated_dimension_selections_share_immutable_records() {
+    use std::collections::BTreeMap;
+    let schema = compile_schema(r#"table Item { @localized name: string; }"#);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("sword", "Item", [("name", "Sword".into())]);
+    builder.add_dimension_value_draft(overlay("Item", "sword", "name", "language", "ja", "剣".into()));
+    let model = builder.build().unwrap();
+    let record = model.lookup_assignable(&schema, "Item", "sword").unwrap();
+    let snapshot = model.clone();
+    assert!(std::ptr::eq(model.record(record).unwrap(), snapshot.record(record).unwrap()));
+    let selection = BTreeMap::from([("language".into(), "ja".into())]);
+    let selected = model.project_dimensions(&schema, &selection).unwrap();
+    let repeated = selected.project_dimensions(&schema, &selection).unwrap();
+    assert!(std::ptr::eq(selected.record(record).unwrap(), repeated.record(record).unwrap()));
+    assert_eq!(rendered(model.record(record).unwrap().field("name").unwrap()), "Sword");
+    assert_eq!(rendered(repeated.record(record).unwrap().field("name").unwrap()), "剣");
+}

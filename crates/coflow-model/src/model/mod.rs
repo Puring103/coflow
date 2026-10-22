@@ -28,13 +28,14 @@ pub(crate) struct DimensionProjection {
     selections: BTreeMap<String, String>,
 }
 
+/// 不可变模型共享记录与索引；克隆可用于代次快照和投影来源，无需复制数据树。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
-    pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) record_by_domain_id: BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
-    pub(crate) records: Vec<CfdRecord>,
-    pub(crate) refs: RefIndexes,
-    pub(crate) dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
+    pub(crate) tables: Arc<BTreeMap<TypeName, CfdTable>>,
+    pub(crate) record_by_domain_id: Arc<BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>>,
+    pub(crate) records: Arc<Vec<CfdRecord>>,
+    pub(crate) refs: Arc<RefIndexes>,
+    pub(crate) dimension_variants: Arc<BTreeMap<DimensionName, BTreeSet<VariantName>>>,
     pub(crate) projection: Option<DimensionProjection>,
 }
 

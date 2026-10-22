@@ -1,4 +1,4 @@
-use super::{Candidate, Failure, InputSnapshot, RecordTarget, Result};
+use super::{Candidate, RecordTarget, Result};
 use coflow_language::{
     cfd::{CfdField, CfdValue as A},
     cft::{CftSchema, CftValueType},
@@ -12,11 +12,9 @@ pub fn rename_references(
     record: &RecordTarget,
     new_id: &str,
 ) -> Result<()> {
-    let snapshot = InputSnapshot::capture(&candidate.project()?)?;
-    for file in snapshot.files.iter().filter(|f| f.kind == "data") {
-        let mut text = String::from_utf8(file.contents.clone())
-            .map_err(|e| Failure::request(e.to_string()))?;
-        let (ast, _) = coflow_language::cfd::parse_cfd(&text);
+    for file in candidate.data_sources()? {
+        let mut text = file.text.clone();
+        let ast = &file.ast;
         let mut patches = Vec::new();
         for r in ast
             .records
@@ -41,8 +39,9 @@ pub fn rename_references(
         for (span, value) in patches {
             text.replace_range(span.start..span.end, &value);
         }
-        if text.as_bytes() != file.contents {
-            fs::write(&file.absolute, text)?;
+        if text != file.text {
+            fs::write(&file.absolute, &text)?;
+            candidate.refresh_source(&file.absolute, Some(text))?;
         }
     }
     rename_schema_references(candidate, schema, record, new_id)
@@ -89,8 +88,7 @@ fn visit(
     }
     match (ty, value) {
         (CftValueType::RecordRef(target), A::Ref(reference))
-            if reference.id.0 == record.id
-                && schema.is_assignable(&record.actual_type, target) =>
+            if reference.id.0 == record.id && schema.is_assignable(&record.actual_type, target) =>
         {
             patches.push((reference.id.1, new_id.into()));
         }
@@ -192,7 +190,7 @@ fn rename_schema_references(
     new_id: &str,
 ) -> Result<()> {
     use coflow_language::cft::syntax::ast::Item;
-    let session = crate::Runtime::open_schema_session(candidate.project()?)?;
+    let session = candidate.schema_session()?;
     for (_, module) in session.modules().modules() {
         let Some(ast) = module.ast() else {
             continue;
@@ -243,7 +241,8 @@ fn rename_schema_references(
         for (span, value) in patches {
             text.replace_range(span.start..span.end, &value);
         }
-        fs::write(module.path(), text)?;
+        fs::write(module.path(), &text)?;
+        candidate.refresh_source(module.path(), Some(text))?;
     }
     Ok(())
 }

@@ -58,13 +58,15 @@ pub use model_value::{DictionaryEntry, ModelValue};
 mod diagnostics;
 mod execute;
 mod explanations;
+mod presentation;
+pub use presentation::DiagnosticsSummary;
 mod rewrite;
 pub use diagnostics::CommandDiagnostic;
 pub use execute::{execute, explain, format_source};
 pub use explanations::DiagnosticExplanation;
 pub use operations::{FieldPath, InputValue, Operation, RecordFields, RecordTarget};
-pub use query::{query_records, Page, Selector};
 pub use query::{FieldSource, RecordResult};
+pub use query::{Page, Selector};
 pub use read::{read_command, SchemaSymbol, SourceRead};
 pub use read::{DraftField, DraftResult, RecordDraft};
 pub use request::Arguments;
@@ -121,8 +123,15 @@ pub struct RejectedDataRecord {
 pub struct DataScope {
     pub complete: bool,
     pub available_records: usize,
+    pub selected_file_count: usize,
+    pub incomplete_file_count: usize,
+    pub rejected_record_count: usize,
+    pub details_omitted: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub selected_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incomplete_files: Vec<IncompleteDataFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rejected_records: Vec<RejectedDataRecord>,
 }
 
@@ -134,8 +143,10 @@ pub struct Response<T = Value> {
     pub status: Status,
     pub error_category: Option<ErrorCategory>,
     pub project: Option<String>,
+    pub revision: Option<String>,
     pub result: T,
     pub data_scope: Option<DataScope>,
+    pub diagnostics_summary: Option<DiagnosticsSummary>,
     #[schemars(with = "Vec<CommandDiagnostic>")]
     pub diagnostics: Vec<Diagnostic>,
     #[schemars(skip)]
@@ -143,6 +154,8 @@ pub struct Response<T = Value> {
         std::collections::BTreeMap<usize, crate::DiagnosticLogicalLocation>,
     #[schemars(skip)]
     pub(crate) explanations: std::collections::BTreeMap<usize, Value>,
+    #[schemars(skip)]
+    diagnostic_help: std::collections::BTreeMap<usize, String>,
 }
 
 impl<T: Serialize> Serialize for Response<T> {
@@ -150,26 +163,37 @@ impl<T: Serialize> Serialize for Response<T> {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        let mut fields = serializer.serialize_struct("Response", 8)?;
+        let mut fields = serializer.serialize_struct("Response", 10)?;
         fields.serialize_field("protocol_version", &self.protocol_version)?;
         fields.serialize_field("command", &self.command)?;
         fields.serialize_field("status", &self.status)?;
         fields.serialize_field("error_category", &self.error_category)?;
         fields.serialize_field("project", &self.project)?;
+        fields.serialize_field("revision", &self.revision)?;
         fields.serialize_field("result", &self.result)?;
         fields.serialize_field("data_scope", &self.data_scope)?;
+        fields.serialize_field("diagnostics_summary", &self.diagnostics_summary)?;
         let root = self.project.as_deref().map(std::path::Path::new);
         let diagnostics: Vec<_> = self
             .diagnostics
             .iter()
             .enumerate()
             .map(|(index, diagnostic)| {
-                CommandDiagnostic::new(
+                let mut output = CommandDiagnostic::new(
                     diagnostic,
                     self.diagnostic_locations.get(&index),
                     root,
                     self.explanations.get(&index),
-                )
+                );
+                if let Some(help) = self.diagnostic_help.get(&index) {
+                    output.help = Some(help.clone());
+                } else if diagnostic.code == "CLI-REQUEST" {
+                    output.help = Some(format!(
+                        "查看参数和请求格式：coflow describe {} --json",
+                        self.command
+                    ));
+                }
+                output
             })
             .collect();
         fields.serialize_field("diagnostics", &diagnostics)?;
@@ -185,17 +209,26 @@ impl Response {
             status: Status::Success,
             error_category: None,
             project: None,
+            revision: None,
             result: Value::Null,
             data_scope: None,
+            diagnostics_summary: None,
             diagnostics: Vec::new(),
             diagnostic_locations: Default::default(),
             explanations: Default::default(),
+            diagnostic_help: Default::default(),
         }
+    }
+    pub fn set_diagnostic_help(&mut self, index: usize, help: String) {
+        self.diagnostic_help.insert(index, help);
     }
     pub fn fail(&mut self, failure: Failure) {
         self.status = failure.status;
         self.error_category = failure.error_category;
         if let Some(result) = failure.result {
+            if let Some(revision) = result.get("revision") {
+                self.revision = revision.as_str().map(str::to_owned);
+            }
             self.result = result;
         }
         self.diagnostics.extend(failure.diagnostics.diagnostics);
@@ -244,7 +277,7 @@ impl Response {
             }
         }
         // 拒绝记录保留身份与来源；计数范围不随列表筛选或分页改变。
-        let rejected_records = session
+        let rejected_records: Vec<_> = session
             .queries()
             .rejected_records()
             .iter()
@@ -256,6 +289,12 @@ impl Response {
                 file: record.display_path.clone(),
             })
             .collect();
+        let selected_files: Vec<_> = snapshot
+            .files
+            .iter()
+            .filter(|file| file.kind == "data")
+            .map(|file| file.path.clone())
+            .collect();
         self.data_scope = Some(DataScope {
             complete: !session
                 .queries()
@@ -264,12 +303,11 @@ impl Response {
                 .iter()
                 .any(|diagnostic| diagnostic.severity == Severity::Error),
             available_records: session.model().records().count(),
-            selected_files: snapshot
-                .files
-                .iter()
-                .filter(|file| file.kind == "data")
-                .map(|file| file.path.clone())
-                .collect(),
+            selected_file_count: selected_files.len(),
+            incomplete_file_count: incomplete.len(),
+            rejected_record_count: rejected_records.len(),
+            details_omitted: false,
+            selected_files,
             incomplete_files: incomplete
                 .into_iter()
                 .map(|(file, reasons)| IncompleteDataFile { file, reasons })
@@ -452,8 +490,17 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
     }
 }
 
+#[derive(schemars::JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum ResponsePayload<T> {
+    Result(T),
+    Failure(execution_contract::FailureContext),
+}
+
 pub fn response_schema_of<T: schemars::JsonSchema>() -> schemars::schema::RootSchema {
-    let mut schema = schemars::schema_for!(Response<T>);
+    // 请求或前置条件失败可能发生在候选事务创建前，Schema 同样描述这些实际输出。
+    let mut schema = schemars::schema_for!(Response<ResponsePayload<T>>);
     // 信封始终输出全部属性；Option 的空值是 null，而不是省略该属性。
     if let Some(object) = schema.schema.object.as_mut() {
         object.required.extend(object.properties.keys().cloned());

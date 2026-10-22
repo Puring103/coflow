@@ -383,69 +383,52 @@ pub(crate) fn check_with_limits(
         raw,
         &origins,
     ));
-    let states: Vec<_> = output.results.iter().map(|result| {
-        let target = match &result.task.target {
-            crate::CheckTarget::Project => json!({"kind":"project"}),
-            crate::CheckTarget::Record(handle) => json!({"kind":"record", "record": session.model().record(*handle).map(|record| json!({"type":record.actual_type(),"id":record.id()}))}),
-            crate::CheckTarget::Data { record, path, dimension } => {
-                let host = session.model().record(*record);
-                let mut full_path = dimension.as_ref().map_or_else(crate::CfdPath::root, |(field, _)| crate::CfdPath::root().field(field));
-                full_path.segments.extend(path.segments.iter().cloned());
-                json!({"kind":"data", "record": host.map(|record| json!({"type":record.actual_type(),"id":record.id()})),
-                    "field_path":crate::format_field_path(&full_path),
-                    "dimension":dimension.as_ref().map(|(field,variant)| json!({"field":field,"variant":variant,
-                        "dimension":host.and_then(|record| session.schema().field(record.actual_type(),field)).and_then(|field| field.dimension.as_ref()).map(|binding| binding.dimension.as_str())}))})
-            },
+    // 先按规则与目标汇总原始状态；默认路径不为每个成功任务构造重复 JSON。
+    let mut grouped = Vec::<(
+        &coflow_checker::CheckTaskResult,
+        coflow_checker::CheckTaskStatus,
+        usize,
+    )>::new();
+    let mut indices = std::collections::BTreeMap::new();
+    for result in &output.results {
+        let Some(statement) = session.schema().check_statement(result.task.statement) else {
+            continue;
         };
-        json!({
-            "rule": session.schema().check_statement(result.task.statement).map(|statement| identity(statement.info)),
-            "statement": session.schema().check_statement(result.task.statement).map(|statement| statement.info.root_index),
-            "state": match result.status {
-                coflow_checker::CheckTaskStatus::Passed => "passed",
-                coflow_checker::CheckTaskStatus::NotTriggered => "not_triggered",
-                coflow_checker::CheckTaskStatus::Failed => "failed",
-                coflow_checker::CheckTaskStatus::EvaluationError => "evaluation_error",
-                coflow_checker::CheckTaskStatus::BudgetExceeded => "budget_exhausted",
-                coflow_checker::CheckTaskStatus::NotExecuted => "not_executed",
-            },
-            "target": target,
-            "diagnostic_count": result.diagnostics.len(),
-        })
-    }).collect();
-    // 对外按规则与实际对象汇总，同时保留根语句状态用于解释跳过与失败位置。
-    let mut rule_results = Vec::<Value>::new();
-    let mut result_indices = std::collections::BTreeMap::new();
-    let rank = |state: &str| match state {
-        "budget_exhausted" => 6,
-        "evaluation_error" => 5,
-        "not_executed" => 4,
-        "failed" => 3,
-        "passed" => 2,
-        _ => 1,
-    };
-    for state in &states {
-        let key = (state["rule"].to_string(), state["target"].to_string());
-        if let Some(index) = result_indices.get(&key).copied() {
-            let result: &mut Value = &mut rule_results[index];
-            if rank(state["state"].as_str().unwrap_or_default())
-                > rank(result["state"].as_str().unwrap_or_default())
-            {
-                result["state"] = state["state"].clone();
+        let key = (statement.info.rule_id.as_str(), &result.task.target);
+        if let Some(index) = indices.get(&key).copied() {
+            let (_, status, count) = &mut grouped[index];
+            if state_rank(result.status) > state_rank(*status) {
+                *status = result.status;
             }
-            result["diagnostic_count"] = json!(
-                result["diagnostic_count"].as_u64().unwrap_or(0)
-                    + state["diagnostic_count"].as_u64().unwrap_or(0)
-            );
+            *count += result.diagnostics.len();
         } else {
-            result_indices.insert(key, rule_results.len());
-            rule_results.push(json!({"rule":state["rule"], "state":state["state"], "target":state["target"], "diagnostic_count":state["diagnostic_count"]}));
+            indices.insert(key, grouped.len());
+            grouped.push((result, result.status, result.diagnostics.len()));
         }
     }
+    let mut counts = std::collections::BTreeMap::from([("total", grouped.len())]);
+    for (_, status, _) in &grouped {
+        *counts.entry(state_name(*status)).or_default() += 1;
+    }
+    let mut report = json!({"structure":"passed", "rules":if exhausted {"budget_exhausted"} else if super::has_errors(&diagnostics) {"failed"} else {"passed"},
+        "complete":complete, "scope": if requested.is_empty() {json!("all")} else {json!(requested)}, "rule_counts":counts,
+        "diagnostic_count": diagnostics.diagnostics.len(), "requested_tasks":output.statistics.requested_tasks,
+        "executed_tasks":output.statistics.executed_tasks,"rejected_tasks":output.statistics.rejected_tasks});
+    if args.flag("details") {
+        report["tasks"] = json!(output.results.iter().map(|result| {
+            let statement = session.schema().check_statement(result.task.statement);
+            json!({"rule":statement.as_ref().map(|statement| identity(statement.info)),
+                "statement":statement.map(|statement| statement.info.root_index),
+                "state":state_name(result.status), "target":target_json(session, &result.task.target),
+                "diagnostic_count":result.diagnostics.len()})
+        }).collect::<Vec<_>>());
+        report["results"] = json!(grouped.into_iter().map(|(result, status, count)| {
+            json!({"rule":session.schema().check_statement(result.task.statement).map(|statement| identity(statement.info)),
+                "state":state_name(status), "target":target_json(session, &result.task.target), "diagnostic_count":count})
+        }).collect::<Vec<_>>());
+    }
     let mut validation = Validation {
-        report: json!({"structure":"passed", "rules":if exhausted {"budget_exhausted"} else if super::has_errors(&diagnostics) {"failed"} else {"passed"},
-            "complete":complete, "scope": if requested.is_empty() {json!("all")} else {json!(requested)}, "tasks":states, "results":rule_results,
-            "diagnostic_count": diagnostics.diagnostics.len(), "requested_tasks":output.statistics.requested_tasks,
-            "executed_tasks":output.statistics.executed_tasks,"rejected_tasks":output.statistics.rejected_tasks}),
+        report,
         diagnostics,
         logical_locations: locations,
         explanations: Default::default(),
@@ -489,6 +472,59 @@ pub(crate) fn check_with_limits(
         }
     }
     Ok(validation)
+}
+
+fn state_name(status: coflow_checker::CheckTaskStatus) -> &'static str {
+    use coflow_checker::CheckTaskStatus as S;
+    match status {
+        S::Passed => "passed",
+        S::NotTriggered => "not_triggered",
+        S::Failed => "failed",
+        S::EvaluationError => "evaluation_error",
+        S::BudgetExceeded => "budget_exhausted",
+        S::NotExecuted => "not_executed",
+    }
+}
+
+fn state_rank(status: coflow_checker::CheckTaskStatus) -> u8 {
+    use coflow_checker::CheckTaskStatus as S;
+    match status {
+        S::BudgetExceeded => 6,
+        S::EvaluationError => 5,
+        S::NotExecuted => 4,
+        S::Failed => 3,
+        S::Passed => 2,
+        S::NotTriggered => 1,
+    }
+}
+
+fn target_json(session: &ReadOnlyProjectSession, target: &crate::CheckTarget) -> Value {
+    let record = |handle| {
+        session
+            .model()
+            .record(handle)
+            .map(|record| json!({"type":record.actual_type(),"id":record.id()}))
+    };
+    match target {
+        crate::CheckTarget::Project => json!({"kind":"project"}),
+        crate::CheckTarget::Record(handle) => json!({"kind":"record","record":record(*handle)}),
+        crate::CheckTarget::Data {
+            record: handle,
+            path,
+            dimension,
+        } => {
+            let host = session.model().record(*handle);
+            let mut full_path = dimension
+                .as_ref()
+                .map_or_else(crate::CfdPath::root, |(field, _)| {
+                    crate::CfdPath::root().field(field)
+                });
+            full_path.segments.extend(path.segments.iter().cloned());
+            json!({"kind":"data","record":record(*handle),"field_path":crate::format_field_path(&full_path),
+                "dimension":dimension.as_ref().map(|(field,variant)| json!({"field":field,"variant":variant,
+                    "dimension":host.and_then(|record| session.schema().field(record.actual_type(),field)).and_then(|field| field.dimension.as_ref()).map(|binding| binding.dimension.as_str())}))})
+        }
+    }
 }
 
 pub(super) fn explain_diagnostics(session: &ReadOnlyProjectSession, validation: &mut Validation) {

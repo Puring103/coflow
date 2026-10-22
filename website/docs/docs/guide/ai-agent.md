@@ -1,55 +1,48 @@
-# AI Agent Skills
+# 使用 AI Agent
 
-本页介绍如何让 AI agent 维护 Coflow 项目。
+Coflow 提供结构化查询、批量修改、业务校验与可定位诊断。Agent 可以先取得当前任务的上下文，再在一次候选事务中完成修改与检查。
 
-## 安装
+## 安装 Skills
 
-`coflow` CLI 内置两个 skills，不依赖 Node.js。安装到当前 Coflow 项目：
+CLI 内置 `coflow-workflow` 与 `coflow-schema`，不依赖 Node.js。前者处理查询、CFD 编辑、项目配置、诊断与代码生成；后者处理 CFT 建模、字段、命名规则、引用与维度。
 
 ```powershell
 coflow skill install --project <project>
-```
-
-安装到当前用户的通用和已检测 agent 目录：
-
-```powershell
 coflow skill install -g
 ```
 
-使用 `coflow skill status` / `coflow skill status -g` 查看状态，使用对应的
-`coflow skill uninstall` 命令卸载。
+分别安装到当前项目或当前用户的通用及已检测 agent 目录。使用 `coflow skill status` / `coflow skill status -g` 查看状态，使用对应 `skill uninstall` 命令卸载。
 
-## Skill 分工
+## 给 Agent 的任务
 
-| Skill | 使用场景 |
-| --- | --- |
-| `coflow-workflow` | 项目流程、`coflow.yaml`、检查与构建、CI、诊断处理和最佳实践 |
-| `coflow-schema` | CFT schema、类型/字段/默认值、引用、多态、`check Valid {}`、本地化和数据结构设计 |
+提供项目路径、目标与修改范围，例如“在 `my-game/config` 中将所有普通药水价格降低 10%，验证业务规则”。业务取值、修改范围和发布授权由任务约定；skills 不会增加固定审批步骤。
 
-## Agent 工作流
-
-给 agent 任务时，尽量提供项目路径和目标，例如“在 `examples/showcase` 中新增一个字段并更新 CFD 记录”。agent 应先读取 schema 和 CFD 文件，再修改：
+Agent 可以按需查询：
 
 ```powershell
-coflow schema inspect --project <project>
-coflow project files --kind schema --project <project>
+coflow describe --json
+coflow describe apply --json
+coflow describe apply --schema input --json
+coflow context --type Item --project <project> --examples 2 --json
+coflow data list --type Item --fields name,price --limit 20 --project <project> --json
 ```
 
-修改 schema 后运行：
+`describe` 先返回命令目录，单命令查询提供参数与示例，完整 JSON Schema 按需展开。`context`、字段选择和分页帮助 agent 获取所需信息，避免反复读取整个项目。
+
+批量修改推荐：
 
 ```powershell
-coflow source write --project <project> --file schema/main.cft --input candidates/main.cft --dry-run
-coflow check --rules --project <project>
+coflow apply --input changes.json --project <project> --rules --if-revision <revision> --json
 ```
 
-修改 CFD 后运行 `coflow check --rules --project <project>`。需要检查并生成代码时运行 `coflow build --project <project>`；仅生成代码时使用 `coflow codegen`。批量修改可以先使用 `apply --dry-run` 预览，正式提交时按需加 `--rules` 验证业务规则。
+`revision` 使用前一次查询返回的值；也可放在变更集顶层的 `if_revision`。需要先审阅源码补丁时加 `--dry-run`。CFT 与 CFD 联合修改用文件模式，记录、数组、字典和维度修改用操作模式，准确格式由 `describe apply --schema input` 提供。
 
-## 文档引用
+`--rules` 同时验证结构、数据与业务规则，成功后无需再执行相同范围的 `check`。直接编辑源码后用 `check --rules`；需要生成代码时用 `build`。普通 `check` 默认只检查结构与数据。
 
-skills 内置了从公开 reference 文档同步的本地快照，也会在 `SKILL.md` 中标出公开链接。外部引用优先使用网站文档：
+## 精简输出与修复
 
-- [项目配置](../reference/01-project-config.md)
-- [CFT Schema](../reference/03-language/01-cft.md)
-- [CFD 文本数据](../reference/03-language/02-cfd.md)
-- [数据模型](../reference/05-data-model.md)
-- [CLI 命令](../reference/08-cli.md)
+`--json` 返回单行 JSON；人工查看时用 `--pretty`。默认结果提供计数与失败信息，诊断最多 50 条；`diagnostics_summary` 明确报告总数与截断。只有需要完整任务明细或更多诊断时才加 `--details`，显式 `--limit` 继续生效。
+
+先看 `code`、`help`、记录和字段位置；需要深入定位时用 `check --rule Type::Rule --explain --json`。请求格式错误提供 JSON 路径与操作序号。发生修订冲突时重新读取目标；旧分页游标失效时从第一页查询。失败写入结果保留实际写入与恢复情况。
+
+详见 [CLI 参考](../reference/08-cli.md)、[诊断](../reference/09-diagnostics/01-diagnostics.md)和 [CFT 参考](../reference/03-language/01-cft.md)。Skills 中的参考快照与公开文档同步，按当前任务需要读取即可。

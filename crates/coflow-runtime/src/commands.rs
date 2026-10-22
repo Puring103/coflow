@@ -222,8 +222,17 @@ pub fn codegen_automation(
     project: &Project,
     preview: bool,
 ) -> crate::automation::Result<CommandOutcome<serde_json::Value>> {
-    use serde_json::json;
     let snapshot = crate::automation::InputSnapshot::capture(project)?;
+    codegen_automation_with_snapshot(project, preview, &snapshot)
+}
+
+/// 使用调用入口已捕获的输入修订，避免校验通过后重新捕获而丢失旧值前置条件。
+pub(crate) fn codegen_automation_with_snapshot(
+    project: &Project,
+    preview: bool,
+    snapshot: &crate::automation::InputSnapshot,
+) -> crate::automation::Result<CommandOutcome<serde_json::Value>> {
+    use serde_json::json;
     let mut publication_failure = None;
     let outcome = prepare_project_code(project, |prepared, _| {
         let mut report = prepared.preview()?;
@@ -237,7 +246,11 @@ pub fn codegen_automation(
         report["written_files"] = json!([]);
         if !preview {
             let failure = match snapshot.verify(project) {
-                Err(failure) => Some(failure.with_result(json!({"artifacts":report}))),
+                Err(mut failure) => {
+                    let mut result = failure.result.take().unwrap_or_else(|| json!({}));
+                    result["artifacts"] = report.take();
+                    Some(failure.with_result(result))
+                }
                 Ok(()) => match prepared.publish_detailed() {
                     Ok(paths) => {
                         report["written"] = json!(!paths.is_empty());

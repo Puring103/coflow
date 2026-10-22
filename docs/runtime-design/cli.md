@@ -64,7 +64,7 @@ coflow <command> [subcommand] [arguments] --project <dir-or-config> --json
 
 ### 3.2 输出格式
 
-普通命令默认输出适合终端阅读的文本，`--json` 输出一个完整 JSON 对象。stdout 仅包含结果，进度与日志写入 stderr。
+普通命令默认输出适合终端阅读的文本，`--json` 输出单行 JSON 对象，`--pretty` 隐含 JSON 并使用缩进。stdout 仅包含结果，进度与日志写入 stderr。`--details` 独立控制详细程度，默认采用计数与失败诊断，排版选项不改变响应范围。
 
 统一信封包含：
 
@@ -73,13 +73,19 @@ coflow <command> [subcommand] [arguments] --project <dir-or-config> --json
 | `protocol_version` | CLI 结构化协议版本 |
 | `command` | 规范命令名称 |
 | `status` | `success`、`partial`、`invalid`、`conflict` 或 `error` |
-| `error_category` | `request` 或 `execution`；仅 `error` 状态使用，其余状态为空 |
-| `project` | 项目定位结果；无项目或定位失败时为空 |
+| `error_category` | `request` 或 `execution`；仅 `error` 状态提供 |
+| `project` | 成功定位的项目根目录 |
+| `revision` | 读取或发布后的项目输入修订，用于后续前置条件 |
 | `result` | 命令专属结果 |
-| `data_scope` | 数据查询的加载完整性、可用记录数、选中文件、不完整文件及原因和被拒绝记录；不读取数据时为空 |
-| `diagnostics` | 结构化诊断 |
+| `data_scope` | 默认提供加载完整性、可用记录数和来源计数；`--details` 展开来源列表 |
+| `diagnostics` | 有界结构化诊断 |
+| `diagnostics_summary` | 有诊断时提供 `total`、`returned` 和 `truncated` |
 
-诊断统一包含错误码、阶段、严重性、消息、源码位置、记录坐标、字段路径、相关位置和上下文。未知位置为空，坐标约定统一为从零开始的行列和 UTF-16 列偏移。
+诊断包含错误码、阶段、严重性、消息、简短修复建议 `help`，以及可获得的源码位置、记录坐标、字段路径、相关位置和上下文。可选元数据为 None 时省略，附加列表为空时省略；业务值的 `null`、`None`、空字符串和空集合保留。坐标约定统一为从零开始的行列和 UTF-16 列偏移。
+
+`data_scope` 默认保留 `complete`、`available_records`、`selected_file_count`、`incomplete_file_count`、`rejected_record_count` 和 `details_omitted`；`--details` 返回 `selected_files`、`incomplete_files`（含原因）和 `rejected_records`，空列表省略。精简范围信息不裁剪查询业务值。
+
+CLI 默认最多输出 50 条诊断，`diagnostics_summary` 保存裁剪前总数；`--details` 解除默认上限，显式 `--limit` 仍限制诊断条数。输出裁剪发生在执行结果形成之后，不能影响执行完整性、事务发布信息、退出状态或业务值。成功任务默认汇总，`--details` 才输出逐目标规则和语句结果。
 
 `--json` 覆盖参数错误、项目打开失败、输入读取失败、解析失败、执行失败和发布冲突。帮助与版本查询使用各自明确的输出方式；`lsp` 的 stdout 专用于语言服务器协议。
 
@@ -90,12 +96,12 @@ coflow <command> [subcommand] [arguments] --project <dir-or-config> --json
 | `0` | 请求完成，满足命令要求 |
 | `1` | 校验未通过、要求的结果不完整或状态检查未满足 |
 | `2` | 命令参数或请求协议不合法 |
-| `3` | 文件内容或预期旧值不一致 |
+| `3` | 项目修订、分页游标、文件内容或预期旧值不一致 |
 | `4` | I/O、权限、外部工具或内部执行失败 |
 
 `success` 对应退出码 `0`；`invalid` 表示 Schema、数据、业务规则或产物状态检查未通过，对应 `1`；`partial` 表示要求的结果或执行不完整，对应 `1`；`error` 配合 `error_category: request` 对应 `2`；`conflict` 对应 `3`；`error` 配合 `error_category: execution` 对应 `4`。精确目标不存在属于 `invalid`。存在警告的完整成功结果仍使用 `success`。
 
-执行失败时返回失败原因；写入命令同时返回实际写入文件和恢复结果。
+请求解析错误尽量返回 `result.request_path`、从零开始的 `operation_index` 和 `target`。执行失败时返回失败原因；写入命令保留 `written`、实际写入文件、恢复成功和失败项及失败操作序号。
 
 分页截断与项目数据不完整分别报告：分页通过 `truncated` 和 `next_cursor` 表达，项目加载或计算不完整通过 `status: partial` 表达。
 
@@ -106,10 +112,10 @@ coflow <command> [subcommand] [arguments] --project <dir-or-config> --json
 ```bash
 coflow describe --json
 coflow describe data.set --json
-coflow describe apply --json
+coflow describe apply --schema input --json
 ```
 
-输出规范命令名、参数、默认值、条件默认值、依赖与互斥条件、值格式与数值范围、输入 JSON Schema、输出 JSON Schema、退出状态、只读或写入属性及简短示例。自描述协议与实际参数和 DTO 定义同步生成。
+根命令与分组查询默认只列 `commands` 目录、全局参数、退出码及下一步查询提示。具体命令返回单个 `result.definition`，包含参数、默认值、条件默认值、依赖与互斥条件、值约束、输入格式、只读或写入属性及简短示例。`--schema input|output|both` 仅适用于具体命令，按需在同一 definition 内提供 Schema，响应中不重复展开定义。自描述协议与实际参数和 DTO 定义同步生成。
 
 每个命令列出必填参数、允许值、可重复参数和专属结果。参数格式检查在项目加载前完成。
 
@@ -155,14 +161,14 @@ JSON 路径使用 `field`、`index`、`dict_key` 段，字典段的 `key` 使用
 - 基础值是默认取值视角；`--dimension name=variant` 可重复指定不同维度，同一维度仅有一个选择。
 - `--sort` 显式指定排序；默认按实际类型与记录 ID 稳定排序。
 - 明细列表默认 `--limit 50`，通过 `--cursor` 翻页；游标只用于同一查询的后续读取。
-- 每页读取当前项目数据。项目在翻页期间发生变化时，可以从第一页重新查询。
+- 游标绑定查询条件与项目 `revision`；页大小可调整，其余条件保持一致。项目变化后旧游标返回 `conflict`，从第一页重新查询。
 - 聚合计算覆盖全部匹配记录，分页只限制聚合结果行或明细展示。
 
 `--where` 使用字段路径、CFD 值字面量、比较运算 `== != < <= > >=`、布尔运算 `! && ||`、括号、集合包含和状态判断。布尔优先级依次为 `!`、比较、`&&`、`||`。函数限定为 `contains(path, value)`、`is_some(path)`、`is_none(path)` 和 `is_reachable(path)`；字符串与数组的包含按语言值语义处理，字典包含检查键。不可达值的比较结果为假，状态由对应判断函数查询。表达式在遍历前完成类型检查。
 
 `--sort` 接受逗号分隔的字段路径，前缀 `-` 表示降序。升序中不可达值先于 `None`，再按可比较语义值排序；降序反转该顺序。对象、集合及互不兼容的类型作为排序目标时返回请求错误。所有排序最后追加实际类型与记录 ID 的升序作为并列顺序。异构查询的路径必须在所选类型上合法；嵌套对象按查询范围内记录的实际类型绑定路径，零样本类型按声明验证。运行时 Option 空态造成的不可达单独返回。
 
-明细列表返回 `items`、`total`、`truncated` 和 `next_cursor`，分页大小可以调整。数据加载不完整时，列出未加载文件及原因，计数仅表示已成功加载的范围。
+明细列表返回 `items`、`total`、`truncated` 和 `next_cursor`，分页大小可以调整。数据加载不完整时返回对应计数，`--details` 展开未加载文件及原因；计数仅表示已成功加载的范围。
 
 列表通过分页控制输出量。上下文查询可以省略示例和关联信息，并返回继续查询的命令；精确查询返回完整的目标值。
 
@@ -415,7 +421,7 @@ coflow stats refs --direction incoming --json
 - 零传入引用只表示当前配置模型中没有传入边。
 - 无法加载的记录与文件单独计数；部分数据统计标记 `partial`，不表示完整项目结果。
 
-Runtime 执行耗时、缓存命中和工作计数通过可选性能信息返回，与配置内容统计分离。
+规则执行耗时与工作计数通过 `--performance` 按需返回，与配置内容统计分离。内部事务缓存计数由测试验证。
 
 ## 9. 校验、诊断与生成
 
@@ -442,7 +448,9 @@ coflow check --input changes.json --rules --json
 
 只有错误严重性的诊断阻止校验通过与发布，警告和信息诊断随结果返回。要求执行的规则必须全部完成且通过；未要求执行的业务规则使用 `not_executed`。`--rules` 与 `--rule` 互斥，重复 `--rule` 执行所选规则的并集并报告范围。
 
-`--limit` 限制返回的诊断条数，保留完整诊断计数；执行预算独立于输出限制。筛选某条记录的诊断不等于仅执行该记录的所有潜在依赖。
+默认校验结果保留 `rule_counts`、`requested_tasks`、`executed_tasks` 和 `rejected_tasks` 等计数。`--details` 展开按目标汇总的 `results` 与根语句 `tasks`。`complete` 表示所选检查全部执行完成，普通业务失败可以是完整结果。
+
+默认诊断上限为 50；`--details` 解除默认上限，`--limit` 显式限制返回条数，均保留完整计数。执行预算独立于输出限制。筛选某条记录的诊断不等于仅执行该记录的所有潜在依赖。
 
 ### 9.2 诊断解释
 
@@ -450,7 +458,7 @@ coflow check --input changes.json --rules --json
 coflow explain DATA-011 --json
 ```
 
-错误码解释包含含义、触发条件、合法形式和相关查询入口。`check --explain` 在实例诊断中加入预期类型、实际类型、规则源码、可可靠获得的相关值和有限候选。
+默认实例诊断的 `help` 提供简短修复方向。错误码解释包含含义、触发条件、合法形式和相关查询入口。`check --explain` 按需加入预期类型、实际类型、规则源码、相关值和有限候选；`--rule` 可将解释限定到指定规则。
 
 自动修复入口仅承载确定性的源码修复。需要选择业务值、改变规则或决定翻译内容的情况返回待决信息。
 
@@ -473,7 +481,7 @@ coflow build --json
 ### 10.1 统一入口
 
 ```bash
-coflow apply --input changes.json --dry-run --json
+coflow apply --input changes.json --rules --dry-run --json
 coflow apply --input changes.json --rules --json
 ```
 
@@ -539,7 +547,11 @@ coflow apply --input changes.json --rules --json
 
 操作按数组顺序执行，每一步使用前面操作修改后的数据。记录先创建，再修改字段或添加覆盖；改名后的操作使用新身份。引用在全部操作完成后检查，因此可以引用同批稍后创建的记录。某一步失败时停止执行，剩余操作标记 `not_executed`。
 
-调用方可以指定文件指纹或预期旧值，在对应操作执行前检查。旧值条件指定显式赋值或有效值，维度条件同时指定维度与变体。冲突结果包含操作序号、目标、预期值和实际值。批量操作先确定目标清单并检查 `expected_count`，再修改这些目标。
+候选事务共享编译后的 Schema、文件语法树与记录索引；只重新解析实际变化的文件并更新索引。常规批次复用一次基线模型，最终结构校验仅构建一次候选模型，after 快照复用该会话。`set_where` 每次读取当前候选模型，以维持顺序筛选语义。
+
+读取响应返回 `revision`，由配置、Schema、数据、稳定映射和输入文件身份与内容通过稳定 SHA-256 编码产生。所有项目写入与候选预览支持 `--if-revision`；两种 ChangeSet 的顶层都支持 `if_revision`，与参数同时提供时必须相同。前置条件在候选修改前校验，发布前重新发现输入范围并检查本次读取的原始内容；冲突报告当前修订。游标绑定相同修订，翻页时仅 `limit` 可改变。
+
+`data set --expected-cfd` 与 `set_field.expected` 按字段类型比较当前基础有效值；默认字段按 Schema 物化，模板保留 `f` 源表达式进行比较。文件替换与删除可附加 `expected_fingerprint`。这些局部条件与覆盖所有操作的项目修订条件可以组合。冲突结果提供操作序号、目标、预期值和实际值。批量操作先确定目标清单并检查 `expected_count`，再修改这些目标。
 
 ### 10.3 校验与发布约束
 
@@ -559,15 +571,19 @@ coflow apply --input changes.json --rules --json
 
 - `changed`、`written`、`dry_run`。
 - 结构与数据校验结果、业务规则状态及执行完整性。
-- 每个操作的序号、目标、执行状态及失败原因。
+- 默认 `operation_counts` 汇总所有操作状态，仅返回失败操作的序号、目标与原因；`--details` 返回全部操作。
 - 匹配记录数、改变记录数、改变字段数。
 - 涉及文件与实际写入文件。
 - 自动更新的引用、覆盖、输入配置和稳定映射。
-- 源码 Diff 与记录、维度语义 Diff。
+- 预览 `files` 中的源码补丁；`--details` 展开语义 Diff，独立 `diff` 命令提供按视图查询。失败报告与 Schema 预览使用同一源码报告形式。
+- `diff --include-source` 才提供完整 `before` / `after`，`--summary` 仅保留路径与变更种类；`--details` 不隐含完整源码。
+- `revision_before`、`revision_after` 表示读取与成功发布后的输入状态。
 
 `written` 表示全部修改已成功写入。写入失败时返回实际写入文件、已恢复文件和恢复失败项。调用方可以通过源码指纹或重新读取数据确认实际内容。
 
-单次 CLI 调用的返回状态完整反映是否落盘。校验失败与写入失败分别表达。
+默认精简输出保留上述发布与恢复信息，包含 `failed_operation`、`written_files`、`restored_files`、`restoration_failed` 等实际存在的上下文。单次 CLI 调用的返回状态完整反映是否落盘。校验失败与写入失败分别表达。
+
+AI 修改流程采用定向读取、按已授权目标构建候选、`apply --rules` 提交；需要审阅时预览。成功响应已包含相同范围的校验结果，无需重复运行 `check`。
 
 ## 11. 差异与格式化
 
@@ -601,6 +617,7 @@ coflow format --stdin --language cfd
 - 项目模式省略文件范围时格式化全部配置输入，支持重复 `--file`。
 - `--check` 只检查格式，存在差异返回退出码 `1`。
 - `--dry-run` 返回格式差异，不写文件。
+- 文件模式的成功、预览、检查和冲突结果统一使用 `files[]` 的 `path`、`change`、`patch`；完整源码通过 `source.read` 读取。
 - stdin 模式独立于项目；文本模式输出格式化源码，JSON 模式将源码放入结果对象。
 - `--check` 与 `--dry-run` 互斥；stdin 的检查模式输出检查结果，普通与预览模式输出格式化源码。stdin 与项目文件范围互斥，语言由 `--language cft|cfd` 指定。
 - 多文件先完成读取和格式化，再按公共事务发布。
