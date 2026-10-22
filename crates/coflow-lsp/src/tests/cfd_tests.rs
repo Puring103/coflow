@@ -4,7 +4,7 @@
 use super::super::definition::{
     cft_schema_field_definition_location, cft_type_definition_location,
 };
-use super::super::semantic_tokens::{MOD_DECLARATION, MOD_RECORD, SEM_RECORD_KEY, SEM_VARIABLE};
+use super::super::semantic_tokens::{MOD_DECLARATION, MOD_RECORD, SEM_RECORD_ID, SEM_VARIABLE};
 use super::common::*;
 use super::*;
 use coflow_language::cfd::parse_cfd;
@@ -105,7 +105,7 @@ fn cfd_requests_ignore_uppercase_cfd_extension() {
 }
 
 #[test]
-fn cfd_definition_request_resolves_record_keys_across_project_sources() {
+fn cfd_definition_request_resolves_record_ids_across_project_sources() {
     let schema_source = "table Item { key: string = \"\"; }\n\
 table Holder { key: string = \"\"; item: &Item; }\n";
     let (_cleanup, project) =
@@ -184,7 +184,7 @@ table Holder { key: string = \"\"; item: &Item; }\n";
     let sword = completion_result
         .iter()
         .find(|item| item["label"] == "sword")
-        .expect("indexed record key completion");
+        .expect("indexed record id completion");
     assert_eq!(sword["insertText"], "&sword");
 }
 
@@ -369,7 +369,7 @@ fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
 }
 
 #[test]
-fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
+fn dirty_group_record_id_keeps_semantic_color_and_offers_completion() {
     let schema_source = "table Product { name: string; }\n";
     let (_cleanup, project) = test_project("lsp-cfd-dirty-group-key", schema_source);
     let cfd_path = project.root_dir().join("data.cfd");
@@ -405,7 +405,7 @@ fn dirty_group_record_key_keeps_semantic_color_and_offers_completion() {
     assert!(
         tokens.contains(&DecodedSemanticToken {
             text: "asd".to_string(),
-            token_type: SEM_RECORD_KEY,
+            token_type: SEM_RECORD_ID,
             modifiers: MOD_DECLARATION | MOD_RECORD,
         }),
         "{tokens:?}"
@@ -510,7 +510,7 @@ table Settings {\n\
 
 #[test]
 fn cfd_formatted_strings_highlight_and_complete_record_fields() {
-    let schema_source = "table Message { amount: int; enabled: Option<bool>; label: fstring; }\n";
+    let schema_source = "table Message { amount: int; enabled: Option<bool>; label: string; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-string", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = r#"message: Message { amount: 7, enabled: true, label: f"amount={self.amount}" }"#;
@@ -552,7 +552,7 @@ fn cfd_formatted_strings_highlight_and_complete_record_fields() {
 #[test]
 fn cfd_formatted_string_completion_includes_nested_paths() {
     let schema_source = "data Details { count: int; }\n\
-table Message { details: Details; label: fstring; }\n";
+table Message { details: Details; label: string; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-nested", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = r#"message: Message { details: { count: 1 }, label: f"{self.det}" }"#;
@@ -568,7 +568,7 @@ table Message { details: Details; label: fstring; }\n";
 
 #[test]
 fn cfd_formatted_string_completion_supports_record_reference_syntax() {
-    let schema_source = "table DefaultSettings { visible: bool; title: fstring; }\n";
+    let schema_source = "table DefaultSettings { visible: bool; title: string; }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cfd-formatted-record-ref", schema_source);
     let schema = build.schema().expect("compiled schema");
     let source = r#"standard: DefaultSettings { visible: true, title: f"{&DefaultSettings::standard.visible}" }"#;
@@ -684,7 +684,7 @@ fn cfd_top_level_completion_inserts_a_required_field_record_snippet() {
     assert_eq!(product["insertTextFormat"], 2);
     assert_eq!(
         product["insertText"],
-        "${1:key}: Product {\n  name: ${2:\"value\"},\n}"
+        "${1:id}: Product {\n  name: ${2:\"value\"},\n}"
     );
 }
 
@@ -828,7 +828,7 @@ fn line_indexed_cfd_range_matches_linear_scan() {
 fn literal_and_escaped_braces_do_not_offer_interpolation_paths() {
     let (_cleanup, build) = test_lsp_build(
         "lsp-cfd-literal-braces",
-        "table Item { name: string; label: fstring; }",
+        "table Item { name: string; label: string; }",
     );
     let schema = build.schema().expect("schema");
     for source in [

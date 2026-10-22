@@ -22,7 +22,7 @@ impl CfdWriter {
         let variant = request.variant.as_str();
         let field_name = request.schema.source_field.name.as_str();
         let matches_record = |record: &&coflow_language::cfd::CfdRecord| {
-            record.key == request.source_key.as_str()
+            record.id == request.source_id.as_str()
                 && request.schema.schema.inheritance_root(&record.type_name)
                     == request
                         .schema
@@ -104,7 +104,7 @@ impl CfdWriter {
             } else {
                 let record = format!(
                     "  {}: {} {{\n    {field_name}: {value},\n  }}\n",
-                    request.source_key, request.schema.source_type.name
+                    request.source_id, request.schema.source_type.name
                 );
                 if let Some(block) = blocks.first() {
                     let end = block.span.end - 1;
@@ -139,13 +139,13 @@ impl CfdWriter {
         let mut patches = Vec::new();
         // 同一主体的覆盖可跨维度、变体与文件，按记录身份更新全部覆盖块。
         for record in ast.dimensions.iter().flat_map(|block| &block.records) {
-            if record.key != request.old_key.as_str()
+            if record.id != request.old_id.as_str()
                 || request.schema.inheritance_root(&record.type_name) != root
             {
                 continue;
             }
-            if let Some(new_key) = request.new_key {
-                patches.push((record.key_span, new_key.to_string()));
+            if let Some(new_id) = request.new_id {
+                patches.push((record.id_span, new_id.to_string()));
             } else {
                 patches.push((record.span, String::new()));
             }

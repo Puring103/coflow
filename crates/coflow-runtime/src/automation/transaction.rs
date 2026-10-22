@@ -676,7 +676,7 @@ impl Candidate {
                         .flatten(),
                 )
             })
-            .filter_map(|target| Some((target["type"].as_str()?, target["key"].as_str()?)))
+            .filter_map(|target| Some((target["type"].as_str()?, target["id"].as_str()?)))
             .collect::<std::collections::BTreeSet<_>>();
         report["matched_records"] = json!(matched.len());
         report["diff"] = super::semantic_diff::select(difference, args)?;

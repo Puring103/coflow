@@ -33,7 +33,7 @@ export interface ReplayDriver {
   deleteRecord(filePath: string, coordinate: RecordCoordinate): Promise<MutationResult<unknown>>
   insertRecord(
     filePath: string,
-    recordKey: string,
+    recordId: string,
     actualType: string,
     fields: FieldValue,
   ): Promise<MutationResult<unknown>>
@@ -89,12 +89,12 @@ const REPLAY_TABLE: Record<EditEntry['kind'], Handler> = {
     const insert = entry as Extract<EditEntry, { kind: 'insert' }>
     return direction === 'undo'
       ? driver.deleteRecord(insert.filePath, insert.coordinate)
-      : driver.insertRecord(insert.filePath, insert.coordinate.key, insert.coordinate.actual_type, insert.fields)
+      : driver.insertRecord(insert.filePath, insert.coordinate.id, insert.coordinate.actual_type, insert.fields)
   },
   delete: (driver, entry, direction) => {
     const deleted = entry as Extract<EditEntry, { kind: 'delete' }>
     return direction === 'undo'
-      ? driver.insertRecord(deleted.filePath, deleted.coordinate.key, deleted.coordinate.actual_type, deleted.snapshot)
+      ? driver.insertRecord(deleted.filePath, deleted.coordinate.id, deleted.coordinate.actual_type, deleted.snapshot)
       : driver.deleteRecord(deleted.filePath, deleted.coordinate)
   },
   'swap-records': (driver, entry) => {

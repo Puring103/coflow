@@ -50,7 +50,7 @@ impl Arguments {
             actual_type: self.get("type").map(str::to_string),
             include_derived: self.flag("include-derived"),
             file: self.get("file").map(|s| s.replace('\\', "/")),
-            key: self.get("key").map(str::to_string),
+            id: self.get("id").map(str::to_string),
             fields: field_list(&self.all("fields"))?,
             dimensions,
             sort: field_list(&self.all("sort"))?,

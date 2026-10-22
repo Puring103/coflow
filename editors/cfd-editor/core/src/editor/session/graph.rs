@@ -42,7 +42,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     let ctx = WireContext::new(queries, &session.diagnostics, &session.shape_cache);
 
     while let Some((coordinate, depth)) = queue.pop_front() {
-        let Some(view) = queries.record_view(&coordinate.actual_type, &coordinate.key) else {
+        let Some(view) = queries.record_view(&coordinate.actual_type, &coordinate.id) else {
             continue;
         };
         let host_file = view.display_path.to_string();
@@ -115,14 +115,14 @@ fn top_level_field(path: &CfdPath) -> Option<&str> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct NodeKey {
     actual_type: String,
-    key: String,
+    id: String,
 }
 
 impl NodeKey {
     fn from_coordinate(c: &RecordCoordinate) -> Self {
         Self {
             actual_type: c.actual_type.to_string(),
-            key: c.key.to_string(),
+            id: c.id.to_string(),
         }
     }
 }

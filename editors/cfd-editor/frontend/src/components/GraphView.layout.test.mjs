@@ -35,9 +35,9 @@ function layoutAll(graph, enabledFields, activeType, nodeExpanded, rowExpanded) 
 function graphNode(key, fields = [], actualType = 'Item') {
   return {
     id: `${actualType}::${key}`,
-    key,
+    record_id: key,
     actual_type: actualType,
-    coordinate: { actual_type: actualType, key },
+    coordinate: { actual_type: actualType, id: key},
     file_path: 'data/items.cfd',
     in_focus_file: true,
     is_collapsed: false,

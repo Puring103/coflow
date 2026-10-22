@@ -1,4 +1,4 @@
-use super::{CfdDataModel, CfdRecordId, CfdValue};
+use super::{CfdDataModel, CfdRecordHandle, CfdValue};
 use crate::diagnostics::RecordOrigin;
 use coflow_language::cft::CftSchema;
 
@@ -22,6 +22,35 @@ pub enum DimensionValueLookup<'a> {
 }
 
 impl CfdDataModel {
+    /// 返回原始模型的指定单维上下文有效值；此显式字段查询不继承模型投影选择。
+    #[must_use]
+    pub fn dimension_value(
+        &self,
+        source_record: CfdRecordHandle,
+        field_name: &str,
+        variant: &str,
+    ) -> Option<&CfdValue> {
+        let source = self.projection.as_ref().map_or(self, |view| &view.source);
+        let record = source.record(source_record)?;
+        record
+            .dimension_field(field_name)
+            .and_then(|values| values.effective_variants.get(variant))
+            .or_else(|| record.field(field_name))
+    }
+
+    /// 判断字段是否显式填写该变体；None、空字符串和与基础值相同的值都算已填写。
+    #[must_use]
+    pub fn has_dimension_variant(
+        &self,
+        source_record: CfdRecordHandle,
+        field_name: &str,
+        variant: &str,
+    ) -> bool {
+        self.record(source_record)
+            .and_then(|record| record.dimension_field(field_name))
+            .is_some_and(|values| values.variants.contains_key(variant))
+    }
+
     /// Looks up a dimension-specific value stored on its owning record.
     ///
     /// # Errors
@@ -31,7 +60,7 @@ impl CfdDataModel {
     pub fn dimension_field_value<'a>(
         &'a self,
         schema: &CftSchema,
-        source_record: CfdRecordId,
+        source_record: CfdRecordHandle,
         field_name: &str,
         dimension: &str,
         variant: &str,

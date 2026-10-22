@@ -35,7 +35,7 @@ impl Diagnostics {
             borrowed
                 .entry(file_path)
                 .or_default()
-                .entry(coordinate.key.as_str())
+                .entry(coordinate.id.as_str())
                 .or_default()
                 .push(index);
         }
@@ -44,7 +44,7 @@ impl Diagnostics {
             .map(|(file_path, by_record)| {
                 let by_record = by_record
                     .into_iter()
-                    .map(|(record_key, indexes)| (record_key.to_string(), indexes))
+                    .map(|(record_id, indexes)| (record_id.to_string(), indexes))
                     .collect();
                 (file_path.to_string(), by_record)
             })
@@ -72,7 +72,7 @@ impl Diagnostics {
     ) -> impl Iterator<Item = &'a FlatDiagnostic> + 'a {
         self.by_file_record
             .get(file_path)
-            .and_then(|by_record| by_record.get(coordinate.key.as_str()))
+            .and_then(|by_record| by_record.get(coordinate.id.as_str()))
             .into_iter()
             .flatten()
             .filter_map(|index| self.items.get(*index))
@@ -112,7 +112,7 @@ pub fn diagnostics_from_store(queries: ProjectQueries<'_>, project_root: &Path) 
                     .map(|label| label.location.text_range());
                 let mut flat = diagnostic.flat_view(
                     logical.and_then(|loc| loc.actual_type.clone()),
-                    logical.and_then(|loc| loc.record_key.clone()),
+                    logical.and_then(|loc| loc.record_id.clone()),
                     logical.and_then(|loc| loc.field_path.clone()),
                 );
                 normalize_target(&mut flat.target, source_range, queries, project_root);
@@ -140,13 +140,13 @@ fn normalize_target(
         } => {
             *file_path = project_relative_path(project_root, file_path);
             if queries
-                .file_for_record(&coordinate.actual_type, &coordinate.key)
+                .file_for_record(&coordinate.actual_type, &coordinate.id)
                 .is_none()
             {
                 let file_path = file_path.clone();
                 let range = source_range.or_else(|| {
                     queries
-                        .rejected_records_by_coordinate(&coordinate.actual_type, &coordinate.key)
+                        .rejected_records_by_coordinate(&coordinate.actual_type, &coordinate.id)
                         .find(|record| record.display_path == file_path)
                         .and_then(|record| match &record.origin {
                             coflow_runtime::RecordOrigin::File { span, .. } => *span,
@@ -207,7 +207,7 @@ mod tests {
 
     fn diagnostic(
         file_path: &str,
-        record_key: &str,
+        record_id: &str,
         actual_type: &str,
         message: &str,
     ) -> FlatDiagnostic {
@@ -219,7 +219,7 @@ mod tests {
             message: message.to_string(),
             target: DiagnosticTarget::TableField {
                 file_path: file_path.to_string(),
-                coordinate: RecordCoordinate::try_new(actual_type, record_key).expect("coordinate"),
+                coordinate: RecordCoordinate::try_new(actual_type, record_id).expect("coordinate"),
                 field_path: "name".to_string(),
             },
             contexts: Vec::new(),

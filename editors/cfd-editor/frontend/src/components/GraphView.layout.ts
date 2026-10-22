@@ -287,7 +287,7 @@ function sortedGraphNodes(nodes: GraphNodeView[]): GraphNodeView[] {
   return [...nodes].sort((left, right) => {
     if (left.in_focus_file !== right.in_focus_file) return left.in_focus_file ? -1 : 1
     if (left.file_path !== right.file_path) return left.file_path.localeCompare(right.file_path)
-    if (left.key !== right.key) return left.key.localeCompare(right.key)
+    if (left.record_id !== right.record_id) return left.record_id.localeCompare(right.record_id)
     return left.id.localeCompare(right.id)
   })
 }

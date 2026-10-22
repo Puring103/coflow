@@ -44,7 +44,7 @@ node editors/vscode-coflow/test/extension-unit.test.js
 dotnet build runtimes/csharp/Coflow.Loader/Coflow.Loader.csproj --configuration Release
 dotnet run --project runtimes/csharp/Coflow.Loader.NetStandardSmoke/Coflow.Loader.NetStandardSmoke.csproj --configuration Release
 dotnet test runtimes/csharp/Coflow.Loader.Tests/Coflow.Loader.Tests.csproj --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=40 /p:ThresholdType=line%2cbranch /p:ThresholdStat=total
-cargo run -- codegen tests/csharp-loader-integration
+cargo run -- codegen --project tests/csharp-loader-integration
 dotnet run --project tests/csharp-loader-integration/app/Coflow.Loader.Example.csproj --configuration Release
 ```
 
@@ -90,11 +90,21 @@ Keep README focused on user-facing installation, features, configuration, and us
 internal architecture notes, development workflow, repository checks, and specification indexes
 in this file or in `docs/`.
 
-Internal language and C# Loader design lives under `docs/language-design/` and is split by responsibility:
+Internal documentation is indexed by `docs/README.md` and grouped by responsibility:
 
-- `01-language-design.zh-CN.md`: base language semantics.
-- `02-api-runtime-design.zh-CN.md`: generated business types, typed descriptors, CFD loading, references, dimensions, and interpolation.
-- `04-source-formatting.zh-CN.md`: shared CFT/CFD source formatting contract and host integration.
+- `docs/language-design/spec/`: the implemented CFT/CFD language specification.
+- `docs/language-design/01-language-design.zh-CN.md`: language implementation boundaries.
+- `docs/language-design/02-api-runtime-design.zh-CN.md`: generated business types, typed descriptors, CFD loading, references, dimensions, and interpolation.
+- `docs/language-design/04-source-formatting.zh-CN.md`: shared CFT/CFD source formatting contract and host integration.
+- `docs/architecture/`: shared module boundaries, project generations, and domain terminology.
+- `docs/runtime-design/`: CLI protocols, project paths, mutations, and artifact publication.
+- `docs/editor-design/`: views, dimensions, value creation, tolerant loading, plugins, and Git comparison.
+- `docs/integration/`: application integration guidance.
+- `docs/development/`: engineering quality requirements; release procedures remain in `docs/releasing.md`.
+- `docs/archive/`: historical plans, UI previews, and dated benchmark reports.
+
+The cross-module language contracts are documented in `docs/language-design/05-language-evolution.zh-CN.md`.
+Keep the language specifications, implementation design, public website and synced skill references aligned.
 
 Keep public C# syntax and API guidance concise in
 `website/docs/docs/reference/07-codegen/01-csharp.md`; do not duplicate internal layouts or

@@ -57,15 +57,15 @@ export interface EditorMutationBackend {
     fieldPath: FieldPathSegment[],
     edit: CollectionEdit,
   ) => Promise<WriteFieldOutcome>
-  renameRecordKey: (
+  renameRecordId: (
     sessionId: number,
     coordinate: RecordCoordinate,
-    newKey: string,
+    newId: string,
   ) => Promise<RenameRecordOutcome>
   insertRecord: (
     sessionId: number,
     filePath: string,
-    recordKey: string,
+    recordId: string,
     actualType: string,
     fields: FieldValue,
   ) => Promise<InsertRecordOutcome>
@@ -372,12 +372,12 @@ export class EditorMutationController {
   async renameRecord(
     filePath: string,
     coordinate: RecordCoordinate,
-    newKey: string,
+    newId: string,
   ): Promise<RecordRow | undefined> {
     return this.enqueueMutation(undefined, async () => committedValue(await this.execute(
       '重命名失败',
       filePath,
-      sessionId => this.backend.renameRecordKey(sessionId, coordinate, newKey),
+      sessionId => this.backend.renameRecordId(sessionId, coordinate, newId),
       outcome => this.fileRecordsForRow(filePath, coordinate, outcome.row, outcome.revision),
       outcome => {
         this.applyRename(filePath, coordinate, outcome.renamed)
@@ -387,8 +387,8 @@ export class EditorMutationController {
           filePath,
           coordinate: outcome.renamed,
           fieldPath: [fieldPathField('id')],
-          oldValue: { kind: 'string', value: coordinate.key },
-          newValue: { kind: 'string', value: newKey },
+          oldValue: { kind: 'string', value: coordinate.id },
+          newValue: { kind: 'string', value: newId },
         })
         return outcome.row
       },
@@ -397,13 +397,13 @@ export class EditorMutationController {
 
   async insertRecord(
     filePath: string,
-    recordKey: string,
+    recordId: string,
     actualType: string,
     fields: FieldValue,
   ): Promise<void> {
     await this.enqueueMutation(undefined, () => this.insertRecordInternal(
       filePath,
-      recordKey,
+      recordId,
       actualType,
       fields,
       { recordHistory: true },
@@ -483,8 +483,8 @@ export class EditorMutationController {
         this.writeFieldsInternal(filePath, writes, { recordHistory: false }),
       deleteRecord: (filePath, coordinate) =>
         this.deleteRecordInternal(filePath, coordinate, { recordHistory: false }),
-      insertRecord: (filePath, recordKey, actualType, fields) =>
-        this.insertRecordInternal(filePath, recordKey, actualType, fields, { recordHistory: false }),
+      insertRecord: (filePath, recordId, actualType, fields) =>
+        this.insertRecordInternal(filePath, recordId, actualType, fields, { recordHistory: false }),
       swapRecords: (filePath, first, second) =>
         this.swapRecordsInternal(filePath, first, second, { recordHistory: false }),
       moveRecord: (filePath, coordinate, targetIndex) =>
@@ -685,7 +685,7 @@ export class EditorMutationController {
 
   private insertRecordInternal(
     filePath: string,
-    recordKey: string,
+    recordId: string,
     actualType: string,
     fields: FieldValue,
     options: MutationOptions,
@@ -693,7 +693,7 @@ export class EditorMutationController {
     return this.execute(
       '新建记录失败',
       filePath,
-      sessionId => this.backend.insertRecord(sessionId, filePath, recordKey, actualType, fields),
+      sessionId => this.backend.insertRecord(sessionId, filePath, recordId, actualType, fields),
       outcome => outcome.file_records,
       outcome => {
         if (options.recordHistory) {
@@ -701,7 +701,7 @@ export class EditorMutationController {
             kind: 'insert',
             revision: outcome.revision,
             filePath,
-            coordinate: { actual_type: actualType, key: recordKey },
+            coordinate: { actual_type: actualType, id: recordId },
             fields: cloneValue(fields),
           })
         }
@@ -935,7 +935,7 @@ function fieldWriteKey(
   coordinate: RecordCoordinate,
   fieldPath: FieldPathSegment[],
 ): string {
-  return `${filePath}\u001f${coordinate.actual_type}\u001f${coordinate.key}\u001f${fieldPath
+  return `${filePath}\u001f${coordinate.actual_type}\u001f${coordinate.id}\u001f${fieldPath
     .map(segment => `${segment.kind}:${segment.value}`)
     .join('/')}`
 }
@@ -943,7 +943,7 @@ function fieldWriteKey(
 function dimensionWriteKey(coordinate: DimensionValueCoordinate): string {
   return [
     coordinate.actual_type,
-    coordinate.record_key,
+    coordinate.record_id,
     coordinate.field,
     coordinate.dimension,
     coordinate.variant,
@@ -972,7 +972,7 @@ function sameCoordinateOrNull(
   previous: RecordCoordinate,
   next: RecordCoordinate,
 ): RecordCoordinate | null {
-  return previous.actual_type === next.actual_type && previous.key === next.key ? null : next
+  return previous.actual_type === next.actual_type && previous.id === next.id ? null : next
 }
 
 function fieldWriteChangesTopology(outcome: WriteFieldOutcome): boolean {

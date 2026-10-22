@@ -7,6 +7,8 @@ CFD Editor 提供：
 - 文件与类型导航。
 - 记录表格和字段编辑。
 - 引用关系图。
+- 本地化与其他维度的覆盖编辑。
+- Git Diff 变化比较。
 - 项目诊断和源位置跳转。
 - 可撤销的安全写入。
 
@@ -22,7 +24,7 @@ CFD Editor 提供：
 
 常用补全包括 `b`、`i`、`u`、`s`、`strong`、`em`、`mark`、`sub`、`sup`、`color`、`size`、`font-weight`、`span`、`br`、`space` 和 `sprite`。预览只把受支持的标签和安全样式映射为编辑器样式，不执行字符串中的 HTML、脚本、链接或外部资源；未知标签按普通文本处理。源数据始终保存原始字符串，不会被预览结果替换。
 
-富文本标签也可以写入 `fstring` 模板。编辑器的表格、记录和维度视图会展示 `f"..."` 的插值结果及富文本样式；单击字段仍可编辑原始模板。普通 `string` 中的花括号保持原样：
+富文本标签也可以写入 `string` 字段的模板值。编辑器的表格、记录和维度视图会展示 `f"..."` 的插值结果及富文本样式；单击字段仍可编辑原始模板，通过“文本 / 模板”选择是否启用插值。普通 `string` 中的花括号保持原样：
 
 ```cfd
 text: f"推荐 <b>{&Item::sword_fire.name}</b>，售价 <color=#ffb347>{&Item::sword_fire.price}</color> 金币"
@@ -30,7 +32,7 @@ text: f"推荐 <b>{&Item::sword_fire.name}</b>，售价 <color=#ffb347>{&Item::s
 
 ## VS Code 与 LSP
 
-Coflow LSP 为 CFT 和 CFD 提供诊断、补全、hover、定义跳转和语义高亮。LSP 适合文本编辑和快速导航，但完整项目交付仍应运行 `coflow check`，需要生成源文件时再运行 `coflow codegen`。
+Coflow LSP 为 CFT 和 CFD 提供诊断、补全、hover、定义跳转、语义高亮和源码格式化。LSP 适合文本编辑和快速导航，完整项目交付时运行 `coflow check --rules`，需要生成源文件时运行 `coflow build`。
 
 ## 与 CLI 的分工
 

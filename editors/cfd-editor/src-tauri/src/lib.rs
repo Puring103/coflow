@@ -94,7 +94,7 @@ pub fn run() -> tauri::Result<()> {
             write_dimension_value,
             edit_collection,
             insert_record,
-            rename_record_key,
+            rename_record_id,
             delete_record,
             swap_records,
             move_record,

@@ -12,7 +12,7 @@ import {
   coordinateId,
   errorMessage,
   recordActualType,
-  recordKey,
+  recordId,
   sameCoordinate,
   type DiagnosticItem,
   type FieldPathSegment,
@@ -91,8 +91,8 @@ interface Props {
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onWriteFields?: (coordinates: readonly RecordCoordinate[], fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<void>
   onCollectionEdit?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], edit: CollectionEdit) => Promise<RecordRow | void>
-  onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
-  onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
+  onRenameRecord?: (coordinate: RecordCoordinate, newId: string) => Promise<RecordRow | void>
+  onInsertRecord?: (recordId: string, actualType: string, fields: FieldValue) => Promise<void>
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
   onDeleteRecords?: (coordinates: readonly RecordCoordinate[]) => Promise<void>
   onMoveRecord?: (coordinate: RecordCoordinate, targetIndex: number) => Promise<void>
@@ -246,7 +246,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   }, [firstRecordFocusRequest])
 
   if (!record) {
-    return <div className="record-view"><div className="empty-hint">记录 "{coordinate.actual_type}.{coordinate.key}" 未找到</div></div>
+    return <div className="record-view"><div className="empty-hint">记录 "{coordinate.actual_type}.{coordinate.id}" 未找到</div></div>
   }
 
   const fields = fieldSearch
@@ -264,7 +264,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
     },
   )
   const fieldDiags = diagnosticProjection(record).fieldDiagnostics
-  const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
+  const canRename = !readOnly && data.capabilities.can_edit_id && !!onRenameRecord
   const rowSeverity = (row: RecordRow): 'error' | 'warning' | null =>
     diagnosticProjection(row).severity
 
@@ -375,7 +375,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         data-coordinate-id={id}
         data-record-draggable="true"
         data-record-drop-kind="record"
-        data-record-label={recordKey(row)}
+        data-record-label={recordId(row)}
         style={{
           '--type-color': typeColor(recordActualType(row)),
           ...recordGroupColorStyle(group?.color),
@@ -397,7 +397,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         }}
       >
         <Icon name="grip" size={13} className="record-drag-handle rv-record-drag-handle" aria-hidden />
-        <span className="rv-item-key">{recordKey(row)}</span>
+        <span className="rv-item-key">{recordId(row)}</span>
         {firstScalarSummary(row) && (
           <span className="rv-item-subtitle">{firstScalarSummary(row)}</span>
         )}
@@ -496,7 +496,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
             anchorY: event.clientY,
             filePath: data.file_path,
             coordinates: [record.coordinate],
-            primaryKey: recordKey(record),
+            primaryId: recordId(record),
           })
         }}
         onMouseDownCapture={e => {
@@ -529,7 +529,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         ) : <>
         <Fragment key={expansionOwner}>
         <CardHeader
-          recordKey={recordKey(record)}
+          recordId={recordId(record)}
           fields={record.fields}
           actualType={recordActualType(record)}
           filePath={data.file_path}
@@ -666,12 +666,12 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         <CreateRecordDialog
           actualType={newRecordType}
           typeOptions={data.type_names}
-          existingKeys={data.records.map(r => r.coordinate.key)}
+          existingIds={data.records.map(r => r.coordinate.id)}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={async (key, type, fields) => {
             await onInsertRecord(key, type, fields)
             if (insertAfterRecord && onMoveRecord) {
-              await onMoveRecord({ actual_type: type, key }, record.container_index + 1)
+              await onMoveRecord({ actual_type: type, id: key}, record.container_index + 1)
             }
           }}
           onClose={() => { setShowNewRecord(false); setInsertAfterRecord(false) }}
@@ -682,7 +682,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           request={recordMenu}
           groups={recordGroups}
           showOpenRecord
-          canRename={!readOnly && data.capabilities.can_edit_key && !!onRenameRecord}
+          canRename={!readOnly && data.capabilities.can_edit_id && !!onRenameRecord}
           canInsertBelow={canCreate && !!onMoveRecord}
           canDelete={!readOnly && data.capabilities.can_delete_record && !!onDeleteRecords}
           canAddToGroup={(recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup}
@@ -696,13 +696,13 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       )}
       {recordMenuAction?.kind === 'rename' && onRenameRecord && (
         <TextInputDialog
-          title="重命名 Key"
-          message="输入新的记录 Key"
-          initialValue={recordKey(record)}
+          title="重命名 ID"
+          message="输入新的记录 ID"
+          initialValue={recordId(record)}
           confirmLabel="重命名"
           onClose={() => setRecordMenuAction(null)}
           onConfirm={async next => {
-            if (next !== recordKey(record)) await onRenameRecord(record.coordinate, next)
+            if (next !== recordId(record)) await onRenameRecord(record.coordinate, next)
             setRecordMenuAction(null)
           }}
         />
@@ -710,7 +710,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       {recordMenuAction?.kind === 'delete' && onDeleteRecords && (
         <ConfirmDialog
           title="删除记录"
-          message={`确认删除记录 ${recordKey(record)}？此操作不可撤销。`}
+          message={`确认删除记录 ${recordId(record)}？此操作不可撤销。`}
           confirmLabel="删除"
           danger
           onClose={() => setRecordMenuAction(null)}

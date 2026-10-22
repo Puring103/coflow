@@ -308,7 +308,7 @@ fn parses_formatted_string_cell_references() -> TestResult {
     );
     let value = parse_value(
         &schema,
-        "fstring",
+        "string",
         r#"f"{self.name} {&Item::sword.name} {&Item::shield.name}""#,
     )?;
     let LoadedValueDraft::FormattedString(value) = value else {
@@ -325,7 +325,7 @@ fn parses_formatted_string_cell_references() -> TestResult {
         .filter_map(|segment| match segment {
             coflow_model::LoadedFormatSegment::Reference(reference) => Some((
                 reference.type_name.as_deref(),
-                reference.key.as_deref(),
+                reference.id.as_deref(),
                 reference.path.clone(),
             )),
             _ => None,
@@ -1354,7 +1354,7 @@ fn direct_record_refs_reject_invalid_forms_and_keys() -> TestResult {
         invalid_key
             .diagnostics
             .iter()
-            .any(|diag| diag.message.contains("invalid reference key")),
+            .any(|diag| diag.message.contains("invalid reference id")),
         "expected invalid key hint, got {invalid_key:?}",
     );
 

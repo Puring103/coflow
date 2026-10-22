@@ -3,10 +3,11 @@
 
 namespace Game.Config
 {
-public sealed partial class Settings
+public sealed partial class Settings : global::Coflow.Loader.ICfdRecord
 {
+    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
-    internal Settings(string key) { id = key; }
+    internal Settings(string id) { this.id = id; }
     public Item start { get; internal set; } = default!;
 }
 }

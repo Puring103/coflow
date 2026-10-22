@@ -5,7 +5,7 @@ import type { RecordRow } from '../bindings/RecordRow'
 import { graphCacheKey, projectGraphRows } from './appSupport'
 
 const row = (actualType: string, key: string): RecordRow => ({
-  coordinate: { actual_type: actualType, key }, display_path: 'data/items.cfd',
+  coordinate: { actual_type: actualType, id: key}, display_path: 'data/items.cfd',
   container_index: 0, container_size: 1, fields: [], field_index: {}, field_summaries: {},
   field_diagnostics: [], diagnostic_severity: null,
 })

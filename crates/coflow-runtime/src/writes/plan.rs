@@ -140,14 +140,14 @@ pub(crate) fn prepare_mutation_execution(
             value,
             ..
         } if is_id_path(path) => {
-            let CfdValue::String(new_key) = value else {
+            let CfdValue::String(new_id) = value else {
                 return Err(DiagnosticSet::one(Diagnostic::error(
                     "WRITE-RENAME",
                     "WRITE",
-                    "record key writes require a string value",
+                    "record id writes require a string value",
                 )));
             };
-            prepare_rename(session, catalog, write_record, new_key)
+            prepare_rename(session, catalog, write_record, new_id)
                 .map(MutationExecutionPlan::Rename)
         }
         PreparedMutationOp::SetField {
@@ -159,7 +159,7 @@ pub(crate) fn prepare_mutation_execution(
             session,
             catalog,
             &write_record.actual_type,
-            &write_record.key,
+            &write_record.id,
             path,
             value,
             allow_noop,
@@ -186,13 +186,13 @@ pub(crate) fn prepare_mutation_execution(
             session,
             catalog,
             &write_record.actual_type,
-            &write_record.key,
+            &write_record.id,
             path,
         )
         .map(MutationExecutionPlan::UnsetField),
         PreparedMutationOp::RenameRecord {
-            record, new_key, ..
-        } => prepare_rename(session, catalog, record, new_key).map(MutationExecutionPlan::Rename),
+            record, new_id, ..
+        } => prepare_rename(session, catalog, record, new_id).map(MutationExecutionPlan::Rename),
         PreparedMutationOp::DeleteRecord { record, .. } => {
             prepare_delete(session, catalog, record).map(MutationExecutionPlan::Delete)
         }
@@ -221,11 +221,11 @@ fn prepare_unset_field(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     actual_type: &str,
-    key: &str,
+    id: &str,
     path: &[WriteFieldPathSegment],
 ) -> Result<WriteFieldPlan, DiagnosticSet> {
-    let Some(record_ref) = session.records.get_by_coordinate(actual_type, key) else {
-        return Err(DiagnosticSet::one(not_found(actual_type, key)));
+    let Some(record_ref) = session.records.get_by_coordinate(actual_type, id) else {
+        return Err(DiagnosticSet::one(not_found(actual_type, id)));
     };
     let target = write_target_for_path(session, record_ref, path);
     let source = source_for_id(session, target.source_id)?;
@@ -378,8 +378,8 @@ fn required_record_ref<'a>(
 ) -> Result<&'a RecordRef, DiagnosticSet> {
     session
         .records
-        .get_by_coordinate(&coordinate.actual_type, &coordinate.key)
-        .ok_or_else(|| DiagnosticSet::one(not_found(&coordinate.actual_type, &coordinate.key)))
+        .get_by_coordinate(&coordinate.actual_type, &coordinate.id)
+        .ok_or_else(|| DiagnosticSet::one(not_found(&coordinate.actual_type, &coordinate.id)))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -444,22 +444,22 @@ fn prepare_write_field(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     actual_type: &str,
-    key: &str,
+    id: &str,
     path: &[WriteFieldPathSegment],
     new_value: &CfdValue,
     allow_noop: bool,
 ) -> Result<Option<WriteFieldPlan>, DiagnosticSet> {
-    let Some(record_ref) = session.records.get_by_coordinate(actual_type, key) else {
-        return Err(DiagnosticSet::one(not_found(actual_type, key)));
+    let Some(record_ref) = session.records.get_by_coordinate(actual_type, id) else {
+        return Err(DiagnosticSet::one(not_found(actual_type, id)));
     };
     let Some(_record) = session.model.record(record_ref.id) else {
-        return Err(DiagnosticSet::one(not_found(actual_type, key)));
+        return Err(DiagnosticSet::one(not_found(actual_type, id)));
     };
     let target = write_target_for_path(session, record_ref, path);
     let target_record = session
         .model
         .record(record_ref.id)
-        .ok_or_else(|| DiagnosticSet::one(not_found(actual_type, key)))?;
+        .ok_or_else(|| DiagnosticSet::one(not_found(actual_type, id)))?;
     let expected = write_rules::expected_type_for_record_path(
         session.schema(),
         target_record,
@@ -478,7 +478,7 @@ fn prepare_write_field(
     if allow_noop
         && session.field_value(
             &target.coordinate.actual_type,
-            &target.coordinate.key,
+            &target.coordinate.id,
             &target.field_path,
         ) == Some(new_value)
     {
@@ -497,24 +497,24 @@ fn prepare_rename(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<RenamePlan, DiagnosticSet> {
     let Some(target_ref) = session
         .records
-        .get_by_coordinate(&record.actual_type, &record.key)
+        .get_by_coordinate(&record.actual_type, &record.id)
     else {
         return Err(DiagnosticSet::one(not_found(
             &record.actual_type,
-            &record.key,
+            &record.id,
         )));
     };
-    if record.key() == new_key {
+    if record.id() == new_id {
         return Ok(RenamePlan::Noop {
             coordinate: target_ref.coordinate.clone(),
         });
     }
     let writer = lookup_source_writer(catalog);
-    let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_key)?;
+    let reference_actions = reference_update_actions(session, catalog, target_ref.id, new_id)?;
     let dimension_actions = dimension_record_actions(session, catalog, &record.actual_type);
     Ok(RenamePlan::Write(Box::new(RenameWritePlan {
         old_coordinate: target_ref.coordinate.clone(),
@@ -533,17 +533,17 @@ fn prepare_delete(
 ) -> Result<DeletePlan, DiagnosticSet> {
     let Some(record_ref) = session
         .records
-        .get_by_coordinate(&record.actual_type, &record.key)
+        .get_by_coordinate(&record.actual_type, &record.id)
     else {
         return Err(DiagnosticSet::one(not_found(
             &record.actual_type,
-            &record.key,
+            &record.id,
         )));
     };
     let Some(model_record) = session.model.record(record_ref.id) else {
         return Err(DiagnosticSet::one(not_found(
             &record.actual_type,
-            &record.key,
+            &record.id,
         )));
     };
     let writer = lookup_source_writer(catalog);

@@ -1,5 +1,5 @@
 //! `CfdValue` round-trip via serde JSON. Pins that the type is pure data —
-//! no `CfdRecordId` is serialized into the wire form, so the value can be
+//! no `CfdRecordHandle` is serialized into the wire form, so the value can be
 //! shipped to external hosts (Tauri front-end, LSP, ...) without leaking
 //! internal indices.
 
@@ -58,7 +58,7 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
     );
 
     let record = CfdRecord {
-        key: RecordCoordinate::try_new("Item", "potion")?.key,
+        id: RecordCoordinate::try_new("Item", "potion")?.id,
         object: CfdObject::try_new("Item", fields)?,
         origin: RecordOrigin::None,
         dimension_fields: BTreeMap::new(),
@@ -101,7 +101,7 @@ fn record_coordinate_has_stable_validated_wire_form() -> Result<(), Box<dyn std:
     let json = serde_json::to_string(&coordinate)?;
     expect_eq(
         json.as_str(),
-        r#"{"actual_type":"Item","key":"sword"}"#,
+        r#"{"actual_type":"Item","id":"sword"}"#,
         "record coordinate wire shape",
     )?;
     expect_eq(
@@ -111,9 +111,9 @@ fn record_coordinate_has_stable_validated_wire_form() -> Result<(), Box<dyn std:
     )?;
 
     for invalid in [
-        r#"{"actual_type":"","key":"sword"}"#,
-        r#"{"actual_type":"Item","key":""}"#,
-        r#"{"actual_type":"not valid","key":"sword"}"#,
+        r#"{"actual_type":"","id":"sword"}"#,
+        r#"{"actual_type":"Item","id":""}"#,
+        r#"{"actual_type":"not valid","id":"sword"}"#,
     ] {
         if serde_json::from_str::<RecordCoordinate>(invalid).is_ok() {
             return Err(std::io::Error::other(format!(

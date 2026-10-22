@@ -1,12 +1,12 @@
 use super::LoadedValueDraft;
 use crate::diagnostics::RecordOrigin;
-use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, RecordId, TypeName, VariantName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DimensionValueDraft {
     pub source_type: TypeName,
-    pub source_key: RecordKey,
+    pub source_id: RecordId,
     pub field: FieldName,
     pub dimension: DimensionName,
     pub variant: VariantName,
@@ -16,7 +16,7 @@ pub struct DimensionValueDraft {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedRecordDraft {
-    pub key: String,
+    pub id: String,
     pub actual_type: String,
     pub fields: BTreeMap<String, LoadedValueDraft>,
     /// Where this top-level record originated. Loaders set this when parsing;
@@ -27,12 +27,12 @@ pub struct LoadedRecordDraft {
 impl LoadedRecordDraft {
     #[must_use]
     pub fn new(
-        key: impl Into<String>,
+        id: impl Into<String>,
         actual_type: impl Into<String>,
         fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
     ) -> Self {
         Self {
-            key: key.into(),
+            id: id.into(),
             actual_type: actual_type.into(),
             fields: fields
                 .into_iter()

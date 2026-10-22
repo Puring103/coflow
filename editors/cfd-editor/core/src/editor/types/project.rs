@@ -74,7 +74,7 @@ pub struct PluginSchemaField {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectSearchMode {
-    Key,
+    Id,
     FullText,
 }
 

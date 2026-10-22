@@ -26,5 +26,5 @@ export function isEditableCapabilities(input: WriterCapabilities | null | undefi
 }
 
 export function canRenameKey(input: FileRecords | null | undefined): boolean {
-  return !!input?.capabilities.can_edit_key
+  return !!input?.capabilities.can_edit_id
 }

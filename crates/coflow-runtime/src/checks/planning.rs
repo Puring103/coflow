@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::data_model::{CfdDataModel, CfdRecordId};
+use crate::data_model::{CfdDataModel, CfdRecordHandle};
 use coflow_checker::{CheckTarget, CheckTask};
 use coflow_language::cft::{
     CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo,
@@ -32,9 +32,12 @@ pub(crate) fn plan_selected_checks_with_limit(
         if tasks.overflowed() {
             break;
         }
+        insert_data_tasks(schema, model, record, selected, &mut tasks);
         for statement in schema.check_statements_for_actual_type(value.actual_type()) {
             if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
-                if selected.is_some_and(|selected| !selected.contains(&info.id)) { continue; }
+                if selected.is_some_and(|selected| !selected.contains(&info.id)) {
+                    continue;
+                }
                 insert_statement_task(schema, info, CheckTarget::Record(record), &mut tasks);
             }
         }
@@ -43,7 +46,9 @@ pub(crate) fn plan_selected_checks_with_limit(
         .all_check_statements()
         .filter(|info| matches!(info.owner, CheckOwner::Project(_)))
     {
-        if selected.is_some_and(|selected| !selected.contains(&info.id)) { continue; }
+        if selected.is_some_and(|selected| !selected.contains(&info.id)) {
+            continue;
+        }
         if tasks.overflowed() {
             break;
         }
@@ -67,12 +72,19 @@ pub(super) fn plan_incremental_checks_with_limit(
     impact: &CheckImpact,
     max_tasks: usize,
 ) -> Result<Vec<CheckTask>, CheckPlanningError> {
+    // 内联对象可能替换、移动或删除；其引用还可读取其他记录，使用完整计划保证诊断不会过期。
+    if schema
+        .all_types()
+        .any(|ty| ty.kind == coflow_language::cft::CftTypeKind::Data && !ty.checks.is_empty())
+    {
+        return plan_full_checks_with_limit(schema, model, max_tasks);
+    }
     let mut tasks = CheckTaskBuilder::new(max_tasks);
     for (coordinate, changes) in &impact.records {
         if tasks.overflowed() {
             break;
         }
-        let record = model.record_by_type_key(&coordinate.actual_type, &coordinate.key);
+        let record = model.record_by_type_id(&coordinate.actual_type, &coordinate.id);
         if let Some(record) = record {
             let is_structural = impact.record_sets.iter().any(|changed| {
                 schema.is_assignable(&coordinate.actual_type, changed)
@@ -184,7 +196,7 @@ fn plan_field_change(
     schema: &CftSchema,
     model: &CfdDataModel,
     coordinate: &RecordCoordinate,
-    record: Option<CfdRecordId>,
+    record: Option<CfdRecordHandle>,
     changed: &ChangedField,
     tasks: &mut CheckTaskBuilder,
 ) {
@@ -286,20 +298,88 @@ fn insert_changed_statement_task(
 }
 
 fn insert_statement_task(
-    _schema: &CftSchema,
+    schema: &CftSchema,
     info: &CheckStatementInfo,
     target: CheckTarget,
     tasks: &mut CheckTaskBuilder,
 ) {
-    tasks.insert(CheckTask {
-        statement: info.id,
-        target,
-    });
+    // 命名规则是执行与失效的最小单位，避免局部重跑越过同规则先前的求值错误。
+    for statement in schema.check_statements_for_rule(&info.rule_id) {
+        tasks.insert(CheckTask {
+            statement,
+            target: target.clone(),
+        });
+    }
 }
 
 fn owner_fits_host(schema: &CftSchema, owner: &CheckOwner, actual_type: &str) -> bool {
     match owner {
         CheckOwner::Project(_) => false,
         CheckOwner::Type(owner) => schema.check_owner_applies_to_actual(owner, actual_type),
+    }
+}
+
+// 只遍历拥有关系，不沿 Ref 再次枚举对象，避免循环与重复执行。
+fn insert_data_tasks(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    record: CfdRecordHandle,
+    selected: Option<&BTreeSet<coflow_language::cft::CheckStatementId>>,
+    tasks: &mut CheckTaskBuilder,
+) {
+    use coflow_model::{CfdPath, CfdValue};
+    let Some(root) = model.record(record) else {
+        return;
+    };
+    let mut pending = root
+        .fields()
+        .iter()
+        .map(|(field, value)| (value, CfdPath::root().field(field.as_str()), None))
+        .collect::<Vec<_>>();
+    for (field, values) in &root.dimension_fields {
+        for (variant, value) in &values.effective_variants {
+            pending.push((
+                value,
+                CfdPath::root(),
+                Some((field.to_string(), variant.to_string())),
+            ));
+        }
+    }
+    while let Some((value, path, dimension)) = pending.pop() {
+        if tasks.overflowed() {
+            return;
+        }
+        match value {
+            CfdValue::Object(object) => {
+                for statement in schema.check_statements_for_actual_type(object.actual_type()) {
+                    if selected.is_some_and(|selection| !selection.contains(&statement)) {
+                        continue;
+                    }
+                    tasks.insert(CheckTask {
+                        statement,
+                        target: CheckTarget::Data {
+                            record,
+                            path: path.clone(),
+                            dimension: dimension.clone(),
+                        },
+                    });
+                }
+                for (field, value) in object.fields() {
+                    pending.push((value, path.clone().field(field.as_str()), dimension.clone()));
+                }
+            }
+            CfdValue::OptionSome(value) => pending.push((value, path, dimension)),
+            CfdValue::Array(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    pending.push((value, path.clone().index(index), dimension.clone()));
+                }
+            }
+            CfdValue::Dict(values) => {
+                for (key, value) in values {
+                    pending.push((value, path.clone().dict_key_value(key), dimension.clone()));
+                }
+            }
+            _ => {}
+        }
     }
 }

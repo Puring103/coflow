@@ -12,7 +12,7 @@ use coflow_model::CfdRecord;
 use common::*;
 
 #[test]
-fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
+fn record_ids_build_indexes_and_record_refs_resolve_by_expected_type() {
     let schema = compile_schema(
         r"
             abstract table Reward {}
@@ -45,7 +45,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
         Some(reward_id)
     );
     assert_eq!(
-        model.record(reward_id).map(CfdRecord::key),
+        model.record(reward_id).map(CfdRecord::id),
         Some("reward_1")
     );
     assert_eq!(
@@ -148,7 +148,7 @@ fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
 }
 
 #[test]
-fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
+fn unrelated_types_can_reuse_record_ids_in_separate_domains() {
     let schema = compile_schema(
         r"
             table Item { value: int; }
@@ -169,14 +169,14 @@ fn unrelated_types_can_reuse_record_keys_in_separate_domains() {
     let skill_domain = schema.inheritance_root("Skill").expect("skill domain");
 
     assert_ne!(item_domain, skill_domain);
-    assert_eq!(model.record_by_type_key("Item", "sword"), Some(item_id));
-    assert_eq!(model.record_by_type_key("Skill", "sword"), Some(skill_id));
+    assert_eq!(model.record_by_type_id("Item", "sword"), Some(item_id));
+    assert_eq!(model.record_by_type_id("Skill", "sword"), Some(skill_id));
     assert_eq!(
-        model.record_by_domain_key(item_domain, "sword"),
+        model.record_by_domain_id(item_domain, "sword"),
         Some(item_id)
     );
     assert_eq!(
-        model.record_by_domain_key(skill_domain, "sword"),
+        model.record_by_domain_id(skill_domain, "sword"),
         Some(skill_id)
     );
 }
@@ -316,18 +316,18 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
             TypeName::new("ItemReward").expect("type name"),
         ])
     );
-    assert_eq!(model.record_by_domain_key(domain, "base"), Some(base_id));
-    assert_eq!(model.record_by_domain_key(domain, "item"), Some(item_id));
+    assert_eq!(model.record_by_domain_id(domain, "base"), Some(base_id));
+    assert_eq!(model.record_by_domain_id(domain, "item"), Some(item_id));
     assert_eq!(
-        model.record_by_domain_key(domain, "currency"),
+        model.record_by_domain_id(domain, "currency"),
         Some(currency_id)
     );
-    assert_eq!(model.record_by_type_key("Reward", "item"), None);
+    assert_eq!(model.record_by_type_id("Reward", "item"), None);
     assert_eq!(
-        model.record_by_type_key("ItemReward", "item"),
+        model.record_by_type_id("ItemReward", "item"),
         Some(item_id)
     );
-    assert_eq!(model.record_by_type_key("CurrencyReward", "item"), None);
+    assert_eq!(model.record_by_type_id("CurrencyReward", "item"), None);
 }
 
 #[test]

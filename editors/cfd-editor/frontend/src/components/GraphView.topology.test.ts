@@ -5,9 +5,9 @@ import { graphTopologySignature, layoutGraph, retainGraphPositions, type GraphLa
 function node(value: string): GraphNodeView {
   return {
     id: 'Item::one',
-    key: 'one',
+    record_id: 'one',
     actual_type: 'Item',
-    coordinate: { actual_type: 'Item', key: 'one' },
+    coordinate: { actual_type: 'Item', id: 'one' },
     file_path: 'data/items.cfd',
     in_focus_file: true,
     is_collapsed: false,
@@ -46,8 +46,8 @@ describe('graph topology signature', () => {
         target: 'Item::two',
         field_path: 'next',
         raw: {
-          source: { actual_type: 'Item', key: 'one' },
-          target: { actual_type: 'Item', key: 'two' },
+          source: { actual_type: 'Item', id: 'one' },
+          target: { actual_type: 'Item', id: 'two' },
           field_path: 'next',
         },
       }],

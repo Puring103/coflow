@@ -183,9 +183,9 @@ fn ref_target_in_value(
 ) -> Option<(String, String)> {
     match value {
         CfdValue::Ref(r) => {
-            if span_contains(r.key.1, offset) {
+            if span_contains(r.id.1, offset) {
                 reference_target_type(expected_type)
-                    .map(|target_type| (target_type.to_string(), r.key.0.clone()))
+                    .map(|target_type| (target_type.to_string(), r.id.0.clone()))
             } else {
                 None
             }

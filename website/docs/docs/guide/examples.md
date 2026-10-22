@@ -11,7 +11,7 @@ coflow codegen --project examples/showcase
 
 - `schema check` 只检查 CFT schema。
 - `check --rules` 加载 `.cfd`，构建数据模型并执行业务规则。
-- `codegen` 发布 C# 等目标语言源文件，不执行 `check {}`；交付前先运行 `check --rules`。
+- `codegen` 生成 C# 源文件；`build` 在全部业务规则通过后生成代码。
 
 输出目录是 `examples/showcase/generated/csharp`。该目录由 Coflow 整体接管，不要放入手写文件。
 
@@ -31,4 +31,4 @@ coflow codegen --project examples/showcase
 | `10-checks` | 校验表达式 |
 | `11-conditional-checks` | 条件校验 |
 | `12-quantifiers` | 集合量词 |
-| `13-functions` | 函数值和函数体 |
+| `14-dimensions` | 本地化字段和语言覆盖 |

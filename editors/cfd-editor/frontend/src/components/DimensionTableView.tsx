@@ -243,7 +243,7 @@ export function DimensionTableView({
                 data-record-index={visibleRows.indexOf(item.row)}
                 onClick={() => { setSelectedKey(dimensionRowId(item.row)); setRecordField(0) }}
               >
-                {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
+                {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.id}{showRowField ? ` · ${item.row.field}` : ''}
               </button>
             ))}
           </aside>
@@ -555,7 +555,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 style={recordGroupColorStyle(item.group?.color)}
               >
                 <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>
-                  {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.key}{showRowField ? ` · ${item.row.field}` : ''}
+                  {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.id}{showRowField ? ` · ${item.row.field}` : ''}
                 </th>
                 <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} /></td>
                 {data.variants.map((variant, variantIndex) => {
@@ -602,7 +602,7 @@ function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField 
 }) {
   return (
     <div className="dimension-record-card">
-      <header><strong>{row.coordinate.actual_type}.{row.coordinate.key} · {row.field}</strong></header>
+      <header><strong>{row.coordinate.actual_type}.{row.coordinate.id} · {row.field}</strong></header>
       <div className={`dimension-record-row readonly${selectedField === 0 ? ' keyboard-selected' : ''}`} data-dimension-record-field="0" onMouseDown={() => onSelectField(0)}>
         <span>default</span>
         <DataCardCompact value={row.default_value} />

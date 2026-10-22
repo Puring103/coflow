@@ -36,8 +36,12 @@ fn standard_name(value: &str) -> bool {
     is_cft_identifier(value)
 }
 
+fn type_name(value: &str) -> bool {
+    standard_name(value) && !matches!(value, "int" | "float" | "bool" | "string" | "Option")
+}
+
 fn variant_name(value: &str) -> bool {
-    value != "default" && is_cft_identifier(value)
+    is_cft_identifier(value)
 }
 
 macro_rules! cft_name {
@@ -146,12 +150,12 @@ macro_rules! cft_name {
     };
 }
 
-cft_name!(TypeName, "type name", standard_name, trusted);
+cft_name!(TypeName, "type name", type_name, trusted);
 cft_name!(FieldName, "field name", standard_name, trusted);
-cft_name!(EnumName, "enum name", standard_name, trusted);
+cft_name!(EnumName, "enum name", type_name, trusted);
 cft_name!(EnumVariantName, "enum variant name", standard_name, trusted);
 cft_name!(ConstName, "const name", standard_name, trusted);
 cft_name!(CheckName, "check name", standard_name, trusted);
 cft_name!(DimensionName, "dimension name", standard_name, trusted);
-cft_name!(RecordKey, "record key", standard_name);
+cft_name!(RecordId, "record ID", standard_name);
 cft_name!(VariantName, "dimension variant", variant_name);

@@ -32,8 +32,8 @@ fn cfd_type_names_are_short_and_static_paths_remain_valid() {
 }
 
 #[test]
-fn cfd_names_and_record_keys_use_unicode_xid_rules() {
+fn cfd_names_and_record_ids_use_unicode_xid_rules() {
     let (ast, diagnostics) = parse_cfd("\u{88C5}\u{5907} { \u{957F}\u{5251}\u{0301} {} }");
     assert!(diagnostics.is_empty(), "{diagnostics:#?}");
-    assert_eq!(ast.records[0].key, "\u{957F}\u{5251}\u{0301}");
+    assert_eq!(ast.records[0].id, "\u{957F}\u{5251}\u{0301}");
 }

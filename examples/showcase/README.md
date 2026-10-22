@@ -23,7 +23,11 @@ representation.
 Run the example from the repository root:
 
 ```powershell
-coflow cft check examples/showcase
-coflow check examples/showcase
-coflow codegen examples/showcase
+coflow schema check --project examples/showcase
+coflow check --rules --project examples/showcase
+coflow codegen --project examples/showcase
 ```
+
+`schema check` validates declarations, `check --rules` validates data and business
+rules, and `codegen` generates C# source. Use `coflow build --project examples/showcase`
+to check declarations, data and all business rules before generating code in one step.

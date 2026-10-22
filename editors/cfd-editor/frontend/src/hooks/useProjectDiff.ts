@@ -48,7 +48,7 @@ export function useProjectDiff(
       ])
       const coordinateStillExists = !current.coordinate || next.records.some(record => (
         record.coordinate.actual_type === current.coordinate?.actual_type
-        && record.coordinate.key === current.coordinate.key
+        && record.coordinate.id === current.coordinate.id
         && (record.after?.file_path ?? record.before?.file_path) === current.filePath
         && (record.after?.dimension ?? record.before?.dimension ?? null) === (current.dimension ?? null)
       ))

@@ -20,11 +20,12 @@ internal static class Program
         var data = loaded.Data;
         var alpha = data.Table<Item>()["alpha"];
         var beta = data.Table<Item>()["beta"];
+        Require(data.Table<@class>()["keyword"].@namespace == "public" && data.Table<@class>()["keyword"].state == @event.@public, "C# keywords are escaped in all generated declarations and accesses");
         Require(typeof(Stats).IsValueType, "Stats must be a struct");
         Require(data.ItemCount == 2 && !alpha.IsFree && alpha.stats.IsAlive, "partial class, struct and data access extensions");
-        Require(data.Singleton<Settings>().StartKey == "alpha", "partial singleton");
+        Require(data.Singleton<Settings>().StartId == "alpha", "partial singleton");
         Require(ReferenceEquals(data.Table<Item>(), data.Table<Item>()), "table access reuses registered table");
-        Require(ReferenceEquals(data.Table<Item>().Get(EntityId.alpha), alpha), "enum key resolves to original identity");
+        Require(ReferenceEquals(data.Table<Item>().Get(EntityId.alpha), alpha), "enum id resolves to original identity");
         Require(data.Table<Item>().TryGet(EntityId.beta, out var enumBeta) && ReferenceEquals(enumBeta, beta), "typed enum lookup");
         Require(!data.Table<Item>().TryGet((EntityId)long.MaxValue, out _), "unknown enum value returns false");
         try { data.Table<Item>().Get((EntityId)long.MaxValue); throw new Exception("invalid enum must fail"); }
@@ -37,7 +38,10 @@ internal static class Program
         catch (InvalidOperationException) { }
         Require(ReferenceEquals(alpha.next.Value, beta) && ReferenceEquals(beta.next.Value, alpha), "circular references must preserve identity");
         Require(ReferenceEquals(data.Table<Entity>()["alpha"], alpha) && ReferenceEquals(data.Singleton<Settings>().start, alpha), "views and singleton references must share objects");
-        Require(alpha.name.Default == "Alpha" && alpha.name.For("ja") == "アルファ" && alpha.name.For("unknown") == "Alpha", "dimension selection and fallback");
+        Require(alpha.name == "Alpha" && alpha.For("language", "ja").name == "アルファ" && alpha.For("language", "unknown").name == "Alpha", "dimension selection and fallback");
+        Require(alpha.HasVariant(nameof(alpha.name), "ja") && !beta.HasVariant(nameof(beta.name), "ja"), "explicit variant presence survives loading");
+        Require(alpha.For("language", "ja").label == "{item} アルファ: 12" && alpha.name == "Alpha", "template fallback is evaluated in an independent selected view");
+        Require(ReferenceEquals(alpha.For("language", "ja").next.Value.next.Value, alpha.For("language", "ja")), "view references preserve cyclic identity");
         Require(alpha.enum_label == "3", "generated enum interpolation");
         Require(alpha.label == "{item} Alpha: 12", "basic nested interpolation");
         Require(alpha.stats.extra.settings.hp == 9, "nested typed defaults and loader-name collisions");
@@ -74,8 +78,8 @@ internal static class Program
                 Require(entry.samples[0] == 2147483648L && entry.samples[1] == long.MinValue
                     && entry.flags == (ContractFlags.A | ContractFlags.B) && entry.indexed[entry.flags] == 7, "compound constants and flag keys");
                 Require(entry.shape.inner.Value.count == 4 && entry.shape.inner.Value.inner.IsNone, "finite recursive struct values");
-                Require(entry.localized.Default.Value.Value == "base" && entry.localized.For("ja").Value.IsNone && entry.localized.For("en").IsNone, "distinct option layers in overlays");
-                Require(ReferenceEquals(shape.next.Value.next.Value, shape) && ReferenceEquals(entry.target.Default, shape), "table references preserve cycles");
+                Require(entry.localized.Value.Value == "base" && entry.For("contract_language", "ja").localized.Value.IsNone && entry.For("contract_language", "en").localized.IsNone, "distinct option layers in overlays");
+                Require(ReferenceEquals(shape.next.Value.next.Value, shape) && ReferenceEquals(entry.target, shape), "table references preserve cycles");
                 Require(entry.polymorphic is ContractChild child && child.score == 7, "data subtype in class field");
                 Require(entry.child.score == 8 && entry.child.name == "value", "inherited data fields");
             }

@@ -1,6 +1,6 @@
 use crate::data_model::CfdValue;
 use crate::CfdSource;
-use coflow_language::cft::{CftDimension, CftField, CftSchema, CftType, RecordKey, VariantName};
+use coflow_language::cft::{CftDimension, CftField, CftSchema, CftType, RecordId, VariantName};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DimensionSourceSchema<'a> {
@@ -14,7 +14,7 @@ pub struct DimensionSourceSchema<'a> {
 pub struct WriteDimensionValueRequest<'a> {
     pub source: &'a CfdSource,
     pub schema: DimensionSourceSchema<'a>,
-    pub source_key: &'a RecordKey,
+    pub source_id: &'a RecordId,
     pub variant: &'a VariantName,
     pub new_value: Option<&'a CfdValue>,
 }
@@ -24,8 +24,8 @@ pub struct RewriteDimensionRecordRequest<'a> {
     pub source: &'a CfdSource,
     pub schema: &'a CftSchema,
     pub actual_type: &'a str,
-    pub old_key: &'a RecordKey,
-    pub new_key: Option<&'a RecordKey>,
+    pub old_id: &'a RecordId,
+    pub new_id: Option<&'a RecordId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

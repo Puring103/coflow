@@ -1,7 +1,7 @@
 use crate::build::ValueDraft;
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::{LoadedDictKeyDraft, LoadedValueDraft};
-use crate::model::{CfdDictKey, CfdRecordId};
+use crate::model::{CfdDictKey, CfdRecordHandle};
 use coflow_language::cft::CftValueType;
 use coflow_language::limits::TraversalCursor;
 
@@ -13,7 +13,7 @@ impl Validator<'_, '_> {
         key_ty: &CftValueType,
         value_ty: &CftValueType,
         entries: &[(LoadedDictKeyDraft, LoadedValueDraft)],
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: &CfdPath,
         cursor: TraversalCursor,
     ) -> Vec<(CfdDictKey, ValueDraft)> {
@@ -47,7 +47,7 @@ impl Validator<'_, '_> {
         &mut self,
         ty: &CftValueType,
         key: &LoadedDictKeyDraft,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) -> Option<CfdDictKey> {
         let value = match key {

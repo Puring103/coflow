@@ -1,6 +1,6 @@
 use crate::limits::{EvaluationBudget, EvaluationCursor, EvaluationKind};
 use coflow_language::cft::{CftValueType, FieldName, VariantName};
-use coflow_model::{CfdDataModel, CfdDictKey, CfdRecordId, CfdValue};
+use coflow_model::{CfdDataModel, CfdDictKey, CfdRecordHandle, CfdValue};
 
 use super::location::{ModelCursor, ValueLocation};
 use super::value::{
@@ -17,7 +17,7 @@ pub(crate) enum EvalItems {
     },
     DictKeys(EvalEntries),
     DictValues(EvalEntries),
-    Records(Vec<CfdRecordId>),
+    Records(Vec<CfdRecordHandle>),
 }
 
 impl EvalItems {
@@ -162,26 +162,15 @@ impl EvalEntries {
             return Ok(None);
         };
         let record = dimension.base.storage.record;
-        let overlay = model
-            .record(record)
-            .and_then(|record| record.dimension_field(dimension.field.as_str()))
-            .and_then(|values| values.variants.get(variant.as_str()));
-        let (value, location) = if let Some(overlay) = overlay {
-            let storage =
-                ModelCursor::dimension(record, dimension.field.as_str(), variant.as_str());
-            (
-                &overlay.value,
-                ValueLocation {
-                    storage: storage.clone(),
-                    blame: storage,
-                    references: dimension.base.references.clone(),
-                },
-            )
-        } else {
-            let Some(value) = model_value(model, &dimension.base.storage) else {
-                return Ok(None);
-            };
-            (value, dimension.base.clone())
+        let Some(value) = model.dimension_value(record, dimension.field.as_str(), variant.as_str())
+        else {
+            return Ok(None);
+        };
+        let storage = ModelCursor::dimension(record, dimension.field.as_str(), variant.as_str());
+        let location = ValueLocation {
+            storage: storage.clone(),
+            blame: storage,
+            references: dimension.base.references.clone(),
         };
         let value = EvalValue::from_cfd_value(
             value,

@@ -46,7 +46,7 @@ impl SessionStore {
         let results = session.queries().search_records(&RecordSearchOptions {
             pattern: query.to_string(),
             mode: match mode {
-                ProjectSearchMode::Key => RecordSearchMode::Key,
+                ProjectSearchMode::Id => RecordSearchMode::Id,
                 ProjectSearchMode::FullText => RecordSearchMode::FullText,
             },
             file: None,
@@ -201,7 +201,7 @@ impl SessionStore {
     }
 
     /// Records assignable to `expected_type`, surfaced as `RefTarget`s so
-    /// the front-end can render `Type.key` and jump directly.
+    /// the front-end can render `Type.id` and jump directly.
     pub fn get_ref_targets(
         &self,
         id: u32,
@@ -226,7 +226,7 @@ impl SessionStore {
                         .and_then(|field| {
                             session
                                 .queries()
-                                .record_view(&target.coordinate.actual_type, &target.coordinate.key)
+                                .record_view(&target.coordinate.actual_type, &target.coordinate.id)
                                 .and_then(|view| match view.record.field(field) {
                                     Some(CfdValue::String(value)) if !value.is_empty() => {
                                         Some(value.clone())

@@ -161,28 +161,28 @@ export async function editCollection(
 export async function insertRecord(
   sessionId: number,
   filePath: string,
-  recordKey: string,
+  recordId: string,
   actualType: string,
   fields: FieldValue,
 ): Promise<InsertRecordOutcome> {
   return invokeCommand<InsertRecordOutcome>('insert_record', {
     sessionId,
     filePath,
-    recordKey,
+    recordId,
     actualType,
     fields,
   })
 }
 
-export async function renameRecordKey(
+export async function renameRecordId(
   sessionId: number,
   coordinate: RecordCoordinate,
-  newKey: string,
+  newId: string,
 ): Promise<RenameRecordOutcome> {
-  return invokeCommand<RenameRecordOutcome>('rename_record_key', {
+  return invokeCommand<RenameRecordOutcome>('rename_record_id', {
     sessionId,
     coordinate,
-    newKey,
+    newId,
   })
 }
 

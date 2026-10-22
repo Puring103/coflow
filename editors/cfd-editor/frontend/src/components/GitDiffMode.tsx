@@ -51,7 +51,7 @@ interface ProjectedTable {
 
 const READ_ONLY_CAPABILITIES = {
   can_edit_field: false,
-  can_edit_key: false,
+  can_edit_id: false,
   can_insert_record: false,
   can_delete_record: false,
   can_reorder_records: false,
@@ -232,7 +232,7 @@ function RecordDiffView({ records, selection, onSelectionChange, changedOnly }: 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return records
-    return records.filter(record => `${record.coordinate.actual_type}.${record.coordinate.key}`.toLowerCase().includes(query))
+    return records.filter(record => `${record.coordinate.actual_type}.${record.coordinate.id}`.toLowerCase().includes(query))
   }, [records, search])
   const activeRecord = useMemo(() => {
     if (selection.coordinate) {
@@ -279,7 +279,7 @@ function RecordDiffView({ records, selection, onSelectionChange, changedOnly }: 
               <button key={coordinateId(record.coordinate)} role="option" aria-selected={selected}
                 className={`git-record-list-item${selected ? ' selected' : ''}`}
                 onClick={() => onSelectionChange({ ...selection, coordinate: record.coordinate })}>
-                <span className="tree-item-label" title={`${record.coordinate.actual_type}.${record.coordinate.key}`}>{record.coordinate.actual_type}.{record.coordinate.key}</span>
+                <span className="tree-item-label" title={`${record.coordinate.actual_type}.${record.coordinate.id}`}>{record.coordinate.actual_type}.{record.coordinate.id}</span>
                 <ChangeMark change={record.change} />
               </button>
             )

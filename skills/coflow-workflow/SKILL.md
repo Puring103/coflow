@@ -12,8 +12,8 @@ description: "Coflow CFD-only 项目工作流：当用户需要规划 coflow.yam
 1. 定位项目：使用用户给出的 `CONFIG_OR_DIR`，否则从当前目录查找 `coflow.yaml` 或 `coflow.yml`。
 2. 读取工程结构：查看 `coflow.yaml`，必要时运行 `coflow schema inspect --project <project>` 和 `coflow project files --kind schema --project <project>`。
 3. 区分任务边界：schema 建模走 `coflow-schema`；CFD 文件由 runtime 统一加载，不存在可选输入格式。
-4. 修改后先运行 `coflow check --project <project>`；需要产物时再运行 `coflow build --project <project>`。
-5. 如果诊断返回非零，按 `file`、`range`、`code` 和消息定位后继续修复，不要跳过检查。
+4. 修改后先运行 `coflow check --rules --project <project>`；需要产物时再运行 `coflow build --project <project>`。
+5. 如果诊断返回非零，按 `location`、`record`、`field_path`、`code` 和消息定位后继续修复，不要跳过检查。
 
 ## 常用命令
 
@@ -21,7 +21,9 @@ description: "Coflow CFD-only 项目工作流：当用户需要规划 coflow.yam
 coflow init <project-dir>
 coflow schema inspect --project <project>
 coflow project files --kind schema --project <project>
-coflow check --project <project>
+coflow check --rules --project <project>
+coflow rule list --project <project>
+coflow check --rule Item::ValidPrice --explain --project <project>
 coflow build --project <project>
 coflow codegen --project <project>
 ```

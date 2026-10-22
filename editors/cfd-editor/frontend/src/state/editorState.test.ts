@@ -15,7 +15,7 @@ const fieldEntry = (key: string): EditEntry => ({
   kind: 'field',
   revision: 1,
   filePath: 'data/items.cfd',
-  coordinate: { actual_type: 'Item', key },
+  coordinate: { actual_type: 'Item', id: key},
   fieldPath: [{ kind: 'field', value: 'name' }],
   oldValue: { kind: 'string', value: 'old' },
   newValue: { kind: 'string', value: 'new' },

@@ -4,7 +4,7 @@ table RangeRule {
   minimum: int;
   maximum: int;
 
-  check {
+  check Valid {
     minimum <= maximum;
   }
 }

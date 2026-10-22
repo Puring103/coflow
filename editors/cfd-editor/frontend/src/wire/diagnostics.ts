@@ -11,7 +11,7 @@ export function diagnosticMatchesCoordinate(
 ): boolean {
   const target = diagnosticRecordTarget(diagnostic)
   return !!target
-    && target.coordinate.key === coordinate.key
+    && target.coordinate.id === coordinate.id
     && target.coordinate.actual_type === coordinate.actual_type
 }
 
@@ -63,13 +63,13 @@ export function diagnosticKey(diagnostic: DiagnosticItem): string {
 export function diagnosticMatchesAnchor(
   diagnostic: DiagnosticItem,
   filePath: string,
-  recordKey: string,
+  recordId: string,
   actualType: string | null,
   fieldPath: string | null,
 ): boolean {
   const target = diagnosticRecordTarget(diagnostic)
   if (!target || target.file_path !== filePath) return false
-  if (target.coordinate.key !== recordKey) return false
+  if (target.coordinate.id !== recordId) return false
   if (actualType !== null && target.coordinate.actual_type !== actualType) {
     return false
   }

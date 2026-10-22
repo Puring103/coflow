@@ -9,7 +9,7 @@ const MAX_LSP_STDERR_LENGTH = 64 * 1024;
 
 const CFT_SEMANTIC_TOKENS_LEGEND = new vscode.SemanticTokensLegend(
   [
-    "recordKey",
+    "recordId",
     "type",
     "enum",
     "enumMember",
@@ -866,11 +866,10 @@ function appendProjectArg(args, projectDir) {
   if (!projectDir) {
     return args;
   }
-  const lspIndex = args.lastIndexOf("lsp");
-  if (lspIndex >= 0 && args.slice(lspIndex + 1).some((arg) => !arg.startsWith("-"))) {
+  if (args.some((arg) => arg === "--project" || arg.startsWith("--project="))) {
     return args;
   }
-  return [...args, projectDir];
+  return [...args, "--project", projectDir];
 }
 
 function findNearestCoflowConfigDir(startDir) {

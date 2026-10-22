@@ -12,7 +12,7 @@ use common::*;
 use std::path::PathBuf;
 
 #[test]
-fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_check() {
+fn data_model_applies_defaults_and_builds_record_id_indexes_without_running_check() {
     let schema = compile_schema(
         r#"
             const DEFAULT_NAME = "unknown";
@@ -22,7 +22,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
                 rarity: Rarity = Rarity::Common;
                 tags: [string] = [];
                 attrs: {string: int} = {};
-                check { id != ""; }
+                check Valid { id != ""; }
             }
         "#,
     );
@@ -45,7 +45,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
     );
 
     let record = model.record(item_id).expect("record");
-    assert_eq!(record.key(), "item_1");
+    assert_eq!(record.id(), "item_1");
     assert_eq!(
         record.field("name"),
         Some(&CfdValue::String("unknown".to_string()))
@@ -83,7 +83,7 @@ fn invalid_dimension_values_preserve_the_overlay_origin() {
     builder.add_record("item", "Item", [("value", LoadedValueDraft::from(1_i64))]);
     builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new("Item").unwrap(),
-        source_key: RecordKey::new("item").unwrap(),
+        source_id: RecordId::new("item").unwrap(),
         field: FieldName::new("value").unwrap(),
         dimension: DimensionName::new("platform").unwrap(),
         variant: VariantName::new("pc").unwrap(),
@@ -153,7 +153,7 @@ fn dimension_field_lookup_reads_record_owned_overlay() {
     );
     builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new("Item").unwrap(),
-        source_key: RecordKey::new("potion").unwrap(),
+        source_id: RecordId::new("potion").unwrap(),
         field: FieldName::new("name").unwrap(),
         dimension: DimensionName::new("platform").unwrap(),
         variant: VariantName::new("pc").unwrap(),
@@ -203,7 +203,7 @@ fn dimension_refs_are_precomputed_with_typed_coordinates() {
     );
     builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new("Offer").unwrap(),
-        source_key: RecordKey::new("starter").unwrap(),
+        source_id: RecordId::new("starter").unwrap(),
         field: FieldName::new("item").unwrap(),
         dimension: DimensionName::new("platform").unwrap(),
         variant: VariantName::new("pc").unwrap(),
@@ -252,7 +252,7 @@ fn dimension_field_lookup_uses_singleton_owner_record() {
     );
     builder.add_dimension_value_draft(DimensionValueDraft {
         source_type: TypeName::new("UiText").unwrap(),
-        source_key: RecordKey::new("UiText").unwrap(),
+        source_id: RecordId::new("UiText").unwrap(),
         field: FieldName::new("welcome").unwrap(),
         dimension: DimensionName::new("language").unwrap(),
         variant: VariantName::new("zh").unwrap(),
@@ -330,7 +330,7 @@ fn object_typed_record_refs_resolve_by_expected_type() {
 }
 
 #[test]
-fn parent_record_keys_do_not_satisfy_child_typed_refs() {
+fn parent_record_ids_do_not_satisfy_child_typed_refs() {
     let schema = compile_schema(
         r#"
             table Base { name: string; }
@@ -499,21 +499,28 @@ fn semantic_edges_report_data_model_diagnostics() {
 }
 
 #[test]
-fn omitted_option_field_materializes_as_none_without_a_diagnostic() {
-    let schema = compile_schema("table Item { name: string; maybe: Option<int>; }");
+fn omitted_option_requires_an_explicit_default() {
+    let schema =
+        compile_schema("table Item { required: Option<int>; optional: Option<int> = None; }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
         "Item",
-        [("name", LoadedValueDraft::from("visible"))],
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
     );
+    let output = builder.build_partial().expect("editable missing field");
+    let diagnostic = diagnostic_with_code(&output.diagnostics, CfdErrorCode::MissingRequiredField);
+    assert_eq!(
+        primary_path_segments(diagnostic),
+        &[CfdPathSegment::Field("required".into())]
+    );
+    let (_, item) = output.model.records().next().expect("item record");
+    assert_eq!(item.field("required"), None);
+    assert_eq!(item.field("optional"), Some(&CfdValue::OptionNone));
 
-    let model = builder.build().expect("omitted option is valid");
-    let item_id = model
-        .lookup_assignable(&schema, "Item", "item")
-        .expect("item record");
-    let item = model.record(item_id).expect("item");
-    assert_eq!(item.field("maybe"), Some(&CfdValue::OptionNone));
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item", "Item", [("required", LoadedValueDraft::OptionNone)]);
+    assert!(builder.build().is_ok(), "explicit None satisfies presence");
 }
 
 #[test]
@@ -573,7 +580,7 @@ fn duplicate_keys_report_record_level_id_paths() {
 }
 
 #[test]
-fn empty_record_keys_are_rejected() {
+fn empty_record_ids_are_rejected() {
     let schema = compile_schema("table Item { value: int; }");
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -588,7 +595,7 @@ fn empty_record_keys_are_rejected() {
 }
 
 #[test]
-fn non_identifier_record_keys_are_rejected() {
+fn non_identifier_record_ids_are_rejected() {
     let schema = compile_schema("table Item { value: int; }");
 
     for key in ["123", "fire-ball", "fire.ball", "type"] {
@@ -598,7 +605,7 @@ fn non_identifier_record_keys_are_rejected() {
         let Err(err) = builder.build() else {
             panic!("`{key}` should fail as a record key")
         };
-        assert_has_code(&err, CfdErrorCode::InvalidRecordKey);
+        assert_has_code(&err, CfdErrorCode::InvalidRecordId);
     }
 }
 

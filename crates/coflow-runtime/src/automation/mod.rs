@@ -251,7 +251,7 @@ impl Response {
             .map(|record| RejectedDataRecord {
                 record: RecordTarget {
                     actual_type: record.actual_type.clone(),
-                    key: record.key.clone(),
+                    id: record.id.clone(),
                 },
                 file: record.display_path.clone(),
             })

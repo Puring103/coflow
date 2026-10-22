@@ -84,7 +84,6 @@ pub enum SchemaTypeRefInfo {
     Float,
     Bool,
     String,
-    FormattedString,
     Named { name: String, target_kind: String },
     Ref { target: String },
     Array { item: Box<Self> },
@@ -123,7 +122,7 @@ pub enum SchemaDefaultValueInfo {
     },
     RecordReference {
         type_name: String,
-        key: String,
+        id: String,
     },
 }
 
@@ -163,7 +162,7 @@ pub enum SchemaConstValueInfo {
     },
     RecordReference {
         type_name: String,
-        key: String,
+        id: String,
     },
 }
 
@@ -315,7 +314,6 @@ fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
         CftValueType::Float => SchemaTypeRefInfo::Float,
         CftValueType::Bool => SchemaTypeRefInfo::Bool,
         CftValueType::String => SchemaTypeRefInfo::String,
-        CftValueType::FormattedString => SchemaTypeRefInfo::FormattedString,
         CftValueType::Object(name) => SchemaTypeRefInfo::Named {
             name: name.to_string(),
             target_kind: "type".to_string(),
@@ -381,10 +379,10 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
                 .map(|(name, value)| (name.to_string(), default_value_info(value)))
                 .collect(),
         },
-        CftSchemaDefaultValue::RecordReference { type_name, key } => {
+        CftSchemaDefaultValue::RecordReference { type_name, id: key } => {
             SchemaDefaultValueInfo::RecordReference {
                 type_name: type_name.to_string(),
-                key: key.clone(),
+                id: key.clone(),
             }
         }
     }
@@ -429,10 +427,10 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
                 .map(|(name, value)| (name.to_string(), const_value_info(value)))
                 .collect(),
         },
-        CftConstValue::RecordReference { type_name, key } => {
+        CftConstValue::RecordReference { type_name, id: key } => {
             SchemaConstValueInfo::RecordReference {
                 type_name: type_name.to_string(),
-                key: key.clone(),
+                id: key.clone(),
             }
         }
     }

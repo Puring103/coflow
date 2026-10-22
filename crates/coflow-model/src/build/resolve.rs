@@ -1,16 +1,20 @@
 use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
-use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordId, CfdValue};
+use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordHandle, CfdValue};
 use crate::{stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString};
-use coflow_language::cft::{CftValueType, FieldName, RecordKey, TypeName};
+use coflow_language::cft::{
+    CftValueType, DimensionName, FieldName, RecordId, TypeName, VariantName,
+};
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ValueNode {
-    record: CfdRecordId,
+    record: CfdRecordHandle,
     path: CfdPath,
+    // 维度身份属于求值节点，缓存与循环检测不能仅用变体名区分。
+    context: Option<(DimensionName, VariantName)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +34,7 @@ impl ValueNode {
         Self {
             record: self.record,
             path: self.path.clone().field(name.as_str()),
+            context: self.context.clone(),
         }
     }
 
@@ -37,6 +42,7 @@ impl ValueNode {
         Self {
             record: self.record,
             path: self.path.clone().index(index),
+            context: self.context.clone(),
         }
     }
 
@@ -44,6 +50,7 @@ impl ValueNode {
         Self {
             record: self.record,
             path: self.path.clone().dict_key_value(key),
+            context: self.context.clone(),
         }
     }
 }
@@ -51,8 +58,10 @@ impl ValueNode {
 pub(super) struct ValueResolver<'a, 'schema> {
     schema: &'a BuildSchema<'schema>,
     drafts: &'a [RecordDraft],
-    record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_id: &'a BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     diagnostics: &'a mut Vec<CfdDiagnostic>,
+    dimension_values:
+        BTreeMap<(CfdRecordHandle, FieldName, DimensionName, VariantName), ValueDraft>,
     reference_diagnostics: Vec<CfdDiagnostic>,
     memo: BTreeMap<ValueNode, ResolvedMemo>,
     active: BTreeMap<ValueNode, usize>,
@@ -67,16 +76,17 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     pub(super) fn new(
         schema: &'a BuildSchema<'schema>,
         drafts: &'a [RecordDraft],
-        record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+        record_by_domain_id: &'a BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
         diagnostics: &'a mut Vec<CfdDiagnostic>,
         structural_limits: StructuralLimits,
     ) -> Self {
         Self {
             schema,
             drafts,
-            record_by_domain_key,
+            record_by_domain_id,
             diagnostics,
             reference_diagnostics: Vec::new(),
+            dimension_values: BTreeMap::new(),
             memo: BTreeMap::new(),
             active: BTreeMap::new(),
             stack: Vec::new(),
@@ -89,7 +99,8 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     pub(super) fn resolve_record_fields(
         &mut self,
-        record: CfdRecordId,
+        record: CfdRecordHandle,
+        context: Option<(DimensionName, VariantName)>,
     ) -> Option<BTreeMap<FieldName, CfdValue>> {
         self.budget = StructuralBudget::new(self.structural_limits);
         self.budget_exhausted = false;
@@ -101,9 +112,14 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let root = ValueNode {
             record,
             path: CfdPath::root(),
+            context,
         };
         let cursor = self.enter_node(TraversalCursor::root(), &root, StructureKind::DataValue)?;
-        self.resolve_fields(fields, &root, cursor, &drafts[record.index()])
+        // 顶层保留已成功的字段，供容错加载使用；严格构建仍会拒绝全部求值诊断。
+        Some(
+            self.resolve_fields_partial(fields, &root, cursor, &drafts[record.index()])
+                .0,
+        )
     }
 
     pub(super) fn take_reference_diagnostics(&mut self) -> Vec<CfdDiagnostic> {
@@ -114,32 +130,21 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         self.diagnostics.len()
     }
 
-    pub(super) fn resolve_dimension_value(
-        &mut self,
-        record: CfdRecordId,
-        value: &ValueDraft,
-        path: &CfdPath,
-    ) -> Option<CfdValue> {
-        self.budget = StructuralBudget::new(self.structural_limits);
-        self.budget_exhausted = false;
-        self.memo.clear();
-        self.active.clear();
-        self.stack.clear();
-        let node = ValueNode {
-            record,
-            path: path.clone(),
-        };
-        self.resolve_node(
-            value,
-            node,
-            TraversalCursor::root(),
-            false,
-            &self.drafts[record.index()],
-            &ValueNode {
-                record,
-                path: CfdPath::root(),
-            },
-        )
+    pub(super) fn set_dimension_values(&mut self, values: &[super::ValidatedDimensionValue]) {
+        self.dimension_values = values
+            .iter()
+            .map(|(record, input, draft, _)| {
+                (
+                    (
+                        *record,
+                        input.field.clone(),
+                        input.dimension.clone(),
+                        input.variant.clone(),
+                    ),
+                    draft.clone(),
+                )
+            })
+            .collect();
     }
 
     fn resolve_fields(
@@ -149,10 +154,23 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         cursor: TraversalCursor,
         owner: &RecordDraft,
     ) -> Option<BTreeMap<FieldName, CfdValue>> {
+        let (fields, complete) = self.resolve_fields_partial(fields, parent, cursor, owner);
+        complete.then_some(fields)
+    }
+
+    fn resolve_fields_partial(
+        &mut self,
+        fields: &BTreeMap<FieldName, ValueDraft>,
+        parent: &ValueNode,
+        cursor: TraversalCursor,
+        owner: &RecordDraft,
+    ) -> (BTreeMap<FieldName, CfdValue>, bool) {
         let diagnostic_start = self.diagnostics.len();
         let mut out = BTreeMap::new();
         let mut complete = true;
         for (name, value) in fields {
+            let selected = self.dimension_override(parent, name).cloned();
+            let value = selected.as_ref().unwrap_or(value);
             let Some(value) =
                 self.resolve_node(value, parent.field(name), cursor, false, owner, parent)
             else {
@@ -161,7 +179,20 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             };
             out.insert(name.clone(), value);
         }
-        (complete && self.diagnostics.len() == diagnostic_start).then_some(out)
+        (out, complete && self.diagnostics.len() == diagnostic_start)
+    }
+
+    fn dimension_override(&self, owner: &ValueNode, field: &FieldName) -> Option<&ValueDraft> {
+        if !owner.path.segments.is_empty() {
+            return None;
+        }
+        let (dimension, variant) = owner.context.as_ref()?;
+        self.dimension_values.get(&(
+            owner.record,
+            field.clone(),
+            dimension.clone(),
+            variant.clone(),
+        ))
     }
 
     fn resolve_node(
@@ -228,12 +259,15 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             ValueDraft::FormattedString(value) => {
                 self.resolve_formatted_string(value, node, cursor, owner, owner_node)
             }
-            ValueDraft::PendingRef { explicit_type, key } => {
+            ValueDraft::PendingRef {
+                explicit_type,
+                id: key,
+            } => {
                 if let Some(explicit) = explicit_type {
                     if let Some(target) = self
                         .schema
                         .inheritance_root(explicit.as_str())
-                        .and_then(|root| self.record_by_domain_key.get(root))
+                        .and_then(|root| self.record_by_domain_id.get(root))
                         .and_then(|records| records.get(key.as_str()))
                         .and_then(|id| self.drafts.get(id.index()))
                     {
@@ -246,7 +280,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                         }
                     }
                 }
-                match RecordKey::new(key.clone()) {
+                match RecordId::new(key.clone()) {
                     Ok(key) => Some(CfdValue::Ref(key)),
                     Err(error) => {
                         self.diagnostics.push(
@@ -334,7 +368,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<CfdValue> {
         let first = reference.path.first()?;
         // self 绑定到实际包含模板的对象，集合和 Option 只传递所属对象，不重新绑定。
-        let (mut current_value, mut current_type) = if reference.key.is_none() {
+        let (mut current_value, mut current_type) = if reference.id.is_none() {
             self.resolve_owner_field(owner, owner_node, first, node, cursor)?
         } else {
             let expected = reference
@@ -342,8 +376,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                 .as_deref()
                 .unwrap_or(self.drafts.get(node.record.index())?.actual_type.as_str());
             let expected = TypeName::new(expected).ok()?;
-            let (record, _) =
-                self.resolve_ref_target(&expected, reference.key.as_deref()?, node)?;
+            let (record, _) = self.resolve_ref_target(&expected, reference.id.as_deref()?, node)?;
             self.resolve_record_field(record, first, node, cursor)?
         };
         for field in reference.path.iter().skip(1) {
@@ -365,7 +398,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     ) -> Option<(CfdValue, CftValueType)> {
         // id 只属于顶层记录；data 即便位于记录内也没有虚拟身份。
         if field_name == "id" && owner_node.path.segments.is_empty() {
-            return Some((CfdValue::String(owner.key.clone()), CftValueType::String));
+            return Some((CfdValue::String(owner.id.clone()), CftValueType::String));
         }
         let field = self
             .schema
@@ -375,9 +408,13 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             self.push_unknown_format_field(owner.actual_type.as_str(), field_name, blame);
             return None;
         };
-        let value = owner.fields.get(&field.name)?;
+        // 缺少显式覆盖时仍在当前上下文求值基础表达式，不能复用基础渲染结果。
+        let value = self
+            .dimension_override(owner_node, &field.name)
+            .or_else(|| owner.fields.get(&field.name))?
+            .clone();
         let resolved = self.resolve_node(
-            value,
+            &value,
             owner_node.field(&field.name),
             cursor,
             true,
@@ -389,7 +426,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
 
     fn resolve_record_field(
         &mut self,
-        record_id: CfdRecordId,
+        record_id: CfdRecordHandle,
         field_name: &str,
         node: &ValueNode,
         cursor: TraversalCursor,
@@ -399,6 +436,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         let owner_node = ValueNode {
             record: record_id,
             path: CfdPath::root(),
+            context: node.context.clone(),
         };
         self.resolve_owner_field(owner, &owner_node, field_name, node, cursor)
     }
@@ -463,12 +501,12 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
         expected_type: &TypeName,
         key: &str,
         node: &ValueNode,
-    ) -> Option<(CfdRecordId, RecordKey)> {
+    ) -> Option<(CfdRecordHandle, RecordId)> {
         let target = self
             .schema
             .inheritance_root(expected_type.as_str())
             .and_then(|inheritance_root| {
-                self.record_by_domain_key
+                self.record_by_domain_id
                     .get(inheritance_root)?
                     .get_key_value(key)
                     .map(|(key, id)| (*id, key.clone()))
@@ -478,7 +516,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
             self.diagnostics.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::RefTargetNotFound,
-                    format!("ref target `{expected_type}` with key `{key}` was not found"),
+                    format!("ref target `{expected_type}` with id `{key}` was not found"),
                 )
                 .with_primary(Some(node.record), node.path.clone()),
             );
@@ -627,7 +665,7 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
     fn display_node(&self, node: &ValueNode) -> String {
         let mut out = self.drafts.get(node.record.index()).map_or_else(
             || format!("record#{}", node.record.index()),
-            |draft| format!("{}.{}", draft.actual_type, draft.key),
+            |draft| format!("{}.{}", draft.actual_type, draft.id),
         );
         for segment in &node.path.segments {
             match segment {
@@ -644,6 +682,9 @@ impl<'a, 'schema> ValueResolver<'a, 'schema> {
                     out.push(']');
                 }
             }
+        }
+        if let Some((dimension, variant)) = &node.context {
+            let _ = write!(out, " @{dimension}:{variant}");
         }
         out
     }

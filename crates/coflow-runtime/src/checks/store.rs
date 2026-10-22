@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::data_model::{CfdDataModel, CfdRecordId};
+use crate::data_model::{CfdDataModel, CfdRecordHandle};
 use coflow_checker::{CheckDiagnostic, CheckOutput, CheckTarget, CheckTask};
 use coflow_language::cft::{CftSchema, CheckStatementId};
 
@@ -9,6 +9,11 @@ use crate::RecordCoordinate;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum StableCheckTarget {
     Record(RecordCoordinate),
+    Data {
+        record: RecordCoordinate,
+        path: coflow_model::CfdPath,
+        dimension: Option<(String, String)>,
+    },
     Project,
 }
 
@@ -21,7 +26,7 @@ struct StableCheckTask {
 #[derive(Debug, Clone)]
 struct StoredCheckDiagnostic {
     diagnostic: CheckDiagnostic,
-    records: BTreeMap<CfdRecordId, RecordCoordinate>,
+    records: BTreeMap<CfdRecordHandle, RecordCoordinate>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -38,6 +43,13 @@ impl CheckDiagnosticStore {
         model: &CfdDataModel,
         output: CheckOutput,
     ) {
+        // 内联拥有树每次完整重算时先清除旧任务，删除/移动后的路径不能留下诊断。
+        if schema
+            .all_types()
+            .any(|ty| ty.kind == coflow_language::cft::CftTypeKind::Data && !ty.checks.is_empty())
+        {
+            self.by_task.clear();
+        }
         self.variants = variant_catalog(schema, model);
         self.request_diagnostics = output.request_diagnostics;
         for result in output.results {
@@ -63,8 +75,8 @@ impl CheckDiagnosticStore {
 
     pub(super) fn remove_missing_records(&mut self, model: &CfdDataModel) {
         self.by_task.retain(|task, _| match &task.target {
-            StableCheckTarget::Record(record) => model
-                .record_by_type_key(&record.actual_type, &record.key)
+            StableCheckTarget::Record(record) | StableCheckTarget::Data { record, .. } => model
+                .record_by_type_id(&record.actual_type, &record.id)
                 .is_some(),
             StableCheckTarget::Project => true,
         });
@@ -87,10 +99,19 @@ impl CheckDiagnosticStore {
 fn stable_task(model: &CfdDataModel, task: &CheckTask) -> Option<StableCheckTask> {
     Some(StableCheckTask {
         statement: task.statement,
-        target: match task.target {
+        target: match &task.target {
             CheckTarget::Record(record) => {
-                StableCheckTarget::Record(model.record(record)?.coordinate())
+                StableCheckTarget::Record(model.record(*record)?.coordinate())
             }
+            CheckTarget::Data {
+                record,
+                path,
+                dimension,
+            } => StableCheckTarget::Data {
+                record: model.record(*record)?.coordinate(),
+                path: path.clone(),
+                dimension: dimension.clone(),
+            },
             CheckTarget::Project => StableCheckTarget::Project,
         },
     })
@@ -99,7 +120,7 @@ fn stable_task(model: &CfdDataModel, task: &CheckTask) -> Option<StableCheckTask
 fn diagnostic_records(
     model: &CfdDataModel,
     diagnostic: &CheckDiagnostic,
-) -> BTreeMap<CfdRecordId, RecordCoordinate> {
+) -> BTreeMap<CfdRecordHandle, RecordCoordinate> {
     diagnostic
         .diagnostic
         .primary
@@ -109,6 +130,9 @@ fn diagnostic_records(
             let id = label.record?;
             Some((id, model.record(id)?.coordinate()))
         })
+        .chain(diagnostic.value_location.iter().filter_map(|location| {
+            Some((location.record, model.record(location.record)?.coordinate()))
+        }))
         .collect()
 }
 
@@ -117,6 +141,10 @@ fn restore_diagnostic(
     stored: &StoredCheckDiagnostic,
 ) -> Option<CheckDiagnostic> {
     let mut diagnostic = stored.diagnostic.clone();
+    if let Some(location) = &mut diagnostic.value_location {
+        let coordinate = stored.records.get(&location.record)?;
+        location.record = model.record_by_type_id(&coordinate.actual_type, &coordinate.id)?;
+    }
     for label in diagnostic
         .diagnostic
         .primary
@@ -125,7 +153,7 @@ fn restore_diagnostic(
     {
         let Some(old) = label.record else { continue };
         let coordinate = stored.records.get(&old)?;
-        label.record = Some(model.record_by_type_key(&coordinate.actual_type, &coordinate.key)?);
+        label.record = Some(model.record_by_type_id(&coordinate.actual_type, &coordinate.id)?);
     }
     Some(diagnostic)
 }

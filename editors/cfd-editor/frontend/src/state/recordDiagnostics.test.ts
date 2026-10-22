@@ -8,7 +8,7 @@ import {
 
 const target: RecordDiagnosticTarget = {
   filePath: 'data/items.cfd',
-  coordinate: { actual_type: 'Item', key: 'one' },
+  coordinate: { actual_type: 'Item', id: 'one' },
 }
 const fallback = {
   fieldDiagnostics: [{ severity: 'error', field_path: 'name', message: 'stale' }],
@@ -27,8 +27,8 @@ function diagnostic(
     stage: 'CHECK',
     message: `${severity} diagnostic`,
     target: fieldPath === null
-      ? { kind: 'record', file_path: target.filePath, coordinate: { actual_type: actualType, key: target.coordinate.key } }
-      : { kind: 'table_field', file_path: target.filePath, coordinate: { actual_type: actualType, key: target.coordinate.key }, field_path: fieldPath },
+      ? { kind: 'record', file_path: target.filePath, coordinate: { actual_type: actualType, id: target.coordinate.id } }
+      : { kind: 'table_field', file_path: target.filePath, coordinate: { actual_type: actualType, id: target.coordinate.id }, field_path: fieldPath },
     contexts: [],
   }
 }
@@ -59,7 +59,7 @@ describe('record diagnostic index', () => {
   it('does not expand a typed diagnostic to a sibling type with the same key', () => {
     const sibling: RecordDiagnosticTarget = {
       filePath: target.filePath,
-      coordinate: { actual_type: 'Weapon', key: target.coordinate.key },
+      coordinate: { actual_type: 'Weapon', id: target.coordinate.id },
     }
     const index = buildRecordDiagnosticIndex([target, sibling], [diagnostic('warning')])
     expect(diagnosticsForRecord(index, target, fallback).severity).toBe('warning')

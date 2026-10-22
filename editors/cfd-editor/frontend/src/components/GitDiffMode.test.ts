@@ -10,7 +10,7 @@ const fileTypes = { 'data/items.cfd': [{ name: 'Item', display_name: 'Items', re
 
 describe('Git Diff available views and tree', () => {
   it('hides semantic views for a selected source-only file even when another file has records', () => {
-    const diff: ProjectDiff = { ...emptyDiff, files: [{ path: 'schema.cft', change: 'modified', before: '', after: '', patch: '' }], records: [{ coordinate: { actual_type: 'Item', key: 'one' }, change: 'added', after: { file_path: 'data/items.cfd', values: [] }, fields: [] }] }
+    const diff: ProjectDiff = { ...emptyDiff, files: [{ path: 'schema.cft', change: 'modified', before: '', after: '', patch: '' }], records: [{ coordinate: { actual_type: 'Item', id: 'one' }, change: 'added', after: { file_path: 'data/items.cfd', values: [] }, fields: [] }] }
     const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes, loading: false, error: null, selection: { filePath: 'schema.cft', typeName: null, coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
     expect(html).not.toContain('>记录</button>')
     expect(html).not.toContain('>表格</button>')
@@ -19,7 +19,7 @@ describe('Git Diff available views and tree', () => {
   })
 
   it('defaults singleton diffs to the shared table view', () => {
-    const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Settings', key: 'only' }, change: 'modified', before: { file_path: 'data/settings.cfd', values: [] }, after: { file_path: 'data/settings.cfd', values: [] }, fields: [] }] }
+    const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Settings', id: 'only' }, change: 'modified', before: { file_path: 'data/settings.cfd', values: [] }, after: { file_path: 'data/settings.cfd', values: [] }, fields: [] }] }
     const singletonTypes = { 'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true, dimension_fields: {} }] }
     const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes: singletonTypes, loading: false, error: null, selection: { filePath: 'data/settings.cfd', typeName: 'Settings', coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
     expect(html).toContain('>记录</button>')
@@ -102,7 +102,7 @@ describe('Git Diff available views and tree', () => {
       ...emptyDiff,
       files: [],
       records: [{
-        coordinate: { actual_type: 'Item', key: 'one' },
+        coordinate: { actual_type: 'Item', id: 'one' },
         change: 'modified',
         before: { file_path: 'data/mixed.cfd', values: [] },
         after: { file_path: 'data/mixed.cfd', values: [] },
@@ -186,7 +186,7 @@ describe('Git Diff table projection', () => {
       files: [],
       diagnostics: [],
       records: [{
-        coordinate: { actual_type: 'Quest', key: 'advanced' },
+        coordinate: { actual_type: 'Quest', id: 'advanced' },
         change: 'modified',
         before: { file_path: 'data/quests.cfd', values: [{ path: 'level', value: { kind: 'int', value: 1n } }] },
         after: { file_path: 'data/quests.cfd', values: [{ path: 'level', value: { kind: 'int', value: 2n } }] },
@@ -206,10 +206,10 @@ describe('Git Diff table projection', () => {
 
   it('filters unchanged columns and keeps nested changes and all added or deleted fields', () => {
     const values = ['stable', 'nested', 'addedOnly'].map(path => ({ path, value: { kind: 'int' as const, value: 1n } }))
-    const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Item', key: 'one' }, change: 'modified', before: { file_path: 'data.cfd', values }, after: { file_path: 'data.cfd', values }, fields: [{ path: 'nested.value', change: 'modified' }] }] }
+    const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Item', id: 'one' }, change: 'modified', before: { file_path: 'data.cfd', values }, after: { file_path: 'data.cfd', values }, fields: [{ path: 'nested.value', change: 'modified' }] }] }
     expect(changedTableColumns(projectTable(diff, 'data.cfd', 'Item'))).toEqual(['nested'])
     for (const change of ['added', 'deleted'] as const) {
-      diff.records.push({ coordinate: { actual_type: 'Item', key: change }, change, [change === 'added' ? 'after' : 'before']: { file_path: 'data.cfd', values: [values[2]] }, fields: [] })
+      diff.records.push({ coordinate: { actual_type: 'Item', id: change }, change, [change === 'added' ? 'after' : 'before']: { file_path: 'data.cfd', values: [values[2]] }, fields: [] })
       expect(changedTableColumns(projectTable(diff, 'data.cfd', 'Item'))).toEqual(['nested', 'addedOnly'])
     }
   })

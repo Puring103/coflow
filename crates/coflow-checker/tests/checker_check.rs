@@ -18,7 +18,7 @@ fn type_statements(schema: &CftSchema, owner: &str) -> Vec<CheckStatementId> {
 #[test]
 fn explicit_task_executes_only_the_selected_root_statement() {
     let schema = compile_schema(
-        "table Item { price: int; enabled: bool; check { price > 0: \"price\"; enabled: \"enabled\"; } }",
+        "table Item { price: int; enabled: bool; check Valid { price > 0: \"price\"; enabled: \"enabled\"; } }",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -105,7 +105,7 @@ fn table_check_walks_inline_collection_elements() {
     let schema = compile_schema(
         r#"
             data Reward { count: int; }
-            table Item { rewards: [Reward]; check { all reward in rewards { reward.count > 0: "bad reward"; } } }
+            table Item { rewards: [Reward]; check Valid { all reward in rewards { reward.count > 0: "bad reward"; } } }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -147,7 +147,7 @@ fn table_check_reads_optional_inline_values() {
     let schema = compile_schema(
         r#"
             data Reward { count: int; }
-            table Item { reward: Option<Reward> = None; check { when reward is Some(value) { value.count > 0: "bad reward"; } } }
+            table Item { reward: Option<Reward> = None; check Valid { when reward is Some(value) { value.count > 0: "bad reward"; } } }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
@@ -188,7 +188,7 @@ fn when_quantifier_and_formatted_message_stay_inside_one_task() {
             table Item {
                 enabled: bool;
                 nums: [int];
-                check {
+                check Valid {
                     when enabled { all value in nums { value > 0: f"bad {value}"; } }
                 }
             }
@@ -220,12 +220,12 @@ fn when_quantifier_and_formatted_message_stay_inside_one_task() {
         output.results[0].diagnostics[0].diagnostic.message,
         "bad -2"
     );
-    assert_eq!(output.results[0].diagnostics[0].contexts.len(), 2);
+    assert_eq!(output.results[0].diagnostics[0].contexts.len(), 3);
 }
 
 #[test]
 fn duplicate_tasks_are_stably_deduplicated() {
-    let schema = compile_schema("table Item { check { false; } }");
+    let schema = compile_schema("table Item { check Valid { false; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",
@@ -249,7 +249,7 @@ fn duplicate_tasks_are_stably_deduplicated() {
 
 #[test]
 fn mismatched_statement_target_returns_an_internal_diagnostic() {
-    let schema = compile_schema("table Item { check { true; } }");
+    let schema = compile_schema("table Item { check Valid { true; } }");
     let model = CfdDataModel::builder(&schema).build().expect("model");
     let output = execute_checks(
         &schema,
@@ -269,7 +269,7 @@ fn mismatched_statement_target_returns_an_internal_diagnostic() {
 
 #[test]
 fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
-    let schema = compile_schema("table Item { check { true; } }");
+    let schema = compile_schema("table Item { check Valid { true; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("a", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
     builder.add_record("b", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());

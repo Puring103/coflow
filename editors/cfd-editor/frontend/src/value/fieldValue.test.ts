@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFieldValueText, plainFieldValueText, recordMatchesFullTextSearch, recordMatchesSearch, referenceKeyText, summaryOf } from './fieldValue'
+import { parseFieldValueText, plainFieldValueText, recordMatchesFullTextSearch, recordMatchesSearch, referenceIdText, summaryOf } from './fieldValue'
 import type { RecordRow } from '../bindings/RecordRow'
 
 describe('FieldValue authoring', () => {
@@ -58,14 +58,14 @@ describe('FieldValue authoring', () => {
   })
 
   it('renders references as keys without type qualifiers', () => {
-    expect(referenceKeyText('&ItemConfig.sword')).toBe('sword')
+    expect(referenceIdText('&ItemConfig.sword')).toBe('sword')
     expect(summaryOf({ kind: 'ref', value: 'ItemConfig.sword' })).toBe('sword')
-    expect(referenceKeyText('plain_key')).toBe('plain_key')
+    expect(referenceIdText('plain_key')).toBe('plain_key')
   })
 
   it('matches only record keys in the standard search mode', () => {
     const record = {
-      coordinate: { actual_type: 'Item', key: 'sword' },
+      coordinate: { actual_type: 'Item', id: 'sword' },
       fields: [{ name: 'displayName', value: { kind: 'string', value: 'Excalibur' } }],
     } as unknown as RecordRow
 
@@ -77,7 +77,7 @@ describe('FieldValue authoring', () => {
 
   it('searches values nested in arrays, dictionaries, and objects in full-text mode', () => {
     const record = {
-      coordinate: { actual_type: 'Item', key: 'sword' },
+      coordinate: { actual_type: 'Item', id: 'sword' },
       fields: [{
         name: 'metadata',
         value: {

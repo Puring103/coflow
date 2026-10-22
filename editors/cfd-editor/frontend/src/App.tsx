@@ -1034,7 +1034,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const focusDiagnosticForAnchor = useCallback(
     (
       filePath: string,
-      recordKeyValue: string,
+      recordIdValue: string,
       actualType: string | null,
       fieldPath: string | null,
     ) => {
@@ -1044,10 +1044,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       // asked for a field. When they asked for the whole record we take the
       // first diagnostic on it regardless of field.
       let hit = fieldPath
-        ? source.find(d => diagnosticMatchesAnchor(d, filePath, recordKeyValue, actualType, fieldPath))
+        ? source.find(d => diagnosticMatchesAnchor(d, filePath, recordIdValue, actualType, fieldPath))
         : undefined
       if (!hit) {
-        hit = source.find(d => diagnosticMatchesAnchor(d, filePath, recordKeyValue, actualType, null))
+        hit = source.find(d => diagnosticMatchesAnchor(d, filePath, recordIdValue, actualType, null))
       }
       if (!hit) return
       setDiagFocus(prev => ({
@@ -1067,9 +1067,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         return
       }
       const target = result.value.find(item => (
-        item.coordinate.key === targetKey
+        item.coordinate.id === targetKey
         && item.coordinate.actual_type === targetType
-      )) ?? result.value.find(item => item.coordinate.key === targetKey)
+      )) ?? result.value.find(item => item.coordinate.id === targetKey)
       if (!target) {
         setErrorMsg(`引用记录 ${targetKey} 未找到`)
         return
@@ -1244,7 +1244,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   ) => {
     const coordinate: DimensionValueCoordinate = {
       actual_type: row.coordinate.actual_type,
-      record_key: row.coordinate.key,
+      record_id: row.coordinate.id,
       field: row.field,
       dimension: data.dimension,
       variant,
@@ -1306,9 +1306,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   )
 
   const renameRecord = useCallback(
-    async (filePath: string, coordinate: RecordCoordinate, newKey: string) => {
+    async (filePath: string, coordinate: RecordCoordinate, newId: string) => {
       const groups = projectSettings?.record_groups[filePath]?.[coordinate.actual_type] ?? []
-      const result = await mutations.renameRecord(filePath, coordinate, newKey)
+      const result = await mutations.renameRecord(filePath, coordinate, newId)
       if (result) {
         saveRecordGroups(
           filePath,
@@ -1322,8 +1322,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   )
 
   const insertRecord = useCallback(
-    async (filePath: string, recordKey: string, actualType: string, fields: FieldValue) => {
-      await mutations.insertRecord(filePath, recordKey, actualType, fields)
+    async (filePath: string, recordId: string, actualType: string, fields: FieldValue) => {
+      await mutations.insertRecord(filePath, recordId, actualType, fields)
     },
     [mutations],
   )
@@ -1433,10 +1433,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             await editCollection(request.filePath, request.coordinate, request.fieldPath, request.edit)
             break
           case 'rename_record':
-            await renameRecord(request.filePath, request.coordinate, request.newKey)
+            await renameRecord(request.filePath, request.coordinate, request.newId)
             break
           case 'insert_record':
-            await insertRecord(request.filePath, request.recordKey, request.actualType, request.fields)
+            await insertRecord(request.filePath, request.recordId, request.actualType, request.fields)
             break
           case 'delete_record':
             await deleteRecords(request.filePath, [request.coordinate])
@@ -2307,8 +2307,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     [currentRoute?.view, currentRoute?.file, writeField],
   )
   const tableOnRenameRecord = useCallback(
-    (coordinate: RecordCoordinate, newKey: string): Promise<RecordRow | void> => {
-      if (currentRoute?.view === 'table') return renameRecord(currentRoute.file, coordinate, newKey)
+    (coordinate: RecordCoordinate, newId: string): Promise<RecordRow | void> => {
+      if (currentRoute?.view === 'table') return renameRecord(currentRoute.file, coordinate, newId)
       return Promise.resolve()
     },
     [currentRoute?.view, currentRoute?.file, renameRecord],
@@ -2346,7 +2346,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const tableOnBadgeClick = useCallback(
     (coordinate: RecordCoordinate, fieldPath: string | null) => {
       if (currentRoute?.view !== 'table') return
-      focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
+      focusDiagnosticForAnchor(currentRoute.file, coordinate.id, coordinate.actual_type, fieldPath)
     },
     [currentRoute?.view, currentRoute?.file, focusDiagnosticForAnchor],
   )
@@ -3017,14 +3017,14 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onWriteFields={(coordinates, path, val) => writeFields(currentRoute.file, coordinates, path, val)}
                     onCollectionEdit={(coordinate, path, edit) => editCollection(currentRoute.file, coordinate, path, edit)}
-                    onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
+                    onRenameRecord={(coordinate, newId) => renameRecord(currentRoute.file, coordinate, newId)}
                     onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
                     onCreateRecordDraft={tableOnCreateRecordDraft}
                     onDeleteRecords={(coordinates) => deleteRecords(currentRoute.file, coordinates)}
                     onMoveRecord={(coordinate, targetIndex) =>
                       moveRecord(currentRoute.file, coordinate, targetIndex)}
                     onDiagnosticBadgeClick={(coordinate, fieldPath) =>
-                      focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
+                      focusDiagnosticForAnchor(currentRoute.file, coordinate.id, coordinate.actual_type, fieldPath)
                     }
                     onExitLeft={focusFileTree}
                     onExitUp={focusDocumentSearch}
@@ -3058,11 +3058,11 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                       onWriteField={writeField}
                       onCollectionEdit={editCollection}
                       onDiagnosticBadgeClick={(file, coordinate, fieldPath) =>
-                        focusDiagnosticForAnchor(file, coordinate.key, coordinate.actual_type, fieldPath)
+                        focusDiagnosticForAnchor(file, coordinate.id, coordinate.actual_type, fieldPath)
                       }
                       onCreateRecordDraft={tableOnCreateRecordDraft}
-                      onInsertRecord={(recordKey, actualType, fields) =>
-                        insertRecord(currentRoute.file, recordKey, actualType, fields)}
+                      onInsertRecord={(recordId, actualType, fields) =>
+                        insertRecord(currentRoute.file, recordId, actualType, fields)}
                       recordGroups={recordGroups}
                       onDropRecordIntoGroup={dropRecordIntoGroup}
                       onRenameRecord={renameRecord}
@@ -3138,7 +3138,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           onRenameRecord={renameRecord}
           onDiagnosticBadgeClick={(coordinate, fieldPath) => {
             if (!inspectorCoord) return
-            focusDiagnosticForAnchor(inspectorCoord.file, coordinate.key, coordinate.actual_type, fieldPath)
+            focusDiagnosticForAnchor(inspectorCoord.file, coordinate.id, coordinate.actual_type, fieldPath)
           }}
           focusRequest={inspectorFocusRequest}
           onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
@@ -3183,7 +3183,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         <CreateRecordDialog
           actualType={treeRecordDraft.actualType}
           typeOptions={treeRecordDraft.data.type_names}
-          existingKeys={treeRecordDraft.data.records.map(record => record.coordinate.key)}
+          existingIds={treeRecordDraft.data.records.map(record => record.coordinate.id)}
           onCreateRecordDraft={tableOnCreateRecordDraft}
           onInsertRecord={async (key, type, fields) => {
             await insertRecord(treeRecordDraft.filePath, key, type, fields)

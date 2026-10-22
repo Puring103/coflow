@@ -63,7 +63,7 @@ import {
   optionDepthForDeclaredType,
   parseFieldValueText,
   plainFieldValueText,
-  referenceKeyText,
+  referenceIdText,
   scalarDefaultForDeclaredType,
   summaryOf,
 } from '../value/fieldValue'
@@ -88,7 +88,7 @@ import {
 export { collectionObjectDraftForAnnotation, dictKeyTemplate } from './DataCard.defaults'
 
 export function CardHeader({
-  recordKey,
+  recordId,
   shortName,
   fields,
   actualType,
@@ -98,12 +98,12 @@ export function CardHeader({
   onDiagBadgeClick,
   highlight,
 }: {
-  recordKey: string
+  recordId: string
   shortName?: string
   fields?: FieldCell[]
   actualType: string
   filePath?: string
-  onRename?: (newKey: string) => void
+  onRename?: (newId: string) => void
   /** Record-level severity: shows a corner badge that focuses the panel. */
   diagSeverity?: 'error' | 'warning' | null
   onDiagBadgeClick?: () => void
@@ -114,13 +114,13 @@ export function CardHeader({
   const shortNameSettings = useContext(ShortNameContext)
   const displayName = shortName ?? (fields ? recordShortName(fields, shortNameSettings.fields[actualType]) : undefined)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(recordKey)
-  useEffect(() => { if (!editing) setDraft(recordKey) }, [recordKey, editing])
+  const [draft, setDraft] = useState(recordId)
+  useEffect(() => { if (!editing) setDraft(recordId) }, [recordId, editing])
 
   const commit = () => {
     const next = draft.trim()
     setEditing(false)
-    if (next && next !== recordKey && onRename) onRename(next)
+    if (next && next !== recordId && onRename) onRename(next)
   }
 
   return (
@@ -135,7 +135,7 @@ export function CardHeader({
           onBlur={commit}
           onKeyDown={e => {
             if (e.key === 'Enter') commit()
-            if (e.key === 'Escape') { setEditing(false); setDraft(recordKey) }
+            if (e.key === 'Escape') { setEditing(false); setDraft(recordId) }
           }}
           onClick={e => e.stopPropagation()}
         />
@@ -145,7 +145,7 @@ export function CardHeader({
           onDoubleClick={onRename ? () => setEditing(true) : undefined}
           title={onRename ? '双击重命名' : undefined}
         >
-          {shortNameLabel(recordKey, displayName)}
+          {shortNameLabel(recordId, displayName)}
         </span>
       )}
       <div className="gn-meta">
@@ -225,7 +225,7 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
 
 function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue; refTargetType?: string; highlightQuery?: string }) {
   const navigation = useEditorNavigation()
-  const shortName = useReferenceShortName(value.kind === 'ref' ? refTargetType : undefined, value.kind === 'ref' ? referenceKeyText(value.value) : '')
+  const shortName = useReferenceShortName(value.kind === 'ref' ? refTargetType : undefined, value.kind === 'ref' ? referenceIdText(value.value) : '')
   switch (value.kind) {
     case 'option_none':
       return <span className="vc vc-null">{highlightSearchText('None', highlightQuery)}</span>
@@ -252,7 +252,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
         </span>
       )
     case 'ref':
-      const refKey = referenceKeyText(value.value)
+      const refKey = referenceIdText(value.value)
       const refColor = typeColor(refTargetType ?? 'ref')
       return (
         <span
@@ -1298,14 +1298,36 @@ export function DirectEditor({
   if (value.kind === 'ref' || (value.kind === 'option_none' && refTargetType)) {
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
-  if (value.kind === 'formatted_string') {
-    return <FormattedTextDirectInput value={value} onCommit={onCommit} />
+  if (value.kind === 'string' || value.kind === 'formatted_string') {
+    return <StringDirectEditor value={value} onCommit={onCommit} />
   }
-  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
+  if (value.kind === 'int' || value.kind === 'float') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
   }
 
   return <ValueChip value={value} />
+}
+
+// 字符串模式是显式源码选择；切换保留作者输入的正文，不根据花括号推断模板。
+function StringDirectEditor({ value, onCommit }: {
+  value: FieldValue & { kind: 'string' | 'formatted_string' }
+  onCommit: (next: FieldValue) => void
+}) {
+  return <span className="dc-string-editor">
+    <select className="dc-string-mode" aria-label="字符串模式" value={value.kind}
+      onChange={event => {
+        const text = plainFieldValueText(value)
+        onCommit(event.target.value === 'string'
+          ? { kind: 'string', value: text }
+          : { kind: 'formatted_string', value: { source: `f${JSON.stringify(text)}`, rendered: text } })
+      }}>
+      <option value="string">文本</option>
+      <option value="formatted_string">模板</option>
+    </select>
+    {value.kind === 'formatted_string'
+      ? <FormattedTextDirectInput value={value} onCommit={onCommit} />
+      : <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('string')} />}
+  </span>
 }
 
 // 预览使用基础核心已解析的文本；进入编辑时才展示格式化字符串源码。
@@ -1314,9 +1336,9 @@ function FormattedTextDirectInput({ value, onCommit }: {
   onCommit: (next: FieldValue) => void
 }) {
   const [editing, setEditing] = useState(false)
-  if (editing) return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('fstring')} autoFocus onEditingFinished={() => setEditing(false)} />
+  if (editing) return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('string')} autoFocus onEditingFinished={() => setEditing(false)} />
   return (
-    <span className="dc-fstring-preview" role="button" tabIndex={0}
+    <span className="dc-template-preview" role="button" tabIndex={0}
       title={value.value.source}
       onClick={() => setEditing(true)}
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditing(true) } }}>
@@ -1640,15 +1662,15 @@ export function RefDirectSelect({
   const [targets, setTargets] = useState<{ key: string; label: string; shortName: string | null }[] | null>(() => (
     targetType
       ? lookups.cachedRefTargets(targetType)?.map(target => ({
-        key: target.coordinate.key,
-        label: shortNameLabel(target.coordinate.key, target.short_name),
+        key: target.coordinate.id,
+        label: shortNameLabel(target.coordinate.id, target.short_name),
         shortName: target.short_name,
       })) ?? null
       : null
   ))
   const targetsIdentity = useRef({ sessionId: lookups.sessionId, targetType })
   const [loadError, setLoadError] = useState<string | null>(null)
-  const currentKey = value.kind === 'ref' ? referenceKeyText(value.value) : ''
+  const currentKey = value.kind === 'ref' ? referenceIdText(value.value) : ''
   const selectedValue = value.kind === 'option_none' ? NULL_SENTINEL : currentKey
   const color = typeColor(targetType ?? 'ref')
   const inputClass = variant === 'input'
@@ -1667,8 +1689,8 @@ export function RefDirectSelect({
     targetsIdentity.current = { sessionId: lookups.sessionId, targetType }
     // 同一引用域刷新时保留已有选项和输入控件，异步结果到达后原位更新。
     const cachedTargets = lookups.cachedRefTargets(targetType)?.map(target => ({
-      key: target.coordinate.key,
-      label: shortNameLabel(target.coordinate.key, target.short_name),
+      key: target.coordinate.id,
+      label: shortNameLabel(target.coordinate.id, target.short_name),
       shortName: target.short_name,
     }))
     setTargets(current => cachedTargets ?? (sameTarget ? current : null))
@@ -1677,8 +1699,8 @@ export function RefDirectSelect({
       if (!alive) return
       if (r.ok) {
         setTargets(r.value.map(target => ({
-          key: target.coordinate.key,
-          label: shortNameLabel(target.coordinate.key, target.short_name),
+          key: target.coordinate.id,
+          label: shortNameLabel(target.coordinate.id, target.short_name),
           shortName: target.short_name,
         })))
       } else {
@@ -1698,7 +1720,7 @@ export function RefDirectSelect({
       if (value.kind !== 'option_none') onCommit(nullValue())
       return
     }
-    if (value.kind !== 'ref' || key !== referenceKeyText(value.value)) {
+    if (value.kind !== 'ref' || key !== referenceIdText(value.value)) {
       onCommit(refValue(key))
     }
   }

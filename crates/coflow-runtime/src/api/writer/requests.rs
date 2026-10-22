@@ -10,7 +10,7 @@ pub type WriteFieldPathSegment = CfdPathSegment;
 #[derive(Debug, Clone)]
 pub struct WriteCellRequest<'a> {
     pub origin: &'a RecordOrigin,
-    pub record_key: &'a str,
+    pub record_id: &'a str,
     pub actual_type: &'a str,
     pub field_path: &'a [WriteFieldPathSegment],
     /// Source-neutral new value, serialized to the source format by the writer.
@@ -28,7 +28,7 @@ pub struct InsertRecordRequest<'a> {
     /// Target source that should receive the new record.
     pub source: &'a CfdSource,
     /// CFD records are document-addressed; no sheet/table selector is needed.
-    pub record_key: &'a str,
+    pub record_id: &'a str,
     pub actual_type: &'a str,
     pub fields: &'a BTreeMap<String, CfdValue>,
     pub schema: &'a CftSchema,
@@ -40,7 +40,7 @@ pub struct InsertRecordRequest<'a> {
 #[derive(Debug, Clone)]
 pub struct DeleteRecordRequest<'a> {
     pub origin: &'a RecordOrigin,
-    pub record_key: &'a str,
+    pub record_id: &'a str,
     pub actual_type: &'a str,
 }
 
@@ -48,7 +48,7 @@ pub struct DeleteRecordRequest<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct WriteRecordRef<'a> {
     pub origin: &'a RecordOrigin,
-    pub record_key: &'a str,
+    pub record_id: &'a str,
     pub actual_type: &'a str,
 }
 
@@ -78,8 +78,8 @@ pub struct ReorderRecordsRequest<'a> {
 #[derive(Debug, Clone)]
 pub struct RenameRecordRequest<'a> {
     pub origin: &'a RecordOrigin,
-    pub old_key: &'a str,
-    pub new_key: &'a str,
+    pub old_id: &'a str,
+    pub new_id: &'a str,
     pub actual_type: &'a str,
 }
 

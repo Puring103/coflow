@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 
 use super::semantic_tokens::{
     MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_COMMENT, SEM_ENUM_MEMBER,
-    SEM_KEYWORD, SEM_NUMBER, SEM_OPERATOR, SEM_PROPERTY, SEM_RECORD_KEY, SEM_STRING, SEM_TYPE,
+    SEM_KEYWORD, SEM_NUMBER, SEM_OPERATOR, SEM_PROPERTY, SEM_RECORD_ID, SEM_STRING, SEM_TYPE,
     SEM_VARIABLE,
 };
 use super::LspBuild;
@@ -49,10 +49,10 @@ pub fn document_symbols(source: &str, ast: &CfdAst) -> Value {
         .records
         .iter()
         .map(|record| {
-            let name_range = byte_range(source, record.key_span.start, record.key_span.end);
+            let name_range = byte_range(source, record.id_span.start, record.id_span.end);
             let full_range = byte_range(source, record.span.start, record.span.end);
             json!({
-                "name": record.key,
+                "name": record.id,
                 "detail": record.type_name,
                 "kind": 5,  // Class
                 "range": full_range,
@@ -91,8 +91,8 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
     // Walk the AST for structured tokens.
     for record in &ast.records {
         collector.add(
-            record.key_span,
-            SEM_RECORD_KEY,
+            record.id_span,
+            SEM_RECORD_ID,
             MOD_DECLARATION | MOD_RECORD,
         );
         collector.add(record.type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
@@ -103,7 +103,7 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
     }
     if let Some(schema) = schema {
         for (_, span, _) in incomplete_group_keys(source, schema) {
-            collector.add(span, SEM_RECORD_KEY, MOD_DECLARATION | MOD_RECORD);
+            collector.add(span, SEM_RECORD_ID, MOD_DECLARATION | MOD_RECORD);
         }
     }
 
@@ -143,7 +143,7 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             if let Some((_, type_span)) = &r.type_name {
                 c.add(*type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
             }
-            c.add(r.key.1, SEM_RECORD_KEY, MOD_REFERENCE | MOD_RECORD);
+            c.add(r.id.1, SEM_RECORD_ID, MOD_REFERENCE | MOD_RECORD);
         }
     }
 }
@@ -354,7 +354,7 @@ pub(crate) fn completion_with_build(
                 "label": t.name.as_str(),
                 "kind": 7,
                 "detail": format!("new {} record", t.name),
-                "insertText": format!("${{1:key}}: {} {{{body}}}", t.name),
+                "insertText": format!("${{1:id}}: {} {{{body}}}", t.name),
                 "insertTextFormat": 2,
             })
         })
@@ -419,7 +419,7 @@ fn formatted_string_completion(
             );
         } else {
             paths.extend(
-                formatted_record_keys(ast, schema, build, owner_type)
+                formatted_record_ids(ast, schema, build, owner_type)
                     .into_iter()
                     .filter(|key| key.starts_with(key_prefix))
                     .map(|key| {
@@ -586,7 +586,7 @@ fn formatted_nested_type(value_type: &CftValueType) -> Option<&str> {
     }
 }
 
-fn formatted_record_keys(
+fn formatted_record_ids(
     ast: &CfdAst,
     schema: &CftSchema,
     build: Option<&LspBuild>,
@@ -606,7 +606,7 @@ fn formatted_record_keys(
                     .iter()
                     .any(|actual| actual.as_str() == record.type_name)
             })
-            .map(|record| record.key.clone()),
+            .map(|record| record.id.clone()),
     );
     keys.sort();
     keys.dedup();
@@ -785,8 +785,7 @@ fn value_completion_items(
         CftValueType::Object(name) => object_value_completion_items(schema, name),
         CftValueType::Int
         | CftValueType::Float
-        | CftValueType::String
-        | CftValueType::FormattedString => Vec::new(),
+        | CftValueType::String => Vec::new(),
         CftValueType::RecordRef(name) => {
             record_reference_completion_items(schema, name, build, true)
         }
@@ -807,7 +806,7 @@ fn record_reference_completion_items(
             "label": "record reference",
             "kind": 18,
             "detail": format!("reference to {expected_name}"),
-            "insertText": "&${1:key}",
+            "insertText": "&${1:id}",
             "insertTextFormat": 2,
         })];
     }
@@ -996,7 +995,6 @@ fn value_placeholder(value_type: &CftValueType) -> String {
         CftValueType::Float => "0.0".to_string(),
         CftValueType::Bool => "true".to_string(),
         CftValueType::String => "\"value\"".to_string(),
-        CftValueType::FormattedString => "f\"value\"".to_string(),
         CftValueType::Enum(name) => name.to_string(),
         CftValueType::RecordRef(_) => "&key".to_string(),
         CftValueType::Array(_) => "[]".to_string(),

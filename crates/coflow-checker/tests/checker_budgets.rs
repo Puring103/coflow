@@ -13,7 +13,7 @@ fn quantified_model() -> (CftSchema, CfdDataModel) {
         r"
             table Item {
                 nums: [int];
-                check { all number in nums { number > 0; } }
+                check Valid { all number in nums { number > 0; } }
             }
         ",
     );
@@ -68,7 +68,7 @@ fn aggregate_builtins_charge_work_before_scanning() {
         r"
             table Item {
                 nums: [int];
-                check { nums.isUnique(); }
+                check Valid { nums.isUnique(); }
             }
         ",
     );
@@ -102,7 +102,7 @@ fn aggregate_builtins_charge_work_before_scanning() {
 
 #[test]
 fn raising_iterations_does_not_raise_the_work_limit() {
-    let schema = compile_schema("table Item { nums: [int]; check { nums.isUnique(); } }");
+    let schema = compile_schema("table Item { nums: [int]; check Valid { nums.isUnique(); } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item",

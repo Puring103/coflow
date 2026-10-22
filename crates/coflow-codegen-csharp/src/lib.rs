@@ -59,7 +59,7 @@ impl CodeGenerator for CsharpCfdCodeGenerator {
             CsharpOptions::deserialize(input.target.options.clone()).map_err(|error| {
                 CodegenError::Message(format!("invalid C# output options: {error}"))
             })?;
-        // 锁文件保留已删除 key 的编号；输出仅包含本次数据中的有效记录 key。
+        // 锁文件保留已删除 id 的编号；输出仅包含本次数据中的有效记录 id。
         let mut active_values = input.id_as_enum_values.clone();
         for en in input.schema.all_enums() {
             let Some(record_type) = input.schema.type_for_id_as_enum(&en.name) else {
@@ -68,16 +68,16 @@ impl CodeGenerator for CsharpCfdCodeGenerator {
             let model = input.model.ok_or_else(|| {
                 CodegenError::Message("@idAsEnum code generation requires CFD data".to_string())
             })?;
-            let keys = model
+            let ids = model
                 .records_assignable_to(input.schema, &record_type.name)
-                .map(|(_, record)| record.key().to_string())
+                .map(|(_, record)| record.id().to_string())
                 .collect::<std::collections::BTreeSet<_>>();
             if let Some(entries) = active_values.get_mut(en.name.as_str()) {
-                entries.retain(|key, _| keys.contains(key));
-                for key in &keys {
-                    if !entries.contains_key(key) {
+                entries.retain(|id, _| ids.contains(id));
+                for id in &ids {
+                    if !entries.contains_key(id) {
                         return Err(CodegenError::Message(format!(
-                            "missing stable value for `{en_name}::{key}`",
+                            "missing stable value for `{en_name}::{id}`",
                             en_name = en.name
                         )));
                     }

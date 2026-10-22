@@ -12,8 +12,8 @@
  * - `enum_type`: the enum type name when this field's declared type resolves
  *   to an enum. Set regardless of value kind so the front-end can show an
  *   enum dropdown even for `null` cells.
- * - `nullable`: true when the declared type outer-wraps a `?`, so the UI
- *   can offer a "clear to null" option in dropdowns.
+ * - `nullable`: true when the declared type outer-wraps `Option<T>`, so the UI
+ *   can offer a "set to None" option in dropdowns.
  * - `children`: nested annotations for object fields, array items, or dict
  *   values. Keys are field names, zero-based array indexes, or dict-key text.
  */

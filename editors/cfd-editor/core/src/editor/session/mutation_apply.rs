@@ -48,17 +48,17 @@ pub(crate) fn write_field_in_session(
     let final_coordinate = renamed.as_ref().unwrap_or(coordinate);
     let queries = session.queries();
     let view = queries
-        .record_view(&final_coordinate.actual_type, &final_coordinate.key)
+        .record_view(&final_coordinate.actual_type, &final_coordinate.id)
         .ok_or_else(|| {
             EditorError::not_found(format!(
                 "record `{}.{}` not found after write",
-                final_coordinate.actual_type, final_coordinate.key
+                final_coordinate.actual_type, final_coordinate.id
             ))
         })?;
     let current_value = queries
         .field_value(
             &final_coordinate.actual_type,
-            &final_coordinate.key,
+            &final_coordinate.id,
             field_path,
         )
         .cloned();

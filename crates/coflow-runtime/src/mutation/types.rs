@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::api::{DiagnosticSet, FlatDiagnostic};
 use crate::data_model::{CfdPath, CfdPathSegment, CfdValue};
-use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, RecordId, TypeName, VariantName};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -51,7 +51,7 @@ pub enum MutationOp {
         file: String,
         #[serde(rename = "type")]
         actual_type: String,
-        key: String,
+        id: String,
         #[serde(default)]
         fields: MutationFields,
         #[serde(default)]
@@ -87,7 +87,7 @@ pub enum MutationOp {
         record: RecordCoordinate,
         #[serde(default)]
         file: Option<String>,
-        new_key: String,
+        new_id: String,
     },
     DeleteRecord {
         record: RecordCoordinate,
@@ -125,7 +125,7 @@ pub struct DimensionValueCoordinate {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub actual_type: TypeName,
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
-    pub record_key: RecordKey,
+    pub record_id: RecordId,
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub field: FieldName,
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
@@ -139,7 +139,7 @@ pub struct DimensionValueCoordinate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DimensionSourceCoordinate {
     pub source_type: TypeName,
-    pub source_key: RecordKey,
+    pub source_id: RecordId,
     pub field: FieldName,
     pub dimension: DimensionName,
     pub variant: VariantName,
@@ -234,7 +234,7 @@ pub(crate) enum PreparedMutationOp {
     InsertRecord {
         file: String,
         actual_type: TypeName,
-        key: RecordKey,
+        id: RecordId,
         fields: BTreeMap<String, CfdValue>,
     },
     SetField {
@@ -259,7 +259,7 @@ pub(crate) enum PreparedMutationOp {
     },
     RenameRecord {
         record: RecordCoordinate,
-        new_key: RecordKey,
+        new_id: RecordId,
         report_file: Option<String>,
     },
     DeleteRecord {
@@ -309,11 +309,11 @@ impl PreparedMutationOp {
             Self::InsertRecord {
                 file,
                 actual_type,
-                key,
+                id,
                 ..
             } => (
                 "insert_record",
-                Some(RecordCoordinate::new(actual_type.clone(), key.clone())),
+                Some(RecordCoordinate::new(actual_type.clone(), id.clone())),
                 Some(file.clone()),
             ),
             Self::CancelledInsert { record, write_file } => (
@@ -350,13 +350,13 @@ impl PreparedMutationOp {
             ),
             Self::RenameRecord {
                 record,
-                new_key,
+                new_id,
                 report_file,
             } => (
                 "rename_record",
                 Some(RecordCoordinate::new(
                     record.actual_type.clone(),
-                    new_key.clone(),
+                    new_id.clone(),
                 )),
                 report_file.clone(),
             ),

@@ -14,7 +14,7 @@ export interface RecordContextMenuRequest {
   filePath: string
   coordinates: readonly RecordCoordinate[]
   /** 单条上下文用于展示；多选时传 null。 */
-  primaryKey?: string | null
+  primaryId?: string | null
 }
 
 interface Props {
@@ -162,7 +162,7 @@ export function RecordContextMenu({
       {!multiple && canRename && onRename && (
         <div className="ctx-item" role="menuitem" onClick={() => { onRename(); onClose() }}>
           <Icon name="edit" size={13} aria-hidden />
-          重命名 Key
+          重命名 ID
         </div>
       )}
       {!multiple && canInsertBelow && onInsertBelow && (

@@ -5,8 +5,8 @@ import { recordSelection, valueSelection } from './editorSelection'
 import { editIntentForKey, moveTableSelection } from './tableCellNavigation'
 
 const rows: RecordCoordinate[] = [
-  { actual_type: 'Item', key: 'one' },
-  { actual_type: 'Item', key: 'two' },
+  { actual_type: 'Item', id: 'one' },
+  { actual_type: 'Item', id: 'two' },
 ]
 const columns = ['name', 'price']
 

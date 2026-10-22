@@ -63,8 +63,8 @@ export function validationCodeMirrorDiagnostics(
 export function flatDiagnosticMessage(diagnostic: FlatDiagnostic): string {
   const target = diagnostic.target
   const location = target.kind === 'table_field'
-    ? `${target.coordinate.key}.${target.field_path}`
-    : target.kind === 'record' ? target.coordinate.key : ''
+    ? `${target.coordinate.id}.${target.field_path}`
+    : target.kind === 'record' ? target.coordinate.id : ''
   return location ? `${location}: ${diagnostic.message}` : diagnostic.message
 }
 

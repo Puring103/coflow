@@ -139,7 +139,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .cm-lsp-token-enumMember { color: var(--code-constant); }
 .cm-lsp-token-operator { color: var(--code-operator); }
 .cm-lsp-token-decorator { color: var(--code-special); }
-.cm-lsp-token-recordKey, .cm-lsp-token-function, .cm-lsp-token-parameter, .cm-lsp-token-variable { color: var(--code-special); }
+.cm-lsp-token-recordId, .cm-lsp-token-function, .cm-lsp-token-parameter, .cm-lsp-token-variable { color: var(--code-special); }
 
 /* Completion rows use the actual insertion text and a quiet selection state.
  * CodeMirror's property glyph is a hollow square that reads like a checkbox,
@@ -2750,9 +2750,9 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 .vc-bool.on { color: var(--green); }
 .vc-num { color: var(--text); font-variant-numeric: tabular-nums; }
 .vc-str { color: var(--text-dim); }
-/* fstring 的求值只影响展示；源码进入编辑态后仍可直接修改。 */
-.dc-fstring-preview { cursor: text; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.dc-fstring-error { color: var(--red); margin-left: 6px; font-size: var(--fs-xs); }
+/* 字符串模板的求值只影响展示；源码进入编辑态后仍可直接修改。 */
+.dc-template-preview { cursor: text; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.dc-template-error { color: var(--red); margin-left: 6px; font-size: var(--fs-xs); }
 .rich-text-string {
   display: inline;
   white-space: pre-wrap;
@@ -4981,3 +4981,8 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .diag-filters label { display: flex; align-items: center; gap: 5px; }
 .diag-filters select { background: var(--bg-1); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 3px 6px; }
 .diag-filters > span { margin-left: auto; }
+
+/* 文本和模板共用 string 字段，模式选择与正文保持同一编辑行。 */
+.dc-string-editor { display: flex; align-items: start; gap: 6px; min-width: 0; width: 100%; }
+.dc-string-editor > .dc-input, .dc-string-editor > .dc-template-preview { flex: 1; }
+.dc-string-mode { flex: none; font-size: var(--fs-xs); color: var(--text-muted); background: transparent; border: 1px solid var(--border); border-radius: 4px; }

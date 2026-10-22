@@ -3,7 +3,7 @@ import type { GraphData } from '../bindings/GraphData'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import { reachableGraph } from './graphFilter'
 
-const coordinate = (key: string): RecordCoordinate => ({ actual_type: 'Node', key })
+const coordinate = (key: string): RecordCoordinate => ({ actual_type: 'Node', id: key})
 const graph = (edges: [string, string][]): GraphData => ({
   revision: 1,
   nodes: ['a', 'b', 'c', 'd'].map(key => ({
@@ -18,14 +18,14 @@ const graph = (edges: [string, string][]): GraphData => ({
 
 describe('reachableGraph', () => {
   it('keeps every node reachable from matching roots through cycles', () => {
-    const filtered = reachableGraph(graph([['a', 'b'], ['b', 'c'], ['c', 'a']]), value => value.key === 'a')
-    expect(filtered.nodes.map(node => node.coordinate.key)).toEqual(['a', 'b', 'c'])
+    const filtered = reachableGraph(graph([['a', 'b'], ['b', 'c'], ['c', 'a']]), value => value.id === 'a')
+    expect(filtered.nodes.map(node => node.coordinate.id)).toEqual(['a', 'b', 'c'])
     expect(filtered.edges).toHaveLength(3)
   })
 
   it('excludes disconnected nodes and edges', () => {
-    const filtered = reachableGraph(graph([['a', 'b'], ['c', 'd']]), value => value.key === 'a')
-    expect(filtered.nodes.map(node => node.coordinate.key)).toEqual(['a', 'b'])
-    expect(filtered.edges.map(edge => edge.source.key)).toEqual(['a'])
+    const filtered = reachableGraph(graph([['a', 'b'], ['c', 'd']]), value => value.id === 'a')
+    expect(filtered.nodes.map(node => node.coordinate.id)).toEqual(['a', 'b'])
+    expect(filtered.edges.map(edge => edge.source.id)).toEqual(['a'])
   })
 })

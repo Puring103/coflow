@@ -13,6 +13,8 @@ pub enum RuleScope {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RuleExecution {
     pub rule: Option<String>,
+    pub statement: Option<usize>,
+    pub diagnostic_count: Option<usize>,
     pub state: String,
     pub target: Value,
 }
@@ -25,6 +27,7 @@ pub struct ValidationReport {
     pub diagnostic_count: Option<usize>,
     pub scope: Option<RuleScope>,
     pub tasks: Option<Vec<RuleExecution>>,
+    pub results: Option<Vec<RuleExecution>>,
     pub requested_tasks: Option<usize>,
     pub executed_tasks: Option<usize>,
     pub rejected_tasks: Option<usize>,
@@ -65,7 +68,7 @@ pub struct AutomaticUpdate {
     pub kind: String,
     pub file: String,
     pub record: Option<RecordTarget>,
-    pub new_key: Option<String>,
+    pub new_id: Option<String>,
     pub count: Option<usize>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

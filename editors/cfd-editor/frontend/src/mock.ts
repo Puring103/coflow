@@ -20,7 +20,7 @@ import {
 
 const MOCK_CFD_CAPS: WriterCapabilities = {
   can_edit_field: true,
-  can_edit_key: true,
+  can_edit_id: true,
   can_insert_record: true,
   can_delete_record: true,
   can_reorder_records: true,
@@ -168,8 +168,8 @@ export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
         name: '药水',
         color: null,
         records: [
-          { actual_type: 'Item', key: 'Item_001' },
-          { actual_type: 'Item', key: 'Item_002' },
+          { actual_type: 'Item', id: 'Item_001' },
+          { actual_type: 'Item', id: 'Item_002' },
         ],
       }],
     },
@@ -185,7 +185,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
     variants: ['zh-CN', 'en-US'],
     rows: [
       {
-        coordinate: { actual_type: 'Item', key: 'Item_001' },
+        coordinate: { actual_type: 'Item', id: 'Item_001' },
         field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('初级药水'),
@@ -196,7 +196,7 @@ export const MOCK_DIMENSION_FILE_RECORDS: Record<string, DimensionFileRecords> =
         },
       },
       {
-        coordinate: { actual_type: 'Item', key: 'Item_002' },
+        coordinate: { actual_type: 'Item', id: 'Item_002' },
         field: 'name',
         owner_file_path: 'data/item.cfd',
         default_value: stringValue('中级药水'),
@@ -230,18 +230,18 @@ export const MOCK_GRAPH: GraphData = {
   ],
   edges: [
     {
-      source: { actual_type: 'Npc', key: 'Npc_001' },
-      target: { actual_type: 'Item', key: 'Item_001' },
+      source: { actual_type: 'Npc', id: 'Npc_001' },
+      target: { actual_type: 'Item', id: 'Item_001' },
       field_path: 'drops[0]',
     },
     {
-      source: { actual_type: 'Npc', key: 'Npc_001' },
-      target: { actual_type: 'Item', key: 'Item_002' },
+      source: { actual_type: 'Npc', id: 'Npc_001' },
+      target: { actual_type: 'Item', id: 'Item_002' },
       field_path: 'drops[1]',
     },
     {
-      source: { actual_type: 'Npc', key: 'Npc_002' },
-      target: { actual_type: 'Weapon', key: 'Sword_001' },
+      source: { actual_type: 'Npc', id: 'Npc_002' },
+      target: { actual_type: 'Weapon', id: 'Sword_001' },
       field_path: 'reward_item',
     },
   ],
@@ -261,7 +261,7 @@ function row(
     field_summaries[field.name] = summaryOf(field.value)
   })
   return {
-    coordinate: { actual_type: actualType, key },
+    coordinate: { actual_type: actualType, id: key},
     display_path: `${actualType}.${key}`,
     container_index: 0,
     container_size: 1,

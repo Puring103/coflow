@@ -23,9 +23,9 @@ describe('CFD semantic highlighting', () => {
       { from: 0, to: 7, type: 'type' },
       { from: 12, to: 16, type: 'property' },
     ], [
-      { from: 0, to: 7, type: 'recordKey' },
+      { from: 0, to: 7, type: 'recordId' },
     ])).toEqual([
-      { from: 0, to: 7, type: 'recordKey' },
+      { from: 0, to: 7, type: 'recordId' },
       { from: 12, to: 16, type: 'property' },
     ])
   })

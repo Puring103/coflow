@@ -62,10 +62,10 @@ pub(super) fn prepare_rename_update(
         let Some(entries) = values.get_mut(&enum_name) else {
             continue;
         };
-        let Some(value) = entries.remove(old.key.as_ref()) else {
+        let Some(value) = entries.remove(old.id.as_ref()) else {
             continue;
         };
-        entries.insert(new.key.to_string(), value);
+        entries.insert(new.id.to_string(), value);
         changed = true;
     }
 

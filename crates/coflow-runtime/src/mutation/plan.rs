@@ -115,7 +115,7 @@ fn prepare_planned_op(
         MutationOp::InsertRecord {
             file,
             actual_type,
-            key,
+            id,
             fields,
             materialization,
         } => prepare_insert(
@@ -125,7 +125,7 @@ fn prepare_planned_op(
             MutationOp::InsertRecord {
                 file,
                 actual_type,
-                key,
+                id,
                 fields,
                 materialization,
             },
@@ -133,7 +133,7 @@ fn prepare_planned_op(
         MutationOp::RenameRecord {
             record,
             file,
-            new_key,
+            new_id,
         } => {
             let Some(insert_index) = pending_inserts.get(&record).copied() else {
                 return prepare_one(
@@ -141,7 +141,7 @@ fn prepare_planned_op(
                     MutationOp::RenameRecord {
                         record,
                         file,
-                        new_key,
+                        new_id,
                     },
                     pending_inserts,
                 );
@@ -153,7 +153,7 @@ fn prepare_planned_op(
                 insert_index,
                 &record,
                 file.as_deref(),
-                &new_key,
+                &new_id,
             )
         }
         MutationOp::DeleteRecord { record, file } => {
@@ -213,7 +213,7 @@ fn prepare_set_field(
     let PreparedMutationOp::InsertRecord {
         file: insert_file,
         actual_type,
-        key,
+        id,
         fields,
         ..
     } = &mut pending_insert.op
@@ -227,7 +227,7 @@ fn prepare_set_field(
         PendingInsertSetRequest {
             insert_file,
             actual_type,
-            key,
+            id,
             fields,
             file_guard: file.as_deref(),
             path: &path,
@@ -245,7 +245,7 @@ fn prepare_insert(
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     let MutationOp::InsertRecord {
         ref actual_type,
-        ref key,
+        ref id,
         ..
     } = op
     else {
@@ -253,7 +253,7 @@ fn prepare_insert(
             "insert preparation received a non-insert operation",
         ));
     };
-    let coordinate = RecordCoordinate::try_new(actual_type, key).map_err(|error| {
+    let coordinate = RecordCoordinate::try_new(actual_type, id).map_err(|error| {
         DiagnosticSet::one(Diagnostic::error(
             "MUTATION-COORDINATE",
             "MUTATION",
@@ -266,7 +266,7 @@ fn prepare_insert(
             "MUTATION",
             format!(
                 "record `{}.{}` is inserted more than once in the same mutation",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ),
         )));
     }
@@ -284,7 +284,7 @@ fn fold_pending_insert_rename(
     insert_index: usize,
     record: &RecordCoordinate,
     file_guard: Option<&str>,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     let Some(pending_insert) = planned.get(insert_index) else {
         return Err(mutation_invariant_error(
@@ -298,23 +298,23 @@ fn fold_pending_insert_rename(
     };
     let insert_file = file.clone();
     let folded =
-        prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_key)?;
+        prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_id)?;
     let new_record =
-        RecordCoordinate::try_new(record.actual_type.to_string(), new_key).map_err(|error| {
+        RecordCoordinate::try_new(record.actual_type.to_string(), new_id).map_err(|error| {
             DiagnosticSet::one(Diagnostic::error(
                 "MUTATION-COORDINATE",
                 "MUTATION",
                 error.to_string(),
             ))
         })?;
-    let typed_new_key = new_record.key.clone();
+    let typed_new_id = new_record.id.clone();
     if new_record != *record && pending_inserts.contains_key(&new_record) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "MUTATION-RENAME-CONFLICT",
             "MUTATION",
             format!(
                 "record `{}.{}` is already pending insertion in the same mutation",
-                new_record.actual_type, new_record.key
+                new_record.actual_type, new_record.id
             ),
         )));
     }
@@ -329,8 +329,8 @@ fn fold_pending_insert_rename(
                 &record.actual_type,
                 actual_type,
                 fields,
-                &record.key,
-                &typed_new_key,
+                &record.id,
+                &typed_new_id,
             )?,
             PreparedMutationOp::SetField {
                 write_record,
@@ -343,8 +343,8 @@ fn fold_pending_insert_rename(
                 &write_record.actual_type,
                 path,
                 value,
-                &record.key,
-                &typed_new_key,
+                &record.id,
+                &typed_new_id,
             )?,
             _ => {}
         }
@@ -354,12 +354,12 @@ fn fold_pending_insert_rename(
             "pending rename index disappeared during planning",
         ));
     };
-    let PreparedMutationOp::InsertRecord { key, .. } = &mut pending_insert.op else {
+    let PreparedMutationOp::InsertRecord { id, .. } = &mut pending_insert.op else {
         return Err(mutation_invariant_error(
             "pending rename target changed during planning",
         ));
     };
-    *key = typed_new_key;
+    *id = typed_new_id;
     pending_inserts.remove(record);
     pending_inserts.insert(new_record, insert_index);
     Ok(folded)

@@ -1,6 +1,6 @@
 use crate::api::{Diagnostic, DiagnosticSet, Severity};
 use crate::data_model::{
-    CfdPathSegment, CfdRecord, CfdRecordId, CfdValue, CfdValueSemanticContext, ValueValidationMode,
+    CfdPathSegment, CfdRecord, CfdRecordHandle, CfdValue, CfdValueSemanticContext, ValueValidationMode,
     ValueValidationRequest,
 };
 use coflow_language::cft::{CftSchema, CftValueType, TypeName};
@@ -8,12 +8,12 @@ use std::collections::BTreeMap;
 
 use crate::ProjectSession;
 
-fn validate_record_key_for_stage(
+fn validate_record_id_for_stage(
     key: &str,
     code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    if let Some(reason) = coflow_language::lexical::record_key_ident_error(key) {
+    if let Some(reason) = coflow_language::lexical::record_id_ident_error(key) {
         return Err(one_error(
             code,
             stage,
@@ -23,16 +23,16 @@ fn validate_record_key_for_stage(
     Ok(())
 }
 
-pub fn ensure_record_key_available_with_conflict_code(
+pub fn ensure_record_id_available_with_conflict_code(
     session: &ProjectSession,
     actual_type: &str,
     key: &str,
-    current_record: Option<CfdRecordId>,
+    current_record: Option<CfdRecordHandle>,
     code: &'static str,
     conflict_code: &'static str,
     stage: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    validate_record_key_for_stage(key, code, stage)?;
+    validate_record_id_for_stage(key, code, stage)?;
     let Some(inheritance_root) = session.schema.inheritance_root(actual_type) else {
         return Err(one_error(
             code,
@@ -40,7 +40,7 @@ pub fn ensure_record_key_available_with_conflict_code(
             format!("unknown type `{actual_type}`"),
         ));
     };
-    let Some(existing_id) = session.model.record_by_domain_key(inheritance_root, key) else {
+    let Some(existing_id) = session.model.record_by_domain_id(inheritance_root, key) else {
         return Ok(());
     };
     if current_record == Some(existing_id) {
@@ -59,7 +59,7 @@ pub fn ensure_record_key_available_with_conflict_code(
         format!(
             "key `{key}` already exists in `{actual_type}` inheritance domain as `{}.{}`",
             existing.actual_type(),
-            existing.key
+            existing.id
         ),
     ))
 }
@@ -301,13 +301,13 @@ struct ProjectValueSemanticContext<'a> {
 }
 
 impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
-    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId> {
+    fn record_by_domain_id(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordHandle> {
         self.session
             .model
-            .record_by_domain_key(inheritance_root, key)
+            .record_by_domain_id(inheritance_root, key)
     }
 
-    fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
+    fn record_actual_type(&self, id: CfdRecordHandle) -> Option<&str> {
         self.session.model.record(id).map(CfdRecord::actual_type)
     }
 
@@ -315,7 +315,7 @@ impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
         self.pending_records?
             .keys()
             .find(|record| {
-                record.key() == key
+                record.id() == key
                     && self.session.schema.inheritance_root(&record.actual_type)
                         == Some(inheritance_root)
             })

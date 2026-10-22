@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecordDraft {
-    pub(crate) key: String,
+    pub(crate) id: String,
     pub(crate) actual_type: TypeName,
     pub(crate) fields: BTreeMap<FieldName, ValueDraft>,
     pub(crate) origin: RecordOrigin,
@@ -20,7 +20,7 @@ pub(crate) enum ValueDraft {
     Object(Box<RecordDraft>),
     PendingRef {
         explicit_type: Option<TypeName>,
-        key: String,
+        id: String,
     },
     Array(Vec<ValueDraft>),
     Dict(Vec<(CfdDictKey, ValueDraft)>),

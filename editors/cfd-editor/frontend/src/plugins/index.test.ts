@@ -295,7 +295,7 @@ describe('editor plugin registry', () => {
         columns: [],
         capabilities: {
           can_edit_field: true,
-          can_edit_key: true,
+          can_edit_id: true,
           can_insert_record: true,
           can_delete_record: true,
           can_reorder_records: true,
@@ -310,7 +310,7 @@ describe('editor plugin registry', () => {
       result = await host.data.mutate({
         kind: 'delete_record',
         filePath: 'data.cfd',
-        coordinate: { actual_type: 'Foo', key: 'one' },
+        coordinate: { actual_type: 'Foo', id: 'one' },
       })
     })
 
@@ -340,7 +340,7 @@ describe('editor plugin registry', () => {
     const request = {
       kind: 'delete_record' as const,
       filePath: 'data.cfd',
-      coordinate: { actual_type: 'Foo', key: 'one' },
+      coordinate: { actual_type: 'Foo', id: 'one' },
     }
 
     const first = host!.data.mutate(request)
@@ -363,7 +363,7 @@ describe('editor plugin registry', () => {
       currentIdentity: () => ({ sessionId: 5, revision: 9 }),
       getSchema: async () => [],
       getRecordsByType: async () => [{
-        coordinate: { actual_type: 'Foo', key: 'one' },
+        coordinate: { actual_type: 'Foo', id: 'one' },
         display_path: 'data.cfd',
         fields: [{ name: 'value', value: { kind: 'string', value: 'secret' } }],
       } as never],
@@ -380,7 +380,7 @@ describe('editor plugin registry', () => {
       revision: 9,
       data: [{
         filePath: 'data.cfd',
-        coordinate: { actual_type: 'Foo', key: 'one' },
+        coordinate: { actual_type: 'Foo', id: 'one' },
       }],
     })
   })
@@ -393,7 +393,7 @@ describe('editor plugin registry', () => {
       data: {
         hits: [{
           filePath: 'data.cfd',
-          coordinate: { actual_type: 'Foo', key: 'one' },
+          coordinate: { actual_type: 'Foo', id: 'one' },
           fieldPath: null,
           preview: null,
         }],
@@ -412,8 +412,8 @@ describe('editor plugin registry', () => {
 
     const result = await host!.data.searchRecords('  one  ')
 
-    expect(searchRecords).toHaveBeenCalledWith(5, 'one', 'key', 200)
-    expect(result.data.hits[0].coordinate).toEqual({ actual_type: 'Foo', key: 'one' })
+    expect(searchRecords).toHaveBeenCalledWith(5, 'one', 'id', 200)
+    expect(result.data.hits[0].coordinate).toEqual({ actual_type: 'Foo', id: 'one' })
   })
 
   it('rejects a query superseded by a newer data revision', async () => {

@@ -101,17 +101,19 @@
                     <article class="stack-card code-card" data-card="type" data-depth="0">
                       <div class="code-window">
                         <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
-                        <pre class="code-sample"><code><span class="tok-anno">@idAsEnum</span>(<span class="tok-type">SkillId</span>)
+                        <pre class="code-sample"><code><span class="tok-keyword">enum</span> <span class="tok-type">Element</span> { Fire, Ice, Light }
+<span class="tok-keyword">enum</span> <span class="tok-type">SkillId</span> {}
+<span class="tok-anno">@idAsEnum</span>(<span class="tok-type">SkillId</span>)
 <span class="tok-anno">@label</span>(<span class="tok-string">"技能"</span>)
-<span class="tok-keyword">type</span> <span class="tok-type">Skill</span> {
+<span class="tok-keyword">table</span> <span class="tok-type">Skill</span> {
   name: <span class="tok-type">string</span> = <span class="tok-string">"未命名技能"</span>;
-  element: <span class="tok-type">Element</span> = <span class="tok-type">Element.Fire</span>;
+  element: <span class="tok-type">Element</span> = <span class="tok-type">Element::Fire</span>;
   power: <span class="tok-type">int</span> = <span class="tok-number">0</span>;
   cooldown: <span class="tok-type">float</span> = <span class="tok-number">0.0</span>;
   tags: [<span class="tok-type">string</span>] = [];
   resistance: {<span class="tok-type">Element</span>: <span class="tok-type">float</span>} = {};
   is_passive: <span class="tok-type">bool</span> = <span class="tok-keyword">false</span>;
-  follow_up: <span class="tok-op">&amp;</span><span class="tok-type">Skill</span>? = <span class="tok-keyword">null</span>;
+  follow_up: <span class="tok-type">Option</span>&lt;<span class="tok-op">&amp;</span><span class="tok-type">Skill</span>&gt; = <span class="tok-keyword">None</span>;
 }</code></pre>
                       </div>
                     </article>
@@ -130,11 +132,12 @@
                     <article class="stack-card code-card" data-card="annotation" data-depth="2">
                       <div class="code-window">
                         <div class="win-bar"><span class="win-file">schema/items.cft</span><span class="win-lang">CFT</span></div>
-                        <pre class="code-sample"><code><span class="tok-comment"># record key 生成强类型 SkillId 枚举</span>
+                        <pre class="code-sample"><code><span class="tok-comment"># 记录 ID 生成强类型 SkillId 枚举</span>
+<span class="tok-keyword">enum</span> <span class="tok-type">SkillId</span> {}
 <span class="tok-anno">@idAsEnum</span>(<span class="tok-type">SkillId</span>)
 <span class="tok-anno">@label</span>(<span class="tok-string">"技能"</span>)
 <span class="tok-anno">@description</span>(<span class="tok-string">"战斗技能配置"</span>)
-<span class="tok-keyword">type</span> <span class="tok-type">Skill</span> {
+<span class="tok-keyword">table</span> <span class="tok-type">Skill</span> {
   <span class="tok-comment"># 按语言维度保存本地化名称</span>
   <span class="tok-anno">@localized</span>
   <span class="tok-anno">@label</span>(<span class="tok-string">"名称"</span>)
@@ -145,15 +148,15 @@
                     <article class="stack-card code-card" data-card="inherit" data-depth="3">
                       <div class="code-window">
                         <div class="win-bar"><span class="win-file">schema/rewards.cft</span><span class="win-lang">CFT</span></div>
-                        <pre class="code-sample"><code><span class="tok-keyword">abstract type</span> <span class="tok-type">Reward</span> {
-  id: <span class="tok-type">string</span> = <span class="tok-string">"reward_001"</span>;
-  <span class="tok-keyword">check</span> { id != <span class="tok-string">""</span>; }
+                        <pre class="code-sample"><code><span class="tok-keyword">table</span> <span class="tok-type">Item</span> { name: <span class="tok-type">string</span>; }
+<span class="tok-keyword">abstract data</span> <span class="tok-type">Reward</span> {
+  label: <span class="tok-type">string</span>;
 }
-<span class="tok-keyword">type</span> <span class="tok-type">ItemReward</span> : <span class="tok-type">Reward</span> {
-  item: <span class="tok-type">Item</span>;
+<span class="tok-keyword">data</span> <span class="tok-type">ItemReward</span> : <span class="tok-type">Reward</span> {
+  item: <span class="tok-op">&amp;</span><span class="tok-type">Item</span>;
   count: <span class="tok-type">int</span> = <span class="tok-number">1</span>;
 }
-<span class="tok-keyword">sealed type</span> <span class="tok-type">CurrencyReward</span> : <span class="tok-type">Reward</span> {
+<span class="tok-keyword">sealed data</span> <span class="tok-type">CurrencyReward</span> : <span class="tok-type">Reward</span> {
   amount: <span class="tok-type">int</span> = <span class="tok-number">100</span>;
 }</code></pre>
                       </div>
@@ -183,7 +186,7 @@
                     <article class="stack-card code-card" data-card="basic" data-depth="0">
                       <div class="code-window">
                         <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
-                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> <span class="tok-type">ValidSkill</span> {
   power &gt;= <span class="tok-number">0</span>: <span class="tok-string">"技能威力不能为负"</span>;
   cooldown &gt;= <span class="tok-number">0.0</span>;
   tags.isUnique(): <span class="tok-string">"标签不能重复"</span>;
@@ -194,7 +197,7 @@
                     <article class="stack-card code-card" data-card="when" data-depth="1">
                       <div class="code-window">
                         <div class="win-bar"><span class="win-file">schema/skills.cft</span><span class="win-lang">CFT</span></div>
-                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> <span class="tok-type">ActiveSkill</span> {
   <span class="tok-keyword">when</span> !is_passive {
     power &gt; <span class="tok-number">0</span>: <span class="tok-string">"主动技能威力需大于 0"</span>;
     cooldown &gt; <span class="tok-number">0.0</span>: <span class="tok-string">"主动技能需要冷却时间"</span>;
@@ -205,10 +208,10 @@
                     <article class="stack-card code-card" data-card="quant" data-depth="2">
                       <div class="code-window">
                         <div class="win-bar"><span class="win-file">schema/loot.cft</span><span class="win-lang">CFT</span></div>
-                        <pre class="code-sample"><code><span class="tok-keyword">check</span> {
+                        <pre class="code-sample"><code><span class="tok-keyword">check</span> <span class="tok-type">ValidLoot</span> {
   <span class="tok-keyword">all</span> w <span class="tok-keyword">in</span> weights { w &gt;= <span class="tok-number">0</span>; }
   <span class="tok-keyword">any</span> w <span class="tok-keyword">in</span> weights { w &gt; <span class="tok-number">0</span>; }
-  <span class="tok-keyword">none</span> id <span class="tok-keyword">in</span> item_ids { id == <span class="tok-string">""</span>; }
+  <span class="tok-keyword">none</span> item_id <span class="tok-keyword">in</span> item_ids { item_id == <span class="tok-string">""</span>; }
 }</code></pre>
                       </div>
                     </article>
@@ -242,23 +245,18 @@
               </div>
               <div class="stage-demo">
                 <div class="diagnostic-showcase terminal-diagnostics">
-                  <div class="code-window"><div class="win-bar"><span class="win-file">CFD</span><span class="win-lang">stderr</span></div><pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check .
-<span class="tok-dim">----------------------------------------</span>
-[<span class="tok-err">CFD-TEXT-TypeMismatch</span>] [<span class="tok-type">CFD</span>]
-<span class="tok-key">file</span>    data/items.cfd
-<span class="tok-key">record</span> Item.fireball
-<span class="tok-key">field</span>  power
-<span class="tok-key">message</span>
-  failed to parse `Item.level` cell:
-  expected int</code></pre></div>
-                  <div class="code-window"><div class="win-bar"><span class="win-file">CFD</span><span class="win-lang">stderr</span></div><pre class="code-sample"><code><span class="tok-prompt">$</span> coflow check .
-<span class="tok-dim">----------------------------------------</span>
-[<span class="tok-err">CFD-TEXT-TypeMismatch</span>] [<span class="tok-type">CFD</span>]
-<span class="tok-key">file</span>    data/skills.cfd
-<span class="tok-key">line</span>    4
-<span class="tok-key">column</span>  11
-<span class="tok-key">message</span>
-  expected int</code></pre></div>
+                  <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.cfd</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code>fireball: <span class="tok-type">Skill</span> {
+  name: <span class="tok-string">"火球术"</span>,
+  power: <span class="tok-err">"35"</span>,
+}
+
+<span class="tok-comment"># power 需要整数</span>
+<span class="tok-comment"># 将字符串 "35" 改为整数 35</span></code></pre></div>
+                  <div class="code-window"><div class="win-bar"><span class="win-file">诊断摘要</span><span class="win-lang">coflow check --json</span></div><pre class="code-sample"><code><span class="tok-key">code</span>     <span class="tok-err">CFD-TEXT-TypeMismatch</span>
+<span class="tok-key">stage</span>    <span class="tok-type">CFD</span>
+<span class="tok-key">source</span>   data/skills.cfd
+<span class="tok-key">position</span> 第 3 行，第 10 列
+<span class="tok-key">message</span>  expected int</code></pre></div>
                 </div>
               </div>
             </li>
@@ -281,10 +279,10 @@
                   <div class="stack-deck">
                     <!-- 表格视图（还原 .table-view / .data-table） -->
                     <article class="stack-card cfd-card" data-card="table" data-depth="0">
-                      <div class="cfd-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/></svg><span>按 Key 搜索…</span><em>128 条</em></div>
+                      <div class="cfd-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/></svg><span>按 ID 搜索…</span><em>128 条</em></div>
                       <div class="cfd-table">
                         <div class="cfd-thead">
-                          <div class="cfd-th th-key"><span class="th-name">Key</span><span class="th-type th-type-key">key</span></div>
+                          <div class="cfd-th th-key"><span class="th-name">ID</span><span class="th-type th-type-key">id</span></div>
                           <div class="cfd-th"><span class="th-name">name</span><span class="th-type">string</span></div>
                           <div class="cfd-th"><span class="th-name">element</span><span class="th-type c-enum">Element</span></div>
                           <div class="cfd-th"><span class="th-name">power</span><span class="th-type">int</span></div>
@@ -385,9 +383,9 @@
               </div>
               <div class="stage-demo">
                 <div class="editor-chrome live-editor-demo cfd-stack">
-                  <div class="live-grid"><b>Key</b><b>power</b><b>tags</b><strong>fireball</strong><span class="live-error">-5 <i>1</i></span><span>[burn]</span><strong>frost_nova</strong><span>28</span><span class="live-warning">[ice, ice] <i>1</i></span></div>
+                  <div class="live-grid"><b>ID</b><b>power</b><b>tags</b><strong>fireball</strong><span class="live-error">-5 <i>1</i></span><span>[burn]</span><strong>frost_nova</strong><span>28</span><span class="live-warning">[ice, ice] <i>1</i></span></div>
                   <div class="live-diag-head"><span>诊断</span><em>1</em><i>1</i></div>
-                  <div class="live-diag-row"><i>×</i><span>技能威力不能为负</span><code>CFD-CHECK-007</code><b>power</b></div>
+                  <div class="live-diag-row"><i>×</i><span>技能威力不能为负</span><code>CHECK-007</code><b>power</b></div>
                   <div class="live-status"><span>items.cfd</span><span>实时检查</span><b>● 已同步</b></div>
                 </div>
               </div>
@@ -398,14 +396,14 @@
               <div class="stage-marker"><span>09</span></div>
               <div class="stage-text">
                 <p class="stage-tag">DELIVER</p>
-                <h3 data-en="Multiple languages, one CFD source">多语言代码生成</h3>
-                <p data-en="Load one CFD source directly and generate typed code for every target language.">同一份 CFD 数据直接加载，并为每个目标语言生成类型安全的代码。</p>
+                <h3 data-en="Typed C# code, one CFD source">生成类型安全的 C# 代码</h3>
+                <p data-en="Generate typed C# code and load CFD data as business objects in your application.">生成类型安全的 C# 代码，在应用中将 CFD 数据加载为业务对象。</p>
               </div>
               <div class="stage-demo">
                 <div class="editor-chrome artifact-view">
                   <div class="artifact-group"><header>输入</header><span><b>CFD</b><code>data/skills.cfd</code></span></div>
-                  <div class="artifact-group"><header>代码文件</header><span><b>C#</b><code>Skill.cs</code></span><span><b>TypeScript</b><code>Skill.ts</code></span></div>
-                  <footer><i></i> Build complete · Published atomically</footer>
+                  <div class="artifact-group"><header>代码文件</header><span><b>C#</b><code>Skill.cs</code></span><span><b>C#</b><code>CoflowData.cs</code></span></div>
+                  <footer><i></i> Build complete · C# ready</footer>
                 </div>
               </div>
             </li>
@@ -445,11 +443,11 @@
                 <div class="card-stack code-stack source-stack" data-cardstack aria-label="CFD 配置文件">
                   <div class="stack-deck">
                     <article class="stack-card code-card" data-card="cfd" data-offset="0">
-                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.cfd</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code><span class="tok-type">Skill</span> fireball {
-  name = <span class="tok-string">"火球术"</span>
-  element = <span class="tok-type">Fire</span>
-  power = <span class="tok-number">35</span>
-  cooldown = <span class="tok-number">3.0</span>
+                      <div class="code-window"><div class="win-bar"><span class="win-file">data/skills.cfd</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code>fireball: <span class="tok-type">Skill</span> {
+  name: <span class="tok-string">"火球术"</span>,
+  element: <span class="tok-type">Element::Fire</span>,
+  power: <span class="tok-number">35</span>,
+  cooldown: <span class="tok-number">3.0</span>,
 }</code></pre></div>
                     </article>
                   </div>
@@ -470,11 +468,11 @@
                   <div class="dimension-columns">
                     <section><strong>coflow.yaml</strong><pre><code><span class="tok-key">dimensions</span>:
   <span class="tok-key">platform</span>:
-    <span class="tok-key">variants</span>: [windows, android, ios]
-    <span class="tok-key">out_dir</span>: data/dimensions/platform
+    <span class="tok-key">display_name</span>: 平台
+    <span class="tok-key">dir</span>: dimensions/platform
   <span class="tok-key">language</span>:
-    <span class="tok-key">variants</span>: [zh, en]
-    <span class="tok-key">out_dir</span>: data/dimensions/language</code></pre></section>
+    <span class="tok-key">display_name</span>: 本地化
+    <span class="tok-key">dir</span>: dimensions/language</code></pre></section>
                     <section><strong>schema/skills.cft</strong><pre><code><span class="tok-anno">@dimension</span>(<span class="tok-string">"platform"</span>)
 asset_bundle: <span class="tok-type">string</span>;
 
@@ -492,15 +490,15 @@ name: <span class="tok-type">string</span>;</code></pre></section>
               <div class="stage-text">
                 <p class="stage-tag">AI ITERATE</p>
                 <h3 data-en="AI in the loop, rapid iteration">AI 参与，高速迭代</h3>
-                <p data-en="A complete CLI and detailed skills combine precise CFT types, a unified model and rich diagnostics so AI can change data quickly and correctly.">提供一套完备的 CLI 工具和一组详细的 Skill，结合 CFT 定义的准确数据类型、统一数据模型对数据源差异的弥合，以及丰富详细的诊断信息，保证 AI 改得快、改得对。</p>
+                <p data-en="CLI queries, previews and validation combine with detailed skills so AI can understand and update your configuration.">通过 CLI 查询、修改预览和校验，结合详细的 Skill 与准确的类型定义，让 AI 理解配置并验证修改结果。</p>
               </div>
               <div class="stage-demo">
                 <div class="editor-chrome cli-demo" aria-label="常用 Coflow 命令">
                   <div><span>$</span><code>coflow skill install -g</code><em>安装 Skill</em></div>
-                  <div><span>$</span><code>coflow schema inspect Skill</code><em>理解类型</em></div>
-                  <div><span>$</span><code>coflow codegen .</code><em>生成目标代码</em></div>
-                  <div><span>$</span><code>coflow build .</code><em>校验并发布</em></div>
-                  <div><span>$</span><code>coflow check .</code><em>验证结果</em></div>
+                  <div><span>$</span><code>coflow schema inspect --type Skill</code><em>理解类型</em></div>
+                  <div><span>$</span><code>coflow codegen</code><em>生成目标代码</em></div>
+                  <div><span>$</span><code>coflow build</code><em>校验并发布</em></div>
+                  <div><span>$</span><code>coflow check --rules</code><em>验证结果</em></div>
                 </div>
               </div>
             </li>
@@ -531,7 +529,7 @@ name: <span class="tok-type">string</span>;</code></pre></section>
               <div class="flow-node role-planner"><i></i><div><b data-en="Designers">策划</b><small>CFD Editor · CFD</small></div></div>
               <div class="flow-node role-agent"><i></i><div><b>AI</b><small>CLI · Skills</small></div></div>
               <div class="flow-core"><b>Coflow</b></div>
-              <div class="flow-output"><div><b>Runtime</b><small>CFD · C# · 多语言</small></div><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></div>
+              <div class="flow-output"><div><b>Runtime</b><small>CFD · C#</small></div><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" /></svg></div>
             </div></div>
           </figure>
           <div class="role-cards" data-reveal>

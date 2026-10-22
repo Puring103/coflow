@@ -1,6 +1,6 @@
 use unicode_ident::{is_xid_continue, is_xid_start};
 
-pub(super) fn looks_like_bare_record_key(text: &str) -> bool {
+pub(super) fn looks_like_bare_record_id(text: &str) -> bool {
     let text = text.trim();
     !text.is_empty()
         && !matches!(text, "_" | "null")

@@ -70,20 +70,20 @@ pub(super) fn type_after_dict_key_segment(
 
 pub(super) fn dict_key_path_matches(
     key_type: &CftValueType,
-    source_key: &str,
+    source_id: &str,
     path_key: &str,
 ) -> bool {
-    if source_key == path_key {
+    if source_id == path_key {
         return true;
     }
     match key_type {
         CftValueType::String if path_key.starts_with('"') => {
-            serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
+            serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_id)
         }
         CftValueType::Enum(enum_name) => path_key
             .strip_prefix(enum_name.as_str())
             .and_then(|rest| rest.strip_prefix('.'))
-            .is_some_and(|variant| variant == source_key),
+            .is_some_and(|variant| variant == source_id),
         _ => false,
     }
 }

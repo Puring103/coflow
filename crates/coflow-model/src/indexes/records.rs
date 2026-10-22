@@ -1,13 +1,13 @@
 use crate::build::{BuildSchema, RecordDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{CfdRecordId, CfdTable};
-use coflow_language::cft::{RecordKey, TypeName};
-use coflow_language::lexical::{is_cft_identifier, record_key_ident_error};
+use crate::model::{CfdRecordHandle, CfdTable};
+use coflow_language::cft::{RecordId, TypeName};
+use coflow_language::lexical::{is_cft_identifier, record_id_ident_error};
 use std::collections::BTreeMap;
 
 pub(crate) struct ModelIndexes {
     pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_domain_id: BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
 }
 
 pub(crate) fn build_indexes(
@@ -16,10 +16,10 @@ pub(crate) fn build_indexes(
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
     let mut tables = BTreeMap::<TypeName, CfdTable>::new();
-    let mut record_by_domain_key = BTreeMap::<TypeName, BTreeMap<RecordKey, CfdRecordId>>::new();
+    let mut record_by_domain_id = BTreeMap::<TypeName, BTreeMap<RecordId, CfdRecordHandle>>::new();
 
     for (index, draft) in drafts.iter().enumerate() {
-        let record_id = CfdRecordId::new(index);
+        let record_id = CfdRecordHandle::new(index);
         let Some(inheritance_root) = schema.inheritance_root(draft.actual_type.as_str()) else {
             continue;
         };
@@ -32,48 +32,48 @@ pub(crate) fn build_indexes(
             });
         table.records.push(record_id);
 
-        if draft.key.is_empty() {
+        if draft.id.is_empty() {
             diagnostics.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::MissingIdField,
-                    format!("record `{}` has an empty key", draft.actual_type),
+                    format!("record `{}` has an empty id", draft.actual_type),
                 )
                 .with_primary(Some(record_id), CfdPath::root().field("id")),
             );
             continue;
         }
-        if let Some(reason) = record_key_ident_error(&draft.key) {
+        if let Some(reason) = record_id_ident_error(&draft.id) {
             diagnostics.push(
                 CfdDiagnostic::error(
-                    CfdErrorCode::InvalidRecordKey,
-                    format!("invalid record key `{}`: {reason}", draft.key),
+                    CfdErrorCode::InvalidRecordId,
+                    format!("invalid record id `{}`: {reason}", draft.id),
                 )
                 .with_primary(Some(record_id), CfdPath::root().field("id")),
             );
             continue;
         }
-        let Ok(key) = RecordKey::new(draft.key.clone()) else {
+        let Ok(id) = RecordId::new(draft.id.clone()) else {
             continue;
         };
 
-        if let Some(first) = table.primary_index.insert(key.clone(), record_id) {
+        if let Some(first) = table.primary_index.insert(id.clone(), record_id) {
             diagnostics.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::DuplicateId,
-                    format!("duplicate key in table `{}`", draft.actual_type),
+                    format!("duplicate id in table `{}`", draft.actual_type),
                 )
                 .with_primary(Some(record_id), CfdPath::root().field("id"))
                 .with_related(
                     Some(first),
                     CfdPath::root().field("id"),
-                    "first key is here",
+                    "first id is here",
                 ),
             );
         }
-        if let Some(first) = record_by_domain_key
+        if let Some(first) = record_by_domain_id
             .entry(inheritance_root.clone())
             .or_default()
-            .insert(key.clone(), record_id)
+            .insert(id.clone(), record_id)
         {
             let first_actual_type = drafts
                 .get(first.index())
@@ -82,13 +82,13 @@ pub(crate) fn build_indexes(
                 diagnostics.push(
                     CfdDiagnostic::error(
                         CfdErrorCode::DuplicatePolymorphicId,
-                        "duplicate key in inheritance domain",
+                        "duplicate id in inheritance domain",
                     )
                     .with_primary(Some(record_id), CfdPath::root().field("id"))
                     .with_related(
                         Some(first),
                         CfdPath::root().field("id"),
-                        "first key is here",
+                        "first id is here",
                     ),
                 );
             }
@@ -97,7 +97,7 @@ pub(crate) fn build_indexes(
 
     ModelIndexes {
         tables,
-        record_by_domain_key,
+        record_by_domain_id,
     }
 }
 
@@ -112,7 +112,7 @@ pub(crate) fn validate_singletons(
         .map(|meta| meta.name.clone())
         .collect();
 
-    let mut seen_keys: BTreeMap<String, (TypeName, CfdRecordId)> = BTreeMap::new();
+    let mut seen_keys: BTreeMap<String, (TypeName, CfdRecordHandle)> = BTreeMap::new();
 
     for type_name in &singleton_names {
         let Some(table) = tables.get(type_name) else {
@@ -140,26 +140,26 @@ pub(crate) fn validate_singletons(
         let Some(draft) = drafts.get(record_id.index()) else {
             continue;
         };
-        if draft.key.is_empty() || !is_cft_identifier(&draft.key) {
+        if draft.id.is_empty() || !is_cft_identifier(&draft.id) {
             diagnostics.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::SingletonKeyMissingOrInvalid,
                     format!(
-                        "singleton type `{type_name}` record key `{}` is missing or not a valid CFT identifier",
-                        draft.key
+                        "singleton type `{type_name}` record id `{}` is missing or not a valid CFT identifier",
+                        draft.id
                     ),
                 )
                 .with_primary(Some(record_id), CfdPath::root().field("id")),
             );
             continue;
         }
-        if let Some((other_type, first_id)) = seen_keys.get(&draft.key) {
+        if let Some((other_type, first_id)) = seen_keys.get(&draft.id) {
             diagnostics.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::SingletonKeyCollision,
                     format!(
-                        "singleton record key `{}` collides between `{type_name}` and `{other_type}`",
-                        draft.key
+                        "singleton record id `{}` collides between `{type_name}` and `{other_type}`",
+                        draft.id
                     ),
                 )
                 .with_primary(Some(record_id), CfdPath::root().field("id"))
@@ -170,7 +170,7 @@ pub(crate) fn validate_singletons(
                 ),
             );
         } else {
-            seen_keys.insert(draft.key.clone(), (type_name.clone(), record_id));
+            seen_keys.insert(draft.id.clone(), (type_name.clone(), record_id));
         }
     }
 }

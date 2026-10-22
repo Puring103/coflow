@@ -55,7 +55,7 @@ fn malformed_sources_format_stably() {
 
 #[test]
 fn valid_sources_parse_before_and_after_formatting() {
-    let cft = "table Item { name: string; items: [int]; count: int; check { count > 0; } }";
+    let cft = "table Item { name: string; items: [int]; count: int; check Valid { count > 0; } }";
     let before_modules = parse_modules([CftFile::from_source(ModuleId::from("main"), cft)]);
     let before = build_schema(&before_modules).expect("schema");
     let formatted_cft = format_cft(cft);
@@ -87,7 +87,7 @@ fn valid_sources_parse_before_and_after_formatting() {
             .iter()
             .map(|record| {
                 (
-                    record.key.clone(),
+                    record.id.clone(),
                     record.type_name.clone(),
                     record
                         .fields

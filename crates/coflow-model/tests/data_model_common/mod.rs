@@ -8,7 +8,7 @@
 )]
 
 pub(crate) use coflow_language::cft::{
-    build_schema, parse_modules, CftFile, CftSchema, DimensionName, FieldName, ModuleId, RecordKey,
+    build_schema, parse_modules, CftFile, CftSchema, DimensionName, FieldName, ModuleId, RecordId,
     TypeName, VariantName,
 };
 pub(crate) use coflow_model::*;
@@ -34,7 +34,7 @@ pub(crate) fn assert_has_code(diags: &CfdDiagnostics, code: CfdErrorCode) {
     );
 }
 
-pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordId {
+pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordHandle {
     model
         .records()
         .map(|(record_id, _)| record_id)

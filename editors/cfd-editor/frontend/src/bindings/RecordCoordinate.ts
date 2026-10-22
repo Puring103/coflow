@@ -3,7 +3,7 @@
 /**
  * Stable business identity of a top-level record across model generations.
  *
- * [`CfdRecordId`] is only valid inside one model generation. Persisted and
+ * [`CfdRecordHandle`] is only valid inside one model generation. Persisted and
  * wire-facing references to top-level records must use this coordinate.
  */
-export type RecordCoordinate = { actual_type: string, key: string, };
+export type RecordCoordinate = { actual_type: string, id: string, };

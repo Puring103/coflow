@@ -93,7 +93,7 @@ impl ValueResolver<'_, '_> {
                 (CftValueType::String, CftConstValue::String(value.clone()))
             }
             DefaultExprKind::FormattedString(source) => (
-                CftValueType::FormattedString,
+                CftValueType::String,
                 CftConstValue::FormattedString(source.clone()),
             ),
             DefaultExprKind::BitExpr { op, lhs, rhs } => {
@@ -408,7 +408,7 @@ impl ValueResolver<'_, '_> {
             CftValueType::RecordRef(type_name.clone()),
             CftConstValue::RecordReference {
                 type_name,
-                key: key.name.clone(),
+                id: key.name.clone(),
             },
         ))
     }

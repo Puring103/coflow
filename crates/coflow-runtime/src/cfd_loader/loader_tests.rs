@@ -42,7 +42,7 @@ fn shared_runtime_corpus_preserves_acceptance_and_value_states() {
         if name == "migration-contract.valid.cfd" {
             let model = result.expect("contract model");
             let record = model
-                .record_by_type_key("ContractEntry", "entry")
+                .record_by_type_id("ContractEntry", "entry")
                 .and_then(|id| model.record(id))
                 .expect("entry");
             let Some(CfdValue::Object(payload)) = record.field("payload") else {
@@ -154,7 +154,7 @@ Item {
         Some(&LoadedValueDraft::OptionSome(Box::new(
             LoadedValueDraft::TypedRecordRef {
                 type_name: "Item".to_string(),
-                key: "sword".to_string()
+                id: "sword".to_string()
             }
         )))
     );
@@ -213,7 +213,7 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
     )?;
 
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].key, "sword");
+    assert_eq!(records[0].id, "sword");
     assert_eq!(records[0].actual_type, "Item");
     assert_eq!(
         records[0].fields.get("name"),
@@ -294,7 +294,7 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
             }
             table Holder {
                 item: &Item;
-                message: fstring;
+                message: string;
             }
         "#,
     );
@@ -317,7 +317,7 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
     let holder = model
         .record(
             model
-                .record_by_type_key("Holder", "holder")
+                .record_by_type_id("Holder", "holder")
                 .expect("holder"),
         )
         .expect("holder record");
@@ -332,7 +332,7 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
 #[test]
 fn formatted_strings_follow_record_reference_fields() -> TestResult {
     let schema = compile_schema(
-        "table Item { name: string; } table Holder { item: &Item; message: fstring; }",
+        "table Item { name: string; } table Holder { item: &Item; message: string; }",
     );
     let model = load_cfd_model(
         &schema,
@@ -344,7 +344,7 @@ fn formatted_strings_follow_record_reference_fields() -> TestResult {
     let holder = model
         .record(
             model
-                .record_by_type_key("Holder", "holder")
+                .record_by_type_id("Holder", "holder")
                 .expect("holder"),
         )
         .expect("holder record");
@@ -357,7 +357,7 @@ fn formatted_strings_follow_record_reference_fields() -> TestResult {
 
 #[test]
 fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> TestResult {
-    let schema = compile_schema("table Item { name: string; message: fstring; }");
+    let schema = compile_schema("table Item { name: string; message: string; }");
     let model = load_cfd_model(
         &schema,
         r#"
@@ -366,7 +366,7 @@ fn formatted_strings_resolve_fields_on_another_record_of_the_same_type() -> Test
         "#,
     )?;
     let shield = model
-        .record(model.record_by_type_key("Item", "shield").expect("shield"))
+        .record(model.record_by_type_id("Item", "shield").expect("shield"))
         .expect("shield record");
     assert!(matches!(
         shield.field("message"),
@@ -543,9 +543,9 @@ fn grouped_records_expand_to_records_of_the_same_type() -> TestResult {
     )?;
 
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].key, "sword");
+    assert_eq!(records[0].id, "sword");
     assert_eq!(records[0].actual_type, "Item");
-    assert_eq!(records[1].key, "shield");
+    assert_eq!(records[1].id, "shield");
     assert_eq!(records[1].actual_type, "Item");
     Ok(())
 }
@@ -571,7 +571,7 @@ fn grouped_record_commas_are_optional() -> TestResult {
 
     let coords = records
         .iter()
-        .map(|record| (record.actual_type.as_str(), record.key.as_str()))
+        .map(|record| (record.actual_type.as_str(), record.id.as_str()))
         .collect::<Vec<_>>();
     assert_eq!(
         coords,
@@ -638,12 +638,12 @@ fn schema_free_ast_matches_loader_record_coordinates_for_supported_syntax() -> T
 
     let loader_coords = loader_records
         .iter()
-        .map(|record| (record.actual_type.as_str(), record.key.as_str()))
+        .map(|record| (record.actual_type.as_str(), record.id.as_str()))
         .collect::<Vec<_>>();
     let ast_coords = ast
         .records
         .iter()
-        .map(|record| (record.type_name.as_str(), record.key.as_str()))
+        .map(|record| (record.type_name.as_str(), record.id.as_str()))
         .collect::<Vec<_>>();
     assert_eq!(ast_coords, loader_coords);
     Ok(())
@@ -887,7 +887,7 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
         r#"
             sword: Item {
                 name: "Iron Sword",
-                check { true }
+                check Valid { true }
             }
         "#,
     )
@@ -1103,7 +1103,7 @@ fn cft_data_defaults_materialize_as_cfd_values() -> TestResult {
         r#"
 table Rule {
   name: string;
-  label: fstring = f"rule {self.name}";
+  label: string = f"rule {self.name}";
   effect: Effect = Damage { amount: 2 };
   permissions: Permission = Permission::Read | Permission::Write;
 }
@@ -1114,7 +1114,7 @@ data Damage: Effect {}
     );
     let model = load_cfd_model(&schema, "item: Rule { name: \"primary\" }")?;
     let record_id = model
-        .record_by_type_key("Rule", "item")
+        .record_by_type_id("Rule", "item")
         .expect("defaulted data record");
     let record = model.record(record_id).expect("defaulted data value");
     assert!(matches!(
@@ -1170,7 +1170,7 @@ fn dimension_blocks_replace_selected_fields_without_configured_variants() -> Tes
         language[en] {}
     "#,
     )?;
-    let id = model.record_by_type_key("Item", "sword").expect("sword");
+    let id = model.record_by_type_id("Item", "sword").expect("sword");
     assert!(
         matches!(model.dimension_field_value(&schema, id, "name", "language", "ja"),
         Ok(coflow_runtime::DimensionValueLookup::Value { value: CfdValue::String(value), .. }) if value == "剣")
@@ -1208,7 +1208,7 @@ fn dimension_blocks_replace_selected_fields_without_configured_variants() -> Tes
 
 #[test]
 fn formatted_string_terminals_reject_composite_and_optional_numbers() {
-    let schema = compile_schema("data Stats { hp: int; } table Item { numbers: [int]; stats: Stats; optional: Option<int>; target: &Item; message: fstring; }");
+    let schema = compile_schema("data Stats { hp: int; } table Item { numbers: [int]; stats: Stats; optional: Option<int>; target: &Item; message: string; }");
     for terminal in ["numbers", "stats", "optional", "target"] {
         let source = format!("item: Item {{ numbers: [1], stats: {{ hp: 1 }}, optional: 1, target: &item, message: f\"{{self.{terminal}}}\" }}");
         let diagnostics =
@@ -1238,7 +1238,7 @@ fn explicit_reference_type_errors_remain_repairable_in_partial_models() {
         .expect("partial model retains invalid reference");
     assert!(output
         .model
-        .record_by_type_key("Holder", "holder")
+        .record_by_type_id("Holder", "holder")
         .is_some());
     assert!(output
         .diagnostics

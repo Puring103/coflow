@@ -274,7 +274,7 @@ pub(crate) fn quantifier_bindings_at(document: &LspDocument, offset: usize) -> V
     for item in &ast.items {
         match item {
             Item::Type(ty) => {
-                if let Some(check) = &ty.check {
+                for check in &ty.checks {
                     let result = visitor.visit_block(check);
                     debug_assert!(result.is_ok());
                 }

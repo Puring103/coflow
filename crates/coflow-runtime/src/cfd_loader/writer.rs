@@ -26,7 +26,7 @@ use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_staging::{StagedChange, StagedFile, StagedRemoval};
 use patch::{
     append_record_source, apply_patch, apply_unset_field_patch, delete_record_span, find_record,
-    reorder_record_spans, replace_spans, serialize_record, validate_record_key, validate_values,
+    reorder_record_spans, replace_spans, serialize_record, validate_record_id, validate_values,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -35,7 +35,7 @@ use crate::{DataSourceTextOverride, ProjectFileUpdate};
 
 pub(crate) const CFD_WRITER_CAPABILITIES: WriterCapabilities = WriterCapabilities {
     can_edit_field: true,
-    can_edit_key: true,
+    can_edit_id: true,
     can_insert_record: true,
     can_delete_record: true,
     can_reorder_records: true,
@@ -418,7 +418,7 @@ impl CfdWriter {
     pub(crate) fn unset_field(
         &self,
         origin: &RecordOrigin,
-        record_key: &str,
+        record_id: &str,
         actual_type: &str,
         field_path: &[crate::api::WriteFieldPathSegment],
         schema: &coflow_language::cft::CftSchema,
@@ -431,7 +431,7 @@ impl CfdWriter {
         };
         let (source, ast) = self.read_or_parse(path)?;
         let new_source =
-            apply_unset_field_patch(schema, &source, &ast, actual_type, record_key, field_path)?;
+            apply_unset_field_patch(schema, &source, &ast, actual_type, record_id, field_path)?;
         self.write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
     }
@@ -441,24 +441,24 @@ impl CfdWriter {
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = request.source.location.path();
-        validate_record_key(request.record_key)?;
+        validate_record_id(request.record_id)?;
         validate_values(request.fields.values())?;
 
         let (source, ast) = self.read_or_parse(path)?;
         if ast.records.iter().any(|record| {
-            record.key == request.record_key && record.type_name == request.actual_type
+            record.id == request.record_id && record.type_name == request.actual_type
         }) {
             return Err(DiagnosticSet::one(diag(
                 "CFD-WRITE",
                 format!(
                     "record `{}.{}` already exists",
-                    request.actual_type, request.record_key
+                    request.actual_type, request.record_id
                 ),
             )));
         }
         let fragment = serialize_record(
             request.schema,
-            request.record_key,
+            request.record_id,
             request.actual_type,
             request.fields,
         );
@@ -468,14 +468,14 @@ impl CfdWriter {
                 .records
                 .iter()
                 .find(|record| {
-                    record.type_name == before.actual_type && record.key == before.record_key
+                    record.type_name == before.actual_type && record.id == before.record_id
                 })
                 .ok_or_else(|| {
                     DiagnosticSet::one(diag(
                         "CFD-WRITE",
                         format!(
                             "insert anchor `{}.{}` not found in AST",
-                            before.actual_type, before.record_key
+                            before.actual_type, before.record_id
                         ),
                     ))
                 })?;
@@ -509,19 +509,19 @@ impl CfdWriter {
         }
         let (source, ast) = self.read_or_parse(path)?;
         let declaration =
-            find_record(&ast, record.actual_type, record.record_key).ok_or_else(|| {
+            find_record(&ast, record.actual_type, record.record_id).ok_or_else(|| {
                 DiagnosticSet::one(diag("CFD-WRITE", "transfer source record does not exist"))
             })?;
         let mut fragment = source[declaration.span.start..declaration.span.end].to_string();
         if declaration.group_type.is_some() && declaration.type_span.start < declaration.span.start
         {
             fragment.insert_str(
-                declaration.key_span.end - declaration.span.start,
+                declaration.id_span.end - declaration.span.start,
                 &format!(": {}", record.actual_type),
             );
         }
         let (target_source, target_ast) = self.read_or_parse(target)?;
-        if find_record(&target_ast, record.actual_type, record.record_key).is_some() {
+        if find_record(&target_ast, record.actual_type, record.record_id).is_some() {
             return Err(DiagnosticSet::one(diag(
                 "CFD-WRITE",
                 "transfer destination already contains the record",
@@ -529,7 +529,7 @@ impl CfdWriter {
         }
         let target_source = if let Some(before) = before {
             ensure_cfd_origin_path(before.origin, target)?;
-            let anchor = find_record(&target_ast, before.actual_type, before.record_key)
+            let anchor = find_record(&target_ast, before.actual_type, before.record_id)
                 .ok_or_else(|| {
                     DiagnosticSet::one(diag(
                         "CFD-WRITE",
@@ -559,12 +559,12 @@ impl CfdWriter {
         };
         let (source, ast) = self.read_or_parse(path)?;
         let record =
-            find_record(&ast, request.actual_type, request.record_key).ok_or_else(|| {
+            find_record(&ast, request.actual_type, request.record_id).ok_or_else(|| {
                 DiagnosticSet::one(diag(
                     "CFD-WRITE",
                     format!(
                         "record `{}.{}` not found in AST",
-                        request.actual_type, request.record_key
+                        request.actual_type, request.record_id
                     ),
                 ))
             })?;
@@ -584,18 +584,18 @@ impl CfdWriter {
                 "cfd writer requires a File origin",
             )));
         };
-        validate_record_key(request.new_key)?;
+        validate_record_id(request.new_id)?;
         let (source, ast) = self.read_or_parse(path)?;
-        let record = find_record(&ast, request.actual_type, request.old_key).ok_or_else(|| {
+        let record = find_record(&ast, request.actual_type, request.old_id).ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "CFD-WRITE",
                 format!(
                     "record `{}.{}` not found in AST",
-                    request.actual_type, request.old_key
+                    request.actual_type, request.old_id
                 ),
             ))
         })?;
-        let new_source = replace_spans(&source, &[(record.key_span, request.new_key.to_string())])?;
+        let new_source = replace_spans(&source, &[(record.id_span, request.new_id.to_string())])?;
         self.write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
     }
@@ -617,17 +617,17 @@ impl CfdWriter {
                 }
                 ensure_cfd_origin_path(first.origin, path)?;
                 ensure_cfd_origin_path(second.origin, path)?;
-                let first = record_index(&ast, first.actual_type, first.record_key)?;
-                let second = record_index(&ast, second.actual_type, second.record_key)?;
+                let first = record_index(&ast, first.actual_type, first.record_id)?;
+                let second = record_index(&ast, second.actual_type, second.record_id)?;
                 order.swap(first, second);
             }
             ReorderRecordsOperation::MoveBefore { record, before } => {
                 ensure_cfd_origin_path(record.origin, path)?;
-                let record = record_index(&ast, record.actual_type, record.record_key)?;
+                let record = record_index(&ast, record.actual_type, record.record_id)?;
                 let before = before
                     .map(|before| {
                         ensure_cfd_origin_path(before.origin, path)?;
-                        record_index(&ast, before.actual_type, before.record_key)
+                        record_index(&ast, before.actual_type, before.record_id)
                     })
                     .transpose()?;
                 let moved = order.remove(record);
@@ -670,7 +670,7 @@ fn insert_record_before(
 fn record_index(ast: &CfdAst, actual_type: &str, key: &str) -> Result<usize, DiagnosticSet> {
     ast.records
         .iter()
-        .position(|record| record.type_name == actual_type && record.key == key)
+        .position(|record| record.type_name == actual_type && record.id == key)
         .ok_or_else(|| {
             DiagnosticSet::one(diag(
                 "CFD-WRITE",

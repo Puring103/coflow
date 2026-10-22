@@ -5,6 +5,6 @@ namespace Game.Config
 {
 public partial class ContractChildNode : ContractNode
 {
-    internal ContractChildNode(string key) : base(key) { }
+    internal ContractChildNode(string id) : base(id) { }
 }
 }

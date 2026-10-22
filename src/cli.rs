@@ -99,16 +99,16 @@ const FLAGS: &[&str] = &[
     "from-base",
     "to-base",
 ];
-const QUERY: &str = "type include-derived file key fields where dimension sort limit cursor";
+const QUERY: &str = "type include-derived file id fields where dimension sort limit cursor";
 const WRITE: &str = "dry-run rules";
-const RECORD: &str = "type key";
+const RECORD: &str = "type id";
 const VALUE: &str = "value-cfd value-file";
-const DIMENSION: &str = "dimension variant type key field";
+const DIMENSION: &str = "dimension variant type id field";
 
 fn option(name: &'static str) -> Arg {
     let argument = Arg::new(name).long(name).help(match name {
         "type" => "Actual type name",
-        "key" => "Record key",
+        "id" => "Record id",
         "file" => "Source path relative to the project",
         "input" => "Request or source content file; - reads stdin",
         "value-cfd" => "CFD expression parsed using the field type",
@@ -337,7 +337,7 @@ pub(crate) fn command() -> Command {
                     required(leaf("draft", "Prepare a record draft", &[RECORD]), "type"),
                     required(
                         leaf("create", "Create a record", &[RECORD, "file input", WRITE]),
-                        "type key file input",
+                        "type id file input",
                     ),
                     required(
                         leaf(
@@ -345,7 +345,7 @@ pub(crate) fn command() -> Command {
                             "Set an explicit field value",
                             &[RECORD, "path", VALUE, WRITE],
                         ),
-                        "type key path",
+                        "type id path",
                     ),
                     required(
                         leaf(
@@ -353,15 +353,15 @@ pub(crate) fn command() -> Command {
                             "Remove a field assignment",
                             &[RECORD, "path", WRITE],
                         ),
-                        "type key path",
+                        "type id path",
                     ),
                     required(
                         leaf(
                             "rename",
                             "Rename a record and its references",
-                            &[RECORD, "new-key", WRITE],
+                            &[RECORD, "new-id", WRITE],
                         ),
-                        "type key new-key",
+                        "type id new-id",
                     ),
                     required(
                         leaf(
@@ -377,7 +377,7 @@ pub(crate) fn command() -> Command {
                             "Move a record to another file",
                             &[RECORD, "to-file", WRITE],
                         ),
-                        "type key to-file",
+                        "type id to-file",
                     ),
                     required(
                         leaf(
@@ -855,8 +855,8 @@ fn example(command: &Command, name: &str) -> String {
         if argument.get_action().takes_values() {
             let value = match argument.get_id().as_str() {
                 "type" | "symbol" => "Item",
-                "key" => "sword",
-                "new-key" => "sword2",
+                "id" => "sword",
+                "new-id" => "sword2",
                 "path" | "field" => "value",
                 "file" => "data/items.cfd",
                 "to-file" => "data/other.cfd",

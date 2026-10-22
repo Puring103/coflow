@@ -175,14 +175,14 @@ fn cft_info(code: CftErrorCode) -> (&'static str, &'static str, &'static str) {
             "按注解语法调整名称和参数。",
         ),
         C::InvalidCheckStatement => (
-            "检查语句无效",
-            "check 块中的语句结构不合法",
-            "按检查语句语法改写该语句。",
+            "检查语句无效或规则为空",
+            "check 块为空，或其中的语句结构不合法",
+            "为规则添加有效断言，并按诊断位置修正对应检查语句。",
         ),
         C::DuplicateCheckBlock => (
-            "检查块重复",
-            "同一类型声明了多个 check 块",
-            "把检查语句合并到一个 check 块。",
+            "同一继承链中的规则名称重复",
+            "当前类型或其继承链存在同名 check 规则",
+            "为冲突规则指定不同名称，保留各规则的声明顺序。",
         ),
         C::SyntaxStructureLimitExceeded => (
             "语法结构超出限制",
@@ -552,7 +552,7 @@ fn cfd_info(code: CfdErrorCode) -> (&'static str, &'static str, &'static str) {
             "记录缺少要求的身份信息",
             "按记录身份规则补齐身份。",
         ),
-        C::InvalidRecordKey => (
+        C::InvalidRecordId => (
             "记录键无效",
             "记录键不符合身份规则",
             "使用合法且符合目标类型规则的记录键。",

@@ -21,7 +21,7 @@ pub(crate) use sanitize::{
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use coflow_runtime::{RecordKey, TypeName};
+    use coflow_runtime::{RecordId, TypeName};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::model::MIN_COLUMN_WIDTH;
@@ -38,7 +38,7 @@ mod tests {
     fn coordinate(key: &str) -> coflow_runtime::RecordCoordinate {
         coflow_runtime::RecordCoordinate::new(
             TypeName::new("Item").expect("type"),
-            RecordKey::new(key).expect("key"),
+            RecordId::new(key).expect("key"),
         )
     }
 

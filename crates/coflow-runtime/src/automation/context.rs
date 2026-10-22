@@ -92,10 +92,10 @@ pub fn query(
     selector.view = "both".into();
     // 即使不请求示例，也验证字段与筛选条件；精确目标不受示例数量影响。
     let records = super::query::selected_records(session, &selector)?;
-    let target = if let Some(key) = args.get("key") {
+    let target = if let Some(key) = args.get("id") {
         let record = records
             .iter()
-            .find(|record| record.actual_type() == ty && record.key() == key)
+            .find(|record| record.actual_type() == ty && record.id() == key)
             .ok_or_else(|| Failure::missing(format!("record `{ty}::{key}` does not exist")))?;
         Some(super::query::record_json(
             project, session, record, &selector,
@@ -133,7 +133,7 @@ pub fn query(
             .model()
             .records()
             .filter(|(_, record)| session.schema().is_assignable(record.actual_type(), &name))
-            .map(|(_, record)| json!({"type": record.actual_type(), "key": record.key()}))
+            .map(|(_, record)| json!({"type": record.actual_type(), "id": record.id()}))
             .collect();
         let count = candidates.len();
         let limit = args.number("ref-limit", 10)?;
@@ -166,9 +166,9 @@ pub fn query(
                     .actual_type
                     .as_deref()
                     .is_none_or(|name| name == ty)
-                    && args.get("key").is_none_or(|key| {
+                    && args.get("id").is_none_or(|key| {
                         location
-                            .record_key
+                            .record_id
                             .as_deref()
                             .is_none_or(|name| name == key)
                     })
@@ -262,12 +262,12 @@ fn trim(result: &mut Value, ty: &str, budget: usize) -> Result<()> {
         );
     }
     if result.to_string().chars().count() > budget && !result["target"].is_null() {
-        let key = result["target"]["key"].as_str().unwrap().to_string();
+        let key = result["target"]["id"].as_str().unwrap().to_string();
         result.as_object_mut().unwrap().remove("target");
         omit(
             result,
             "target",
-            format!("data get --type {ty} --key {key} --view both"),
+            format!("data get --type {ty} --id {key} --view both"),
         );
     }
     // 大声明逐字段裁剪，始终保留类型身份与剩余字段，而不是丢弃整个核心声明。

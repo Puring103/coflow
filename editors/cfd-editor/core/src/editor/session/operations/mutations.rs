@@ -91,7 +91,7 @@ impl SessionStore {
                     .queries()
                     .field_value(
                         &final_coordinate.actual_type,
-                        &final_coordinate.key,
+                        &final_coordinate.id,
                         &write.field_path,
                     )
                     .cloned();
@@ -123,7 +123,7 @@ impl SessionStore {
         let mut session = entry.state.write();
         let current = session
             .queries()
-            .field_value(&coordinate.actual_type, &coordinate.key, field_path)
+            .field_value(&coordinate.actual_type, &coordinate.id, field_path)
             .cloned()
             .ok_or_else(|| EditorError::not_found("collection field not found"))?;
         let default_item = session
@@ -140,14 +140,14 @@ impl SessionStore {
         &self,
         id: u32,
         file_path: &str,
-        record_key: &str,
+        record_id: &str,
         actual_type: &str,
         fields: CfdValue,
     ) -> Result<InsertRecordOutcome, EditorError> {
         self.insert_record_with_materialization(
             id,
             file_path,
-            record_key,
+            record_id,
             actual_type,
             fields,
             DefaultMaterialization::Minimal,
@@ -158,7 +158,7 @@ impl SessionStore {
         &self,
         id: u32,
         file_path: &str,
-        record_key: &str,
+        record_id: &str,
         actual_type: &str,
         fields: CfdValue,
         materialization: DefaultMaterialization,
@@ -184,7 +184,7 @@ impl SessionStore {
                 ops: vec![MutationOp::InsertRecord {
                     file: file_path.to_string(),
                     actual_type: actual_type.to_string(),
-                    key: record_key.to_string(),
+                    id: record_id.to_string(),
                     fields: MutationFields::Cfd(fields_map),
                     materialization,
                 }],
@@ -201,11 +201,11 @@ impl SessionStore {
         })
     }
 
-    pub fn rename_record_key(
+    pub fn rename_record_id(
         &self,
         id: u32,
         coordinate: &RecordCoordinate,
-        new_key: &str,
+        new_id: &str,
     ) -> Result<RenameRecordOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
@@ -217,7 +217,7 @@ impl SessionStore {
                 ops: vec![MutationOp::RenameRecord {
                     record: coordinate.clone(),
                     file: None,
-                    new_key: new_key.to_string(),
+                    new_id: new_id.to_string(),
                 }],
             },
         )
@@ -234,11 +234,11 @@ impl SessionStore {
             .ok_or_else(|| EditorError::write("rename did not produce a new coordinate"))?;
         let view = session
             .queries()
-            .record_view(&renamed.actual_type, &renamed.key)
+            .record_view(&renamed.actual_type, &renamed.id)
             .ok_or_else(|| {
                 EditorError::not_found(format!(
                     "record `{}.{}` not found after rename",
-                    renamed.actual_type, renamed.key
+                    renamed.actual_type, renamed.id
                 ))
             })?;
         let ctx = WireContext::new(
@@ -271,13 +271,13 @@ impl SessionStore {
             .or_else(|| {
                 session
                     .queries()
-                    .file_for_record(&coordinate.actual_type, &coordinate.key)
+                    .file_for_record(&coordinate.actual_type, &coordinate.id)
                     .map(str::to_string)
             })
             .ok_or_else(|| {
                 EditorError::not_found(format!(
                     "record `{}.{}` not found",
-                    coordinate.actual_type, coordinate.key
+                    coordinate.actual_type, coordinate.id
                 ))
             })?;
         let report = coflow_runtime::commands::apply_project_mutation(
@@ -346,7 +346,7 @@ impl SessionStore {
         let old_index = record_container_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
                 "record `{}.{}` not found in source order",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ))
         })?;
         let report = coflow_runtime::commands::apply_project_mutation(
@@ -385,7 +385,7 @@ impl SessionStore {
         let old_index = record_type_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
                 "record `{}.{}` not found in source type order",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ))
         })?;
         let report = coflow_runtime::commands::apply_project_mutation(

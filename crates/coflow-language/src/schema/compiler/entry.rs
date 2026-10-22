@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn check_stage_publishes_analysis_for_every_check_block() {
-        let modules = modules("table Item { value: int; check { value > 0; } }");
+        let modules = modules("table Item { value: int; check Valid { value > 0; } }");
         let limits = StructuralLimits::default();
         let mut structural = StructuralBudget::new(limits);
         let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");

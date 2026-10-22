@@ -10,7 +10,7 @@ import { GitDiffSidebar, projectTable, changedTableColumns } from '../components
 import { RecordView } from '../components/RecordView'
 import { TableView } from '../components/TableView'
 
-const coordinate = { actual_type: 'Item', key: 'one' }
+const coordinate = { actual_type: 'Item', id: 'one' }
 const value = { kind: 'array' as const, value: [{ kind: 'object' as const, value: {
   actual_type: 'Stats', fields: { hp: { kind: 'int' as const, value: 2n } },
 } }] }

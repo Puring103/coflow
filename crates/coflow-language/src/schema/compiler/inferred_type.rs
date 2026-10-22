@@ -69,7 +69,6 @@ impl InferredType {
     pub(super) fn read_type(self) -> Self {
         fn read_value_type(ty: CftValueType) -> CftValueType {
             match ty {
-                CftValueType::FormattedString => CftValueType::String,
                 CftValueType::Array(inner) => {
                     CftValueType::Array(Box::new(read_value_type(*inner)))
                 }

@@ -125,7 +125,7 @@ jobs:
         if: steps.gate.outputs.full == 'true'
         shell: pwsh
         run: |
-          cargo run -- codegen tests/csharp-loader-integration
+          cargo run -- codegen --project tests/csharp-loader-integration
           dotnet run --project tests/csharp-loader-integration/app/Coflow.Loader.Example.csproj --configuration Release
 
       - name: Check TypeScript bindings

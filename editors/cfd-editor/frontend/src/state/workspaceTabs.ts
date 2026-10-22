@@ -175,8 +175,8 @@ function isViewKind(value: unknown): value is ViewRenderKind {
 function isCoordinate(value: unknown, typeName: string): value is RecordCoordinate {
   return isObject(value)
     && value.actual_type === typeName
-    && typeof value.key === 'string'
-    && value.key.length > 0
+    && typeof value.id === 'string'
+    && value.id.length > 0
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

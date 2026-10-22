@@ -4,7 +4,7 @@ use crate::api::DiagnosticSet;
 use crate::data_model::{
     CfdDictKey, CfdEnumValue, CfdObject, CfdValue, ValueValidationMode, ValueValidationRequest,
 };
-use coflow_language::cft::{CftValueType, FieldName, RecordKey};
+use coflow_language::cft::{CftValueType, FieldName, RecordId};
 use serde_json::{Map, Value};
 
 use crate::write_rules;
@@ -70,23 +70,6 @@ fn coerce_json_value(
             .as_str()
             .map(|text| CfdValue::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string")),
-        CftValueType::FormattedString => {
-            let source = value
-                .as_str()
-                .ok_or_else(|| one_value_error("expected fstring source"))?;
-            let (_, errors) =
-                coflow_language::cfd::parse_cfd(&format!("value: Value {{ field: {source} }}"));
-            if let Some(error) = errors.first() {
-                return Err(one_value_error(error.message.clone()));
-            }
-            if !source.starts_with("f\"") {
-                return Err(one_value_error("expected explicit fstring source"));
-            }
-            Ok(CfdValue::FormattedString(crate::CfdFormattedString {
-                source: source.to_string(),
-                rendered: String::new(),
-            }))
-        }
         CftValueType::Option(inner) => {
             let object = single_tag_object(value, "Option", &["$none", "$some"])?;
             if object.contains_key("$none") {
@@ -110,7 +93,7 @@ fn coerce_json_value(
         CftValueType::RecordRef(target_type) => json_ref_key(value)
             .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`")))
             .and_then(|key| {
-                RecordKey::new(key)
+                RecordId::new(key)
                     .map(CfdValue::Ref)
                     .map_err(|error| one_value_error(error.to_string()))
             }),

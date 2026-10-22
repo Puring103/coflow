@@ -11,13 +11,13 @@ use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, Recor
 use crate::indexes::{self, build_ref_indexes};
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
-    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord, CfdRecordId,
-    CfdValue,
+    CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord,
+    CfdRecordHandle, CfdValue,
 };
 use crate::semantics::{
     CfdValueSemanticContext, CfdValueSemanticErrorKind, ValueValidationMode, ValueValidationRequest,
 };
-use coflow_language::cft::{CftSchema, DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{CftSchema, DimensionName, FieldName, RecordId, TypeName, VariantName};
 use coflow_language::limits::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,12 +58,12 @@ impl<'a> CfdModelBuilder<'a> {
 
     pub fn add_record(
         &mut self,
-        key: impl Into<String>,
+        id: impl Into<String>,
         actual_type: impl Into<String>,
         fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
     ) -> &mut Self {
         self.records
-            .push(LoadedRecordDraft::new(key, actual_type, fields));
+            .push(LoadedRecordDraft::new(id, actual_type, fields));
         self
     }
 
@@ -131,6 +131,7 @@ impl<'a> CfdModelBuilder<'a> {
             self.schema,
             self.records,
             self.dimension_values,
+            self.dimension_variants.clone(),
             self.structural_limits,
         )
         .build()?;
@@ -143,6 +144,7 @@ pub(crate) struct ModelCompiler<'a> {
     schema: BuildSchema<'a>,
     input: Vec<LoadedRecordDraft>,
     dimension_values: Vec<DimensionValueDraft>,
+    dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     diagnostics: Vec<CfdDiagnostic>,
     editable_diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
@@ -153,12 +155,14 @@ impl<'a> ModelCompiler<'a> {
         schema_source: &'a CftSchema,
         input: Vec<LoadedRecordDraft>,
         dimension_values: Vec<DimensionValueDraft>,
+        dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
         structural_limits: StructuralLimits,
     ) -> Self {
         Self {
             schema: BuildSchema::new(schema_source),
             input,
             dimension_values,
+            dimension_variants,
             diagnostics: Vec::new(),
             editable_diagnostics: Vec::new(),
             structural_limits,
@@ -188,12 +192,12 @@ impl<'a> ModelCompiler<'a> {
         });
         self.fail_if_diagnostics()?;
 
-        let mut records = self.resolve_records(&drafts, &indexes.record_by_domain_key);
+        let mut records = self.resolve_records(&drafts, &indexes.record_by_domain_id);
         self.fail_if_diagnostics()?;
         validate_resolved_records(
             self.schema,
             &records,
-            &indexes.record_by_domain_key,
+            &indexes.record_by_domain_id,
             &mut self.diagnostics,
         );
         self.move_editable_diagnostics(|code| {
@@ -205,25 +209,40 @@ impl<'a> ModelCompiler<'a> {
         self.fail_if_diagnostics()?;
 
         let validated_dimension_values =
-            self.validate_dimension_values(&records, &indexes.record_by_domain_key);
+            self.validate_dimension_values(&records, &indexes.record_by_domain_id);
         self.move_editable_diagnostics(|_| true);
 
-        let dimension_values = self.resolve_dimension_values(
+        let (dimension_values, effective_values) = self.resolve_dimension_values(
             &drafts,
-            &indexes.record_by_domain_key,
+            &indexes.record_by_domain_id,
             validated_dimension_values,
         );
         self.move_editable_diagnostics(|_| true);
         attach_dimension_values(&mut records, dimension_values);
+        for (record_id, field, dimension, variant, value) in effective_values {
+            if let Some(record) = records.get_mut(record_id.index()) {
+                record
+                    .dimension_fields
+                    .entry(field)
+                    .or_insert_with(|| CfdDimensionFieldValues {
+                        dimension,
+                        variants: BTreeMap::new(),
+                        effective_variants: BTreeMap::new(),
+                    })
+                    .effective_variants
+                    .insert(variant, value);
+            }
+        }
 
-        let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, self.schema);
+        let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_id, self.schema);
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
                 tables: indexes.tables,
-                record_by_domain_key: indexes.record_by_domain_key,
+                record_by_domain_id: indexes.record_by_domain_id,
                 records,
                 refs: ref_indexes,
                 dimension_variants: BTreeMap::new(),
+                projection: None,
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
         })
@@ -242,10 +261,10 @@ impl<'a> ModelCompiler<'a> {
         let mut validator =
             Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits);
         for (input_index, record) in std::mem::take(&mut self.input).into_iter().enumerate() {
-            let id = CfdRecordId::new(input_index);
+            let id = CfdRecordHandle::new(input_index);
             let Some(mut draft) = validator.validate_top_level_record(
                 None,
-                &record.key,
+                &record.id,
                 &record.actual_type,
                 &record.fields,
                 Some(id),
@@ -262,26 +281,26 @@ impl<'a> ModelCompiler<'a> {
     fn resolve_records(
         &mut self,
         drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+        record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     ) -> Vec<CfdRecord> {
         let mut records = Vec::with_capacity(drafts.len());
         let mut resolver = ValueResolver::new(
             &self.schema,
             drafts,
-            record_by_domain_key,
+            record_by_domain_id,
             &mut self.diagnostics,
             self.structural_limits,
         );
         for (index, draft) in drafts.iter().enumerate() {
-            let record_id = CfdRecordId::new(index);
-            let Some(fields) = resolver.resolve_record_fields(record_id) else {
+            let record_id = CfdRecordHandle::new(index);
+            let Some(fields) = resolver.resolve_record_fields(record_id, None) else {
                 continue;
             };
-            let Ok(key) = RecordKey::new(draft.key.clone()) else {
+            let Ok(id) = RecordId::new(draft.id.clone()) else {
                 continue;
             };
             records.push(CfdRecord {
-                key,
+                id,
                 object: CfdObject {
                     actual_type: draft.actual_type.clone(),
                     fields,
@@ -298,13 +317,13 @@ impl<'a> ModelCompiler<'a> {
     fn validate_dimension_values(
         &mut self,
         records: &[CfdRecord],
-        record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+        record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     ) -> Vec<ValidatedDimensionValue> {
         let mut seen = BTreeSet::new();
         let mut values = Vec::new();
         for input in std::mem::take(&mut self.dimension_values) {
             if let Some(value) =
-                self.validate_dimension_value(input, records, record_by_domain_key, &mut seen)
+                self.validate_dimension_value(input, records, record_by_domain_id, &mut seen)
             {
                 values.push(value);
             }
@@ -317,8 +336,8 @@ impl<'a> ModelCompiler<'a> {
         &mut self,
         input: DimensionValueDraft,
         records: &[CfdRecord],
-        record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
-        seen: &mut BTreeSet<(CfdRecordId, FieldName, VariantName)>,
+        record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
+        seen: &mut BTreeSet<(CfdRecordHandle, FieldName, VariantName)>,
     ) -> Option<ValidatedDimensionValue> {
         let path = CfdPath::root().field(input.field.as_str());
         let Some(inheritance_root) = self.schema.inheritance_root(input.source_type.as_str())
@@ -332,9 +351,9 @@ impl<'a> ModelCompiler<'a> {
             ));
             return None;
         };
-        let Some(record_id) = record_by_domain_key
+        let Some(record_id) = record_by_domain_id
             .get(inheritance_root)
-            .and_then(|records| records.get(input.source_key.as_str()))
+            .and_then(|records| records.get(input.source_id.as_str()))
             .copied()
         else {
             self.diagnostics.push(dimension_diagnostic(
@@ -344,7 +363,7 @@ impl<'a> ModelCompiler<'a> {
                 crate::CfdErrorCode::RefTargetNotFound,
                 format!(
                     "dimension target `{}::{}` does not exist",
-                    input.source_type, input.source_key
+                    input.source_type, input.source_id
                 ),
             ));
             return None;
@@ -423,7 +442,7 @@ impl<'a> ModelCompiler<'a> {
                 crate::CfdErrorCode::DuplicateId,
                 format!(
                     "duplicate dimension value `{}:{}.{}/{}`",
-                    input.source_type, input.source_key, input.field, input.variant
+                    input.source_type, input.source_id, input.field, input.variant
                 ),
             ));
             return None;
@@ -451,50 +470,107 @@ impl<'a> ModelCompiler<'a> {
     fn resolve_dimension_values(
         &mut self,
         drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+        record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
         validated: Vec<ValidatedDimensionValue>,
-    ) -> Vec<ResolvedDimensionValue> {
-        let mut values = Vec::with_capacity(validated.len());
-        let mut origins = Vec::new();
+    ) -> (Vec<ResolvedDimensionValue>, Vec<EffectiveDimensionValue>) {
+        let mut explicit_values = Vec::new();
+        let mut effective_values = Vec::new();
+        let inputs = validated
+            .iter()
+            .map(|(record, input, _, _)| {
+                (
+                    (
+                        *record,
+                        input.field.clone(),
+                        input.dimension.clone(),
+                        input.variant.clone(),
+                    ),
+                    input,
+                )
+            })
+            .collect::<DimensionInputs<'_>>();
+        let mut diagnostic_contexts = Vec::new();
         {
             let mut resolver = ValueResolver::new(
                 &self.schema,
                 drafts,
-                record_by_domain_key,
+                record_by_domain_id,
                 &mut self.diagnostics,
                 self.structural_limits,
             );
-            for (record_id, input, draft, path) in validated {
-                let start = resolver.diagnostic_count();
-                if let Some(value) = resolver.resolve_dimension_value(record_id, &draft, &path) {
-                    values.push((record_id, input.clone(), value));
+            resolver.set_dimension_values(&validated);
+            // 对全部已发现单维上下文完整求值，未标注维度的模板也可能经引用受覆盖影响。
+            // 每条记录共享一次结构预算，不预计算维度组合的笛卡尔积。
+            for (dimension, variants) in &self.dimension_variants {
+                for variant in variants {
+                    let start = resolver.diagnostic_count();
+                    for (index, owner) in drafts.iter().enumerate() {
+                        let record_id = CfdRecordHandle::new(index);
+                        if let Some(mut fields) = resolver.resolve_record_fields(
+                            record_id,
+                            Some((dimension.clone(), variant.clone())),
+                        ) {
+                            for field in self.schema.full_fields(owner.actual_type.as_str()) {
+                                if !field
+                                    .dimension
+                                    .as_ref()
+                                    .is_some_and(|binding| &binding.dimension == dimension)
+                                {
+                                    continue;
+                                }
+                                let Some(value) = fields.remove(&field.name) else {
+                                    continue;
+                                };
+                                if let Some(input) = inputs.get(&(
+                                    record_id,
+                                    field.name.clone(),
+                                    dimension.clone(),
+                                    variant.clone(),
+                                )) {
+                                    explicit_values.push((
+                                        record_id,
+                                        (*input).clone(),
+                                        value.clone(),
+                                    ));
+                                }
+                                effective_values.push((
+                                    record_id,
+                                    field.name.clone(),
+                                    dimension.clone(),
+                                    variant.clone(),
+                                    value,
+                                ));
+                            }
+                        }
+                    }
+                    let mut reference_errors = resolver.take_reference_diagnostics();
+                    attach_dimension_context(
+                        &mut reference_errors,
+                        drafts,
+                        &inputs,
+                        dimension,
+                        variant,
+                    );
+                    self.editable_diagnostics.extend(reference_errors);
+                    diagnostic_contexts.push((
+                        start,
+                        resolver.diagnostic_count(),
+                        dimension.clone(),
+                        variant.clone(),
+                    ));
                 }
-                let mut reference_errors = resolver.take_reference_diagnostics();
-                attach_origin_to_diagnostics(
-                    &mut reference_errors,
-                    &input.origin,
-                    Some(record_id),
-                    &path,
-                );
-                self.editable_diagnostics.extend(reference_errors);
-                origins.push((
-                    start,
-                    resolver.diagnostic_count(),
-                    input.origin,
-                    record_id,
-                    path,
-                ));
             }
         }
-        for (start, end, origin, record_id, path) in origins {
-            attach_origin_to_diagnostics(
+        for (start, end, dimension, variant) in diagnostic_contexts {
+            attach_dimension_context(
                 &mut self.diagnostics[start..end],
-                &origin,
-                Some(record_id),
-                &path,
+                drafts,
+                &inputs,
+                &dimension,
+                &variant,
             );
         }
-        values
+        (explicit_values, effective_values)
     }
 
     fn fail_if_diagnostics(&mut self) -> Result<(), CfdDiagnostics> {
@@ -508,8 +584,51 @@ impl<'a> ModelCompiler<'a> {
     }
 }
 
-type ValidatedDimensionValue = (CfdRecordId, DimensionValueDraft, ValueDraft, CfdPath);
-type ResolvedDimensionValue = (CfdRecordId, DimensionValueDraft, CfdValue);
+type ValidatedDimensionValue = (CfdRecordHandle, DimensionValueDraft, ValueDraft, CfdPath);
+type ResolvedDimensionValue = (CfdRecordHandle, DimensionValueDraft, CfdValue);
+type EffectiveDimensionValue = (
+    CfdRecordHandle,
+    FieldName,
+    DimensionName,
+    VariantName,
+    CfdValue,
+);
+
+type DimensionInputs<'a> =
+    BTreeMap<(CfdRecordHandle, FieldName, DimensionName, VariantName), &'a DimensionValueDraft>;
+
+fn attach_dimension_context(
+    diagnostics: &mut [CfdDiagnostic],
+    drafts: &[RecordDraft],
+    inputs: &DimensionInputs<'_>,
+    dimension: &DimensionName,
+    variant: &VariantName,
+) {
+    for diagnostic in diagnostics {
+        diagnostic.message = format!(
+            "{} (dimension `{dimension}`, variant `{variant}`)",
+            diagnostic.message
+        );
+        // 诊断可能来自被引用记录；按实际标签字段定位覆盖来源，不能覆盖为调用方来源。
+        for label in diagnostic.primary.iter_mut().chain(&mut diagnostic.related) {
+            let Some(record) = label.record else {
+                continue;
+            };
+            let override_origin = match label.path.segments.first() {
+                Some(crate::CfdPathSegment::Field(name)) => FieldName::new(name.clone())
+                    .ok()
+                    .and_then(|field| {
+                        inputs.get(&(record, field, dimension.clone(), variant.clone()))
+                    })
+                    .map(|input| &input.origin),
+                _ => None,
+            };
+            label.origin = override_origin
+                .or_else(|| drafts.get(record.index()).map(|draft| &draft.origin))
+                .cloned();
+        }
+    }
+}
 
 fn attach_dimension_values(records: &mut [CfdRecord], values: Vec<ResolvedDimensionValue>) {
     for (record_id, input, value) in values {
@@ -522,6 +641,7 @@ fn attach_dimension_values(records: &mut [CfdRecord], values: Vec<ResolvedDimens
             .or_insert_with(|| CfdDimensionFieldValues {
                 dimension: input.dimension,
                 variants: BTreeMap::default(),
+                effective_variants: BTreeMap::default(),
             });
         field_values.variants.insert(
             input.variant,
@@ -535,7 +655,7 @@ fn attach_dimension_values(records: &mut [CfdRecord], values: Vec<ResolvedDimens
 
 fn dimension_diagnostic(
     input: &DimensionValueDraft,
-    record: Option<CfdRecordId>,
+    record: Option<CfdRecordHandle>,
     path: CfdPath,
     code: crate::CfdErrorCode,
     message: impl Into<String>,
@@ -548,7 +668,7 @@ fn dimension_diagnostic(
 fn attach_origin_to_diagnostics(
     diagnostics: &mut [CfdDiagnostic],
     origin: &RecordOrigin,
-    record: Option<CfdRecordId>,
+    record: Option<CfdRecordHandle>,
     path: &CfdPath,
 ) {
     for diagnostic in diagnostics {
@@ -568,18 +688,22 @@ fn attach_origin_to_diagnostics(
 
 struct BuildValueSemanticContext<'a> {
     records: &'a [CfdRecord],
-    record_by_domain_key: &'a BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_id: &'a BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
 }
 
 impl CfdValueSemanticContext for BuildValueSemanticContext<'_> {
-    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId> {
-        self.record_by_domain_key
+    fn record_by_domain_id(
+        &self,
+        inheritance_root: &TypeName,
+        id: &str,
+    ) -> Option<CfdRecordHandle> {
+        self.record_by_domain_id
             .get(inheritance_root)?
-            .get(key)
+            .get(id)
             .copied()
     }
 
-    fn record_actual_type(&self, id: CfdRecordId) -> Option<&str> {
+    fn record_actual_type(&self, id: CfdRecordHandle) -> Option<&str> {
         self.records.get(id.index()).map(CfdRecord::actual_type)
     }
 }
@@ -587,15 +711,15 @@ impl CfdValueSemanticContext for BuildValueSemanticContext<'_> {
 fn validate_resolved_records(
     schema: BuildSchema<'_>,
     records: &[CfdRecord],
-    record_by_domain_key: &BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) {
     let context = BuildValueSemanticContext {
         records,
-        record_by_domain_key,
+        record_by_domain_id,
     };
     for (index, record) in records.iter().enumerate() {
-        let record_id = CfdRecordId::new(index);
+        let record_id = CfdRecordHandle::new(index);
         for (field_name, value) in record.fields() {
             let Some(field) = schema
                 .cft()

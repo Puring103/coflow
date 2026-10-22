@@ -22,6 +22,7 @@ pub(super) struct CheckEvaluator<'model> {
     pub(super) scopes: Vec<BTreeMap<String, LocatedEvalValue<'model>>>,
     pub(super) contexts: Vec<CheckDiagnosticContext>,
     pub(super) diagnostics: Vec<CheckDiagnostic>,
+    pub(super) root_triggered: bool,
     trace: Option<EvaluationTrace>,
     regex_cache: &'model RefCell<builtins::RegexCache>,
     budget: EvaluationBudget,
@@ -59,6 +60,7 @@ impl<'model> CheckEvaluator<'model> {
             scopes: Vec::new(),
             contexts: Vec::new(),
             diagnostics: Vec::new(),
+            root_triggered: true,
             trace: None,
             regex_cache,
             budget: EvaluationBudget::new(evaluation_limits),
@@ -67,8 +69,12 @@ impl<'model> CheckEvaluator<'model> {
         }
     }
 
-    pub(super) fn into_execution(self) -> (Vec<CheckDiagnostic>, u64) {
-        (self.diagnostics, self.budget.work_used())
+    pub(super) fn into_execution(self) -> (Vec<CheckDiagnostic>, u64, bool) {
+        (
+            self.diagnostics,
+            self.budget.work_used(),
+            self.root_triggered,
+        )
     }
 
     pub(super) fn eval_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
@@ -83,7 +89,11 @@ impl<'model> CheckEvaluator<'model> {
         &mut self,
         expr: &CftSchemaCheckExpr,
     ) -> EvalResult<LocatedEvalValue<'model>> {
-        self.eval_condition(expr).map(|(value, _)| value)
+        self.eval_condition(expr)
+            .map(|(value, _)| match value.value {
+                EvalValue::Dimension { base, .. } => *base,
+                _ => value,
+            })
     }
 
     // 条件表达式拥有独立绑定作用域，只有成立的 && 链与 when 主体接收绑定。
@@ -107,8 +117,15 @@ impl<'model> CheckEvaluator<'model> {
             }
         };
         self.eval_stack.push(cursor);
+        let previous_span = self.schema_location.as_ref().map(|location| location.span);
+        if let Some(location) = self.schema_location.as_mut() {
+            location.span = expr.span;
+        }
         self.scopes.push(BTreeMap::new());
         let result = super::expressions::eval_expr(self, expr);
+        if let (Some(location), Some(span)) = (self.schema_location.as_mut(), previous_span) {
+            location.span = span;
+        }
         let mut bindings = self.scopes.pop().unwrap_or_default();
         let _ = self.eval_stack.pop();
         if let Ok(value) = &result {
@@ -334,19 +351,45 @@ impl<'model> CheckEvaluator<'model> {
             return Err(EvalAbort::Error);
         };
 
-        let receiver_value = self.eval_expr(receiver)?;
+        let receiver_value = if matches!(
+            builtin,
+            Builtin::For | Builtin::Variants | Builtin::HasVariant
+        ) {
+            self.eval_condition(receiver)?.0
+        } else {
+            self.eval_expr(receiver)?
+        };
         match builtin {
-            Builtin::Default => match receiver_value.value {
-                EvalValue::Dimension { base, .. } => Ok(*base),
-                _ => {
+            Builtin::HasVariant => {
+                let selected = self.eval_expr(&args[0])?;
+                let Some(ScalarValue::String(variant)) = selected.value.scalar() else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        selected.location,
+                        "hasVariant() requires a string variant",
+                    );
+                    return Err(EvalAbort::Error);
+                };
+                let EvalValue::Dimension { base, field, .. } = receiver_value.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         receiver_value.location,
-                        "default() requires a dimension field",
+                        "hasVariant() requires a dimension field",
                     );
-                    Err(EvalAbort::Error)
-                }
-            },
+                    return Err(EvalAbort::Error);
+                };
+                let present = base.location.as_ref().is_some_and(|location| {
+                    self.model.has_dimension_variant(
+                        location.storage.record,
+                        field.as_str(),
+                        variant,
+                    )
+                });
+                Ok(LocatedEvalValue::new(
+                    EvalValue::bool(present),
+                    base.location,
+                ))
+            }
             Builtin::Variants => match receiver_value.value {
                 EvalValue::Dimension {
                     base,
@@ -476,9 +519,7 @@ impl<'model> CheckEvaluator<'model> {
         let record_id = location.storage.record;
         let Some(overlay) = self
             .model
-            .record(record_id)
-            .and_then(|record| record.dimension_field(field.as_str()))
-            .and_then(|values| values.variants.get(variant))
+            .dimension_value(record_id, field.as_str(), variant)
         else {
             return Ok(*base);
         };
@@ -490,7 +531,7 @@ impl<'model> CheckEvaluator<'model> {
             references: location.references.clone(),
         };
         let value = EvalValue::from_cfd_value(
-            &overlay.value,
+            overlay,
             Some(&value_type),
             location.clone(),
             self.model,
@@ -787,6 +828,15 @@ impl<'model> CheckEvaluator<'model> {
         message: impl Into<String>,
     ) {
         let location = location.or_else(|| self.check_origin.clone());
+        let value_location = location.as_ref().map(|location| crate::CheckValueLocation {
+            record: location.storage.record,
+            path: location.storage.path.clone(),
+            dimension: location
+                .storage
+                .dimension
+                .as_ref()
+                .map(|coordinate| (coordinate.field.clone(), coordinate.variant.clone())),
+        });
         let mut diagnostic = CfdDiagnostic::error(code, message.into());
         let context_count = self.contexts.len();
         if let Some(location) = location {
@@ -806,17 +856,26 @@ impl<'model> CheckEvaluator<'model> {
                         .diagnostic_label(self.model, Some("value stored here".to_string())),
                 );
             }
-            if let Some(coordinate) = &location.blame.dimension {
-                if let Some(values) = self
-                    .model
-                    .record(location.blame.record)
-                    .and_then(|record| record.dimension_field(&coordinate.field))
-                {
-                    self.contexts.push(CheckDiagnosticContext::Dimension {
-                        dimension: values.dimension.to_string(),
-                        variant: coordinate.variant.clone(),
-                    });
+            // 解引用后主位置位于目标记录，仍保留来源引用的维度上下文。
+            let mut dimensions = std::collections::BTreeSet::new();
+            for cursor in std::iter::once(&location.blame).chain(&location.references) {
+                if let Some(coordinate) = &cursor.dimension {
+                    if let Some(dimension) = self
+                        .model
+                        .record(cursor.record)
+                        .and_then(|record| {
+                            self.schema.field(record.actual_type(), &coordinate.field)
+                        })
+                        .and_then(|field| field.dimension.as_ref())
+                    {
+                        dimensions
+                            .insert((dimension.dimension.to_string(), coordinate.variant.clone()));
+                    }
                 }
+            }
+            for (dimension, variant) in dimensions {
+                self.contexts
+                    .push(CheckDiagnosticContext::Dimension { dimension, variant });
             }
         }
         self.diagnostics.push(CheckDiagnostic {
@@ -824,6 +883,7 @@ impl<'model> CheckEvaluator<'model> {
             contexts: self.contexts.clone(),
             is_custom_message: false,
             schema_location: self.schema_location.clone(),
+            value_location,
         });
         self.contexts.truncate(context_count);
     }

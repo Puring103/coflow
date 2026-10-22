@@ -50,7 +50,7 @@ pub use ingest::{
 };
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
-    CfdFormattedString, CfdObject, CfdRecord, CfdRecordId, CfdTable, CfdValue,
+    CfdFormattedString, CfdObject, CfdRecord, CfdRecordHandle, CfdTable, CfdValue,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup, RecordCoordinate,
     RefEdge, RefSite,
 };

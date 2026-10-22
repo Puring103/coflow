@@ -149,7 +149,7 @@ export interface PluginSnapshot<T> extends PluginIdentity {
   data: T
 }
 
-export type PluginSearchMode = 'key' | 'full_text'
+export type PluginSearchMode = 'id' | 'full_text'
 
 export interface PluginSearchHit {
   filePath: string
@@ -168,8 +168,8 @@ export type PluginMutationRequest =
   | { kind: 'write_fields'; filePath: string; coordinates: RecordCoordinate[]; fieldPath: FieldPathSegment[]; value: FieldValue }
   | { kind: 'write_field_batch'; filePath: string; writes: BatchWriteFieldInput[] }
   | { kind: 'edit_collection'; filePath: string; coordinate: RecordCoordinate; fieldPath: FieldPathSegment[]; edit: CollectionEdit }
-  | { kind: 'rename_record'; filePath: string; coordinate: RecordCoordinate; newKey: string }
-  | { kind: 'insert_record'; filePath: string; recordKey: string; actualType: string; fields: FieldValue }
+  | { kind: 'rename_record'; filePath: string; coordinate: RecordCoordinate; newId: string }
+  | { kind: 'insert_record'; filePath: string; recordId: string; actualType: string; fields: FieldValue }
   | { kind: 'delete_record'; filePath: string; coordinate: RecordCoordinate }
   | { kind: 'swap_records'; filePath: string; first: RecordCoordinate; second: RecordCoordinate }
   | { kind: 'move_record'; filePath: string; coordinate: RecordCoordinate; targetIndex: number }

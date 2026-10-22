@@ -186,7 +186,12 @@ pub(crate) fn current_field<'model>(
     let EvalValue::Record(record) = current else {
         return Ok(None);
     };
-    if name == "id" {
+    if name == "id"
+        && record
+            .actual_type(model)
+            .and_then(|name| schema.resolve_type(name))
+            .is_some_and(|ty| ty.kind != coflow_language::cft::CftTypeKind::Data)
+    {
         return Ok(virtual_id(model, record, record.location()));
     }
     record
@@ -216,7 +221,12 @@ pub(crate) fn field_value<'model>(
     }
     match target.value {
         EvalValue::Record(record) => {
-            if name == "id" {
+            if name == "id"
+                && record
+                    .actual_type(model)
+                    .and_then(|name| schema.resolve_type(name))
+                    .is_some_and(|ty| ty.kind != coflow_language::cft::CftTypeKind::Data)
+            {
                 return virtual_id(model, &record, record.location())
                     .ok_or_else(|| OpsError::eval_type(None, "记录没有虚拟 id"));
             }
@@ -256,7 +266,7 @@ pub(crate) fn virtual_id<'model>(
     record: &EvalRecordRef,
     location: Option<ValueLocation>,
 ) -> Option<LocatedEvalValue<'model>> {
-    let key = record.key(model).filter(|key| !key.is_empty())?;
+    let key = record.id(model).filter(|key| !key.is_empty())?;
     let key = key.to_string();
     let location = location.map(|location| location.field("id"));
     Some(LocatedEvalValue::new(EvalValue::string(key), location))

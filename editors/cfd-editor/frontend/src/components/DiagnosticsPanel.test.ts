@@ -35,7 +35,7 @@ describe('diagnostics panel list', () => {
         target: {
           kind: 'table_field',
           file_path: 'data/table/RegionConfig.cfd',
-          coordinate: { actual_type: 'RegionConfig', key: 'Region_01' },
+          coordinate: { actual_type: 'RegionConfig', id: 'Region_01' },
           field_path: 'Value',
         },
         contexts: [],

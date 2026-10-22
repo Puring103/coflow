@@ -26,8 +26,8 @@ coflow explain REF-001 --json
 | `CFT-SYN-006` | 链式比较无效 |
 | `CFT-SYN-007` | check 块位置无效 |
 | `CFT-SYN-008` | 注解语法无效 |
-| `CFT-SYN-009` | 检查语句无效 |
-| `CFT-SYN-010` | 检查块重复 |
+| `CFT-SYN-009` | 检查语句无效或规则为空 |
+| `CFT-SYN-010` | 同一继承链中的规则名称重复 |
 | `CFT-SYN-011` | 语法结构超出限制 |
 | `CFT-SCHEMA-001` | 模块重复 |
 | `CFT-SCHEMA-002` | 全局名称重复 |

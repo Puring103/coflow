@@ -48,9 +48,9 @@ export default withMermaid(defineConfig({
         {
           text: '文档',
           items: [
-            { text: '设计理念', link: '/docs/' },
+            { text: '文档总览', link: '/docs/' },
             { text: '快速开始', link: '/docs/guide/install' },
-            { text: '引用', link: '/docs/reference/01-project-config' }
+            { text: '参考', link: '/docs/reference/01-project-config' }
           ]
         },
         {
@@ -58,15 +58,20 @@ export default withMermaid(defineConfig({
           collapsed: false,
           items: [
             { text: '安装', link: '/docs/guide/install' },
+            { text: '配置项目', link: '/docs/guide/project-config' },
+            { text: 'Schema 建模', link: '/docs/guide/schema' },
+            { text: '编写 CFD', link: '/docs/guide/data-authoring' },
+            { text: '编辑器与 LSP', link: '/docs/guide/editor' },
             { text: '策划视角', link: '/docs/guide/for-designers' },
-            { text: '程序视角', link: '/docs/guide/for-programmers' },
+            { text: '程序员接入', link: '/docs/guide/for-programmers' },
+            { text: '生成代码与应用加载', link: '/docs/guide/build-runtime' },
             { text: '示例', link: '/docs/guide/examples' },
             { text: 'AI Agent Skills', link: '/docs/guide/ai-agent' },
             { text: '最佳工作流', link: '/docs/guide/best-workflow' }
           ]
         },
         {
-          text: '引用',
+          text: '参考',
           collapsed: false,
           items: [
             { text: '项目配置', link: '/docs/reference/01-project-config' },
@@ -93,21 +98,13 @@ export default withMermaid(defineConfig({
               text: '诊断',
               collapsed: false,
               items: [
-                { text: '诊断模型', link: '/docs/reference/09-diagnostics/01-diagnostics' },
+                { text: '诊断与问题定位', link: '/docs/reference/09-diagnostics/01-diagnostics' },
                 { text: '错误码索引', link: '/docs/reference/09-diagnostics/02-codes' }
               ]
             },
             { text: '本地化与维度', link: '/docs/reference/10-localization' },
             { text: 'Schema API', link: '/docs/reference/11-schema-api' },
-            { text: '项目架构', link: '/docs/reference/12-architecture' }
-          ]
-        }
-      ],
-      '/examples/': [
-        {
-          text: '示例',
-          items: [
-            { text: 'CFD 示例', link: '/docs/guide/examples' }
+            { text: '项目组成与协作', link: '/docs/reference/12-architecture' }
           ]
         }
       ]

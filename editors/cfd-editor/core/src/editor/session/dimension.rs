@@ -39,7 +39,7 @@ impl SessionStore {
                 .map_err(|error| EditorError::other(error.to_string()))?;
             for target in queries.ref_targets(&field.source_type) {
                 let Some(view) =
-                    queries.record_view(&target.coordinate.actual_type, &target.coordinate.key)
+                    queries.record_view(&target.coordinate.actual_type, &target.coordinate.id)
                 else {
                     continue;
                 };
@@ -47,14 +47,14 @@ impl SessionStore {
                     continue;
                 };
                 let actual_type = target.coordinate.actual_type.clone();
-                let record_key = target.coordinate.key.clone();
+                let record_id = target.coordinate.id.clone();
                 let mut values = std::collections::BTreeMap::new();
                 let mut sources = std::collections::BTreeMap::new();
                 let mut contains_override = false;
                 for variant in &dimension.variants {
                     let coordinate = DimensionValueCoordinate {
                         actual_type: actual_type.clone(),
-                        record_key: record_key.clone(),
+                        record_id: record_id.clone(),
                         field: field_name.clone(),
                         dimension: dimension_name.clone(),
                         variant: VariantName::new(variant.clone())
@@ -72,7 +72,7 @@ impl SessionStore {
                     values.insert(variant.clone(), state);
                 }
                 let recommended = queries
-                    .dimension_destination(actual_type.as_str(), record_key.as_str(), name)
+                    .dimension_destination(actual_type.as_str(), record_id.as_str(), name)
                     .ok();
                 // 推荐文件可编辑主体的全部字段；分散来源只展示实际包含的覆盖字段。
                 if !contains_override && recommended.as_deref() != Some(source_file) {
@@ -80,7 +80,7 @@ impl SessionStore {
                 }
                 rows.push(DimensionFileRow {
                     owner_file_path: queries
-                        .file_for_record(&target.coordinate.actual_type, &target.coordinate.key)
+                        .file_for_record(&target.coordinate.actual_type, &target.coordinate.id)
                         .unwrap_or_default()
                         .to_string(),
                     coordinate: target.coordinate,
@@ -143,7 +143,7 @@ impl SessionStore {
                     .queries()
                     .dimension_destination(
                         coordinate.actual_type.as_str(),
-                        coordinate.record_key.as_str(),
+                        coordinate.record_id.as_str(),
                         coordinate.dimension.as_str(),
                     )
                     .map_err(api_diagnostics_to_editor_error)?,

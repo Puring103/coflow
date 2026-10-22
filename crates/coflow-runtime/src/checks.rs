@@ -121,7 +121,7 @@ mod tests {
     use coflow_checker::CheckTarget;
     use coflow_language::cft::{
         build_schema, parse_modules, CftFile, CheckOwner, DimensionName, FieldName, ModuleId,
-        RecordKey, TypeName, VariantName,
+        RecordId, TypeName, VariantName,
     };
     use std::collections::BTreeSet;
 
@@ -133,7 +133,7 @@ mod tests {
     fn coordinate(actual_type: &str, key: &str) -> RecordCoordinate {
         RecordCoordinate::new(
             TypeName::new(actual_type).expect("type"),
-            RecordKey::new(key).expect("key"),
+            RecordId::new(key).expect("key"),
         )
     }
 
@@ -145,9 +145,10 @@ mod tests {
     }
 
     #[test]
-    fn direct_field_change_plans_only_the_changed_record_statement() {
-        let schema =
-            schema("table Item { price: int; name: string; check { price > 0; name != \"\"; } }");
+    fn direct_field_change_plans_the_complete_named_rule_on_the_changed_record() {
+        let schema = schema(
+            "table Item { price: int; name: string; check Valid { price > 0; name != \"\"; } }",
+        );
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("price", 1_i64.into()), ("name", "a".into())]);
         builder.add_record("b", "Item", [("price", 2_i64.into()), ("name", "b".into())]);
@@ -160,10 +161,10 @@ mod tests {
             record_sets: BTreeSet::new(),
         };
         let tasks = plan_incremental_checks(&schema, &model, &impact);
-        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks.len(), 2);
         assert_eq!(
             tasks[0].target,
-            CheckTarget::Record(model.record_by_type_key("Item", "b").unwrap())
+            CheckTarget::Record(model.record_by_type_id("Item", "b").unwrap())
         );
         assert_eq!(
             schema
@@ -178,7 +179,7 @@ mod tests {
     #[test]
     fn cross_type_field_change_fans_out_to_every_owner_record() {
         let schema = schema(
-            "table Character { level: int; } table Item { owner: &Character; check { owner.level > 0; } }",
+            "table Character { level: int; } table Item { owner: &Character; check Valid { owner.level > 0; } }",
         );
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("hero", "Character", [("level", 1_i64.into())]);
@@ -205,11 +206,11 @@ mod tests {
         assert_eq!(
             tasks
                 .iter()
-                .map(|task| task.target)
+                .map(|task| task.target.clone())
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([
-                CheckTarget::Record(model.record_by_type_key("Item", "a").unwrap()),
-                CheckTarget::Record(model.record_by_type_key("Item", "b").unwrap()),
+                CheckTarget::Record(model.record_by_type_id("Item", "a").unwrap()),
+                CheckTarget::Record(model.record_by_type_id("Item", "b").unwrap()),
             ])
         );
     }
@@ -219,7 +220,7 @@ mod tests {
         let schema = schema(
             r"
                 data Part { value: int; }
-                table Item { part: Part; check { part.value > 0; } }
+                table Item { part: Part; check Valid { part.value > 0; } }
             ",
         );
         let build = |a_value: i64| {
@@ -258,7 +259,7 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(
             tasks[0].target,
-            CheckTarget::Record(after.record_by_type_key("Item", "a").unwrap())
+            CheckTarget::Record(after.record_by_type_id("Item", "a").unwrap())
         );
         assert_eq!(
             schema
@@ -298,7 +299,7 @@ mod tests {
                     @localized
                     name: string;
                     price: int;
-                    check { name.for("zh").len() <= price; }
+                    check Valid { name.for("zh").len() <= price; }
                 }
             "#,
         );
@@ -346,7 +347,7 @@ mod tests {
 
     #[test]
     fn planning_limit_accepts_the_exact_boundary_and_rejects_partial_plans() {
-        let schema = schema("table Item { value: int; check { value > 0; } }");
+        let schema = schema("table Item { value: int; check Valid { value > 0; } }");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("value", 1_i64.into())]);
         builder.add_record("b", "Item", [("value", 1_i64.into())]);
@@ -362,7 +363,7 @@ mod tests {
 
     #[test]
     fn planning_failure_preserves_scoped_diagnostics_and_adds_request_diagnostic() {
-        let schema = schema("table Item { value: int; check { value > 0; } }");
+        let schema = schema("table Item { value: int; check Valid { value > 0; } }");
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record("a", "Item", [("value", (-1_i64).into())]);
         builder.add_record("b", "Item", [("value", (-1_i64).into())]);
@@ -439,7 +440,7 @@ mod tests {
                 table Item {
                     price: int;
                     name: string;
-                    check { price > 0: "price"; name != "": "name"; }
+                    check Valid { price > 0: "price"; name != "": "name"; }
                 }
             "#,
         );
@@ -474,7 +475,7 @@ mod tests {
     #[test]
     fn cross_type_incremental_replacement_matches_full_without_runtime_read_edges() {
         let schema = schema(
-            "table Character { level: int; } table Item { owner: &Character; check { owner.level > 0; } }",
+            "table Character { level: int; } table Item { owner: &Character; check Valid { owner.level > 0; } }",
         );
         let build = |level: i64| {
             let mut builder = CfdDataModel::builder(&schema);
@@ -510,8 +511,9 @@ mod tests {
 
     #[test]
     fn inherited_statement_incremental_replacement_matches_full() {
-        let schema =
-            schema("abstract table Base { value: int; check { value > 0; } } table Item : Base {}");
+        let schema = schema(
+            "abstract table Base { value: int; check Valid { value > 0; } } table Item : Base {}",
+        );
         let build = |value: i64| {
             let mut builder = CfdDataModel::builder(&schema);
             builder.add_record("a", "Item", [("value", value.into())]);
@@ -568,7 +570,7 @@ mod tests {
                 table Item {
                     @localized
                     name: string;
-                    check { name.for("zh") != ""; }
+                    check Valid { name.for("zh") != ""; }
                 }
             "#,
         );
@@ -577,7 +579,7 @@ mod tests {
             builder.add_record("a", "Item", [("name", "base".into())]);
             builder.add_dimension_value_draft(DimensionValueDraft {
                 source_type: TypeName::new("Item").unwrap(),
-                source_key: RecordKey::new("a").unwrap(),
+                source_id: RecordId::new("a").unwrap(),
                 field: FieldName::new("name").unwrap(),
                 dimension: DimensionName::new("language").unwrap(),
                 variant: VariantName::new("zh").unwrap(),
@@ -631,7 +633,7 @@ mod tests {
     #[test]
     fn adding_a_variant_invalidates_other_records_variant_collections() {
         let schema = schema(
-            r#"table Item { @localized name: string; check { name.variants().len() <= 1; } }"#,
+            r#"table Item { @localized name: string; check Valid { name.variants().len() <= 1; } }"#,
         );
         let build = |extra: bool| {
             let mut builder = CfdDataModel::builder(&schema);
@@ -669,5 +671,90 @@ mod tests {
         let output = run_incremental_project_checks(&schema, &after, &[], &previous.state, &impact);
         assert_eq!(output.statistics.executed_tasks, 2);
         assert_eq!(output.state.diagnostics(&after).len(), 2);
+    }
+    #[test]
+    fn owned_data_checks_cover_collections_options_dimensions_and_clear_removed_paths() {
+        let schema = schema(
+            r#"data Reward { count: int; check Positive { count > 0; } }
+            table Item { rewards: [Option<Reward>]; values: {string: Reward}; @dimension("mode") reward: Reward; }
+        "#,
+        );
+        let reward =
+            |count: i64| LoadedValueDraft::object_with_declared_type([("count", count.into())]);
+        let build = |invalid: bool| {
+            let mut builder = CfdDataModel::builder(&schema);
+            builder.add_record(
+                "one",
+                "Item",
+                [
+                    (
+                        "rewards",
+                        LoadedValueDraft::Array(if invalid {
+                            vec![
+                                LoadedValueDraft::OptionSome(Box::new(reward(-1))),
+                                LoadedValueDraft::OptionNone,
+                            ]
+                        } else {
+                            Vec::new()
+                        }),
+                    ),
+                    (
+                        "values",
+                        LoadedValueDraft::Dict(vec![(
+                            crate::data_model::LoadedDictKeyDraft::String("bad".into()),
+                            reward(if invalid { -1 } else { 1 }),
+                        )]),
+                    ),
+                    ("reward", reward(1)),
+                ],
+            );
+            if invalid {
+                builder.add_dimension_value_draft(DimensionValueDraft {
+                    source_type: TypeName::new("Item").unwrap(),
+                    source_id: RecordId::new("one").unwrap(),
+                    field: FieldName::new("reward").unwrap(),
+                    dimension: DimensionName::new("mode").unwrap(),
+                    variant: VariantName::new("hard").unwrap(),
+                    value: reward(-1),
+                    origin: RecordOrigin::None,
+                });
+            }
+            builder.build().expect("model")
+        };
+        let before = build(true);
+        let previous = full_store(&schema, &before);
+        assert_eq!(previous.diagnostics(&before).len(), 3);
+        let after = build(false);
+        let impact = CheckImpact {
+            records: BTreeMap::from([(coordinate("Item", "one"), ChangedRecordFields::All)]),
+            record_sets: BTreeSet::new(),
+        };
+        let updated = incremental_store(&schema, &after, &previous, &impact);
+        assert!(updated.diagnostics(&after).is_empty());
+        assert_eq!(
+            updated.diagnostics(&after),
+            full_store(&schema, &after).diagnostics(&after)
+        );
+    }
+    #[test]
+    fn materialized_data_defaults_are_checked_at_each_owner() {
+        let schema = schema("data Reward { count: int = 0; check Positive { count > 0; } } table Item { reward: Reward = {}; maybe: Option<Reward> = None; }");
+        let mut builder = CfdDataModel::builder(&schema);
+        for id in ["first", "second"] {
+            builder.add_record(id, "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
+        }
+        let model = builder.build().expect("model");
+        let tasks = plan_full_checks(&schema, &model);
+        assert_eq!(tasks.len(), 2);
+        let output = execute_checks(&schema, &model, tasks, CheckLimits::default());
+        assert_eq!(output.diagnostics().count(), 2);
+        for diagnostic in output.diagnostics() {
+            assert_eq!(
+                diagnostic.diagnostic.primary.as_ref().unwrap().path,
+                crate::data_model::CfdPath::root()
+                    .field("reward")
+                    .field("count")
+            );
+        }
     }
 }

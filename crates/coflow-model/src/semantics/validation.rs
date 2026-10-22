@@ -1,7 +1,7 @@
 use coflow_language::cft::{CftSchema, CftValueType};
 
 use crate::diagnostics::CfdPath;
-use crate::model::{CfdDictKey, CfdEnumValue, CfdRecordId, CfdValue};
+use crate::model::{CfdDictKey, CfdEnumValue, CfdRecordHandle, CfdValue};
 use coflow_language::cft::TypeName;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,12 +90,12 @@ impl CfdValueSemanticError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingInsertRef<'a> {
     pub actual_type: &'a str,
-    pub key: &'a str,
+    pub id: &'a str,
 }
 
 pub trait CfdValueSemanticContext {
-    fn record_by_domain_key(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordId>;
-    fn record_actual_type(&self, id: CfdRecordId) -> Option<&str>;
+    fn record_by_domain_id(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordHandle>;
+    fn record_actual_type(&self, id: CfdRecordHandle) -> Option<&str>;
 
     fn pending_record_actual_type(&self, _inheritance_root: &TypeName, _key: &str) -> Option<&str> {
         None
@@ -219,7 +219,7 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             _ => Err(type_mismatch("bool", value, path)),
         },
         CftValueType::String => match value {
-            CfdValue::String(_) => Ok(()),
+            CfdValue::String(_) | CfdValue::FormattedString(_) => Ok(()),
             _ => Err(type_mismatch("string", value, path)),
         },
         CftValueType::Array(inner) => {
@@ -244,10 +244,6 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
             mode,
             path,
         ),
-        CftValueType::FormattedString => match value {
-            CfdValue::FormattedString(_) => Ok(()),
-            _ => Err(type_mismatch("fstring", value, path)),
-        },
         CftValueType::Object(name) => {
             validate_object_value(schema, context, name, value, pending_insert, mode, path)
         }
@@ -544,7 +540,7 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
             format!("unknown reference target type `{expected_type}`"),
         ));
     };
-    if let Some(target_id) = context.record_by_domain_key(inheritance_root, target_key) {
+    if let Some(target_id) = context.record_by_domain_id(inheritance_root, target_key) {
         let Some(actual_type) = context.record_actual_type(target_id) else {
             return Err(ref_not_found(expected_type, target_key, path));
         };
@@ -572,7 +568,7 @@ fn validate_ref_target<C: CfdValueSemanticContext>(
         return Ok(());
     }
     if let Some(pending) = pending_insert {
-        if pending.key == target_key && schema.is_assignable(pending.actual_type, expected_type) {
+        if pending.id == target_key && schema.is_assignable(pending.actual_type, expected_type) {
             return Ok(());
         }
     }
@@ -591,7 +587,7 @@ fn ref_not_found(expected_type: &str, target_key: &str, path: CfdPath) -> CfdVal
     CfdValueSemanticError::new(
         CfdValueSemanticErrorKind::RefTargetNotFound,
         path,
-        format!("ref target `{expected_type}` with key `{target_key}` was not found"),
+        format!("ref target `{expected_type}` with id `{target_key}` was not found"),
     )
 }
 

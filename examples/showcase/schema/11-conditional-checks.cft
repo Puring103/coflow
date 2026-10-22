@@ -4,7 +4,7 @@ table ConditionalRule {
   enabled: bool;
   threshold: int;
 
-  check {
+  check Valid {
     when enabled {
       threshold > 0;
     }

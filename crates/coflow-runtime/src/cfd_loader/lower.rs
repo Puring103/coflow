@@ -6,9 +6,9 @@ use coflow_language::cfd::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
 };
 use coflow_language::cft::{
-    CftSchema, CftValueType, DimensionName, FieldName, RecordKey, TypeName, VariantName,
+    CftSchema, CftValueType, DimensionName, FieldName, RecordId, TypeName, VariantName,
 };
-use coflow_language::lexical::record_key_ident_error;
+use coflow_language::lexical::record_id_ident_error;
 use coflow_language::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -84,9 +84,9 @@ pub(super) fn lower_dimensions(
                 let Some(value) = lowered.fields.get(&field.name) else {
                     continue;
                 };
-                let (Ok(source_type), Ok(source_key), Ok(name)) = (
+                let (Ok(source_type), Ok(source_id), Ok(name)) = (
                     TypeName::new(lowered.actual_type.clone()),
-                    RecordKey::new(lowered.key.clone()),
+                    RecordId::new(lowered.id.clone()),
                     FieldName::new(field.name.clone()),
                 ) else {
                     continue;
@@ -94,7 +94,7 @@ pub(super) fn lower_dimensions(
                 values.push((
                     DimensionValueDraft {
                         source_type,
-                        source_key,
+                        source_id,
                         field: name,
                         dimension: dimension.clone(),
                         variant: variant.clone(),
@@ -130,7 +130,7 @@ fn lower_record(
     record: &CfdRecord,
     preserve_repairable_values: bool,
 ) -> Result<ParsedLoadedRecordDraft, CfdTextDiagnostics> {
-    validate_record_key(&record.key, record.key_span)?;
+    validate_record_id(&record.id, record.id_span)?;
     let type_name = record.type_name.clone();
     if let Some((group_type, span)) = &record.group_type {
         validate_group_type(schema, group_type, *span)?;
@@ -145,7 +145,7 @@ fn lower_record(
         preserve_repairable_values,
     )?;
     Ok(ParsedLoadedRecordDraft {
-        record: LoadedRecordDraft::new(record.key.clone(), type_name, fields),
+        record: LoadedRecordDraft::new(record.id.clone(), type_name, fields),
         span: text_span(record.span),
     })
 }
@@ -235,7 +235,6 @@ pub(super) fn lower_value_resolved(
         CftValueType::Float => lower_float(value),
         CftValueType::Bool => lower_bool(value),
         CftValueType::String => lower_string(value),
-        CftValueType::FormattedString => lower_formatted_string(value),
         CftValueType::Enum(name) => lower_enum(schema, value, name, preserve_repairable_values),
         CftValueType::Object(name) => lower_object(schema, value, name, preserve_repairable_values),
         CftValueType::RecordRef(name) => lower_ref(schema, value, name),
@@ -300,6 +299,7 @@ fn lower_bool(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> 
 fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
         CfdValue::QuotedString(text, _) => Ok(LoadedValueDraft::String(text.clone())),
+        CfdValue::FormattedString(_) => lower_formatted_string(value),
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
             "expected string",
@@ -321,7 +321,7 @@ fn lower_formatted_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextD
                         CfdFormatSegment::Reference(reference) => {
                             LoadedFormatSegment::Reference(LoadedFieldReference {
                                 type_name: reference.type_name.clone(),
-                                key: reference.key.clone(),
+                                id: reference.id.clone(),
                                 path: reference.path.clone(),
                             })
                         }
@@ -331,7 +331,7 @@ fn lower_formatted_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextD
         }
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
-            "expected fstring",
+            "expected formatted string",
             value.span(),
         )),
     }
@@ -541,14 +541,14 @@ fn lower_ref(
     if let Some((type_name, span)) = &reference.type_name {
         validate_actual_type(schema, expected_type, type_name, *span)?;
     }
-    validate_record_key(&reference.key.0, reference.key.1)?;
+    validate_record_id(&reference.id.0, reference.id.1)?;
     Ok(if let Some((type_name, _)) = &reference.type_name {
         LoadedValueDraft::TypedRecordRef {
             type_name: type_name.clone(),
-            key: reference.key.0.clone(),
+            id: reference.id.0.clone(),
         }
     } else {
-        LoadedValueDraft::record_ref(reference.key.0.clone())
+        LoadedValueDraft::record_ref(reference.id.0.clone())
     })
 }
 
@@ -677,8 +677,8 @@ fn lower_dict_key(
     }
 }
 
-fn validate_record_key(key: &str, span: Span) -> Result<(), CfdTextDiagnostics> {
-    if let Some(reason) = record_key_ident_error(key) {
+fn validate_record_id(key: &str, span: Span) -> Result<(), CfdTextDiagnostics> {
+    if let Some(reason) = record_id_ident_error(key) {
         return Err(error(
             CfdTextErrorCode::Syntax,
             format!("invalid record key `{key}`: {reason}"),

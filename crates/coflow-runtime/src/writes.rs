@@ -114,11 +114,11 @@ impl MutationImpact {
                 },
             ),
             PreparedMutationOp::InsertRecord {
-                actual_type, key, ..
+                actual_type, id, ..
             } => {
                 self.add_structural_record(&RecordCoordinate::new(
                     actual_type.clone(),
-                    key.clone(),
+                    id.clone(),
                 ));
             }
             PreparedMutationOp::CancelledInsert { record, .. }
@@ -127,12 +127,12 @@ impl MutationImpact {
                 self.add_structural_record(record);
             }
             PreparedMutationOp::RenameRecord {
-                record, new_key, ..
+                record, new_id, ..
             } => {
                 self.add_structural_record(record);
                 self.add_structural_record(&RecordCoordinate::new(
                     record.actual_type.clone(),
-                    new_key.clone(),
+                    new_id.clone(),
                 ));
             }
             PreparedMutationOp::FoldedRenameRecord {
@@ -225,12 +225,12 @@ mod tests {
     use super::*;
     use crate::data_model::CfdPathSegment;
     use crate::mutation::PreparedMutationOp;
-    use coflow_language::cft::RecordKey;
+    use coflow_language::cft::RecordId;
 
     fn coordinate(key: &str) -> RecordCoordinate {
         RecordCoordinate::new(
             TypeName::new("Item").expect("valid type name"),
-            RecordKey::new(key).expect("valid record key"),
+            RecordId::new(key).expect("valid record key"),
         )
     }
 

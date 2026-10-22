@@ -397,14 +397,14 @@ function rebindEntry(
   if (entry.kind === 'dimension') {
     if (
       entry.coordinate.actual_type !== oldCoordinate.actual_type
-      || entry.coordinate.record_key !== oldCoordinate.key
+      || entry.coordinate.record_id !== oldCoordinate.id
     ) return entry
     return {
       ...entry,
       coordinate: {
         ...entry.coordinate,
         actual_type: newCoordinate.actual_type,
-        record_key: newCoordinate.key,
+        record_id: newCoordinate.id,
       },
     }
   }

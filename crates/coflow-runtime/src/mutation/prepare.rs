@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::api::DiagnosticSet;
 use crate::api::WriteFieldPathSegment;
 use crate::data_model::{CfdPath, CfdPathSegment, CfdValue, PendingInsertRef};
-use coflow_language::cft::{CftValueType, RecordKey};
+use coflow_language::cft::{CftValueType, RecordId};
 
 use crate::write_rules;
 use crate::writes;
@@ -78,7 +78,7 @@ impl ProjectSession {
         path: &[CfdPathSegment],
     ) -> Result<CfdValue, DiagnosticSet> {
         let record = self
-            .record_view(&coordinate.actual_type, &coordinate.key)
+            .record_view(&coordinate.actual_type, &coordinate.id)
             .map(|view| view.record)
             .ok_or_else(|| one_path_error("record was not found"))?;
         let ty = write_rules::expected_type_for_record_path(
@@ -121,16 +121,16 @@ pub(super) fn prepare_one(
         MutationOp::InsertRecord {
             file,
             actual_type,
-            key,
+            id,
             fields,
             materialization,
         } => {
             ensure_source_file(session, &file)?;
             ensure_type_can_insert(session, &actual_type)?;
-            ensure_record_key_available(
+            ensure_record_id_available(
                 session,
                 &actual_type,
-                &key,
+                &id,
                 None,
                 "MUTATION-INSERT",
                 "MUTATION-INSERT-CONFLICT",
@@ -138,16 +138,16 @@ pub(super) fn prepare_one(
             let fields = prepare_insert_fields(
                 session,
                 &actual_type,
-                &key,
+                &id,
                 fields,
                 materialization,
                 pending_records,
             )?;
-            let coordinate = validated_record_coordinate(actual_type, key)?;
+            let coordinate = validated_record_coordinate(actual_type, id)?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
                 actual_type: coordinate.actual_type,
-                key: coordinate.key,
+                id: coordinate.id,
                 fields,
             })
         }
@@ -220,35 +220,35 @@ pub(super) fn prepare_one(
         MutationOp::RenameRecord {
             record,
             file,
-            new_key,
+            new_id,
         } => {
             ensure_file_guard(session, &record, file.as_deref())?;
             let current_record = session
                 .records
-                .id_for_coordinate(&record.actual_type, &record.key)
+                .id_for_coordinate(&record.actual_type, &record.id)
                 .ok_or_else(|| {
                     one_mutation_error(
                         "MUTATION-RENAME",
                         format!(
                             "record `{}.{}` was not found",
-                            record.actual_type, record.key
+                            record.actual_type, record.id
                         ),
                     )
                 })?;
-            ensure_record_key_available(
+            ensure_record_id_available(
                 session,
                 &record.actual_type,
-                &new_key,
+                &new_id,
                 Some(current_record),
                 "MUTATION-RENAME",
                 "MUTATION-RENAME-CONFLICT",
             )?;
-            let new_key = RecordKey::new(new_key)
+            let new_id = RecordId::new(new_id)
                 .map_err(|error| one_mutation_error("MUTATION-RENAME", error.to_string()))?;
             let report_file = file.or_else(|| record_file(session, &record).map(ToOwned::to_owned));
             Ok(PreparedMutationOp::RenameRecord {
                 record,
-                new_key,
+                new_id,
                 report_file,
             })
         }
@@ -330,7 +330,7 @@ fn materialized_top_level_value(
         segments: path[..1].to_vec(),
     };
     let record = session
-        .record_view(&coordinate.actual_type, &coordinate.key)
+        .record_view(&coordinate.actual_type, &coordinate.id)
         .map(|view| view.record)
         .ok_or_else(|| one_path_error("record was not found while materializing a field"))?;
     let mut root = record.value_at_path(&root_path).cloned().ok_or_else(|| {
@@ -343,7 +343,7 @@ fn materialized_top_level_value(
 pub(super) struct PendingInsertSetRequest<'a> {
     pub(super) insert_file: &'a str,
     pub(super) actual_type: &'a str,
-    pub(super) key: &'a str,
+    pub(super) id: &'a str,
     pub(super) fields: &'a mut BTreeMap<String, CfdValue>,
     pub(super) file_guard: Option<&'a str>,
     pub(super) path: &'a [CfdPathSegment],
@@ -358,7 +358,7 @@ pub(super) fn prepare_set_on_pending_insert(
     let PendingInsertSetRequest {
         insert_file,
         actual_type,
-        key,
+        id,
         fields,
         file_guard,
         path,
@@ -366,7 +366,7 @@ pub(super) fn prepare_set_on_pending_insert(
         pending_records,
     } = request;
     ensure_file_guard_for_file(
-        &validated_record_coordinate(actual_type, key)?,
+        &validated_record_coordinate(actual_type, id)?,
         insert_file,
         file_guard,
     )?;
@@ -381,7 +381,7 @@ pub(super) fn prepare_set_on_pending_insert(
     let value = coerce_mutation_value(session, &expected, value, pending_records)?;
     set_pending_insert_value(fields, &path, value)?;
     Ok(PreparedMutationOp::FoldedSetField {
-        record: validated_record_coordinate(actual_type, key)?,
+        record: validated_record_coordinate(actual_type, id)?,
         write_file: insert_file.to_string(),
         path: CfdPath {
             segments: path.clone(),
@@ -394,22 +394,22 @@ pub(super) fn prepare_rename_on_pending_insert(
     insert_file: &str,
     record: &RecordCoordinate,
     file_guard: Option<&str>,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     ensure_file_guard_for_file(record, insert_file, file_guard)?;
-    ensure_record_key_available(
+    ensure_record_id_available(
         session,
         &record.actual_type,
-        new_key,
+        new_id,
         None,
         "MUTATION-RENAME",
         "MUTATION-RENAME-CONFLICT",
     )?;
-    let new_key = RecordKey::new(new_key)
+    let new_id = RecordId::new(new_id)
         .map_err(|error| one_mutation_error("MUTATION-RENAME", error.to_string()))?;
     Ok(PreparedMutationOp::FoldedRenameRecord {
         old_record: record.clone(),
-        new_record: RecordCoordinate::new(record.actual_type.clone(), new_key),
+        new_record: RecordCoordinate::new(record.actual_type.clone(), new_id),
         write_file: insert_file.to_string(),
     })
 }
@@ -431,8 +431,8 @@ pub(super) fn rename_pending_insert_references(
     target_actual_type: &str,
     host_actual_type: &str,
     fields: &mut BTreeMap<String, CfdValue>,
-    old_key: &str,
-    new_key: &RecordKey,
+    old_id: &str,
+    new_id: &RecordId,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
     for (name, value) in fields {
@@ -442,8 +442,8 @@ pub(super) fn rename_pending_insert_references(
             target_actual_type,
             &field.value_type,
             value,
-            old_key,
-            new_key,
+            old_id,
+            new_id,
         );
     }
     Ok(())
@@ -455,8 +455,8 @@ pub(super) fn rename_prepared_field_references(
     host_actual_type: &str,
     path: &[WriteFieldPathSegment],
     value: &mut CfdValue,
-    old_key: &str,
-    new_key: &RecordKey,
+    old_id: &str,
+    new_id: &RecordId,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
     let expected = write_rules::expected_type_for_cfd_path(
@@ -471,8 +471,8 @@ pub(super) fn rename_prepared_field_references(
         target_actual_type,
         &expected,
         value,
-        old_key,
-        new_key,
+        old_id,
+        new_id,
     );
     Ok(())
 }
@@ -482,8 +482,8 @@ fn rename_pending_value_references(
     target_actual_type: &str,
     expected: &CftValueType,
     value: &mut CfdValue,
-    old_key: &str,
-    new_key: &RecordKey,
+    old_id: &str,
+    new_id: &RecordId,
 ) {
     match (expected, value) {
         (CftValueType::Option(inner), CfdValue::OptionSome(value)) => {
@@ -492,14 +492,14 @@ fn rename_pending_value_references(
                 target_actual_type,
                 inner,
                 value,
-                old_key,
-                new_key,
+                old_id,
+                new_id,
             );
         }
-        (CftValueType::RecordRef(target_type), CfdValue::Ref(key))
-            if key.as_str() == old_key && schema.is_assignable(target_actual_type, target_type) =>
+        (CftValueType::RecordRef(target_type), CfdValue::Ref(id))
+            if id.as_str() == old_id && schema.is_assignable(target_actual_type, target_type) =>
         {
-            *key = new_key.clone();
+            *id = new_id.clone();
         }
         (CftValueType::Array(inner), CfdValue::Array(items)) => {
             for item in items {
@@ -508,8 +508,8 @@ fn rename_pending_value_references(
                     target_actual_type,
                     inner,
                     item,
-                    old_key,
-                    new_key,
+                    old_id,
+                    new_id,
                 );
             }
         }
@@ -520,8 +520,8 @@ fn rename_pending_value_references(
                     target_actual_type,
                     item_type,
                     item,
-                    old_key,
-                    new_key,
+                    old_id,
+                    new_id,
                 );
             }
         }
@@ -536,8 +536,8 @@ fn rename_pending_value_references(
                     target_actual_type,
                     &field.value_type,
                     field_value,
-                    old_key,
-                    new_key,
+                    old_id,
+                    new_id,
                 );
             }
         }
@@ -603,7 +603,7 @@ pub(super) fn set_nested_value(
 fn prepare_insert_fields(
     session: &ProjectSession,
     actual_type: &str,
-    key: &str,
+    id: &str,
     fields: MutationFields,
     materialization: DefaultMaterialization,
     pending_records: &BTreeMap<RecordCoordinate, usize>,
@@ -628,7 +628,7 @@ fn prepare_insert_fields(
                 value,
                 crate::data_model::ValueValidationMode::Mutation,
             )
-            .with_pending_insert(PendingInsertRef { actual_type, key }),
+            .with_pending_insert(PendingInsertRef { actual_type, id }),
             Some(pending_records),
             "MUTATION-VALUE",
             "MUTATION-SHAPE",
@@ -677,7 +677,7 @@ fn expected_value_for_path(
     path: &[CfdPathSegment],
 ) -> Result<ExpectedValue, DiagnosticSet> {
     let record = session
-        .record_view(&coordinate.actual_type, &coordinate.key)
+        .record_view(&coordinate.actual_type, &coordinate.id)
         .map(|view| view.record)
         .ok_or_else(|| one_path_error("record was not found"))?;
     let current = write_rules::expected_type_for_record_path(
@@ -706,17 +706,17 @@ fn effective_write_target_for_set_field(
 ) -> Result<(RecordCoordinate, String, Vec<WriteFieldPathSegment>), DiagnosticSet> {
     let record_ref = session
         .records
-        .get_by_coordinate(&coordinate.actual_type, &coordinate.key)
+        .get_by_coordinate(&coordinate.actual_type, &coordinate.id)
         .ok_or_else(|| {
             one_path_error(format!(
                 "record `{}.{}` was not found",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ))
         })?;
     let _record = session.model.record(record_ref.id).ok_or_else(|| {
         one_path_error(format!(
             "record `{}.{}` was not found in the data model",
-            coordinate.actual_type, coordinate.key
+            coordinate.actual_type, coordinate.id
         ))
     })?;
     Ok(writes::effective_write_target_for_path(
@@ -747,7 +747,7 @@ fn ensure_file_guard(
             "MUTATION-FILE-GUARD",
             format!(
                 "record `{}.{}` was not found for file guard `{expected_file}`",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ),
         ));
     };
@@ -758,7 +758,7 @@ fn ensure_file_guard(
         "MUTATION-FILE-GUARD",
         format!(
             "record `{}.{}` belongs to `{actual_file}`, not `{expected_file}`",
-            coordinate.actual_type, coordinate.key
+            coordinate.actual_type, coordinate.id
         ),
     ))
 }
@@ -778,7 +778,7 @@ fn ensure_file_guard_for_file(
         "MUTATION-FILE-GUARD",
         format!(
             "record `{}.{}` writes to `{actual_file}`, not `{expected_file}`",
-            coordinate.actual_type, coordinate.key
+            coordinate.actual_type, coordinate.id
         ),
     ))
 }
@@ -809,18 +809,18 @@ fn ensure_type_can_insert(
     Ok(())
 }
 
-fn ensure_record_key_available(
+fn ensure_record_id_available(
     session: &ProjectSession,
     actual_type: &str,
-    key: &str,
-    current_record: Option<crate::data_model::CfdRecordId>,
+    id: &str,
+    current_record: Option<crate::data_model::CfdRecordHandle>,
     code: &'static str,
     conflict_code: &'static str,
 ) -> Result<(), DiagnosticSet> {
-    write_rules::ensure_record_key_available_with_conflict_code(
+    write_rules::ensure_record_id_available_with_conflict_code(
         session,
         actual_type,
-        key,
+        id,
         current_record,
         code,
         conflict_code,
@@ -829,7 +829,7 @@ fn ensure_record_key_available(
 }
 
 fn record_file<'a>(session: &'a ProjectSession, coordinate: &RecordCoordinate) -> Option<&'a str> {
-    session.file_for_record(&coordinate.actual_type, &coordinate.key)
+    session.file_for_record(&coordinate.actual_type, &coordinate.id)
 }
 
 fn required_record_file<'a>(
@@ -842,7 +842,7 @@ fn required_record_file<'a>(
             code,
             format!(
                 "record `{}.{}` was not found",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ),
         )
     })

@@ -13,7 +13,7 @@ import {
   type EditorMutationPort,
 } from './editorMutations'
 
-const coordinate = { actual_type: 'Item', key: 'sword' }
+const coordinate = { actual_type: 'Item', id: 'sword' }
 const fieldPath = [{ kind: 'field' as const, value: 'name' }]
 const row = { coordinate } as RecordRow
 
@@ -44,7 +44,7 @@ function backend(
     writeField,
     writeDimensionValue,
     editCollection: vi.fn(),
-    renameRecordKey: vi.fn(),
+    renameRecordId: vi.fn(),
     insertRecord: vi.fn(),
     deleteRecord: vi.fn(),
     swapRecords: vi.fn(),
@@ -55,7 +55,7 @@ function backend(
 
 const dimensionCoordinate = {
   actual_type: 'Item',
-  record_key: 'sword',
+  record_id: 'sword',
   field: 'name',
   dimension: 'language',
   variant: 'zh',
@@ -193,7 +193,7 @@ describe('EditorMutationController', () => {
     expect(history.getSnapshot().undo).toHaveLength(1)
   })
   it('records a batch field edit as one atomic undo and redo step', async () => {
-    const second = { actual_type: 'Item', key: 'shield' }
+    const second = { actual_type: 'Item', id: 'shield' }
     const batchOutcome = (
       revision: number,
       values: Array<[typeof coordinate, string, string]>,

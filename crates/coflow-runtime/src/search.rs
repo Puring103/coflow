@@ -6,7 +6,7 @@ use crate::{value_summary, ProjectQueries};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordSearchMode {
-    Key,
+    Id,
     FullText,
 }
 
@@ -60,7 +60,7 @@ impl ProjectQueries<'_> {
                 {
                     continue;
                 }
-                let key_matches = contains_normalized(&view.coordinate.key, &normalized);
+                let key_matches = contains_normalized(&view.coordinate.id, &normalized);
                 let field_match = if options.mode == RecordSearchMode::FullText && !key_matches {
                     find_record_field_match(view.record.fields(), &normalized)
                 } else {

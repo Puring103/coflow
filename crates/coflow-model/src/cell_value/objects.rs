@@ -6,7 +6,7 @@ use super::diagnostics::{
     missing_boundary, reference_needs_marker, syntax, type_mismatch, CellValueDiagnostic,
     CellValueDiagnostics, CellValueErrorCode,
 };
-use super::markers::{is_type_marker_name, looks_like_bare_record_key};
+use super::markers::{is_type_marker_name, looks_like_bare_record_id};
 use super::scan::{find_marker_open_brace, find_top_level_char, split_top_level, strip_outer_pair};
 use super::types::{full_fields, FieldMeta};
 use super::{parse_value, ValueContext};
@@ -24,7 +24,7 @@ pub(super) fn parse_object(
     if text.trim().starts_with('&') {
         return Err(type_mismatch(expected_type));
     }
-    if looks_like_bare_record_key(text) {
+    if looks_like_bare_record_id(text) {
         return Err(reference_needs_marker(text));
     }
 

@@ -21,7 +21,7 @@ export async function serializeCfdCellMatrix(
 }
 
 export function serializeRecordRefsAsCfd(records: readonly RecordCoordinate[]): string {
-  return serializeCfdMatrix(records.map(record => [`&${record.key}`]))
+  return serializeCfdMatrix(records.map(record => [`&${record.id}`]))
 }
 
 export function serializeCfdMatrix(rows: readonly (readonly string[])[]): string {

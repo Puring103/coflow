@@ -244,7 +244,7 @@ mod project_runtime_tests {
         assert_eq!(queries.record_count(), 1);
         assert!(queries
             .record_views_in_file("data/items.cfd")
-            .any(|record| record.coordinate.key.as_str() == "valid"));
+            .any(|record| record.coordinate.id.as_str() == "valid"));
         let codes = queries
             .diagnostics()
             .as_set()
@@ -297,7 +297,7 @@ mod project_runtime_tests {
         assert_eq!(queries.rejected_records().len(), 2);
         assert!(queries
             .record_views_in_file("data/items.cfd")
-            .any(|record| record.coordinate.key.as_str() == "survivor"));
+            .any(|record| record.coordinate.id.as_str() == "survivor"));
         assert!(queries
             .diagnostics()
             .as_set()
@@ -604,7 +604,7 @@ impl WriteProjectSession {
     ) -> Result<String, DiagnosticSet> {
         let value = self
             .queries()
-            .field_value(&coordinate.actual_type, &coordinate.key, path)
+            .field_value(&coordinate.actual_type, &coordinate.id, path)
             .ok_or_else(|| {
                 DiagnosticSet::one(Diagnostic {
                     code: "MUTATION-PATH".to_string(),
@@ -815,16 +815,16 @@ impl WriteProjectSession {
     ///
     /// Returns diagnostics when the mutation is rejected or produces no
     /// applied operation.
-    pub fn rename_record_key(
+    pub fn rename_record_id(
         &mut self,
         actual_type: &str,
-        old_key: &str,
-        new_key: &str,
+        old_id: &str,
+        new_id: &str,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::RenameRecord {
-            record: validated_coordinate(actual_type, old_key)?,
+            record: validated_coordinate(actual_type, old_id)?,
             file: None,
-            new_key: new_key.to_string(),
+            new_id: new_id.to_string(),
         })
     }
 
@@ -837,14 +837,14 @@ impl WriteProjectSession {
     pub fn insert_record(
         &mut self,
         file: &str,
-        record_key: &str,
+        record_id: &str,
         actual_type: &str,
         fields: &BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         self.apply_one(MutationOp::InsertRecord {
             file: file.to_string(),
             actual_type: actual_type.to_string(),
-            key: record_key.to_string(),
+            id: record_id.to_string(),
             fields: MutationFields::Cfd(fields.clone()),
             materialization: DefaultMaterialization::Minimal,
         })

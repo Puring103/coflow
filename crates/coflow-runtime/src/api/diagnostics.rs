@@ -183,7 +183,7 @@ impl Diagnostic {
     pub fn flat_view(
         &self,
         actual_type: Option<String>,
-        record_key: Option<String>,
+        record_id: Option<String>,
         field_path: Option<String>,
     ) -> FlatDiagnostic {
         let file_path = self
@@ -202,7 +202,7 @@ impl Diagnostic {
                 self,
                 file_path.as_deref(),
                 actual_type.as_deref(),
-                record_key.as_deref(),
+                record_id.as_deref(),
                 field_path.as_deref(),
             ),
             severity: severity_str(self.severity).to_string(),
@@ -213,7 +213,7 @@ impl Diagnostic {
                 file_path,
                 range,
                 actual_type,
-                record_key,
+                record_id,
                 field_path,
                 self.primary.as_ref().map(|label| &label.location),
             ),
@@ -416,7 +416,7 @@ fn diagnostic_id(
     diagnostic: &Diagnostic,
     file_path: Option<&str>,
     actual_type: Option<&str>,
-    record_key: Option<&str>,
+    record_id: Option<&str>,
     field_path: Option<&str>,
 ) -> String {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
@@ -430,7 +430,7 @@ fn diagnostic_id(
         Some(diagnostic.message.as_str()),
         file_path,
         actual_type,
-        record_key,
+        record_id,
         field_path,
         source_location.as_deref(),
     ] {
@@ -477,7 +477,7 @@ fn diagnostic_target(
     file_path: Option<String>,
     range: Option<TextRange>,
     actual_type: Option<String>,
-    record_key: Option<String>,
+    record_id: Option<String>,
     field_path: Option<String>,
     location: Option<&SourceLocation>,
 ) -> DiagnosticTarget {
@@ -485,7 +485,7 @@ fn diagnostic_target(
         return DiagnosticTarget::None;
     };
     let coordinate = actual_type
-        .zip(record_key)
+        .zip(record_id)
         .and_then(|(actual_type, key)| crate::RecordCoordinate::try_new(actual_type, key).ok());
     if let Some(coordinate) = coordinate {
         return match field_path {

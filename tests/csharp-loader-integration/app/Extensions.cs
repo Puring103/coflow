@@ -11,7 +11,7 @@ public partial struct Stats
 }
 public sealed partial class Settings
 {
-    public string StartKey => start.id;
+    public string StartId => start.id;
 }
 public sealed partial class CoflowData
 {

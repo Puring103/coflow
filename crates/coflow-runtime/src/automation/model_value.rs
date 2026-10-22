@@ -38,7 +38,7 @@ pub enum ModelValue {
     Ref {
         #[serde(rename = "type")]
         type_name: String,
-        key: String,
+        id: String,
     },
     Object {
         #[serde(rename = "type")]
@@ -122,7 +122,7 @@ impl ModelValue {
                         .map_err(|e| Failure::request(e.to_string()))?,
                 )
             }
-            (Self::Ref { type_name, key }, T::RecordRef(name))
+            (Self::Ref { type_name, id: key }, T::RecordRef(name))
                 if schema.is_assignable(type_name, name) =>
             {
                 CfdValue::record_ref(key.clone()).map_err(|e| Failure::request(e.to_string()))?
@@ -167,7 +167,7 @@ impl ModelValue {
                 }
                 CfdValue::Dict(items)
             }
-            (Self::Fstring { source }, T::FormattedString) => {
+            (Self::Fstring { source }, T::String) => {
                 super::values::expression(schema, expected, source)?
             }
             _ => {
@@ -213,7 +213,7 @@ impl ModelValue {
                 };
                 Self::Ref {
                     type_name: name.to_string(),
-                    key: key.to_string(),
+                    id: key.to_string(),
                 }
             }
             CfdValue::Object(object) => Self::Object {

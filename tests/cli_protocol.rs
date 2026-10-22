@@ -7,7 +7,7 @@ fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("data")).unwrap();
     fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n").unwrap();
-    fs::write(root.path().join("schema.cft"), "table Item { value: int; check { value > 0; } }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "table Item { value: int; check Valid { value > 0; } }\n").unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item { value: -1 }\n").unwrap();
     root
 }
@@ -133,7 +133,7 @@ fn validation_and_request_errors_have_different_exit_codes() {
     assert_eq!(code, 1);
     assert_eq!(response["status"], "invalid");
     assert_eq!(response["error_category"], Value::Null);
-    assert_eq!(response["diagnostics"][0]["record"], json!({"type":"Item","key":"a"}));
+    assert_eq!(response["diagnostics"][0]["record"], json!({"type":"Item","id":"a"}));
     assert_eq!(response["diagnostics"][0]["location"]["path"], "data/items.cfd");
     assert!(response.get("snapshot").is_none());
 }
@@ -141,7 +141,7 @@ fn validation_and_request_errors_have_different_exit_codes() {
 #[test]
 fn missing_targets_and_unreadable_request_files_return_complete_results() {
     let root = fixture();
-    let (code, response, _) = call(root.path(), &["data", "get", "--type", "Item", "--key", "missing"], None);
+    let (code, response, _) = call(root.path(), &["data", "get", "--type", "Item", "--id", "missing"], None);
     assert_eq!(code, 1);
     assert_eq!(response["status"], "invalid");
     let (code, response, _) = call(root.path(), &["apply", "--input", "missing.json"], None);
@@ -227,10 +227,71 @@ fn stdin_format_check_reports_changes_without_returning_source() {
 #[test]
 fn default_terminal_output_is_text() {
     let root = fixture();
-    let output = Command::new(env!("CARGO_BIN_EXE_coflow")).current_dir(root.path()).args(["data", "get", "--type", "Item", "--key", "a"]).output().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_coflow")).current_dir(root.path()).args(["data", "get", "--type", "Item", "--id", "a"]).output().unwrap();
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.starts_with("data.get:"));
-    assert!(text.contains("key: a"));
+    assert!(text.contains("id: a"));
     assert!(serde_json::from_str::<Value>(&text).is_err());
+}
+
+#[test]
+fn named_rules_are_listed_once_and_inline_diagnostics_keep_record_and_path() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), r#"
+data Reward {
+  count: int;
+  check Positive: "奖励规则" { count > 0: "数量必须为正"; count < 100; }
+}
+table Item {
+  rewards: [Reward];
+  check HasReward { rewards.len() > 0; }
+}
+"#).unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { rewards: [{ count: -1 }] }\n").unwrap();
+    let (exit, listed, _) = call(root.path(), &["rule", "list"], None);
+    assert_eq!(exit, 0, "{listed}");
+    let rules = listed["result"]["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 2, "{listed}");
+    let reward = rules.iter().find(|rule| rule["id"] == "Reward::Positive").unwrap();
+    assert!(reward["expression"].as_str().unwrap().contains("count < 100"));
+    assert!(reward["messages"].as_array().unwrap().iter().any(|text| text.as_str().unwrap().contains("奖励规则")));
+    let (exit, checked, _) = call(root.path(), &["check", "--rule", "Reward::Positive", "--explain"], None);
+    assert_eq!(exit, 1, "{checked}");
+    assert_eq!(checked["result"]["complete"], true);
+    assert_eq!(checked["result"]["results"].as_array().unwrap().len(), 1);
+    assert_eq!(checked["result"]["results"][0]["rule"], "Reward::Positive");
+    assert_eq!(checked["result"]["results"][0]["state"], "failed");
+    assert_eq!(checked["diagnostics"][0]["record"], json!({"type":"Item", "id":"a"}));
+    assert_eq!(checked["diagnostics"][0]["field_path"], "rewards[0].count");
+    assert!(checked["diagnostics"][0]["explanation"].is_object());
+    let (exit, _) = {
+        let (exit, response, _) = call(root.path(), &["data", "get", "--type", "Item", "--id", "a"], None);
+        assert_eq!(response["result"]["id"], "a");
+        (exit, response)
+    };
+    assert_eq!(exit, 0);
+}
+
+#[test]
+fn evaluation_error_aborts_only_its_rule_without_claiming_budget_exhaustion() {
+    let root = fixture();
+    fs::write(root.path().join("schema.cft"), r#"
+table Item {
+  value: int;
+  check Division { 10 // value > 1; value >= 0; }
+  check StillRuns { value == 0; }
+}
+"#).unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item { value: 0 }\n").unwrap();
+    let (exit, response, _) = call(root.path(), &["check", "--rules"], None);
+    assert_eq!(exit, 1, "{response}");
+    assert_eq!(response["result"]["rules"], "failed");
+    assert_eq!(response["result"]["complete"], false);
+    let tasks = response["result"]["tasks"].as_array().unwrap();
+    assert_eq!(tasks.iter().map(|task| task["state"].as_str().unwrap()).collect::<Vec<_>>(),
+        vec!["evaluation_error", "not_executed", "passed"]);
+    let results = response["result"]["results"].as_array().unwrap();
+    assert_eq!(results[0]["state"], "evaluation_error");
+    assert_eq!(results[1]["state"], "passed");
 }

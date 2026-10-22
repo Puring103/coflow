@@ -69,7 +69,7 @@ pub struct DimensionState {
 pub struct DimensionValue {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub field: String,
     pub dimension: String,
     pub variant: String,
@@ -117,7 +117,7 @@ pub struct DimensionMissing {
 pub struct DimensionComparison {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub field: String,
     pub before: DimensionView,
     pub after: DimensionView,
@@ -149,7 +149,7 @@ fn field_value(
         .filter(|f| f.dimension.as_str() == dimension)
         .and_then(|f| f.variants.get(variant));
     let effective = projected
-        .record_by_type_key(record.actual_type(), record.key())
+        .record_by_type_id(record.actual_type(), record.id())
         .and_then(|id| projected.record(id))
         .and_then(|value| value.field(field));
     let expected = &session
@@ -177,7 +177,7 @@ fn field_value(
     };
     Ok(DimensionValue {
         actual_type: record.actual_type().to_string(),
-        key: record.key().to_string(),
+        id: record.id().to_string(),
         field: field.into(),
         dimension: dimension.into(),
         variant: variant.into(),
@@ -326,7 +326,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) 
                 if state_changed || value_changed || rendered_changed {
                     comparisons.push(DimensionComparison {
                         actual_type: record.actual_type().to_string(),
-                        key: record.key().to_string(),
+                        id: record.id().to_string(),
                         field: field.name.to_string(),
                         before: previous,
                         after: current,
@@ -373,7 +373,7 @@ pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) 
                     .ok_or_else(|| Failure::missing("unknown dimension field"))?;
                 let record = session
                     .model()
-                    .record_by_type_key(&value.actual_type, &value.key)
+                    .record_by_type_id(&value.actual_type, &value.id)
                     .and_then(|id| session.model().record(id))
                     .ok_or_else(|| Failure::missing("dimension record is unavailable"))?;
                 // 补齐任务携带其他显式变体值，不将回退值伪装成已有翻译。

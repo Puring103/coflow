@@ -24,7 +24,7 @@ public static class CfdLoader
         {
             var context = new LoadContext(CfdParser.ParseAll(sources), types, constants);
             context.Build();
-            // 对外数据只含生成对象；构建上下文和解析节点不进入结果。
+            // 业务对象保持基础值；维度视图通过独立上下文生成并保留同一视图内的引用身份。
             return new LoadResult<T>(construct(new CfdData(types, context.Records)), System.Array.Empty<CfdDiagnostic>());
         }
         catch (CfdLoadException error) { return new LoadResult<T>(null, error.Diagnostics); }
@@ -52,19 +52,63 @@ public sealed class CfdData
 
 internal sealed class RecordState
 {
-    internal RecordState(CfdType type, CfdRecordNode node, string path) { Type = type; Node = node; Path = path; Value = type.CreateRecord(node.Key); }
+    internal RecordState(CfdType type, CfdRecordNode node, string path) { Type = type; Node = node; Path = path; Value = type.CreateRecord(node.Id); }
     internal CfdType Type { get; }
     internal CfdRecordNode Node { get; }
     internal string Path { get; }
     internal object Value { get; }
     internal CfdReader Reader { get; set; } = null!;
+    private bool _building;
+    private bool _built;
+    internal void Build()
+    {
+        if (_built || _building) return;
+        _building = true;
+        try { Reader.Validate(); Type.FillRecord(Value, Reader); _built = true; }
+        finally { _building = false; }
+    }
 }
 
 internal sealed class LoadContext
 {
     private readonly Dictionary<string, CfdType> _types;
-    private readonly Dictionary<(string Root, string Key), RecordState> _recordsByIdentity = new Dictionary<(string Root, string Key), RecordState>();
-    private readonly Dictionary<string, List<RecordState>> _recordsByKey = new Dictionary<string, List<RecordState>>(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<RecordState, RecordState>> _views = new Dictionary<string, Dictionary<RecordState, RecordState>>(StringComparer.Ordinal);
+    internal RecordState InView(RecordState record, DimensionSelection selection)
+    {
+        if (selection.Key.Length == 0) return record;
+        if (!_views.TryGetValue(selection.Key, out var records)) _views.Add(selection.Key, records = new Dictionary<RecordState, RecordState>());
+        if (!records.TryGetValue(record, out var projected))
+        {
+            // 先登记身份，再填充字段；视图中的循环引用仍指向同一个对象。
+            projected = new RecordState(record.Type, record.Node, record.Path);
+            projected.Reader = record.Reader.InView(selection);
+            records.Add(record, projected);
+        }
+        return projected;
+    }
+    internal object Select(RecordState record, DimensionSelection selection)
+    {
+        lock (_views)
+        {
+            try
+            {
+                var projected = InView(record, selection);
+                projected.Build();
+                return projected.Value;
+            }
+            catch
+            {
+                // 组合视图失败时移除构造缓存，避免循环引用中已填充的邻居暴露半成品。
+                _views.Remove(selection.Key);
+                throw;
+            }
+        }
+    }
+    internal IReadOnlyList<string> DimensionVariants(string dimension)
+        => Variants.TryGetValue(dimension, out var variants) ? System.Array.AsReadOnly(variants.ToArray())
+        : throw new ArgumentException($"Unknown dimension `{dimension}`.", nameof(dimension));
+    private readonly Dictionary<(string Root, string Id), RecordState> _recordsByIdentity = new Dictionary<(string Root, string Id), RecordState>();
+    private readonly Dictionary<string, List<RecordState>> _recordsById = new Dictionary<string, List<RecordState>>(StringComparer.Ordinal);
     private readonly IReadOnlyDictionary<string, CfdValueNode> _constants;
     internal CfdValueNode ResolveConstant(CfdValueNode node) => node is CfdScalarValue scalar && _constants.TryGetValue(scalar.Value, out var value) ? value : node;
     private int _depth;
@@ -92,15 +136,15 @@ internal sealed class LoadContext
                 // 分组声明限定实际类型，未知分组与无关类型不能绕过继承校验。
                 if (node.GroupType != null && (!_types.TryGetValue(node.GroupType, out var group) || group.Kind != CfdTypeKind.Table || !Assignable(type, node.GroupType)))
                     throw Error("CFD-TYPE", $"record type `{type.Name}` is not assignable to group `{node.GroupType}`", document.Path, node.Span);
-                var identity = (Root(type), node.Key);
+                var identity = (Root(type), node.Id);
                 if (_recordsByIdentity.ContainsKey(identity))
-                    throw Error("CFD-DUPLICATE", $"duplicate record `{node.Key}`", document.Path, node.Span);
+                    throw Error("CFD-DUPLICATE", $"duplicate record `{node.Id}`", document.Path, node.Span);
                 var record = new RecordState(type, node, document.Path);
                 Records.Add(record);
-                // 引用按继承树与 key 建立临时索引，加载过程不逐条扫描全部记录。
+                // 引用按继承树与 id 建立临时索引，加载过程不逐条扫描全部记录。
                 _recordsByIdentity.Add(identity, record);
-                if (!_recordsByKey.TryGetValue(node.Key, out var matching))
-                    _recordsByKey.Add(node.Key, matching = new List<RecordState>());
+                if (!_recordsById.TryGetValue(node.Id, out var matching))
+                    _recordsById.Add(node.Id, matching = new List<RecordState>());
                 matching.Add(record);
             }
         foreach (var type in types.Where(type => type.Kind == CfdTypeKind.Singleton))
@@ -108,10 +152,10 @@ internal sealed class LoadContext
             var records = Records.Where(record => Assignable(record.Type, type.Name)).ToArray();
             if (records.Length != 1)
                 throw Error("CFD-SINGLETON", $"singleton `{type.Name}` requires exactly one record", "", default);
-            // 单例身份来自声明短名，和 Rust 数据模型使用同一条 key 规则。
-            var key = type.Name.Substring(type.Name.LastIndexOf('.') + 1);
-            if (records[0].Node.Key != key)
-                throw Error("CFD-SINGLETON", $"singleton `{type.Name}` requires record key `{key}`", records[0].Path, records[0].Node.Span);
+            // 单例身份来自声明短名，和 Rust 数据模型使用同一条 id 规则。
+            var id = type.Name.Substring(type.Name.LastIndexOf('.') + 1);
+            if (records[0].Node.Id != id)
+                throw Error("CFD-SINGLETON", $"singleton `{type.Name}` requires record id `{id}`", records[0].Path, records[0].Node.Span);
         }
         var overrides = new Dictionary<RecordState, Dictionary<string, Dictionary<string, CfdValueNode>>>();
         foreach (var document in documents)
@@ -122,7 +166,7 @@ internal sealed class LoadContext
                 variants.Add(block.Variant);
                 foreach (var target in block.Records)
                 {
-                    var record = Find(target.DeclaredType, target.Key, document.Path, target.Span);
+                    var record = Find(target.DeclaredType, target.Id, document.Path, target.Span);
                     if (!overrides.TryGetValue(record, out var fields)) overrides.Add(record, fields = new Dictionary<string, Dictionary<string, CfdValueNode>>(StringComparer.Ordinal));
                     foreach (var field in target.Fields)
                     {
@@ -130,7 +174,7 @@ internal sealed class LoadContext
                         if (descriptor == null || descriptor.Type.Dimension != block.Dimension)
                             throw Error("CFD-DIMENSION", $"field `{field.Name}` is not bound to dimension `{block.Dimension}`", document.Path, field.Span);
                         if (!fields.TryGetValue(field.Name, out var values)) fields.Add(field.Name, values = new Dictionary<string, CfdValueNode>(StringComparer.Ordinal));
-                        if (values.ContainsKey(block.Variant)) throw Error("CFD-DUPLICATE-OVERLAY", $"duplicate override `{block.Dimension}[{block.Variant}]::{target.Key}.{field.Name}`", document.Path, field.Span);
+                        if (values.ContainsKey(block.Variant)) throw Error("CFD-DUPLICATE-OVERLAY", $"duplicate override `{block.Dimension}[{block.Variant}]::{target.Id}.{field.Name}`", document.Path, field.Span);
                         values.Add(block.Variant, field.Value);
                         Track(field.Value, document.Path);
                     }
@@ -140,7 +184,7 @@ internal sealed class LoadContext
         {
             foreach (var field in record.Node.Fields) Track(field.Value, record.Path);
             overrides.TryGetValue(record, out var fields);
-            record.Reader = new CfdReader(this, record.Type, record.Node.Fields, record.Path, record.Node.Span, record.Node.Key, fields);
+            record.Reader = new CfdReader(this, record.Type, record.Node.Fields, record.Path, record.Node.Span, record.Node.Id, fields, record: record);
         }
     }
     private void Track(CfdValueNode node, string path)
@@ -154,27 +198,31 @@ internal sealed class LoadContext
     internal string Source(CfdValueNode node, string fallback) => _sources.TryGetValue(node, out var path) ? path : fallback;
     private string Root(CfdType type) => type.Parent == null ? type.Name : Root(_types[type.Parent]);
     internal bool Assignable(CfdType actual, string expected) => actual.Name == expected || actual.Parent != null && Assignable(_types[actual.Parent], expected);
-    internal RecordState Find(string? type, string key, string path, CfdSpan span)
+    internal RecordState Find(string? type, string id, string path, CfdSpan span)
     {
         if (type != null)
         {
             if (_types.TryGetValue(type, out var expected)
-                && _recordsByIdentity.TryGetValue((Root(expected), key), out var record)
+                && _recordsByIdentity.TryGetValue((Root(expected), id), out var record)
                 && Assignable(record.Type, type)) return record;
         }
-        else if (_recordsByKey.TryGetValue(key, out var matching) && matching.Count == 1)
+        else if (_recordsById.TryGetValue(id, out var matching) && matching.Count == 1)
             return matching[0];
-        throw Error("CFD-REFERENCE", $"record `{type}::{key}` is missing or ambiguous", path, span);
+        throw Error("CFD-REFERENCE", $"record `{type}::{id}` is missing or ambiguous", path, span);
     }
     internal void Build()
     {
-        foreach (var record in Records) { record.Reader.Validate(); record.Type.FillRecord(record.Value, record.Reader); }
+        foreach (var record in Records) record.Build();
+        // 每个已声明变体都在加载时验证；读取视图不会把无效覆盖隐藏到业务访问之后。
+        foreach (var dimension in Variants)
+            foreach (var variant in dimension.Value)
+                foreach (var record in Records) Select(record, DimensionSelection.Empty.With(dimension.Key, variant));
     }
     internal T ReadReference<T>(string expected, CfdValueNode node, CfdReader owner) where T : class
     {
         if (!(node is CfdReferenceValue reference)) throw owner.Error(node, "CFD-TYPE", "expected record reference");
-        var record = Find(reference.TypeName ?? expected, reference.Key, Source(node, owner.Path), node.Span);
-        if (!Assignable(record.Type, expected) || !(record.Value is T value)) throw owner.Error(node, "CFD-TYPE", "reference type mismatch");
+        var record = Find(reference.TypeName ?? expected, reference.Id, Source(node, owner.Path), node.Span);
+        if (!Assignable(record.Type, expected) || !(Select(record, owner.Selection) is T value)) throw owner.Error(node, "CFD-TYPE", "reference type mismatch");
         return value;
     }
     internal T ReadObject<T>(string expected, CfdValueNode node, CfdReader owner)
@@ -196,7 +244,7 @@ internal sealed class LoadContext
         }
         else throw owner.Error(node, "CFD-TYPE", "expected inline data object");
         if (!_types.TryGetValue(actual ?? expected, out var type) || type.Kind != CfdTypeKind.Data || type.IsAbstract || !Assignable(type, expected)) throw owner.Error(node, "CFD-TYPE", "inline object type mismatch");
-        return new CfdReader(this, type, fields, Source(node, owner.Path), node.Span);
+        return new CfdReader(this, type, fields, Source(node, owner.Path), node.Span, selection: owner.Selection);
     }
     internal static CfdLoadException Error(string code, string message, string path, CfdSpan span) => new CfdLoadException(new[] { new CfdDiagnostic(code, message, path, span) });
 }
@@ -206,7 +254,24 @@ public sealed class CfdReader
     private readonly LoadContext _context;
     private readonly CfdType _type;
     private readonly CfdSpan _span;
-    private readonly string? _key;
+    private readonly string? _id;
+    private readonly RecordState? _record;
+    internal DimensionSelection Selection { get; }
+    internal CfdReader InView(DimensionSelection selection)
+        => new CfdReader(_context, _type, _nodes.Select(pair => new CfdFieldNode(pair.Key, pair.Value, pair.Value.Span)).ToArray(), Path, _span, _id, _overrides, selection, _record);
+    internal object For(string dimension, string variant)
+    {
+        _context.DimensionVariants(dimension);
+        return _context.Select(_record ?? throw new InvalidOperationException("Only records have dimension views."), Selection.With(dimension, variant));
+    }
+    internal IReadOnlyList<string> Variants(string dimension) => _context.DimensionVariants(dimension);
+    internal bool HasVariant(string field, string variant)
+    {
+        var descriptor = _type.Fields.FirstOrDefault(candidate => candidate.Name == field)
+            ?? throw new ArgumentException($"Unknown field `{field}`.", nameof(field));
+        if (descriptor.Type.Dimension == null) throw new ArgumentException($"Field `{field}` is not bound to a dimension.", nameof(field));
+        return _overrides.TryGetValue(field, out var variants) && variants.ContainsKey(variant);
+    }
     private readonly IReadOnlyDictionary<string, CfdValueNode> _nodes;
     private readonly IReadOnlyDictionary<string, Dictionary<string, CfdValueNode>> _overrides;
     private readonly Dictionary<string, object?> _values = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -220,9 +285,9 @@ public sealed class CfdReader
     }
     internal void Validate() { foreach (var field in _type.Fields) Read(field.Name); }
     internal string Path { get; }
-    internal CfdReader(LoadContext context, CfdType type, IReadOnlyList<CfdFieldNode> nodes, string path, CfdSpan span, string? key = null, IReadOnlyDictionary<string, Dictionary<string, CfdValueNode>>? overrides = null)
+    internal CfdReader(LoadContext context, CfdType type, IReadOnlyList<CfdFieldNode> nodes, string path, CfdSpan span, string? id = null, IReadOnlyDictionary<string, Dictionary<string, CfdValueNode>>? overrides = null, DimensionSelection? selection = null, RecordState? record = null)
     {
-        _context = context; _type = type; _span = span; _key = key; Path = path;
+        _context = context; _type = type; _span = span; _id = id; Path = path; Selection = selection ?? DimensionSelection.Empty; _record = record;
         // 未标类型的内联字典也要给出来源诊断，重复字段不能泄漏 Dictionary 异常。
         var fieldsByName = new Dictionary<string, CfdValueNode>(StringComparer.Ordinal);
         foreach (var field in nodes)
@@ -238,29 +303,27 @@ public sealed class CfdReader
     public T Get<T>(string field) => (T)Read(field)!;
     private object? Read(string field)
     {
-        if (field == "id" && _key != null) return _key;
+        if (field == "id" && _id != null) return _id;
         if (_values.TryGetValue(field, out var value)) return value;
         if (!_resolving.Add(field)) throw LoadContext.Error("CFD-INTERPOLATION-CYCLE", $"cyclic field dependency `{field}`", Path, _span);
         _context.EnterRead(Path, _span);
         try
         {
             var descriptor = _type.Fields.FirstOrDefault(candidate => candidate.Name == field) ?? throw LoadContext.Error("CFD-FIELD", $"unknown field `{field}`", Path, _span);
-            if (!_nodes.TryGetValue(field, out var node)) node = descriptor.DefaultValue;
-            if (node == null)
-            {
-                if (!descriptor.Type.AllowsMissing) throw LoadContext.Error("CFD-MISSING", $"missing required field `{field}`", Path, _span);
-                node = CfdDefaults.None();
-            }
-            if (descriptor.Type.Dimension is string dimension)
-            {
-                _overrides.TryGetValue(field, out var overrides);
-                value = descriptor.Type.ReadDimension(_context, node, this, dimension, overrides ?? new Dictionary<string, CfdValueNode>());
-            }
-            else value = descriptor.Type.Read(_context, node, this);
+            var node = SourceNode(descriptor)
+                ?? throw LoadContext.Error("CFD-MISSING", $"missing required field `{field}`", Path, _span);
+            value = descriptor.Type.Read(_context, node, this);
             _values.Add(field, value);
             return value;
         }
         finally { _resolving.Remove(field); _context.ExitRead(); }
+    }
+    private CfdValueNode? SourceNode(CfdField descriptor)
+    {
+        // 缺少覆盖时重新求值基础表达式，不能复用已经按基础上下文渲染的字符串。
+        if (descriptor.Type.Dimension is string dimension && Selection.TryGet(dimension, out var variant)
+            && _overrides.TryGetValue(descriptor.Name, out var values) && values.TryGetValue(variant, out var value)) return value;
+        return _nodes.TryGetValue(descriptor.Name, out var node) ? node : descriptor.DefaultValue;
     }
     internal CfdLoadException Error(CfdValueNode node, string code, string message) => LoadContext.Error(code, message, _context.Source(node, Path), node.Span);
     internal string Format(CfdFormattedStringValue formatted)
@@ -270,11 +333,11 @@ public sealed class CfdReader
         {
             if (segment is CfdFormatText text) { output.Append(text.Text); continue; }
             var reference = (CfdFormatReference)segment;
-            var owner = reference.Key == null ? this : _context.Find(reference.TypeName, reference.Key, _context.Source(formatted, Path), formatted.Span).Reader;
-            var path = reference.Key == null ? reference.Path.Skip(1).ToArray() : reference.Path.ToArray();
+            var owner = reference.Id == null ? this : _context.InView(_context.Find(reference.TypeName, reference.Id, _context.Source(formatted, Path), formatted.Span), Selection).Reader;
+            var path = reference.Id == null ? reference.Path.Skip(1).ToArray() : reference.Path.ToArray();
             // 是否可插值由静态字段描述决定，不靠装箱值的形状放宽可选类型。
             var value = owner.ReadPath(path, formatted);
-            output.Append(value ?? throw Error(formatted, "CFD-INTERPOLATION", "interpolation requires a string, number, bool, enum or fstring field"));
+            output.Append(value ?? throw Error(formatted, "CFD-INTERPOLATION", "interpolation requires a string, number, bool or enum field"));
         }
         return output.ToString();
     }
@@ -285,16 +348,16 @@ public sealed class CfdReader
         if (path.Count == 1)
         {
             var value = Read(path[0]);
-            if (path[0] == "id" && _key != null) return _key;
+            if (path[0] == "id" && _id != null) return _id;
             return descriptor?.Type.FormatScalar(value);
         }
-        if (descriptor?.Type.AllowsMissing == true)
+        if (descriptor?.Type.IsOptional == true)
             throw Error(template, "CFD-INTERPOLATION", "field path cannot traverse an optional value");
         // 路径依赖沿构建材料解析，避免使用反射访问尚未填充的业务属性。
-        if (!_nodes.TryGetValue(path[0], out var node)) node = _type.Fields.FirstOrDefault(field => field.Name == path[0])?.DefaultValue;
+        var node = descriptor == null ? null : SourceNode(descriptor);
         if (node != null) node = _context.ResolveConstant(node);
         var tail = path.Skip(1).ToArray();
-        if (node is CfdReferenceValue reference) return _context.Find(reference.TypeName ?? descriptor?.Type.NamedType, reference.Key, _context.Source(node, Path), node.Span).Reader.ReadPath(tail, template);
+        if (node is CfdReferenceValue reference) return _context.InView(_context.Find(reference.TypeName ?? descriptor?.Type.NamedType, reference.Id, _context.Source(node, Path), node.Span), Selection).Reader.ReadPath(tail, template);
         if (node != null && descriptor?.Type.NamedType is string expected) return ObjectReader(expected, node).ReadPath(tail, template);
         throw Error(template, "CFD-INTERPOLATION", "field path must traverse data or a record reference");
     }

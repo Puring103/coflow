@@ -10,7 +10,7 @@ import {
   type PasteCell,
 } from './clipboard'
 
-const coordinate = { actual_type: 'Item', key: 'one' }
+const coordinate = { actual_type: 'Item', id: 'one' }
 const annotation = (overrides: Partial<FieldAnnotation> = {}): FieldAnnotation => ({
   enum_int_value: null,
   declared_type: 'string',
