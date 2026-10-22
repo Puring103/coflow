@@ -100,6 +100,6 @@ uses the same content for the GitHub Release and updater manifest.
 Patch releases (`Z > 0`, such as `0.10.3`) use the same gate as normal development:
 `cargo check --workspace` and `cargo test --workspace`.
 Major and minor releases (`X.Y.0`, such as `0.10.0` or `1.0.0`) require the full
-gate in `AGENTS.md`, including C# runtime and benchmark checks.
+gate in [AGENTS.md](../AGENTS.md), including C# runtime, frontend, extension, and bindings checks.
 Manual release workflow runs select the gate from the root Cargo version as well.
 All releases still validate their version and build, sign, and publish the same artifacts.

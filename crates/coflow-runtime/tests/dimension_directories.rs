@@ -33,7 +33,7 @@ fn fixture(dimensions: &str) -> tempfile::TempDir {
 fn coordinate(key: &str) -> DimensionValueCoordinate {
     DimensionValueCoordinate {
         actual_type: "Item".try_into().expect("type"),
-        record_key: key.try_into().expect("key"),
+        record_id: key.try_into().expect("key"),
         field: "name".try_into().expect("field"),
         dimension: "language".try_into().expect("dimension"),
         variant: "ja".try_into().expect("variant"),

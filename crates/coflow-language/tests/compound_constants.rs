@@ -64,7 +64,7 @@ const NO_ITEM: Option<&Item> = None;
     assert!(matches!(
         &maybe.value,
         CftConstValue::OptionSome(value)
-            if matches!(value.as_ref(), CftConstValue::RecordReference { key, .. } if key == "wooden_sword")
+            if matches!(value.as_ref(), CftConstValue::RecordReference { id: key, .. } if key == "wooden_sword")
     ));
     assert!(matches!(
         schema.resolve_const("NO_ITEM").expect("NO_ITEM").value,

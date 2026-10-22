@@ -137,7 +137,7 @@ export function ObjectDraftDialog({
         <div className={`create-record-identity${headerExtras ? '' : ' type-only'}`}>
           {headerExtras && (
             <label className="create-record-identity-field">
-              <span>记录 Key</span>
+              <span>记录 ID</span>
               {headerExtras}
             </label>
           )}

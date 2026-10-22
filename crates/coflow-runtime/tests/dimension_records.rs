@@ -26,7 +26,7 @@ fn project(schema: &str, base: &str, overlays: &[(&str, &str)]) -> TempDir {
 fn coordinate(ty: &str, key: &str, field: &str, variant: &str) -> DimensionValueCoordinate {
     DimensionValueCoordinate {
         actual_type: ty.try_into().expect("type"),
-        record_key: key.try_into().expect("key"),
+        record_id: key.try_into().expect("key"),
         field: field.try_into().expect("field"),
         dimension: "language".try_into().expect("dimension"),
         variant: variant.try_into().expect("variant"),
@@ -324,7 +324,7 @@ fn inherited_record_rename_and_delete_update_all_overlay_files() {
         vec![MutationOp::RenameRecord {
             record: RecordCoordinate::try_new("Child", "one").expect("coordinate"),
             file: None,
-            new_key: "renamed".into(),
+            new_id: "renamed".into(),
         }],
     );
     for file in ["ja.cfd", "mobile.cfd"] {
@@ -402,7 +402,7 @@ fn record_rename_updates_references_in_each_original_overlay_file() {
         vec![MutationOp::RenameRecord {
             record: RecordCoordinate::try_new("Item", "one").expect("record"),
             file: None,
-            new_key: "renamed".into(),
+            new_id: "renamed".into(),
         }],
     );
     for (file, comment) in [("ja.cfd", "# Japanese"), ("fr.cfd", "# French")] {

@@ -20,8 +20,8 @@ pub struct CfdDimensionBlock {
 /// A top-level record or a record inside a group.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdRecord {
-    pub key: String,
-    pub key_span: Span,
+    pub id: String,
+    pub id_span: Span,
     /// Group declaration type for records nested in `Type { ... }`.
     pub group_type: Option<(String, Span)>,
     pub type_name: String,
@@ -92,7 +92,7 @@ pub enum CfdFormatSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdFieldReference {
     pub type_name: Option<String>,
-    pub key: Option<String>,
+    pub id: Option<String>,
     pub path: Vec<String>,
     pub span: Span,
 }
@@ -132,6 +132,6 @@ pub struct CfdBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdRef {
     pub type_name: Option<(String, Span)>,
-    pub key: (String, Span),
+    pub id: (String, Span),
     pub span: Span,
 }

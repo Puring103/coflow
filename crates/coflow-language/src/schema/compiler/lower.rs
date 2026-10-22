@@ -170,11 +170,12 @@ impl ValidatedSchema<'_> {
                 own_fields: fields,
                 all_fields,
                 field_by_name,
-                check: info
+                checks: info
                     .def
-                    .check
-                    .as_ref()
-                    .map(|check| self.convert_check_block(&info.module, check)),
+                    .checks
+                    .iter()
+                    .map(|check| self.convert_check_block(&info.module, check))
+                    .collect(),
                 span: info.def.span,
             };
             types.insert(type_name, schema);
@@ -304,10 +305,10 @@ fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
                 .map(|(name, value)| (name.clone(), const_value_as_default(value)))
                 .collect(),
         },
-        CftConstValue::RecordReference { type_name, key } => {
+        CftConstValue::RecordReference { type_name, id: key } => {
             CftSchemaDefaultValue::RecordReference {
                 type_name: type_name.clone(),
-                key: key.clone(),
+                id: key.clone(),
             }
         }
     }
@@ -320,6 +321,12 @@ impl ValidatedSchema<'_> {
         check: &crate::syntax::ast::CheckBlock,
     ) -> CftSchemaCheckBlock {
         CftSchemaCheckBlock {
+            message: check
+                .message
+                .as_ref()
+                .map(|message| self.convert_check_message(module, message)),
+            name: CheckName::from_validated(check.name.clone()),
+            name_span: check.name_span,
             stmts: check
                 .stmts
                 .iter()
@@ -341,6 +348,22 @@ impl ValidatedSchema<'_> {
         }
     }
 
+    fn convert_check_message(
+        &self,
+        module: &crate::ModuleId,
+        message: &crate::syntax::ast::CheckMessage,
+    ) -> CftSchemaCheckMessage {
+        CftSchemaCheckMessage {
+            kind: match &message.kind {
+                CheckMessageKind::String(value) => CftSchemaCheckMessageKind::String(value.clone()),
+                CheckMessageKind::Formatted(segments) => CftSchemaCheckMessageKind::Formatted(
+                    self.convert_format_segments(module, segments),
+                ),
+            },
+            span: message.span,
+        }
+    }
+
     fn convert_check_stmt(&self, module: &crate::ModuleId, stmt: &CheckStmt) -> CftSchemaCheckStmt {
         match stmt {
             CheckStmt::Expr {
@@ -349,19 +372,9 @@ impl ValidatedSchema<'_> {
                 span,
             } => CftSchemaCheckStmt::Expr {
                 condition: self.convert_check_expr(module, condition),
-                message: message.as_ref().map(|message| CftSchemaCheckMessage {
-                    kind: match &message.kind {
-                        CheckMessageKind::String(value) => {
-                            CftSchemaCheckMessageKind::String(value.clone())
-                        }
-                        CheckMessageKind::Formatted(segments) => {
-                            CftSchemaCheckMessageKind::Formatted(
-                                self.convert_format_segments(module, segments),
-                            )
-                        }
-                    },
-                    span: message.span,
-                }),
+                message: message
+                    .as_ref()
+                    .map(|message| self.convert_check_message(module, message)),
                 span: *span,
             },
             CheckStmt::Quantifier {
@@ -369,6 +382,7 @@ impl ValidatedSchema<'_> {
                 bindings: _,
                 collection,
                 body,
+                message,
                 span,
             } => CftSchemaCheckStmt::Quantifier {
                 kind: match kind {
@@ -378,6 +392,9 @@ impl ValidatedSchema<'_> {
                 },
                 bindings: self.quantifier_bindings[&(module.clone(), span.start, span.end)].clone(),
                 collection: self.convert_check_expr(module, collection),
+                message: message
+                    .as_ref()
+                    .map(|message| self.convert_check_message(module, message)),
                 body: body
                     .iter()
                     .map(|stmt| self.convert_check_stmt(module, stmt))
@@ -387,9 +404,13 @@ impl ValidatedSchema<'_> {
             CheckStmt::When {
                 condition,
                 body,
+                message,
                 span,
             } => CftSchemaCheckStmt::When {
                 condition: self.convert_check_expr(module, condition),
+                message: message
+                    .as_ref()
+                    .map(|message| self.convert_check_message(module, message)),
                 body: body
                     .iter()
                     .map(|stmt| self.convert_check_stmt(module, stmt))

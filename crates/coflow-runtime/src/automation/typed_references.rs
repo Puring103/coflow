@@ -9,11 +9,11 @@ pub(crate) struct TypedReference {
     dimension: Option<(String, String)>,
     pub path: Vec<P>,
     target_type: String,
-    target_key: String,
+    target_id: String,
 }
 
 fn same_owner(schema: &CftSchema, left: &RecordTarget, right: &RecordTarget) -> bool {
-    left.key == right.key
+    left.id == right.id
         && schema.inheritance_root(&left.actual_type) == schema.inheritance_root(&right.actual_type)
 }
 
@@ -44,7 +44,7 @@ impl Candidate {
             ) {
                 let owner = RecordTarget {
                     actual_type: record.type_name.clone(),
-                    key: record.key.clone(),
+                    id: record.id.clone(),
                 };
                 for field in &record.fields {
                     let Some(meta) = schema.field(&record.type_name, &field.name) else {
@@ -190,16 +190,16 @@ impl Candidate {
         &mut self,
         schema: &CftSchema,
         record: &RecordTarget,
-        new_key: &str,
+        new_id: &str,
     ) {
         for reference in &mut self.typed_references {
             if same_owner(schema, &reference.owner, record) {
-                reference.owner.key = new_key.into();
+                reference.owner.id = new_id.into();
             }
-            if reference.target_key == record.key
+            if reference.target_id == record.id
                 && schema.is_assignable(&record.actual_type, &reference.target_type)
             {
-                reference.target_key = new_key.into();
+                reference.target_id = new_id.into();
             }
         }
     }
@@ -215,7 +215,7 @@ impl Candidate {
                 .lookup_assignable(
                     session.schema(),
                     &reference.owner.actual_type,
-                    &reference.owner.key,
+                    &reference.owner.id,
                 )
                 .and_then(|id| session.model().record(id))
             else {
@@ -239,7 +239,7 @@ impl Candidate {
             while let Some(CfdValue::OptionSome(inner)) = value {
                 value = Some(inner);
             }
-            if !matches!(value, Some(CfdValue::Ref(key)) if key.as_str() == reference.target_key) {
+            if !matches!(value, Some(CfdValue::Ref(key)) if key.as_str() == reference.target_id) {
                 continue;
             }
             if session
@@ -247,7 +247,7 @@ impl Candidate {
                 .lookup_assignable(
                     session.schema(),
                     &reference.target_type,
-                    &reference.target_key,
+                    &reference.target_id,
                 )
                 .is_none()
             {
@@ -256,7 +256,7 @@ impl Candidate {
                     "REF",
                     format!(
                         "typed reference `&{}::{}` has no assignable target",
-                        reference.target_type, reference.target_key
+                        reference.target_type, reference.target_id
                     ),
                 );
                 if let Some(location) = owner.origin.location_for_path(&CfdPath {
@@ -271,7 +271,7 @@ impl Candidate {
                     diagnostic,
                     crate::DiagnosticLogicalLocation {
                         actual_type: Some(owner.actual_type().into()),
-                        record_key: Some(owner.key().into()),
+                        record_id: Some(owner.id().into()),
                         field_path: Some(reference.path.iter().fold(
                             String::new(),
                             |mut path, segment| {
@@ -376,12 +376,12 @@ fn collect_draft(
     output: &mut Vec<TypedReference>,
 ) -> Result<()> {
     match value {
-        D::TypedRecordRef { type_name, key } => output.push(TypedReference {
+        D::TypedRecordRef { type_name, id: key } => output.push(TypedReference {
             owner: owner.clone(),
             dimension: dimension.clone(),
             path,
             target_type: type_name.clone(),
-            target_key: key.clone(),
+            target_id: key.clone(),
         }),
         D::OptionSome(value) => collect_draft(schema, value, owner, dimension, path, output)?,
         D::Object { fields, .. } => {
@@ -438,12 +438,12 @@ fn collect_model(
     output: &mut Vec<TypedReference>,
 ) {
     match (input, value) {
-        (ModelValue::Ref { type_name, key }, CfdValue::Ref(_)) => output.push(TypedReference {
+        (ModelValue::Ref { type_name, id: key }, CfdValue::Ref(_)) => output.push(TypedReference {
             owner: owner.clone(),
             dimension: dimension.clone(),
             path,
             target_type: type_name.clone(),
-            target_key: key.clone(),
+            target_id: key.clone(),
         }),
         (ModelValue::Some { value: input }, CfdValue::OptionSome(value)) => {
             collect_model(input, value, owner, dimension, path, output)
@@ -505,13 +505,13 @@ fn collect_default(
 ) {
     use coflow_language::cft::CftSchemaDefaultValue as S;
     match (default, value) {
-        (Some(S::RecordReference { type_name, key }), CfdValue::Ref(_)) => {
+        (Some(S::RecordReference { type_name, id: key }), CfdValue::Ref(_)) => {
             output.push(TypedReference {
                 owner: owner.clone(),
                 dimension: dimension.clone(),
                 path,
                 target_type: type_name.to_string(),
-                target_key: key.clone(),
+                target_id: key.clone(),
             })
         }
         (default, CfdValue::OptionSome(value)) => collect_default(

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct WriterCapabilities {
     pub can_edit_field: bool,
-    pub can_edit_key: bool,
+    pub can_edit_id: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
     pub can_reorder_records: bool,
@@ -23,7 +23,7 @@ impl WriterCapabilities {
     pub fn read_only() -> Self {
         Self {
             can_edit_field: false,
-            can_edit_key: false,
+            can_edit_id: false,
             can_insert_record: false,
             can_delete_record: false,
             can_reorder_records: false,
@@ -35,7 +35,7 @@ impl WriterCapabilities {
     pub fn local_full() -> Self {
         Self {
             can_edit_field: true,
-            can_edit_key: true,
+            can_edit_id: true,
             can_insert_record: true,
             can_delete_record: true,
             can_reorder_records: true,

@@ -6,6 +6,6 @@
 该工程与 Rust loader 共同消费 `tests/fixtures/cfd-runtime-parity`，核对全部合法和非法输入的加载结果，并验证 int64/binary64 精度、嵌套 Option 默认值及覆盖层次。parser parity 夹具由 Rust language 测试与 C# Loader.Tests 共同消费。
 
 ```sh
-cargo run -- codegen tests/csharp-loader-integration
+cargo run -- codegen --project tests/csharp-loader-integration
 dotnet run --project tests/csharp-loader-integration/app/Coflow.Loader.Example.csproj --configuration Release
 ```

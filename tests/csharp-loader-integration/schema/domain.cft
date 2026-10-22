@@ -13,10 +13,14 @@ table Item: Entity {
   stats: Stats;
   price: int = BASE_PRICE;
   next: Option<&Item> = None;
-  label: fstring = f"{{item}} {self.name}: {self.stats.hp}";
+  label: string = f"{{item}} {self.name}: {self.stats.hp}";
   permissions: Flags = Flags::Read | Flags::Write;
-  enum_label: fstring = f"{self.permissions}";
+  enum_label: string = f"{self.permissions}";
   nums: [int];
   indexed: {string: int};
 }
 singleton Settings { start: &Item; }
+
+# 目标语言关键字由生成器转义，源语言业务名保持不变。
+enum event { public }
+table class { namespace: string; state: event = event::public; }

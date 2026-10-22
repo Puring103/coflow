@@ -183,7 +183,7 @@ describe('DataCardCompact complex previews', () => {
       }],
       actualType: 'Quest',
       filePath: 'data/quests.cfd',
-      coordinate: { actual_type: 'Quest', key: 'main' },
+      coordinate: { actual_type: 'Quest', id: 'main' },
       flattenSingleComplexField: true,
     }))
 
@@ -231,7 +231,7 @@ describe('DataCardCompact complex previews', () => {
       }],
       actualType: 'Quest',
       filePath: 'data/quests.cfd',
-      coordinate: { actual_type: 'Quest', key: 'main' },
+      coordinate: { actual_type: 'Quest', id: 'main' },
     }
 
     const collapsed = renderToStaticMarkup(createElement(DataCardExpanded, props))
@@ -248,7 +248,7 @@ describe('DataCardCompact complex previews', () => {
     const lookups = new EditorLookupController({
       getEnumVariants: async () => [{ name: 'Epic', value: 2n, label: 'Epic', description: null }],
       getRefTargets: async () => [{
-        coordinate: { actual_type: 'Item', key: 'sword' },
+        coordinate: { actual_type: 'Item', id: 'sword' },
         file_path: 'data/items.cfd',
         short_name: null,
       }],

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::api::{source_location_display_path, CfdSource, DiagnosticSet, FlatDiagnostic};
 use crate::data_model::RecordOrigin;
-use crate::data_model::{CfdDataModel, CfdRecordId};
+use crate::data_model::{CfdDataModel, CfdRecordHandle};
 
 use crate::RecordCoordinate;
 
@@ -122,9 +122,9 @@ impl DiagnosticsStore {
             .map(|(index, diagnostic)| {
                 let location = self.logical_location(index);
                 let actual_type = location.and_then(|location| location.actual_type.clone());
-                let record_key = location.and_then(|location| location.record_key.clone());
+                let record_id = location.and_then(|location| location.record_id.clone());
                 let field_path = location.and_then(|location| location.field_path.clone());
-                diagnostic.flat_view(actual_type, record_key, field_path)
+                diagnostic.flat_view(actual_type, record_id, field_path)
             })
             .collect()
     }
@@ -140,8 +140,8 @@ impl DiagnosticsStore {
     }
 
     #[must_use]
-    pub fn by_record(&self, actual_type: &str, record_key: &str) -> &[usize] {
-        RecordCoordinate::try_new(actual_type, record_key)
+    pub fn by_record(&self, actual_type: &str, record_id: &str) -> &[usize] {
+        RecordCoordinate::try_new(actual_type, record_id)
             .ok()
             .and_then(|coordinate| self.by_record.get(&coordinate))
             .map_or(&[], Vec::as_slice)
@@ -180,14 +180,14 @@ impl DiagnosticsStore {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DiagnosticLogicalLocation {
     pub actual_type: Option<String>,
-    pub record_key: Option<String>,
+    pub record_id: Option<String>,
     pub field_path: Option<String>,
 }
 
 impl DiagnosticLogicalLocation {
     #[must_use]
     pub(crate) fn coordinate(&self) -> Option<RecordCoordinate> {
-        RecordCoordinate::try_new(self.actual_type.clone()?, self.record_key.clone()?).ok()
+        RecordCoordinate::try_new(self.actual_type.clone()?, self.record_id.clone()?).ok()
     }
 }
 
@@ -225,13 +225,13 @@ impl SourceId {
 
 /// Index of every top-level record in the project.
 ///
-/// The authoritative key is `(actual_type, key)`.
+/// The authoritative id is `(actual_type, id)`.
 ///
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RecordIndex {
-    by_id: BTreeMap<CfdRecordId, RecordRef>,
-    by_coordinate: BTreeMap<RecordCoordinate, CfdRecordId>,
-    files: BTreeMap<String, Vec<CfdRecordId>>,
+    by_id: BTreeMap<CfdRecordHandle, RecordRef>,
+    by_coordinate: BTreeMap<RecordCoordinate, CfdRecordHandle>,
+    files: BTreeMap<String, Vec<CfdRecordHandle>>,
     rejected: Vec<RejectedRecordRef>,
     rejected_files: BTreeMap<String, Vec<usize>>,
     rejected_by_coordinate: BTreeMap<RecordCoordinate, Vec<usize>>,
@@ -245,7 +245,7 @@ pub(crate) struct RecordIndexBuilder {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingRecordRef {
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub origin: RecordOrigin,
     pub source_id: SourceId,
     pub display_path: String,
@@ -253,36 +253,36 @@ pub(crate) struct PendingRecordRef {
 
 impl RecordIndex {
     #[must_use]
-    pub(crate) fn get(&self, id: CfdRecordId) -> Option<&RecordRef> {
+    pub(crate) fn get(&self, id: CfdRecordHandle) -> Option<&RecordRef> {
         self.by_id.get(&id)
     }
 
     #[must_use]
-    pub(crate) fn get_by_coordinate(&self, actual_type: &str, key: &str) -> Option<&RecordRef> {
-        let coordinate = RecordCoordinate::try_new(actual_type, key).ok()?;
+    pub(crate) fn get_by_coordinate(&self, actual_type: &str, id: &str) -> Option<&RecordRef> {
+        let coordinate = RecordCoordinate::try_new(actual_type, id).ok()?;
         let id = self.by_coordinate.get(&coordinate)?;
         self.by_id.get(id)
     }
 
     #[must_use]
-    pub(crate) fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
-        let coordinate = RecordCoordinate::try_new(actual_type, key).ok()?;
+    pub(crate) fn id_for_coordinate(&self, actual_type: &str, id: &str) -> Option<CfdRecordHandle> {
+        let coordinate = RecordCoordinate::try_new(actual_type, id).ok()?;
         self.by_coordinate.get(&coordinate).copied()
     }
 
     #[must_use]
-    pub(crate) fn ids_in_file(&self, file: &str) -> &[CfdRecordId] {
+    pub(crate) fn ids_in_file(&self, file: &str) -> &[CfdRecordHandle] {
         self.files.get(file).map_or(&[], Vec::as_slice)
     }
 
     #[must_use]
-    pub(crate) fn file_for_coordinate(&self, actual_type: &str, key: &str) -> Option<&str> {
-        self.get_by_coordinate(actual_type, key)
+    pub(crate) fn file_for_coordinate(&self, actual_type: &str, id: &str) -> Option<&str> {
+        self.get_by_coordinate(actual_type, id)
             .map(|r| r.display_path.as_str())
     }
 
     #[must_use]
-    pub(crate) const fn by_id(&self) -> &BTreeMap<CfdRecordId, RecordRef> {
+    pub(crate) const fn by_id(&self) -> &BTreeMap<CfdRecordHandle, RecordRef> {
         &self.by_id
     }
 
@@ -302,9 +302,9 @@ impl RecordIndex {
     pub(crate) fn rejected_by_coordinate(
         &self,
         actual_type: &str,
-        key: &str,
+        id: &str,
     ) -> impl Iterator<Item = &RejectedRecordRef> {
-        let indexes = RecordCoordinate::try_new(actual_type, key)
+        let indexes = RecordCoordinate::try_new(actual_type, id)
             .ok()
             .and_then(|coordinate| self.rejected_by_coordinate.get(&coordinate));
         indexes
@@ -327,7 +327,7 @@ impl RecordIndexBuilder {
         let mut pending_by_coordinate: BTreeMap<RecordCoordinate, Vec<PendingRecordRef>> =
             BTreeMap::new();
         for pending in self.pending {
-            let Ok(coordinate) = RecordCoordinate::try_new(&pending.actual_type, &pending.key)
+            let Ok(coordinate) = RecordCoordinate::try_new(&pending.actual_type, &pending.id)
             else {
                 index.push_rejected(pending);
                 continue;
@@ -385,7 +385,7 @@ impl RecordIndex {
             .entry(pending.display_path.clone())
             .or_default()
             .push(index);
-        let coordinate = RecordCoordinate::try_new(&pending.actual_type, &pending.key).ok();
+        let coordinate = RecordCoordinate::try_new(&pending.actual_type, &pending.id).ok();
         if let Some(coordinate) = &coordinate {
             self.rejected_by_coordinate
                 .entry(coordinate.clone())
@@ -395,7 +395,7 @@ impl RecordIndex {
         self.rejected.push(RejectedRecordRef {
             coordinate,
             actual_type: pending.actual_type,
-            key: pending.key,
+            id: pending.id,
             origin: pending.origin,
             source_id: pending.source_id,
             display_path: pending.display_path,
@@ -405,7 +405,7 @@ impl RecordIndex {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordRef {
-    pub id: CfdRecordId,
+    pub id: CfdRecordHandle,
     pub coordinate: RecordCoordinate,
     pub origin: RecordOrigin,
     pub(crate) source_id: SourceId,
@@ -416,7 +416,7 @@ pub(crate) struct RecordRef {
 pub struct RejectedRecordRef {
     pub coordinate: Option<RecordCoordinate>,
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub origin: RecordOrigin,
     pub(crate) source_id: SourceId,
     pub display_path: String,
@@ -480,7 +480,7 @@ mod tests {
                 0,
                 DiagnosticLogicalLocation {
                     actual_type: Some("Item".to_string()),
-                    record_key: Some("sword".to_string()),
+                    record_id: Some("sword".to_string()),
                     field_path: Some("price".to_string()),
                 },
             )]),

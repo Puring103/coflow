@@ -11,7 +11,7 @@ pub struct Selector {
     pub actual_type: Option<String>,
     pub include_derived: bool,
     pub file: Option<String>,
-    pub key: Option<String>,
+    pub id: Option<String>,
     pub fields: Vec<String>,
     pub dimensions: BTreeMap<String, String>,
     pub sort: Vec<String>,
@@ -30,7 +30,7 @@ impl Default for Selector {
             actual_type: None,
             include_derived: false,
             file: None,
-            key: None,
+            id: None,
             fields: Vec::new(),
             dimensions: BTreeMap::new(),
             sort: Vec::new(),
@@ -66,7 +66,7 @@ pub struct FieldSource {
 pub struct RecordResult {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub file: Option<String>,
     pub rendered: BTreeMap<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,7 +137,7 @@ pub(crate) fn selected_records(
         .map(|expression| super::filter::compile(session, &types, &range, expression))
         .transpose()?;
     for field in &selector.fields {
-        if field != "key" {
+        if field != "id" {
             range_field_types(session, &types, &range, field)?;
         }
     }
@@ -149,7 +149,7 @@ pub(crate) fn selected_records(
                 "sort requires a field path with at most one descending prefix",
             ));
         }
-        if field == "key" || field == "type" {
+        if field == "id" || field == "type" {
             continue;
         }
         let mut common = None;
@@ -158,9 +158,6 @@ pub(crate) fn selected_records(
                 expected = *inner;
             }
             use coflow_language::cft::CftValueType as T;
-            if expected == T::FormattedString {
-                expected = T::String;
-            }
             if !matches!(
                 expected,
                 T::Int | T::Float | T::Bool | T::String | T::Enum(_) | T::RecordRef(_)
@@ -183,7 +180,7 @@ pub(crate) fn selected_records(
     let mut records = Vec::new();
     for record in range {
         if let Some(text) = &selector.text {
-            if !record.key().contains(text)
+            if !record.id().contains(text)
                 && !record
                     .fields()
                     .values()
@@ -194,7 +191,7 @@ pub(crate) fn selected_records(
         }
         if let Some(filters) = &filters {
             let filter = filters
-                .get(&(record.actual_type().to_string(), record.key().to_string()))
+                .get(&(record.actual_type().to_string(), record.id().to_string()))
                 .ok_or_else(|| Failure::request("filter record is outside the selected range"))?;
             if !filter.matches(&record) {
                 continue;
@@ -212,7 +209,7 @@ pub(crate) fn selected_records(
                 .map(|sort| {
                     let name = sort.strip_prefix('-').unwrap_or(sort);
                     match name {
-                        "key" => Ok(Some(CfdValue::String(record.key().into()))),
+                        "id" => Ok(Some(CfdValue::String(record.id().into()))),
                         "type" => Ok(Some(CfdValue::String(record.actual_type().into()))),
                         _ => Ok(value_at(session, &record, name)?.cloned()),
                     }
@@ -235,7 +232,7 @@ pub(crate) fn selected_records(
         }
         a.actual_type()
             .cmp(b.actual_type())
-            .then(a.key().cmp(b.key()))
+            .then(a.id().cmp(b.id()))
     });
     Ok(keyed.into_iter().map(|(record, _)| record).collect())
 }
@@ -262,7 +259,7 @@ pub(crate) fn record_range(
             }) {
                 return false;
             }
-            if selector.key.as_ref().is_some_and(|key| record.key() != key) {
+            if selector.id.as_ref().is_some_and(|key| record.id() != key) {
                 return false;
             }
             if let Some(file) = &selector.file {
@@ -272,7 +269,7 @@ pub(crate) fn record_range(
                 );
                 if session
                     .queries()
-                    .file_for_record(record.actual_type(), record.key())
+                    .file_for_record(record.actual_type(), record.id())
                     .is_none_or(|source| {
                         crate::normalized_path_identity(
                             &project.resolve_path(std::path::Path::new(source)),
@@ -458,7 +455,7 @@ impl RecordSources {
             .records
             .iter()
             .enumerate()
-            .map(|(index, record)| ((record.type_name.clone(), record.key.clone()), index))
+            .map(|(index, record)| ((record.type_name.clone(), record.id.clone()), index))
             .collect();
         let dimensions = ast
             .dimensions
@@ -475,7 +472,7 @@ impl RecordSources {
                                 block.dimension.clone(),
                                 block.variant.clone(),
                                 record.type_name.clone(),
-                                record.key.clone(),
+                                record.id.clone(),
                             ),
                             (block_index, record_index),
                         )
@@ -508,7 +505,7 @@ pub(crate) fn record_json_with_sources(
     let mut rendered = BTreeMap::new();
     let file = session
         .queries()
-        .file_for_record(record.actual_type(), record.key());
+        .file_for_record(record.actual_type(), record.id());
     let parsed = file
         .map(|file| cache.load(&project.resolve_path(std::path::Path::new(file))))
         .transpose()?;
@@ -516,7 +513,7 @@ pub(crate) fn record_json_with_sources(
     let declaration = parsed.as_ref().and_then(|parsed| {
         parsed
             .records
-            .get(&(record.actual_type().into(), record.key().into()))
+            .get(&(record.actual_type().into(), record.id().into()))
             .and_then(|index| parsed.ast.records.get(*index))
     });
     let fields: Vec<_> = if selector.fields.is_empty() {
@@ -525,7 +522,7 @@ pub(crate) fn record_json_with_sources(
         selector.fields.clone()
     };
     for field in fields {
-        if field == "key" {
+        if field == "id" {
             continue;
         }
         let path = resolved_record_path(session, record, &field)?;
@@ -590,7 +587,7 @@ pub(crate) fn record_json_with_sources(
         } else if source_field.is_some_and(|f| f.default.is_some()) {
             "schema_default"
         } else {
-            "option_default"
+            "explicit_base"
         };
         if origin == "schema_default" {
             if let Some(f) = source_field {
@@ -643,7 +640,7 @@ pub(crate) fn record_json_with_sources(
                                 dimension.into(),
                                 variant.clone(),
                                 record.actual_type().into(),
-                                record.key().into(),
+                                record.id().into(),
                             ))
                             .or_else(|| {
                                 parsed
@@ -652,7 +649,7 @@ pub(crate) fn record_json_with_sources(
                                     .find(|((name, value, ty, key), _)| {
                                         name == dimension
                                             && value == variant
-                                            && key == record.key()
+                                            && key == record.id()
                                             && session
                                                 .schema()
                                                 .is_assignable(record.actual_type(), ty)
@@ -684,7 +681,7 @@ pub(crate) fn record_json_with_sources(
                     }
                 }
             }
-            if !assigned && path.len() > 1 {
+            if !assigned && path.len() > 1 && value.is_some() {
                 if let Some(declared) = declared_field_at(session, record, &path)
                     .filter(|field| field.default.is_some())
                 {
@@ -701,11 +698,15 @@ pub(crate) fn record_json_with_sources(
                                 declared.span,
                             )
                         });
-                } else if matches!(expected, coflow_language::cft::CftValueType::Option(_)) {
-                    origin = "option_default";
-                    location = None;
                 }
             }
+        }
+        if value.is_none() {
+            // 空态父对象下的路径没有字段值，不能伪装成子字段的默认值来源。
+            origin = "unreachable";
+            location = None;
+            expression = None;
+            assigned = false;
         }
         sources.insert(
             field,
@@ -721,7 +722,7 @@ pub(crate) fn record_json_with_sources(
     }
     let output = RecordResult {
         actual_type: record.actual_type().to_string(),
-        key: record.key().to_string(),
+        id: record.id().to_string(),
         file: file.map(str::to_string),
         rendered,
         fields: (selector.view != "source").then_some(values),

@@ -21,7 +21,7 @@ describe('moveDimensionCell', () => {
 
 describe('organizeDimensionRows', () => {
   const row = (key: string, owner = 'data/items.cfd'): DimensionFileRow => ({
-    coordinate: { actual_type: 'Item', key },
+    coordinate: { actual_type: 'Item', id: key},
     field: 'name',
     owner_file_path: owner,
     sources: {},
@@ -44,8 +44,8 @@ describe('organizeDimensionRows', () => {
           name: 'Items',
           color: 'blue',
           records: [
-            { actual_type: 'Item', key: 'a' },
-            { actual_type: 'Item', key: 'b' },
+            { actual_type: 'Item', id: 'a' },
+            { actual_type: 'Item', id: 'b' },
           ],
         }],
       },
@@ -54,7 +54,7 @@ describe('organizeDimensionRows', () => {
 
     expect(items.map(item => item.kind)).toEqual(['group', 'row', 'row', 'ungrouped', 'row'])
     expect(items[0].kind === 'group' && items[0].view.group.color).toBe('blue')
-    expect(items[3].kind === 'ungrouped' && items[3].rows[0].coordinate.key).toBe('c')
+    expect(items[3].kind === 'ungrouped' && items[3].rows[0].coordinate.id).toBe('c')
   })
 
   it('hides dimension members when their owner group is collapsed', () => {
@@ -65,8 +65,8 @@ describe('organizeDimensionRows', () => {
           name: 'Items',
           color: null,
           records: [
-            { actual_type: 'Item', key: 'a' },
-            { actual_type: 'Item', key: 'b' },
+            { actual_type: 'Item', id: 'a' },
+            { actual_type: 'Item', id: 'b' },
           ],
         }],
       },

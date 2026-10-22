@@ -6,7 +6,7 @@ import { graphSupportForFile, recordsSupportGraph } from './graphSupport'
 
 function record(value: RecordRow['fields'][number]['value'], annotation: FieldAnnotation | null = null): RecordRow {
   return {
-    coordinate: { actual_type: 'Npc', key: 'Npc_001' },
+    coordinate: { actual_type: 'Npc', id: 'Npc_001' },
     display_path: 'Npc.Npc_001',
     container_index: 0,
     container_size: 1,

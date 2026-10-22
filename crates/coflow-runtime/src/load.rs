@@ -3,7 +3,7 @@ use crate::api::{
 };
 use crate::cfd_loader::CfdLoader;
 use crate::data_model::{
-    CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId, DimensionValueDraft,
+    CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordHandle, DimensionValueDraft,
     LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
@@ -151,7 +151,7 @@ impl SourceDataCache {
         &self,
         schema: &CftSchema,
         actual_type: &str,
-        key: &str,
+        id: &str,
         field: &str,
         dimension: &str,
         variant: &str,
@@ -161,7 +161,7 @@ impl SourceDataCache {
                 .dimension_values
                 .iter()
                 .any(|value| {
-                    value.source_key.as_str() == key
+                    value.source_id.as_str() == id
                         && value.field.as_str() == field
                         && value.dimension.as_str() == dimension
                         && value.variant.as_str() == variant
@@ -468,7 +468,7 @@ fn push_loaded_records(
     for record in loaded_records {
         records_index.push(PendingRecordRef {
             actual_type: record.actual_type.clone(),
-            key: record.key.clone(),
+            id: record.id.clone(),
             origin: record.origin.clone(),
             source_id,
             display_path: display_path.to_string(),
@@ -594,7 +594,7 @@ fn build_partial_model(
         let candidate_coordinates = candidates
             .iter()
             .map(|&index| {
-                RecordCoordinate::try_new(&records[index].actual_type, &records[index].key).ok()
+                RecordCoordinate::try_new(&records[index].actual_type, &records[index].id).ok()
             })
             .collect::<Vec<_>>();
         let mut builder = CfdDataModel::builder(schema)
@@ -639,7 +639,7 @@ fn build_partial_model(
                             .primary
                             .iter()
                             .chain(&diagnostic.related)
-                            .filter_map(|label| label.record.map(CfdRecordId::index))
+                            .filter_map(|label| label.record.map(CfdRecordHandle::index))
                     })
                     .collect::<BTreeSet<_>>();
                 if rejected.is_empty() {
@@ -727,7 +727,7 @@ fn display_path_for(project: &Project, source: &CfdSource) -> String {
 
 pub(crate) fn logical_locations_from_cfd(
     diagnostics: &CfdDiagnostics,
-    resolve_coordinate: impl Fn(CfdRecordId) -> Option<RecordCoordinate>,
+    resolve_coordinate: impl Fn(CfdRecordHandle) -> Option<RecordCoordinate>,
 ) -> BTreeMap<usize, DiagnosticLogicalLocation> {
     diagnostics
         .diagnostics
@@ -742,7 +742,7 @@ pub(crate) fn logical_locations_from_cfd(
                 index,
                 DiagnosticLogicalLocation {
                     actual_type: coordinate.as_ref().map(|c| c.actual_type.to_string()),
-                    record_key: coordinate.map(|c| c.key.to_string()),
+                    record_id: coordinate.map(|c| c.id.to_string()),
                     field_path,
                 },
             ))
@@ -751,7 +751,7 @@ pub(crate) fn logical_locations_from_cfd(
 }
 
 /// Format a [`CfdPath`] as the dotted / bracketed string the editor uses
-/// as a stable key.
+/// as a stable id.
 ///
 /// Callers include the engine's own logical-location pipeline as well as
 /// tauri graph-edge labels. Keep exactly one copy.
@@ -769,8 +769,8 @@ pub fn format_cfd_path(path: &CfdPath) -> String {
             CfdPathSegment::Index(i) => {
                 let _ = write!(out, "[{i}]");
             }
-            CfdPathSegment::DictKey(key) => {
-                let _ = write!(out, "[{key}]");
+            CfdPathSegment::DictKey(id) => {
+                let _ = write!(out, "[{id}]");
             }
         }
     }

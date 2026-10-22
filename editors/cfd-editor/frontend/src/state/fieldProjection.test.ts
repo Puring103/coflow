@@ -7,7 +7,7 @@ import {
   sameFieldValue,
 } from './fieldProjection'
 
-const coordinate = { actual_type: 'Item', key: 'sword' }
+const coordinate = { actual_type: 'Item', id: 'sword' }
 const records = {
   revision: 1,
   file_path: 'data/items.cfd',

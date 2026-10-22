@@ -54,7 +54,6 @@ fn is_formattable(ty: &InferredType) -> bool {
             | CftValueType::Float
             | CftValueType::Bool
             | CftValueType::String
-            | CftValueType::FormattedString
             | CftValueType::Enum(_),
         ) => true,
         InferredType::Value(
@@ -100,12 +99,17 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
         }
     }
 
-    pub(super) fn check_root_stmts(mut self, stmts: &[CheckStmt]) -> CheckAnalysis {
+    pub(super) fn check_root_stmts(
+        mut self,
+        stmts: &[CheckStmt],
+        message: Option<&crate::syntax::ast::CheckMessage>,
+    ) -> CheckAnalysis {
         let mut by_dimension = BTreeMap::<crate::DimensionName, Vec<usize>>::new();
         let mut dependencies = Vec::with_capacity(stmts.len());
         for (index, stmt) in stmts.iter().enumerate() {
             self.dimensions.clear();
             self.dependencies = CheckStatementDependencies::default();
+            self.check_message(message);
             self.check_stmt(stmt);
             for dimension in &self.dimensions {
                 by_dimension
@@ -131,6 +135,12 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     #[allow(clippy::too_many_lines)]
     fn check_stmt(&mut self, stmt: &CheckStmt) {
+        match stmt {
+            CheckStmt::When { message, .. } | CheckStmt::Quantifier { message, .. } => {
+                self.check_message(message.as_ref())
+            }
+            _ => {}
+        }
         match stmt {
             CheckStmt::Expr {
                 condition, message, ..
@@ -349,6 +359,16 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             .unwrap_or(ty)
     }
 
+    fn check_message(&mut self, message: Option<&crate::syntax::ast::CheckMessage>) {
+        if let Some(crate::syntax::ast::CheckMessage {
+            kind: CheckMessageKind::Formatted(segments),
+            ..
+        }) = message
+        {
+            self.check_format_segments(segments);
+        }
+    }
+
     fn check_format_segments(&mut self, segments: &[CheckFormatSegment]) {
         for segment in segments {
             let CheckFormatSegment::Expr(expr) = segment else {
@@ -381,7 +401,10 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             );
             return InferredType::Unknown;
         }
-        ty
+        match ty {
+            InferredType::Dimension(inner) => *inner,
+            other => other,
+        }
     }
 
     fn resolve_value_name(&mut self, name: &str, span: Span) -> InferredType {
@@ -414,7 +437,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 }
                 return field.inferred_type.read_type();
             }
-            if name == "id" {
+            if name == "id"
+                && self
+                    .schema
+                    .types
+                    .get(type_name)
+                    .is_some_and(|info| info.def.kind != crate::syntax::ast::TypeKind::Data)
+            {
                 self.dependencies.insert(
                     CheckDependency::RecordSet(crate::TypeName::from_validated(type_name.clone())),
                     CheckDependencyLocality::Local,
@@ -491,9 +520,12 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             .types
             .get(&resolved_name)
             // 单例同样拥有模型记录身份，顶层规则可统一遍历 table 和 singleton。
-            .is_some_and(|info| matches!(info.def.kind,
-                crate::syntax::ast::TypeKind::Table | crate::syntax::ast::TypeKind::Singleton))
-        {
+            .is_some_and(|info| {
+                matches!(
+                    info.def.kind,
+                    crate::syntax::ast::TypeKind::Table | crate::syntax::ast::TypeKind::Singleton
+                )
+            }) {
             Some(resolved_name.clone())
         } else {
             self.schema
@@ -533,7 +565,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
             return;
         };
         let type_name = target;
-        if name.name == "id" {
+        if name.name == "id"
+            && self
+                .schema
+                .types
+                .get(type_name.as_str())
+                .is_some_and(|info| info.def.kind != crate::syntax::ast::TypeKind::Data)
+        {
             self.dependencies.insert(
                 CheckDependency::RecordSet(type_name.clone()),
                 CheckDependencyLocality::CrossRecord,
@@ -562,7 +600,13 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     ) -> InferredType {
         match unwrap_reference(inner_ty) {
             InferredType::Value(CftValueType::Object(type_name)) => {
-                if name.name == "id" {
+                if name.name == "id"
+                    && self
+                        .schema
+                        .types
+                        .get(type_name.as_str())
+                        .is_some_and(|info| info.def.kind != crate::syntax::ast::TypeKind::Data)
+                {
                     return InferredType::string();
                 }
                 let type_known = self.schema.full_fields.contains_key(type_name.as_str());

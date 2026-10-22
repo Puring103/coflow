@@ -19,6 +19,7 @@ mod api;
 mod artifacts;
 mod catalog;
 mod cfd_loader;
+mod value_drafts;
 #[cfg(feature = "internal-check-bench")]
 #[doc(hidden)]
 pub mod check_benchmark_support;
@@ -60,7 +61,7 @@ pub use coflow_model::{
     validate_object_type_assignable, validate_value_for_schema, CfdDataModel, CfdDiagnostic,
     CfdDiagnostics, CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue,
     CfdErrorCode, CfdFormattedString, CfdLabel, CfdModelBuildOutput, CfdModelBuilder, CfdObject,
-    CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdSeverity, CfdStage, CfdTable, CfdValue,
+    CfdPath, CfdPathSegment, CfdRecord, CfdRecordHandle, CfdSeverity, CfdStage, CfdTable, CfdValue,
     CfdValueSemanticContext, CfdValueSemanticError, CfdValueSemanticErrorKind,
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueDraft, DimensionValueLookup,
     LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString,
@@ -78,7 +79,7 @@ pub use indexes::{DiagnosticLogicalLocation, DiagnosticsStore, RejectedRecordRef
 pub use project::*;
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.
-pub use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+pub use coflow_language::cft::{DimensionName, FieldName, RecordId, TypeName, VariantName};
 pub use load::{format_cfd_path as format_field_path, DataSourceTextOverride};
 pub use mutation::{
     CreateFieldSource, CreateRecordDraft, CreateRecordFieldDraft, CreateRequiredInput,

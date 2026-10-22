@@ -135,13 +135,13 @@ function CompactNodeLabel({ text }: { text: string }) {
 
 // 图节点头部与 Inspector 的头部结构不同：上方是 ID/缩略名，下方是类型小字。
 function GraphNodeHeader({
-  recordKey,
+  recordId,
   shortName,
   actualType,
   diagSeverity,
   onDiagBadgeClick,
 }: {
-  recordKey: string
+  recordId: string
   shortName?: string
   actualType: string
   diagSeverity?: 'error' | 'warning' | null
@@ -154,7 +154,7 @@ function GraphNodeHeader({
     >
       <div className="gn-color-bar" />
       <div className="gn-graph-heading">
-        <span className="gn-key" title={recordKey}>{shortNameLabel(recordKey, shortName)}</span>
+        <span className="gn-key" title={recordId}>{shortNameLabel(recordId, shortName)}</span>
         <span className="gn-type">{actualType}</span>
       </div>
       {(diagSeverity === 'error' || diagSeverity === 'warning') && (
@@ -166,7 +166,7 @@ function GraphNodeHeader({
 
 function CfdNode(props: NodeProps) {
   const { graphNode } = props.data as NodeData
-  const shortName = useReferenceShortName(graphNode.actual_type, graphNode.key)
+  const shortName = useReferenceShortName(graphNode.actual_type, graphNode.record_id)
   return <CfdNodeContent id={props.id} data={props.data} shortName={shortName} />
 }
 
@@ -259,7 +259,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
           onCtrlClick()
         }
       }}
-      title={onCtrlClick ? `${gn.key} — Ctrl+点击打开记录` : gn.key}
+      title={onCtrlClick ? `${gn.record_id} — Ctrl+点击打开记录` : gn.record_id}
     >
       <Handle type="target" position={Position.Left} id="__in" isConnectableStart={false} style={{ top: headerCenterY }} />
       {/* Render a handle for EVERY outgoing path on first render (default Y=0)
@@ -279,7 +279,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
       {compact && (
         <div className="gn-compact-body">
           {/* 缩略模式只显示缩略名或 ID，不显示“缩略名(ID)”。 */}
-          <CompactNodeLabel text={shortName ?? gn.key} />
+          <CompactNodeLabel text={shortName ?? gn.record_id} />
           {(diagSeverity === 'error' || diagSeverity === 'warning') && (
             <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
           )}
@@ -289,7 +289,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
       <div className="gn-detail" style={compact ? { visibility: 'hidden', pointerEvents: 'none' } : undefined} inert={compact}>
           <div ref={headerRef}>
             <GraphNodeHeader
-              recordKey={gn.key}
+              recordId={gn.record_id}
               shortName={shortName}
               actualType={gn.actual_type}
               diagSeverity={diagSeverity}
@@ -425,11 +425,11 @@ interface Props {
   ) => void
   /** 空白处新建节点时的字段草稿与插入通道，复用记录创建对话框。 */
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
-  onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
+  onInsertRecord?: (recordId: string, actualType: string, fields: FieldValue) => Promise<void>
   /** 节点右键共用记录菜单所需的数据与操作。 */
   recordGroups?: readonly EditorRecordGroup[]
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
-  onRenameRecord?: (filePath: string, coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
+  onRenameRecord?: (filePath: string, coordinate: RecordCoordinate, newId: string) => Promise<RecordRow | void>
   onDeleteRecord?: (filePath: string, coordinate: RecordCoordinate) => Promise<void>
   /** 将“新建节点 + 建立引用”合并成单步撤销。 */
   runHistoryBatch?: (operation: () => Promise<void>) => Promise<void>
@@ -450,7 +450,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   useEffect(() => {
     if (selectedCoordinate) setSelectedElement({ kind: 'node', id: coordinateId(selectedCoordinate.coordinate) })
     else setSelectedElement(current => current?.kind === 'node' ? null : current)
-  }, [selectedCoordinate?.file, selectedCoordinate?.coordinate.actual_type, selectedCoordinate?.coordinate.key])
+  }, [selectedCoordinate?.file, selectedCoordinate?.coordinate.actual_type, selectedCoordinate?.coordinate.id])
   const sourceGraph = useMemo(
     () => ({
       nodes: (previousViews.current = reconcileGraphViews(previousViews.current, graphData.nodes)),
@@ -868,7 +868,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     if (!node || !port || !editablePort(nodeId, port)) return
     try {
       // 使用现有写入通道，统一执行校验、配置落盘和撤销历史记录。
-      const value = relationValue(port, target.coordinate.key)
+      const value = relationValue(port, target.coordinate.id)
       if (port.append) await onCollectionEdit!(node.file_path, node.coordinate, port.path, { kind: 'array_append', value })
       else await onWriteField!(node.file_path, node.coordinate, port.path, value)
       setPicker(null)
@@ -878,7 +878,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   }
   function compatibleTarget(nodeId: string, targets: RefTarget[]) {
     const node = currentNodeById.get(nodeId)
-    return targets.find(target => target.coordinate.actual_type === node?.actual_type && target.coordinate.key === node?.key)
+    return targets.find(target => target.coordinate.actual_type === node?.actual_type && target.coordinate.id === node?.record_id)
   }
   function validConnection(connection: Connection | Edge) {
     const port = sourcePort(connection.source, connection.sourceHandle)
@@ -1317,9 +1317,9 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   }
 
   // 新建节点时做重复 Key 提示；以后端校验为准，这里只覆盖图里已有的同类型记录。
-  const existingTargetKeys = useMemo(
+  const existingTargetIds = useMemo(
     () => newTarget
-      ? graphData.nodes.filter(node => node.coordinate.actual_type === newTarget.targetType).map(node => node.coordinate.key)
+      ? graphData.nodes.filter(node => node.coordinate.actual_type === newTarget.targetType).map(node => node.coordinate.id)
       : [],
     [graphData.nodes, newTarget],
   )
@@ -1560,7 +1560,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
               ...(picker.flowPosition && onCreateRecordDraft && onInsertRecord
                 ? [{ value: NEW_TARGET_OPTION, label: '＋ 新建节点', description: `新建 ${picker.targetType} 并连接` }]
                 : []),
-              ...picker.targets.map((target, index) => ({ value: String(index), label: shortNameLabel(target.coordinate.key, target.short_name),
+              ...picker.targets.map((target, index) => ({ value: String(index), label: shortNameLabel(target.coordinate.id, target.short_name),
                 description: `${target.coordinate.actual_type} · ${target.file_path}` })),
             ]}
             onCommit={value => {
@@ -1583,18 +1583,18 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
         <CreateRecordDialog
           actualType={newTarget.targetType}
           typeOptions={[]}
-          existingKeys={existingTargetKeys}
+          existingIds={existingTargetIds}
           onCreateRecordDraft={onCreateRecordDraft}
-          onInsertRecord={async (recordKey, actualType, fields) => {
+          onInsertRecord={async (recordId, actualType, fields) => {
             const create = async () => {
-              await onInsertRecord(recordKey, actualType, fields)
+              await onInsertRecord(recordId, actualType, fields)
               // 记录新节点坐标，布局刷新后即可落在拖放位置。
-              retainedPositions.current.set(coordinateId({ actual_type: actualType, key: recordKey }), newTarget.flowPosition)
+              retainedPositions.current.set(coordinateId({ actual_type: actualType, id: recordId }), newTarget.flowPosition)
               setNewTarget(null)
               await commitRelation(newTarget.nodeId, newTarget.portId, {
                 short_name: null,
                 file_path: filePath,
-                coordinate: { actual_type: actualType, key: recordKey },
+                coordinate: { actual_type: actualType, id: recordId },
               })
             }
             // 创建记录与建立引用合并成一步，Ctrl+Z 一次即可整体撤回。
@@ -1610,11 +1610,11 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             anchorY: nodeMenu.anchorY,
             filePath: nodeMenu.filePath,
             coordinates: [nodeMenu.coordinate],
-            primaryKey: nodeMenu.coordinate.key,
+            primaryId: nodeMenu.coordinate.id,
           }}
           groups={recordGroups}
           showOpenRecord
-          canRename={!!onRenameRecord && (fileCapabilities?.[nodeMenu.filePath]?.can_edit_key ?? false)}
+          canRename={!!onRenameRecord && (fileCapabilities?.[nodeMenu.filePath]?.can_edit_id ?? false)}
           canDelete={!!onDeleteRecord && (fileCapabilities?.[nodeMenu.filePath]?.can_delete_record ?? false)}
           canAddToGroup={(recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup}
           onOpenRecord={() => onOpenRecord(nodeMenu.filePath, nodeMenu.coordinate)}
@@ -1630,13 +1630,13 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
       )}
       {nodeMenuAction?.kind === 'rename' && onRenameRecord && (
         <TextInputDialog
-          title="重命名 Key"
-          message="输入新的记录 Key"
-          initialValue={nodeMenuAction.coordinate.key}
+          title="重命名 ID"
+          message="输入新的记录 ID"
+          initialValue={nodeMenuAction.coordinate.id}
           confirmLabel="重命名"
           onClose={() => setNodeMenuAction(null)}
           onConfirm={async next => {
-            if (next !== nodeMenuAction.coordinate.key) {
+            if (next !== nodeMenuAction.coordinate.id) {
               await onRenameRecord(nodeMenuAction.filePath, nodeMenuAction.coordinate, next)
             }
             setNodeMenuAction(null)
@@ -1646,7 +1646,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
       {nodeMenuAction?.kind === 'delete' && onDeleteRecord && (
         <ConfirmDialog
           title="删除记录"
-          message={`确认删除记录 ${nodeMenuAction.coordinate.key}？此操作不可撤销。`}
+          message={`确认删除记录 ${nodeMenuAction.coordinate.id}？此操作不可撤销。`}
           confirmLabel="删除"
           danger
           onClose={() => setNodeMenuAction(null)}

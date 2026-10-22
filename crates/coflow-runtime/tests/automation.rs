@@ -10,7 +10,7 @@ fn fixture() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("data")).unwrap();
     fs::write(root.path().join("coflow.yaml"),"schema: schema.cft\ndata: data/\ndimensions:\n  language:\n    dir: translations/\ncodegen:\n  - language: csharp\n    dir: generated/\n").unwrap();
-    fs::write(root.path().join("schema.cft"),"table Item { value: int; next: Option<&Item>; numbers: [int] = []; check { value > 0; } }\n").unwrap();
+    fs::write(root.path().join("schema.cft"),"table Item { value: int; next: Option<&Item> = None; numbers: [int] = []; check Valid { value > 0; } }\n").unwrap();
     fs::write(
         root.path().join("data/items.cfd"),
         "a: Item { value: 10 }\nb: Item { value: 20 }\n",
@@ -74,7 +74,7 @@ fn inherited_field_symbols_locate_the_original_declaration() {
 #[test]
 fn schema_symbols_contract_covers_all_kinds_and_preserves_filtered_pages() {
     let root = fixture();
-    fs::write(root.path().join("schema.cft"), "enum Quality { Common, Rare }\nconst Limit: int = 10;\ntable Item { value: int; check { value < Limit; } }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "enum Quality { Common, Rare }\nconst Limit: int = 10;\ntable Item { value: int; check Valid { value < Limit; } }\n").unwrap();
     let all = run(root.path(), "schema.symbols", &[], None);
     for kind in ["type", "field", "enum", "const", "rule"] {
         let selected = run(
@@ -168,7 +168,7 @@ fn statistics_contracts_describe_project_counts_groups_and_nullable_coverage() {
         &[
             ("dimension", "language"),
             ("variant", "en"),
-            ("key", "absent"),
+            ("id", "absent"),
         ],
         None,
     );
@@ -178,7 +178,7 @@ fn statistics_contracts_describe_project_counts_groups_and_nullable_coverage() {
     let empty_field = run(
         root.path(),
         "stats.field",
-        &[("type", "Item"), ("field", "value"), ("key", "absent")],
+        &[("type", "Item"), ("field", "value"), ("id", "absent")],
         None,
     );
     assert!(empty_field.result["min"].is_null());
@@ -216,7 +216,7 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
             "dimension.set",
             &[
                 ("type", "Item"),
-                ("key", "a"),
+                ("id", "a"),
                 ("field", "name"),
                 ("dimension", "language"),
                 ("variant", variant),
@@ -273,7 +273,7 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
         "dimension.get",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("variant", "en"),
@@ -287,7 +287,7 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
         "dimension.missing",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("variant", "unconfigured"),
@@ -301,7 +301,7 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
         "dimension.diff",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("from-base", "true"),
@@ -315,7 +315,7 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
         "dimension.diff",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("from", "en"),
@@ -329,7 +329,7 @@ fn dimension_metadata_and_variant_pages_use_public_locations() {
         "dimension.diff",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("from-base", "true"),
@@ -436,12 +436,12 @@ fn reference_graph_reports_depth_and_pagination_truncation_independently() {
         let one = run(
             root.path(),
             "data.refs",
-            &[("type", "Item"), ("key", "a"), ("direction", direction)],
+            &[("type", "Item"), ("id", "a"), ("direction", direction)],
             None,
         );
         assert_eq!(one.result["total"], 1);
-        assert_eq!(one.result["items"][0]["host"]["key"], host);
-        assert_eq!(one.result["items"][0]["target"]["key"], target);
+        assert_eq!(one.result["items"][0]["host"]["id"], host);
+        assert_eq!(one.result["items"][0]["target"]["id"], target);
         assert_eq!(one.result["depth_truncated"], true);
         assert_eq!(one.result["truncated"], false);
         let two = run(
@@ -449,7 +449,7 @@ fn reference_graph_reports_depth_and_pagination_truncation_independently() {
             "data.refs",
             &[
                 ("type", "Item"),
-                ("key", "a"),
+                ("id", "a"),
                 ("direction", direction),
                 ("depth", "2"),
             ],
@@ -462,7 +462,7 @@ fn reference_graph_reports_depth_and_pagination_truncation_independently() {
             "data.refs",
             &[
                 ("type", "Item"),
-                ("key", "a"),
+                ("id", "a"),
                 ("direction", direction),
                 ("depth", "3"),
             ],
@@ -475,7 +475,7 @@ fn reference_graph_reports_depth_and_pagination_truncation_independently() {
         loop {
             let mut options = vec![
                 ("type", "Item"),
-                ("key", "a"),
+                ("id", "a"),
                 ("direction", direction),
                 ("depth", "3"),
                 ("limit", "1"),
@@ -500,7 +500,7 @@ fn reference_graph_reports_depth_and_pagination_truncation_independently() {
         "data.refs",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("direction", "both"),
             ("depth", "2"),
         ],
@@ -511,7 +511,7 @@ fn reference_graph_reports_depth_and_pagination_truncation_independently() {
     let isolated = run(
         root.path(),
         "data.refs",
-        &[("type", "Item"), ("key", "d"), ("depth", "64")],
+        &[("type", "Item"), ("id", "d"), ("depth", "64")],
         None,
     );
     assert_eq!(isolated.result["total"], 0);
@@ -523,7 +523,7 @@ fn reference_edges_locate_base_and_dimension_sources_separately() {
     let root = fixture();
     fs::write(
         root.path().join("schema.cft"),
-        "table Item { value: int; @dimension(\"language\") next: Option<&Item>; }\n",
+        "table Item { value: int; @dimension(\"language\") next: Option<&Item> = None; }\n",
     )
     .unwrap();
     fs::write(
@@ -536,7 +536,7 @@ fn reference_edges_locate_base_and_dimension_sources_separately() {
         "dimension.set",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "next"),
             ("dimension", "language"),
             ("variant", "en"),
@@ -548,7 +548,7 @@ fn reference_edges_locate_base_and_dimension_sources_separately() {
     let query = run(
         root.path(),
         "data.refs",
-        &[("type", "Item"), ("key", "a"), ("direction", "outgoing")],
+        &[("type", "Item"), ("id", "a"), ("direction", "outgoing")],
         None,
     );
     assert_eq!(query.status, Status::Success, "{query:?}");
@@ -562,9 +562,9 @@ fn reference_edges_locate_base_and_dimension_sources_separately() {
         .iter()
         .find(|edge| !edge["dimension"].is_null())
         .unwrap();
-    assert_eq!(base["target"]["key"], "b");
+    assert_eq!(base["target"]["id"], "b");
     assert_eq!(base["location"]["path"], "data/items.cfd");
-    assert_eq!(overlay["target"]["key"], "c");
+    assert_eq!(overlay["target"]["id"], "c");
     let path = overlay["location"]["path"].as_str().unwrap();
     assert_eq!(path, "translations/data/items.cfd");
     assert_eq!(
@@ -769,7 +769,7 @@ fn schema_constant_references_preserve_each_expression_location_after_value_fold
 #[test]
 fn related_schema_collects_transitive_constants_and_shares_symbol_limits() {
     let root = fixture();
-    fs::write(root.path().join("schema.cft"), "const BASE: int = 7;\nconst NEXT: int = BASE;\nconst UNUSED: int = 99;\nenum Color { Red, Blue }\nenum OtherColor { Green }\ndata Details { value: int = 1; }\ntable Item { count: int = NEXT; color: Color = Color::Red; details: Option<Details>; }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "const BASE: int = 7;\nconst NEXT: int = BASE;\nconst UNUSED: int = 99;\nenum Color { Red, Blue }\nenum OtherColor { Green }\ndata Details { value: int = 1; }\ntable Item { count: int = NEXT; color: Color = Color::Red; details: Option<Details> = None; }\n").unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item {}\n").unwrap();
     let result = run(
         root.path(),
@@ -879,7 +879,7 @@ fn candidate_schema_diagnostic_limits_preserve_total_count_and_failure_status() 
 #[test]
 fn typed_filters_support_functions_precedence_and_unreachable_values() {
     let root = fixture();
-    fs::write(root.path().join("schema.cft"), "data Details { value: Option<int>; }\ntable Item { active: bool; text: string; numbers: [int]; labels: {string: int}; details: Option<Details>; }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "data Details { value: Option<int> = None; }\ntable Item { active: bool; text: string; numbers: [int]; labels: {string: int}; details: Option<Details> = None; }\n").unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item { active: true, text: \"a, && )\", numbers: [1, 2], labels: {\"red\": 1}, details: Some({ value: None }) }\nb: Item { active: false, text: \"hello\", numbers: [], labels: {}, details: None }\nc: Item { active: true, text: \"hello\", numbers: [3], labels: {\"blue\": 1}, details: Some({ value: Some(7) }) }\n").unwrap();
     for (condition, expected) in [
         ("contains(text, \"a, && )\")", vec!["a"]),
@@ -912,7 +912,7 @@ fn typed_filters_support_functions_precedence_and_unreachable_values() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|item| item["key"].as_str().unwrap())
+            .map(|item| item["id"].as_str().unwrap())
             .collect();
         assert_eq!(keys, expected, "{condition}");
     }
@@ -958,7 +958,7 @@ fn filter_type_checks_cover_empty_data_and_both_boolean_branches() {
 #[test]
 fn filter_dictionary_keys_keep_integer_precision_and_enum_identity() {
     let root = fixture();
-    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ntable Item { weights: {int: string}; palette: {Color: int}; caption: fstring = f\"Hello\"; }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ntable Item { weights: {int: string}; palette: {Color: int}; caption: string = f\"Hello\"; }\n").unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item { weights: {9007199254740993: \"big\"}, palette: {Color::Red: 1} }\nb: Item { weights: {-3: \"small\"}, palette: {Color::Blue: 1} }\n").unwrap();
     for (condition, expected) in [
         ("contains(weights, 9007199254740993)", vec!["a"]),
@@ -979,7 +979,7 @@ fn filter_dictionary_keys_keep_integer_precision_and_enum_identity() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|item| item["key"].as_str().unwrap())
+            .map(|item| item["id"].as_str().unwrap())
             .collect();
         assert_eq!(keys, expected, "{condition}");
     }
@@ -1026,7 +1026,7 @@ fn cursors_reject_changes_to_command_and_command_specific_filters() {
 #[test]
 fn context_includes_related_declarations_target_sources_and_bounded_references() {
     let root = fixture();
-    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ndata Details { color: Color = Color::Red; }\ntable Item { value: int = 10; details: Details; next: Option<&Item>; }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ndata Details { color: Color = Color::Red; }\ntable Item { value: int = 10; details: Details; next: Option<&Item> = None; }\n").unwrap();
     fs::write(
         root.path().join("data/items.cfd"),
         "a: Item { details: {} }\nb: Item { value: 20, details: {} }\n",
@@ -1037,7 +1037,7 @@ fn context_includes_related_declarations_target_sources_and_bounded_references()
         "context",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("examples", "0"),
             ("ref-limit", "1"),
         ],
@@ -1116,7 +1116,7 @@ fn writes_are_previewed_and_invalid_candidates_never_publish() {
         "data.set",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("path", "value"),
             ("value-cfd", "30"),
             ("dry-run", "true"),
@@ -1125,13 +1125,14 @@ fn writes_are_previewed_and_invalid_candidates_never_publish() {
     );
     assert_eq!(result.status, Status::Success);
     assert_eq!(result.result["changed"], true);
+    assert_eq!(result.result["matched_records"], 1);
     assert_eq!(fs::read(&file).unwrap(), before);
     let result = run(
         root.path(),
         "data.set",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("path", "value"),
             ("value-cfd", "-1"),
             ("rules", "true"),
@@ -1146,7 +1147,7 @@ fn writes_are_previewed_and_invalid_candidates_never_publish() {
         "data.set",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("path", "value"),
             ("value-cfd", "30"),
         ],
@@ -1163,19 +1164,20 @@ fn operations_support_forward_cycles_transfer_and_sequential_arrays() {
         "apply",
         &[],
         Some(json!({"protocol_version":1,"kind":"operations","ops":[
-            {"op":"create_record","record":{"type":"Item","key":"c"},"file":"data/items.cfd","fields":{"value":{"kind":"expression","source":"3"},"next":{"kind":"expression","source":"&d"}}},
-            {"op":"create_record","record":{"type":"Item","key":"d"},"file":"data/items.cfd","fields":{"value":{"kind":"expression","source":"4"},"next":{"kind":"expression","source":"&c"}}},
-            {"op":"transfer_record","record":{"type":"Item","key":"c"},"to_file":"data/other.cfd"},
-            {"op":"array_insert","record":{"type":"Item","key":"c"},"path":[{"kind":"field","name":"numbers"}],"index":0,"value":{"kind":"expression","source":"1"}},
-            {"op":"array_insert","record":{"type":"Item","key":"c"},"path":[{"kind":"field","name":"numbers"}],"index":0,"value":{"kind":"expression","source":"2"}}
+            {"op":"create_record","record":{"type":"Item","id":"c"},"file":"data/items.cfd","fields":{"value":{"kind":"expression","source":"3"},"next":{"kind":"expression","source":"&d"}}},
+            {"op":"create_record","record":{"type":"Item","id":"d"},"file":"data/items.cfd","fields":{"value":{"kind":"expression","source":"4"},"next":{"kind":"expression","source":"&c"}}},
+            {"op":"transfer_record","record":{"type":"Item","id":"c"},"to_file":"data/other.cfd"},
+            {"op":"array_insert","record":{"type":"Item","id":"c"},"path":[{"kind":"field","name":"numbers"}],"index":0,"value":{"kind":"expression","source":"1"}},
+            {"op":"array_insert","record":{"type":"Item","id":"c"},"path":[{"kind":"field","name":"numbers"}],"index":0,"value":{"kind":"expression","source":"2"}}
         ]})),
     );
     assert_eq!(result.status, Status::Success, "{result:?}");
+    assert_eq!(result.result["matched_records"], 2);
     assert!(root.path().join("data/other.cfd").exists());
     let record = run(
         root.path(),
         "data.get",
-        &[("type", "Item"), ("key", "c")],
+        &[("type", "Item"), ("id", "c")],
         None,
     );
     assert_eq!(record.result["fields"]["numbers"]["items"][0]["value"], "2");
@@ -1201,7 +1203,7 @@ fn cursor_reads_current_data_and_default_check_skips_business_rules() {
     );
     let page = execute("data.list", &project, &snapshot, &args, None, root.path()).unwrap();
     assert_eq!(page.status, Status::Success);
-    assert_eq!(page.result["items"][0]["key"], "b");
+    assert_eq!(page.result["items"][0]["id"], "b");
     assert!(serde_json::to_value(&page)
         .unwrap()
         .get("snapshot")
@@ -1250,7 +1252,7 @@ fn cursors_allow_page_size_changes_but_reject_another_query() {
         None,
     );
     assert_eq!(next.result["items"].as_array().unwrap().len(), 1);
-    assert_eq!(next.result["items"][0]["key"], "b");
+    assert_eq!(next.result["items"][0]["id"], "b");
     let project = Project::open_schema_only(Some(root.path())).unwrap();
     let inputs = InputSnapshot::capture(&project).unwrap();
     let args = Arguments(
@@ -1277,8 +1279,8 @@ enum Quality { Common, Rare }
 data Details { count: int = 1; }
 table Item {
     value: int = 100;
-    nested: Option<Option<int>>;
-    next: Option<&Item>;
+    nested: Option<Option<int>> = None;
+    next: Option<&Item> = None;
     quality: Quality;
     details: Details;
     numbers: [int];
@@ -1287,7 +1289,7 @@ table Item {
     by_quality: {Quality: int};
     @localized
     name: string;
-    label: fstring;
+    label: string;
 }
 "#,
     )
@@ -1318,7 +1320,7 @@ fn query_values_can_be_submitted_without_internal_model_encoding() {
     let before = run(
         root.path(),
         "data.get",
-        &[("type", "Item"), ("key", "a")],
+        &[("type", "Item"), ("id", "a")],
         None,
     );
     assert_eq!(before.status, Status::Success, "{before:?}");
@@ -1332,7 +1334,7 @@ fn query_values_can_be_submitted_without_internal_model_encoding() {
     );
     assert_eq!(
         before.result["fields"]["next"],
-        json!({"kind":"some","value":{"kind":"ref","type":"Item","key":"b"}})
+        json!({"kind":"some","value":{"kind":"ref","type":"Item","id":"b"}})
     );
     assert_eq!(
         before.result["fields"]["label"],
@@ -1345,7 +1347,7 @@ fn query_values_can_be_submitted_without_internal_model_encoding() {
         .iter()
         .map(|(field, value)| {
             json!({
-                "op":"set_field","record":{"type":"Item","key":"b"},
+                "op":"set_field","record":{"type":"Item","id":"b"},
                 "path":[{"kind":"field","name":field}],"value":{"kind":"model","value":value}
             })
         })
@@ -1360,7 +1362,7 @@ fn query_values_can_be_submitted_without_internal_model_encoding() {
     let after = run(
         root.path(),
         "data.get",
-        &[("type", "Item"), ("key", "b")],
+        &[("type", "Item"), ("id", "b")],
         None,
     );
     assert_eq!(after.result["fields"], before.result["fields"]);
@@ -1374,7 +1376,7 @@ fn setting_a_default_creates_explicit_data_then_preserves_identical_source() {
     let config = fs::read(root.path().join("coflow.yaml")).unwrap();
     let options = [
         ("type", "Item"),
-        ("key", "a"),
+        ("id", "a"),
         ("path", "value"),
         ("value-cfd", "100"),
     ];
@@ -1412,7 +1414,7 @@ fn typed_dictionary_paths_validate_keys_and_share_text_query_paths() {
             "apply",
             &[],
             Some(json!({"protocol_version":1,"kind":"operations","ops":[{
-                "op":"set_field","record":{"type":"Item","key":"a"},
+                "op":"set_field","record":{"type":"Item","id":"a"},
                 "path":[{"kind":"field","name":field},{"kind":"dict_key","key":key}],
                 "value":{"kind":"model","value":{"kind":"int","value":"9"}}
             }]})),
@@ -1421,7 +1423,7 @@ fn typed_dictionary_paths_validate_keys_and_share_text_query_paths() {
         let query = run(
             root.path(),
             "data.get",
-            &[("type", "Item"), ("key", "a"), ("fields", text_path)],
+            &[("type", "Item"), ("id", "a"), ("fields", text_path)],
             None,
         );
         assert_eq!(
@@ -1460,7 +1462,7 @@ fn malformed_typed_values_fail_without_publishing() {
         let project = Project::open_schema_only(Some(root.path())).unwrap();
         let snapshot = InputSnapshot::capture(&project).unwrap();
         let request = json!({"protocol_version":1,"kind":"operations","ops":[{
-            "op":"set_field","record":{"type":"Item","key":"a"},"path":[{"kind":"field","name":field}],
+            "op":"set_field","record":{"type":"Item","id":"a"},"path":[{"kind":"field","name":field}],
             "value":{"kind":"model","value":value}
         }]}).to_string();
         let error = execute(
@@ -1488,7 +1490,7 @@ fn dimension_base_flags_are_distinct_from_a_variant_named_base() {
         "dimension.set",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("variant", "base"),
@@ -1502,7 +1504,7 @@ fn dimension_base_flags_are_distinct_from_a_variant_named_base() {
         "dimension.get",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("variant", "base"),
@@ -1519,7 +1521,7 @@ fn dimension_base_flags_are_distinct_from_a_variant_named_base() {
         "dimension.diff",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("from-base", "true"),
@@ -1541,7 +1543,7 @@ fn dimension_base_flags_are_distinct_from_a_variant_named_base() {
         "dimension.diff",
         &[
             ("type", "Item"),
-            ("key", "a"),
+            ("id", "a"),
             ("field", "name"),
             ("dimension", "language"),
             ("from", "base"),
@@ -1610,14 +1612,14 @@ fn candidate_config_imports_new_inputs_without_overwriting_prior_edits() {
     let a = run(
         root.path(),
         "data.get",
-        &[("type", "Item"), ("key", "a")],
+        &[("type", "Item"), ("id", "a")],
         None,
     );
     assert_eq!(a.result["fields"]["value"]["value"], "40");
     let c = run(
         root.path(),
         "data.get",
-        &[("type", "Item"), ("key", "c")],
+        &[("type", "Item"), ("id", "c")],
         None,
     );
     assert_eq!(c.result["fields"]["value"]["value"], "30");
@@ -1717,9 +1719,9 @@ fn failed_operations_report_their_index_precondition_and_unexecuted_tail() {
     let project = Project::open_schema_only(Some(root.path())).unwrap();
     let snapshot = InputSnapshot::capture(&project).unwrap();
     let request = json!({"protocol_version":1,"kind":"operations","ops":[
-        {"op":"set_field","record":{"type":"Item","key":"a"},"path":[{"kind":"field","name":"value"}],"value":{"kind":"expression","source":"30"}},
-        {"op":"set_field","record":{"type":"Item","key":"b"},"path":[{"kind":"field","name":"value"}],"value":{"kind":"expression","source":"40"},"expected":{"kind":"expression","source":"999"}},
-        {"op":"delete_record","record":{"type":"Item","key":"a"}}
+        {"op":"set_field","record":{"type":"Item","id":"a"},"path":[{"kind":"field","name":"value"}],"value":{"kind":"expression","source":"30"}},
+        {"op":"set_field","record":{"type":"Item","id":"b"},"path":[{"kind":"field","name":"value"}],"value":{"kind":"expression","source":"40"},"expected":{"kind":"expression","source":"999"}},
+        {"op":"delete_record","record":{"type":"Item","id":"a"}}
     ]}).to_string();
     let error = execute(
         "apply",
@@ -1892,7 +1894,7 @@ fn sorting_orders_unreachable_none_and_large_signed_values_without_precision_los
     let root = fixture();
     fs::write(
         root.path().join("schema.cft"),
-        "data Details { value: Option<int>; }\ntable Item { details: Option<Details>; }\n",
+        "data Details { value: Option<int> = None; }\ntable Item { details: Option<Details> = None; }\n",
     )
     .unwrap();
     fs::write(root.path().join("data/items.cfd"), "z: Item { details: { value: 9223372036854775807 } }\ny: Item { details: { value: 9223372036854775806 } }\nx: Item { details: { value: None } }\nw: Item { details: None }\n").unwrap();
@@ -1906,7 +1908,7 @@ fn sorting_orders_unreachable_none_and_large_signed_values_without_precision_los
         .as_array()
         .unwrap()
         .iter()
-        .map(|item| item["key"].as_str().unwrap())
+        .map(|item| item["id"].as_str().unwrap())
         .collect();
     assert_eq!(keys, vec!["w", "x", "y", "z"]);
     let descending = run(
@@ -1919,7 +1921,7 @@ fn sorting_orders_unreachable_none_and_large_signed_values_without_precision_los
         .as_array()
         .unwrap()
         .iter()
-        .map(|item| item["key"].as_str().unwrap())
+        .map(|item| item["id"].as_str().unwrap())
         .collect();
     assert_eq!(keys, vec!["z", "y", "x", "w"]);
 }
@@ -1962,7 +1964,7 @@ fn field_projection_traverses_nested_some_layers_and_preserves_terminal_none() {
     let root = fixture();
     fs::write(
         root.path().join("schema.cft"),
-        "data Details { value: Option<int>; }\ntable Item { details: Option<Option<Details>>; }\n",
+        "data Details { value: Option<int> = None; }\ntable Item { details: Option<Option<Details>> = None; }\n",
     )
     .unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item { details: Some(Some({ value: 7 })) }\nb: Item { details: Some(Some({ value: None })) }\nc: Item { details: Some(None) }\n").unwrap();
@@ -1989,4 +1991,84 @@ fn field_projection_traverses_nested_some_layers_and_preserves_terminal_none() {
         result.result["items"][2]["origins"]["details.value"]["reachable"],
         false
     );
+    assert_eq!(
+        result.result["items"][2]["origins"]["details.value"]["origin"],
+        "unreachable"
+    );
+    assert!(result.result["items"][2]["origins"]["details.value"]["location"].is_null());
+}
+
+#[test]
+fn option_sources_distinguish_explicit_none_declared_defaults_and_unreachable_paths() {
+    let root = fixture();
+    fs::write(
+        root.path().join("schema.cft"),
+        "data Details { value: Option<int> = None; }\ntable Item { required: Option<int>; optional: Option<int> = None; @localized details: Option<Details> = None; }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("data/items.cfd"),
+        "a: Item { required: None, details: {} }\n",
+    )
+    .unwrap();
+    let base = run(
+        root.path(),
+        "data.get",
+        &[
+            ("type", "Item"),
+            ("id", "a"),
+            ("fields", "required,optional,details.value"),
+        ],
+        None,
+    );
+    assert_eq!(base.status, Status::Success, "{base:?}");
+    for (path, origin) in [
+        ("required", "explicit_base"),
+        ("optional", "schema_default"),
+        ("details.value", "schema_default"),
+    ] {
+        assert_eq!(base.result["fields"][path], json!({"kind": "none"}));
+        assert_eq!(base.result["origins"][path]["origin"], origin);
+        assert_eq!(base.result["origins"][path]["reachable"], true);
+    }
+    let write = run(
+        root.path(),
+        "dimension.set",
+        &[
+            ("type", "Item"),
+            ("id", "a"),
+            ("field", "details"),
+            ("dimension", "language"),
+            ("variant", "ja"),
+            ("value-cfd", "None"),
+        ],
+        None,
+    );
+    assert_eq!(write.status, Status::Success, "{write:?}");
+    let variant = run(
+        root.path(),
+        "data.get",
+        &[
+            ("type", "Item"),
+            ("id", "a"),
+            ("fields", "details,details.value"),
+            ("dimension", "language=ja"),
+        ],
+        None,
+    );
+    assert_eq!(variant.status, Status::Success, "{variant:?}");
+    assert_eq!(
+        variant.result["origins"]["details"]["origin"],
+        "dimension_override"
+    );
+    assert_eq!(variant.result["fields"]["details"], json!({"kind": "none"}));
+    assert_eq!(
+        variant.result["origins"]["details.value"]["origin"],
+        "unreachable"
+    );
+    assert_eq!(
+        variant.result["origins"]["details.value"]["reachable"],
+        false
+    );
+    assert!(variant.result["origins"]["details.value"]["location"].is_null());
 }

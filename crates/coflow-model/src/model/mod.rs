@@ -8,7 +8,7 @@ mod value;
 pub use dimensions::{DimensionFieldLookupError, DimensionValueLookup};
 pub(crate) use edges::RefEdgeId;
 pub use edges::{DimensionRefCoordinate, RefEdge, RefSite};
-pub use ids::{CfdRecordId, RecordCoordinate};
+pub use ids::{CfdRecordHandle, RecordCoordinate};
 pub use tables::CfdTable;
 pub use value::{
     CfdDictKey, CfdDimensionFieldValues, CfdDimensionValue, CfdEnumValue, CfdFormattedString,
@@ -17,16 +17,25 @@ pub use value::{
 
 use crate::build::CfdModelBuilder;
 use crate::indexes::RefIndexes;
-use coflow_language::cft::{CftSchema, DimensionName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{CftSchema, DimensionName, RecordId, TypeName, VariantName};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DimensionProjection {
+    // 视图始终共享最初的基础模型，后续选择不能把前一视图的覆盖误当作基础来源。
+    source: Arc<CfdDataModel>,
+    selections: BTreeMap<String, String>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
     pub(crate) tables: BTreeMap<TypeName, CfdTable>,
-    pub(crate) record_by_domain_key: BTreeMap<TypeName, BTreeMap<RecordKey, CfdRecordId>>,
+    pub(crate) record_by_domain_id: BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     pub(crate) records: Vec<CfdRecord>,
     pub(crate) refs: RefIndexes,
     pub(crate) dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
+    pub(crate) projection: Option<DimensionProjection>,
 }
 
 impl CfdDataModel {
@@ -43,21 +52,25 @@ impl CfdDataModel {
     }
 
     #[must_use]
-    pub fn record(&self, id: CfdRecordId) -> Option<&CfdRecord> {
+    pub fn record(&self, id: CfdRecordHandle) -> Option<&CfdRecord> {
         self.records.get(id.index())
     }
 
-    pub fn records(&self) -> impl Iterator<Item = (CfdRecordId, &CfdRecord)> {
+    pub fn records(&self) -> impl Iterator<Item = (CfdRecordHandle, &CfdRecord)> {
         self.records
             .iter()
             .enumerate()
-            .map(|(index, record)| (CfdRecordId::new(index), record))
+            .map(|(index, record)| (CfdRecordHandle::new(index), record))
     }
 
     /// Returns top-level records assignable to `expected_type` in stable
-    /// `(actual_type, record_key)` order.
+    /// `(actual_type, record_id)` order.
     #[must_use]
-    pub fn assignable_records(&self, schema: &CftSchema, expected_type: &str) -> Vec<CfdRecordId> {
+    pub fn assignable_records(
+        &self,
+        schema: &CftSchema,
+        expected_type: &str,
+    ) -> Vec<CfdRecordHandle> {
         self.tables
             .iter()
             .filter(|(actual_type, _)| schema.is_assignable(actual_type, expected_type))
@@ -70,21 +83,21 @@ impl CfdDataModel {
         self.tables.get(type_name)
     }
 
-    /// Looks up a record assignable to `expected_type` by key.
+    /// Looks up a record assignable to `expected_type` by id.
     ///
-    /// This is intentionally not an exact `(actual_type, key)` lookup:
+    /// This is intentionally not an exact `(actual_type, id)` lookup:
     /// inherited ranges resolve through the type's domain and then verify
-    /// assignability. Use [`CfdDataModel::record_by_type_key`] when callers
+    /// assignability. Use [`CfdDataModel::record_by_type_id`] when callers
     /// need the record's actual type to match exactly.
     #[must_use]
     pub fn lookup_assignable(
         &self,
         schema: &CftSchema,
         expected_type: &str,
-        key: &str,
-    ) -> Option<CfdRecordId> {
+        id: &str,
+    ) -> Option<CfdRecordHandle> {
         if let Some(inheritance_root) = schema.inheritance_root(expected_type) {
-            if let Some(record_id) = self.record_by_domain_key(inheritance_root, key) {
+            if let Some(record_id) = self.record_by_domain_id(inheritance_root, id) {
                 if self.record(record_id).is_some_and(|record| {
                     inheritance_root.as_str() == expected_type
                         || schema.is_assignable(record.actual_type(), expected_type)
@@ -95,22 +108,22 @@ impl CfdDataModel {
         }
         self.tables
             .get(expected_type)
-            .and_then(|table| table.primary_index.get(key))
+            .and_then(|table| table.primary_index.get(id))
             .copied()
     }
 
-    /// Looks up a record by its actual type and key.
+    /// Looks up a record by its actual type and id.
     #[must_use]
-    pub fn record_by_type_key(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
-        self.tables.get(type_name)?.primary_index.get(key).copied()
+    pub fn record_by_type_id(&self, type_name: &str, id: &str) -> Option<CfdRecordHandle> {
+        self.tables.get(type_name)?.primary_index.get(id).copied()
     }
 
-    /// Looks up a record by canonical inheritance root and key.
+    /// Looks up a record by canonical inheritance root and id.
     #[must_use]
-    pub fn record_by_domain_key(&self, inheritance_root: &str, key: &str) -> Option<CfdRecordId> {
-        self.record_by_domain_key
+    pub fn record_by_domain_id(&self, inheritance_root: &str, id: &str) -> Option<CfdRecordHandle> {
+        self.record_by_domain_id
             .get(inheritance_root)?
-            .get(key)
+            .get(id)
             .copied()
     }
 
@@ -134,11 +147,11 @@ impl CfdDataModel {
     pub fn records_of_type<'a>(
         &'a self,
         type_name: &str,
-    ) -> impl Iterator<Item = (CfdRecordId, &'a CfdRecord)> + 'a {
+    ) -> impl Iterator<Item = (CfdRecordHandle, &'a CfdRecord)> + 'a {
         let ids = self
             .tables
             .get(type_name)
-            .map_or(&[] as &[CfdRecordId], |table| table.records.as_slice());
+            .map_or(&[] as &[CfdRecordHandle], |table| table.records.as_slice());
         ids.iter()
             .filter_map(move |id| self.records.get(id.index()).map(|record| (*id, record)))
     }
@@ -151,7 +164,7 @@ impl CfdDataModel {
         &'a self,
         schema: &'a CftSchema,
         type_name: &'a str,
-    ) -> impl Iterator<Item = (CfdRecordId, &'a CfdRecord)> + 'a {
+    ) -> impl Iterator<Item = (CfdRecordHandle, &'a CfdRecord)> + 'a {
         self.records()
             .filter(move |(_, record)| schema.is_assignable(record.actual_type(), type_name))
     }
@@ -160,7 +173,7 @@ impl CfdDataModel {
     ///
     /// Returns `None` when no ref lives at that path.
     #[must_use]
-    pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
+    pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordHandle> {
         self.refs
             .by_site
             .get(site)
@@ -172,7 +185,10 @@ impl CfdDataModel {
         self.refs.edges.iter()
     }
 
-    pub fn ref_edges_from_host(&self, host: CfdRecordId) -> impl Iterator<Item = &RefEdge> + '_ {
+    pub fn ref_edges_from_host(
+        &self,
+        host: CfdRecordHandle,
+    ) -> impl Iterator<Item = &RefEdge> + '_ {
         self.refs
             .by_host
             .get(&host)
@@ -181,7 +197,10 @@ impl CfdDataModel {
             .filter_map(|id| self.refs.edges.get(id.index()))
     }
 
-    pub fn ref_edges_to_target(&self, target: CfdRecordId) -> impl Iterator<Item = &RefEdge> + '_ {
+    pub fn ref_edges_to_target(
+        &self,
+        target: CfdRecordHandle,
+    ) -> impl Iterator<Item = &RefEdge> + '_ {
         self.refs
             .by_target
             .get(&target)

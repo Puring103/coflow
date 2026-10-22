@@ -46,7 +46,7 @@ table Item {\n\
   kind: Kind = Kind::One;\n\
   target: Target;\n\
   count: int = LIMIT;\n\
-  check {\n\
+  check Valid {\n\
     target.value >= LIMIT;\n\
     kind == Kind::Two;\n\
     count > 0;\n\
@@ -116,7 +116,7 @@ fn completion_scope_uses_boundary_offsets_and_missing_ast_as_top_level() {
     let source = "enum Kind { One = 1, }\n\
 table Item {\n\
   key: string;\n\
-  check { key != \"\"; }\n\
+  check Valid { key != \"\"; }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-completion-scope", source);
     let document = first_document(&build);
@@ -137,7 +137,7 @@ table Item {\n\
             _ => None,
         })
         .expect("type");
-    let check = type_def.check.as_ref().expect("check");
+    let check = type_def.checks.first().expect("check");
     let (_invalid_cleanup, invalid_build) =
         test_lsp_build("lsp-completion-scope-invalid", "table Broken { $");
     let no_ast_document = first_document(&invalid_build);
@@ -195,7 +195,7 @@ fn incomplete_definitions_keep_contextual_completion_scopes() {
         ),
         (
             "type-check",
-            "table Broken {\n  check {\n    ",
+            "table Broken {\n  check Valid {\n    ",
             CompletionScope::CheckBlock,
             "all",
         ),
@@ -235,7 +235,7 @@ fn named_top_level_check_uses_check_completion_scope() {
 
 #[test]
 fn records_query_completes_types_and_resolves_hover_and_definition() {
-    let source = "table Item { value: int; check { value > 0; } }\n\
+    let source = "table Item { value: int; check Valid { value > 0; } }\n\
 table Reward { amount: int; }\n\
 check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
     let (_cleanup, build) = test_lsp_build("lsp-records-query", source);
@@ -284,7 +284,7 @@ table Item {\n\
   target: Target;\n\
   note: string = \"tar\";\n\
   # tar\n\
-  check { target is Target; }\n\
+  check Valid { target is Target; }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-completion-context", source);
     let document = first_document(&build);
@@ -321,7 +321,7 @@ table Item {\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
   other: Target;\n\
-  check { all value, index in xs { value > LIMIT && index >= 0; } }\n\
+  check Valid { all value, index in xs { value > LIMIT && index >= 0; } }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
     let document = first_document(&build);
@@ -594,7 +594,7 @@ table Holder {\n\
   key: string;\n\
   target: Target;\n\
   count: int;\n\
-  check { target.value == 1; }\n\
+  check Valid { target.value == 1; }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-scope-type", source);
     let document = first_document(&build);
@@ -635,14 +635,14 @@ fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
     );
     assert_eq!(receiver_chain_before_dot("target.child.!"), None);
 
-    let source = "check { target . child; other }";
+    let source = "check Valid { target . child; other }";
     let word = word_at(source, source.find("child").expect("child")).expect("word");
     assert_eq!(
         dotted_chain_at(source, &word),
         Some(vec![s("target"), s("child")])
     );
 
-    let punctuated = "check { target . child + other }";
+    let punctuated = "check Valid { target . child + other }";
     let word = word_at(punctuated, punctuated.find("child").expect("child")).expect("word");
     assert_eq!(
         dotted_chain_at(punctuated, &word),
@@ -665,8 +665,8 @@ fn formatter_returns_independent_local_text_edits() {
 }
 
 #[test]
-fn dimension_completion_offers_selection_methods_before_business_operations() {
-    let source = r#"table Item { @localized name: string; title: string; check { name.for("ja") != ""; title.len() > 0; } }"#;
+fn dimension_completion_offers_variants_and_base_value_operations() {
+    let source = r#"table Item { @localized name: string; title: string; check Valid { name.for("ja") != ""; title.len() > 0; } }"#;
     let (_cleanup, build) = test_lsp_build("lsp-dimension-selection", source);
     let document = first_document(&build);
     let offset = source.find("name.for").expect("dimension receiver") + "name.".len();
@@ -675,7 +675,10 @@ fn dimension_completion_offers_selection_methods_before_business_operations() {
         document,
         &position_from_byte(source, offset),
     ));
-    assert_eq!(labels, vec!["default", "for", "variants"]);
+    for expected in ["hasVariant", "for", "variants", "len", "isBlank"] {
+        assert!(labels.contains(&expected.to_string()), "{expected}");
+    }
+    assert!(!labels.contains(&"default".to_string()));
     let offset = source.find("title.len").expect("ordinary receiver") + "title.".len();
     let labels = completion_labels(completion_items(
         &build,
@@ -698,7 +701,7 @@ fn declaration_category_filters_body_annotations_and_reference_targets() {
         &position_from_byte(source, body),
     ));
     assert!(body_labels.contains(&"field".to_string()));
-    assert!(!body_labels.contains(&"check".to_string()));
+    assert!(body_labels.contains(&"check".to_string()));
     let annotation = source.find("@label").expect("annotation") + 1;
     let annotations = completion_labels(completion_items(
         &build,

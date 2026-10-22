@@ -4,7 +4,7 @@ use crate::api::{
     RewriteDimensionRecordRequest, WriteCellRequest, WriteDimensionValueRequest, WriteRecordRef,
 };
 use crate::data_model::CfdValue;
-use coflow_language::cft::RecordKey;
+use coflow_language::cft::RecordId;
 use std::collections::BTreeSet;
 
 use crate::mutation::PreparedMutationOp;
@@ -26,12 +26,12 @@ pub(crate) fn stage_mutation_op(
             PreparedMutationOp::InsertRecord {
                 file,
                 actual_type,
-                key,
+                id,
                 fields,
                 ..
             },
             MutationExecutionPlan::Insert(plan),
-        ) => stage_insert_record(session, plan, file, key, actual_type, fields),
+        ) => stage_insert_record(session, plan, file, id, actual_type, fields),
         (
             PreparedMutationOp::SetField {
                 record,
@@ -67,10 +67,10 @@ pub(crate) fn stage_mutation_op(
             PreparedMutationOp::SetField { record, value, .. },
             MutationExecutionPlan::Rename(plan),
         ) => {
-            let CfdValue::String(new_key) = value else {
+            let CfdValue::String(new_id) = value else {
                 return Err(plan_mismatch("rename execution value is not a string"));
             };
-            stage_rename_record_key(session, plan, record, new_key)
+            stage_rename_record_id(session, plan, record, new_id)
         }
         (
             PreparedMutationOp::UnsetField {
@@ -81,7 +81,7 @@ pub(crate) fn stage_mutation_op(
             let schema = session.schema();
             let writer_outcome = plan.writer.unset_field(
                 &plan.target.origin,
-                &plan.target.coordinate.key,
+                &plan.target.coordinate.id,
                 &plan.target.coordinate.actual_type,
                 path,
                 schema,
@@ -90,10 +90,10 @@ pub(crate) fn stage_mutation_op(
         }
         (
             PreparedMutationOp::RenameRecord {
-                record, new_key, ..
+                record, new_id, ..
             },
             MutationExecutionPlan::Rename(plan),
-        ) => stage_rename_record_key(session, plan, record, new_key),
+        ) => stage_rename_record_id(session, plan, record, new_id),
         (PreparedMutationOp::DeleteRecord { record, .. }, MutationExecutionPlan::Delete(plan)) => {
             stage_delete_record(session, plan, record)
         }
@@ -193,7 +193,7 @@ pub(crate) fn stage_field_mutation_batch(
         }
         requests.push(WriteCellRequest {
             origin: &plan.target.origin,
-            record_key: &plan.target.coordinate.key,
+            record_id: &plan.target.coordinate.id,
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
             new_value: value,
@@ -246,7 +246,7 @@ fn stage_write_field(
     let schema = session.schema();
     let request = WriteCellRequest {
         origin: &plan.target.origin,
-        record_key: &plan.target.coordinate.key,
+        record_id: &plan.target.coordinate.id,
         actual_type: &plan.target.coordinate.actual_type,
         field_path: &plan.target.field_path,
         new_value,
@@ -285,7 +285,7 @@ fn stage_write_dimension_value(
                 source_type,
                 source_field,
             },
-            source_key: &coordinate.source_key,
+            source_id: &coordinate.source_id,
             variant: &coordinate.variant,
             new_value,
         })?;
@@ -324,11 +324,11 @@ fn field_write_outcome(
     }
 }
 
-fn stage_rename_record_key(
+fn stage_rename_record_id(
     session: &ProjectSession,
     plan: &RenamePlan,
     host_record: &RecordCoordinate,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let plan = match plan {
         RenamePlan::Noop { coordinate } => {
@@ -344,8 +344,8 @@ fn stage_rename_record_key(
     let schema = session.schema();
     let target_request = RenameRecordRequest {
         origin: &plan.origin,
-        old_key: &plan.old_coordinate.key,
-        new_key,
+        old_id: &plan.old_coordinate.id,
+        new_id,
         actual_type: &plan.old_coordinate.actual_type,
     };
     let mut diagnostics = plan.writer.rename_record(&target_request)?.diagnostics;
@@ -354,13 +354,13 @@ fn stage_rename_record_key(
         diagnostics.extend(action.execute(schema)?);
         affected_files.insert(action.display_path().to_string());
     }
-    let old_key = plan.old_coordinate.key.clone();
-    let new_dimension_key = RecordKey::new(new_key.to_string())
-        .map_err(|_| plan_mismatch("new record key became invalid before dimension staging"))?;
+    let old_id = plan.old_coordinate.id.clone();
+    let new_dimension_key = RecordId::new(new_id.to_string())
+        .map_err(|_| plan_mismatch("new record id became invalid before dimension staging"))?;
     rewrite_dimension_records(
         session,
         &plan.dimension_actions,
-        &old_key,
+        &old_id,
         Some(&new_dimension_key),
         &mut affected_files,
     )?;
@@ -386,21 +386,21 @@ fn stage_insert_record(
     session: &ProjectSession,
     plan: &InsertPlan,
     file: &str,
-    record_key: &str,
+    record_id: &str,
     actual_type: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
     let request = InsertRecordRequest {
         source: &plan.source,
-        record_key,
+        record_id,
         actual_type,
         fields,
         schema,
         before: None,
     };
     let writer_outcome = plan.writer.insert_record(&request)?;
-    let inserted = RecordCoordinate::try_new(actual_type, record_key)
+    let inserted = RecordCoordinate::try_new(actual_type, record_id)
         .map_err(|_| plan_mismatch("insert coordinate became invalid before staging"))?;
     Ok(WriteOutcome {
         touched: vec![inserted.clone()],
@@ -420,16 +420,16 @@ fn stage_delete_record(
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let request = DeleteRecordRequest {
         origin: &plan.origin,
-        record_key: &record.key,
+        record_id: &record.id,
         actual_type: &record.actual_type,
     };
     let writer_outcome = plan.writer.delete_record(&request)?;
-    let old_key = record.key.clone();
+    let old_id = record.id.clone();
     let mut affected_files = BTreeSet::from([plan.display_path.clone()]);
     rewrite_dimension_records(
         session,
         &plan.dimension_actions,
-        &old_key,
+        &old_id,
         None,
         &mut affected_files,
     )?;
@@ -486,7 +486,7 @@ fn stage_transfer_record(
     let outcome = plan.source_writer.transfer_record(
         &WriteRecordRef {
             origin: &plan.source_origin,
-            record_key: &plan.coordinate.key,
+            record_id: &plan.coordinate.id,
             actual_type: &plan.coordinate.actual_type,
         },
         &plan.destination,
@@ -509,7 +509,7 @@ fn stage_transfer_record(
 fn write_record_ref(position: &super::plan::ResolvedRecordPosition) -> WriteRecordRef<'_> {
     WriteRecordRef {
         origin: &position.origin,
-        record_key: &position.coordinate.key,
+        record_id: &position.coordinate.id,
         actual_type: &position.coordinate.actual_type,
     }
 }
@@ -517,8 +517,8 @@ fn write_record_ref(position: &super::plan::ResolvedRecordPosition) -> WriteReco
 fn rewrite_dimension_records(
     session: &ProjectSession,
     actions: &[DimensionRecordAction],
-    old_key: &RecordKey,
-    new_key: Option<&RecordKey>,
+    old_id: &RecordId,
+    new_id: Option<&RecordId>,
     affected_files: &mut BTreeSet<String>,
 ) -> Result<(), DiagnosticSet> {
     let schema = session.schema();
@@ -529,8 +529,8 @@ fn rewrite_dimension_records(
                 source: &action.source,
                 schema,
                 actual_type: &action.actual_type,
-                old_key,
-                new_key,
+                old_id,
+                new_id,
             })?;
         if result.changed {
             affected_files.insert(action.source.display_name.clone());

@@ -37,7 +37,7 @@ describe('short names', () => {
     const html = renderToStaticMarkup(createElement(ShortNameContext.Provider, {
       value: { fields: { ItemConfig: 'name' }, setField: () => {} },
       children: createElement('div', null,
-        createElement(CardHeader, { actualType: 'ItemConfig', recordKey: 'sword', fields: [makeFieldCell('name', { kind: 'string', value: 'Sword' })] }),
+        createElement(CardHeader, { actualType: 'ItemConfig', recordId: 'sword', fields: [makeFieldCell('name', { kind: 'string', value: 'Sword' })] }),
         createElement(ShortNameMenuItem, { actualType: 'ItemConfig', field: 'name', onClose: () => {} }),
       ),
     }))
@@ -50,7 +50,7 @@ describe('short names', () => {
   it('displays the short name for reference chips and selected references', async () => {
     const lookups = new EditorLookupController({
       getEnumVariants: async () => [],
-      getRefTargets: async () => [{ coordinate: { actual_type: 'Item', key: 'sword' }, file_path: 'data/other.cfd', short_name: 'Sword' }],
+      getRefTargets: async () => [{ coordinate: { actual_type: 'Item', id: 'sword' }, file_path: 'data/other.cfd', short_name: 'Sword' }],
       makeDefaultObject: async () => ({ kind: 'option_none' }),
       createRecordDraft: async () => ({ actual_type: 'Item', fields: [] }),
     })

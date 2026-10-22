@@ -13,7 +13,7 @@ pub(crate) enum EvalValue<'a> {
     Temporary(TemporaryValue),
     Constant(CftConstValue),
     EnumNamespace(EnumName),
-    // 维度字段保持为选择器，显式 for() 后才读取业务值。
+    // 维度元信息只供 for/variants/hasVariant 方法使用；一般表达式读取 base。
     Dimension {
         base: Box<LocatedEvalValue<'a>>,
         field: FieldName,
@@ -176,8 +176,8 @@ impl<'a> EvalValue<'a> {
                 CftConstValue::String(value) => Some(ScalarValue::String(value)),
                 _ => None,
             },
-            Self::Dimension { .. }
-            | Self::EnumNamespace(_)
+            Self::Dimension { base, .. } => base.value.scalar(),
+            Self::EnumNamespace(_)
             | Self::Record(_)
             | Self::Entry(_)
             | Self::Array { .. }
@@ -298,13 +298,13 @@ impl EvalRecordRef {
         }
     }
 
-    pub(crate) fn key<'model>(&self, model: &'model CfdDataModel) -> Option<&'model str> {
+    pub(crate) fn id<'model>(&self, model: &'model CfdDataModel) -> Option<&'model str> {
         match self {
             Self::Resolved(location) | Self::RecordSet(location)
                 if location.storage.dimension.is_none()
                     && location.storage.path.segments.is_empty() =>
             {
-                model.record(location.storage.record).map(CfdRecord::key)
+                model.record(location.storage.record).map(CfdRecord::id)
             }
             Self::Resolved(_) | Self::RecordSet(_) => None,
             Self::Unresolved => None,
@@ -399,11 +399,7 @@ pub(crate) fn model_value<'a>(
     let record = model.record(cursor.record)?;
     let mut segments = cursor.path.segments.iter();
     let mut value = if let Some(dimension) = &cursor.dimension {
-        &record
-            .dimension_field(&dimension.field)?
-            .variants
-            .get(dimension.variant.as_str())?
-            .value
+        model.dimension_value(cursor.record, &dimension.field, &dimension.variant)?
     } else {
         let coflow_model::CfdPathSegment::Field(field) = segments.next()? else {
             return None;

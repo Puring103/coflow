@@ -20,7 +20,7 @@ pub(crate) fn snapshot_record_before_delete(
 ) -> Option<DeletedRecordSnapshot> {
     session
         .queries()
-        .record_view(&coordinate.actual_type, &coordinate.key)
+        .record_view(&coordinate.actual_type, &coordinate.id)
         .map(|view| DeletedRecordSnapshot {
             record: view.record.clone(),
             display_path: view.display_path.to_string(),
@@ -98,12 +98,12 @@ pub(crate) fn reorder_file_path(
 ) -> Result<String, EditorError> {
     session
         .queries()
-        .file_for_record(&coordinate.actual_type, &coordinate.key)
+        .file_for_record(&coordinate.actual_type, &coordinate.id)
         .map(str::to_string)
         .ok_or_else(|| {
             EditorError::not_found(format!(
                 "record `{}.{}` not found",
-                coordinate.actual_type, coordinate.key
+                coordinate.actual_type, coordinate.id
             ))
         })
 }
@@ -115,7 +115,7 @@ pub(crate) fn record_container_index(
 ) -> Option<usize> {
     let file = session
         .queries()
-        .file_for_record(&coordinate.actual_type, &coordinate.key)?;
+        .file_for_record(&coordinate.actual_type, &coordinate.id)?;
     record_index_in_file(session, file, coordinate, false)
 }
 
@@ -126,7 +126,7 @@ pub(crate) fn record_type_index(
 ) -> Option<usize> {
     let file = session
         .queries()
-        .file_for_record(&coordinate.actual_type, &coordinate.key)?;
+        .file_for_record(&coordinate.actual_type, &coordinate.id)?;
     record_index_in_file(session, file, coordinate, true)
 }
 

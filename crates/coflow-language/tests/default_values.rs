@@ -23,7 +23,7 @@ data Damage: Effect {}
 @description("literal {{braces}}")
 table Rule {
   name: string;
-  label: fstring = f"rule {self.name}";
+  label: string = f"rule {self.name}";
   braces: string = "{{ready}}";
   permissions: Permission = Permission::Read | Permission::Write;
   effect: Effect = Damage { amount: 2 };
@@ -69,9 +69,9 @@ fn ordinary_string_braces_are_literal() {
 #[test]
 fn formatted_defaults_only_accept_field_paths() {
     for source in [
-        r#"table Rule { name: string; label: fstring = f"{self.name()}"; }"#,
-        r#"table Rule { price: int; label: fstring = f"{self.price + 1}"; }"#,
-        r#"table Rule { price: int; label: fstring = f"{self.price:000}"; }"#,
+        r#"table Rule { name: string; label: string = f"{self.name()}"; }"#,
+        r#"table Rule { price: int; label: string = f"{self.price + 1}"; }"#,
+        r#"table Rule { price: int; label: string = f"{self.price:000}"; }"#,
     ] {
         let diagnostics = compile(source).expect_err("data interpolation must reject expressions");
         assert!(diagnostics
@@ -113,7 +113,7 @@ fn rejects_invalid_flag_default_expressions() {
 
 #[test]
 fn check_messages_only_interpolate_paths() {
-    compile(r#"table Rule { price: int; check { price >= 0 : f"bad {price}"; } }"#)
+    compile(r#"table Rule { price: int; check Valid { price >= 0 : f"bad {price}"; } }"#)
         .expect("scalar field interpolation");
     for expression in [
         "price + 1",
@@ -123,7 +123,7 @@ fn check_messages_only_interpolate_paths() {
         "len(price)",
     ] {
         let source = format!(
-            "table Rule {{ price: int; check {{ price >= 0 : f\"bad {{{expression}}}\"; }} }}"
+            "table Rule {{ price: int; check Valid {{ price >= 0 : f\"bad {{{expression}}}\"; }} }}"
         );
         assert!(compile(&source).is_err(), "{expression}");
     }

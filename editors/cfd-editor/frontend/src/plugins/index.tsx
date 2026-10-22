@@ -299,10 +299,10 @@ function createDataApi(): PluginDataApi {
     },
     async searchRecords(query, options) {
       const normalized = query.trim()
-      const mode = options?.mode ?? 'key'
+      const mode = options?.mode ?? 'id'
       const limit = options?.limit ?? 200
       if (!normalized) throw new Error('搜索内容不能为空')
-      if (mode !== 'key' && mode !== 'full_text') throw new Error('不支持的搜索模式')
+      if (mode !== 'id' && mode !== 'full_text') throw new Error('不支持的搜索模式')
       if (!Number.isInteger(limit) || limit <= 0) throw new Error('搜索结果上限必须是正整数')
       const { bridge, identity } = capture()
       const result = await bridge.searchRecords(identity.sessionId, normalized, mode, limit)

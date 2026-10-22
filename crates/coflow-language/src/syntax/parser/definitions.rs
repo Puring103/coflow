@@ -156,7 +156,7 @@ impl Parser<'_> {
         };
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let mut fields = Vec::new();
-        let mut check = None;
+        let mut checks = Vec::new();
         let mut dangling_annotations = Vec::new();
         let mut pending_annotations = Vec::new();
         let mut seen_check = false;
@@ -171,15 +171,12 @@ impl Parser<'_> {
                 dangling_annotations.append(&mut pending_annotations);
                 break;
             }
-            if self.at(&TokenKind::Check) && self.next_at(&TokenKind::LBrace) {
-                if seen_check {
-                    return self.err(CftErrorCode::DuplicateCheckBlock, "duplicate check block");
-                }
+            if self.at(&TokenKind::Check) && !self.next_at(&TokenKind::Colon) {
                 if !pending_annotations.is_empty() {
                     dangling_annotations.append(&mut pending_annotations);
                 }
                 seen_check = true;
-                check = Some(self.parse_check_block()?);
+                checks.push(self.parse_check_block()?);
                 continue;
             }
             if seen_check {
@@ -203,7 +200,7 @@ impl Parser<'_> {
             sealed_span,
             parent,
             fields,
-            check,
+            checks,
             annotations,
             dangling_annotations,
             span: Span::new(start, end),
@@ -304,7 +301,6 @@ impl Parser<'_> {
                 "float" => TypeRefKind::Float,
                 "bool" => TypeRefKind::Bool,
                 "string" => TypeRefKind::String,
-                "fstring" => TypeRefKind::FormattedString,
                 _ => TypeRefKind::Named(name.name),
             };
             self.node(StructureKind::TypeRef, name.span, [], || TypeRef {

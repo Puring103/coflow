@@ -12,7 +12,7 @@ fn interpolation_is_explicit_and_only_accepts_paths() {
     };
     assert!(matches!(&template.segments[0], CfdFormatSegment::Text(text) if text == "{text} "));
     assert!(
-        matches!(&template.segments[1], CfdFormatSegment::Reference(value) if value.path == ["name"] && value.key.is_none())
+        matches!(&template.segments[1], CfdFormatSegment::Reference(value) if value.path == ["name"] && value.id.is_none())
     );
     for text in [
         "f\"{name}\"",

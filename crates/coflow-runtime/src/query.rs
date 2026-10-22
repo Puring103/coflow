@@ -1,5 +1,5 @@
 use crate::api::WriterCapabilities;
-use crate::data_model::{CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use crate::data_model::{CfdPathSegment, CfdRecordHandle, CfdValue, DimensionValueLookup};
 use coflow_language::cft::{CftSchema, CftValueType};
 
 use crate::indexes::{FileIndex, SourceIndex};
@@ -198,12 +198,12 @@ impl<'a> ProjectQueries<'a> {
     }
 
     #[must_use]
-    fn id_for_coordinate(self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
+    fn id_for_coordinate(self, actual_type: &str, key: &str) -> Option<CfdRecordHandle> {
         self.session.id_for_coordinate(actual_type, key)
     }
 
     #[must_use]
-    fn coordinate_of(self, id: CfdRecordId) -> Option<RecordCoordinate> {
+    fn coordinate_of(self, id: CfdRecordHandle) -> Option<RecordCoordinate> {
         self.session.coordinate_of(id)
     }
 
@@ -255,7 +255,7 @@ impl<'a> ProjectQueries<'a> {
             .dimension_source(
                 self.session.schema(),
                 coordinate.actual_type.as_str(),
-                coordinate.record_key.as_str(),
+                coordinate.record_id.as_str(),
                 coordinate.field.as_str(),
                 coordinate.dimension.as_str(),
                 coordinate.variant.as_str(),
@@ -270,7 +270,7 @@ impl<'a> ProjectQueries<'a> {
     ) -> Option<DimensionValueView> {
         let record_id = self.id_for_coordinate(
             coordinate.actual_type.as_str(),
-            coordinate.record_key.as_str(),
+            coordinate.record_id.as_str(),
         )?;
         match self
             .session
@@ -383,7 +383,7 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn record_references(self, coordinate: &RecordCoordinate) -> Vec<RecordReferenceInfo> {
-        let Some(host) = self.id_for_coordinate(&coordinate.actual_type, &coordinate.key) else {
+        let Some(host) = self.id_for_coordinate(&coordinate.actual_type, &coordinate.id) else {
             return Vec::new();
         };
         self.session
@@ -412,7 +412,7 @@ impl<'a> ProjectQueries<'a> {
                     .is_some_and(|schema_enum| schema_enum.is_flag);
                 let mut ids = model
                     .records_assignable_to(schema, &schema_type.name)
-                    .map(|(_, record)| record.key().to_string())
+                    .map(|(_, record)| record.id().to_string())
                     .collect::<Vec<_>>();
                 if schema.range_is_polymorphic(&schema_type.name) {
                     ids.sort();

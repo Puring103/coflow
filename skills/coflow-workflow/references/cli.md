@@ -15,31 +15,31 @@ coflow schema symbols --kind field --json
 coflow schema refs --symbol Item.price --json
 coflow context --type Item --examples 3 --json
 coflow data list --type Item --fields name,price --limit 20 --json
-coflow data get --type Item --key sword --view both --json
+coflow data get --type Item --id sword --view both --json
 coflow data search --text 治疗 --json
-coflow data refs --type Item --key sword --direction incoming --json
+coflow data refs --type Item --id sword --direction incoming --json
 coflow rule list --type Item --json
 coflow rule inspect --rule ItemPrices --json
 ```
 
 `describe` 返回命令参数、默认值、条件默认值、依赖与互斥条件、值格式与数值范围、输入输出 JSON Schema、退出状态和示例。`schema inspect` 返回声明、默认值、继承关系和源码位置；字段查询提供枚举、引用和具体对象类型候选。`context` 聚合声明、规则、记录示例与引用候选，支持输出预算并报告省略项。
 
-`data get --view source|effective|both` 分别查询显式赋值、有效值或两者。来源区分基础赋值、Schema 默认值、Option 默认空态和维度覆盖。fstring 表达式和渲染信息分别返回。
+`data get --view source|effective|both` 分别查询显式赋值、有效值或两者。`origin` 区分基础赋值（`explicit_base`）、Schema 默认值（`schema_default`）和维度覆盖（`dimension_override`）。显式 `None` 保留赋值来源，省略带 `= None` 的字段属于 Schema 默认值；穿过 None 的路径则返回 `origin: "unreachable"`、`reachable: false`，没有来源位置或表达式。字符串模板表达式和渲染信息分别返回。
 
-列表共享 `--type`、`--include-derived`、`--file`、`--key`、`--where`、`--sort`、`--dimension name=variant`、`--limit` 和 `--cursor`。列表默认每页 50 条，返回 `items`、`total`、`truncated` 与 `next_cursor`。项目变化后重新从第一页查询。聚合计算覆盖全部匹配记录，分页限制输出行。
+列表共享 `--type`、`--include-derived`、`--file`、`--id`、`--where`、`--sort`、`--dimension name=variant`、`--limit` 和 `--cursor`。列表默认每页 50 条，返回 `items`、`total`、`truncated` 与 `next_cursor`。项目变化后重新从第一页查询。聚合计算覆盖全部匹配记录，分页限制输出行。
 
 `--where` 支持比较、布尔组合和 `contains`、`is_some`、`is_none`、`is_reachable`。`--sort` 使用逗号分隔路径，前缀 `-` 表示降序。文本字段路径支持 `field.child`、`items[0]` 和 `labels["a.b"]`。
 
 ## 修改与预览
 
 ```powershell
-coflow data draft --type Item --key new_sword --json
-coflow data create --type Item --key new_sword --file data/items.cfd --input fields.json
-coflow data set --type Item --key sword --path price --value-cfd 100
-coflow data unset --type Item --key sword --path description
-coflow data rename --type Item --key sword --new-key iron_sword
-coflow data transfer --type Item --key sword --to-file data/weapons.cfd
-coflow data delete --type Item --key obsolete --dry-run --json
+coflow data draft --type Item --id new_sword --json
+coflow data create --type Item --id new_sword --file data/items.cfd --input fields.json
+coflow data set --type Item --id sword --path price --value-cfd 100
+coflow data unset --type Item --id sword --path description
+coflow data rename --type Item --id sword --new-id iron_sword
+coflow data transfer --type Item --id sword --to-file data/weapons.cfd
+coflow data delete --type Item --id obsolete --dry-run --json
 coflow source write --file schema/main.cft --input candidates/main.cft --dry-run --json
 coflow source create --file data/new.cfd --input candidates/new.cfd
 coflow source delete --file data/obsolete.cfd --dry-run
@@ -49,7 +49,7 @@ coflow apply --input changes.json --dry-run --json
 coflow apply --input changes.json --rules --json
 ```
 
-草稿区分声明默认值、形状初值与待输入字段，以 `complete` 和 `required_inputs` 表达完整性。`set` 建立显式赋值，`unset` 移除赋值并应用默认值或缺失检查。相同的已有显式赋值保持源码和时间戳。改名更新已识别引用、维度目标和稳定枚举映射；迁移保留覆盖的来源文件。
+草稿区分声明默认值、类型默认值与待输入字段，以 `complete` 和 `required_inputs` 表达完整性。`set` 建立显式赋值，`unset` 移除赋值并应用默认值或缺失检查。相同的已有显式赋值保持源码和时间戳。改名更新已识别引用、维度目标和稳定枚举映射；迁移保留覆盖的来源文件。
 
 写入先构建候选项目，结构与数据校验通过后统一发布；`--rules` 额外执行业务规则。`--dry-run` 返回校验与差异，保持正式文件原状。正式写入前检查外部修改，冲突时返回退出码 3。结果报告操作状态、涉及文件、实际写入、差异与恢复结果。
 
@@ -63,14 +63,14 @@ coflow apply --input changes.json --rules --json
   "kind": "operations",
   "ops": [{
     "op": "set_field",
-    "record": {"type": "Item", "key": "sword"},
+    "record": {"type": "Item", "id": "sword"},
     "path": [{"kind": "field", "name": "price"}],
     "value": {"kind": "expression", "source": "100"}
   }]
 }
 ```
 
-值输入使用 CFD 表达式或 `{"kind":"model","value":...}`。类型化模型值保留 int64 十进制字符串、有限浮点、每层 `some`/`none`、枚举身份和数值、引用身份、对象实际类型、集合及 fstring 源码。枚举的 `variant` 为单一命名成员名，组合值为空。查询模型值可以用于结构化写入，渲染与来源信息保持只读。`--value-file` 读取 CFD 表达式，`-` 表示 stdin；每次调用只能使用一个 stdin 载体。
+值输入使用 CFD 表达式或 `{"kind":"model","value":...}`。类型化模型值保留 int64 十进制字符串、有限浮点、每层 `some`/`none`、枚举身份和数值、引用身份、对象实际类型、集合及显式模板源码。枚举的 `variant` 为单一命名成员名，组合值为空。查询模型值可以用于结构化写入，渲染与来源信息保持只读。`--value-file` 读取 CFD 表达式，`-` 表示 stdin；每次调用只能使用一个 stdin 载体。
 
 ## 维度与统计
 
@@ -78,9 +78,9 @@ coflow apply --input changes.json --rules --json
 coflow dimension list --json
 coflow dimension inspect --dimension language --json
 coflow dimension variants --dimension language --json
-coflow dimension get --type Item --key sword --field name --dimension language --variant ja --json
-coflow dimension set --type Item --key sword --field name --dimension language --variant ja --value-cfd '"剣"'
-coflow dimension clear --type Item --key sword --field name --dimension language --variant ja
+coflow dimension get --type Item --id sword --field name --dimension language --variant ja --json
+coflow dimension set --type Item --id sword --field name --dimension language --variant ja --value-cfd '"剣"'
+coflow dimension clear --type Item --id sword --field name --dimension language --variant ja
 coflow dimension missing --dimension language --variant ja --json
 coflow dimension diff --dimension language --from-base --to ja --json
 coflow stats project --json
@@ -90,7 +90,7 @@ coflow stats dimension --dimension language --variant ja --group-by type --json
 coflow stats refs --direction incoming --json
 ```
 
-无显式覆盖时回退基础值。显式 `None` 与等于基础值的覆盖都计为覆盖；清除后回退基础值。`missing` 返回缺少显式覆盖的字段、显示说明、基础值及其他显式变体值。维度差异分别报告覆盖状态与有效值变化。`--from-base`、`--to-base` 指定基础视角，名称为 `base` 的变体仍是普通变体。
+无显式覆盖时回退基础值。`get` 返回 `explicit` 表示该字段是否覆盖，`variant_exists` 表示该维度是否存在变体；`override` 与 `effective` 分别提供显式覆盖和有效值。显式 `None` 与等于基础值的覆盖都计为覆盖；清除后回退基础值。`missing` 返回缺少显式覆盖的字段、显示说明、基础值及其他显式变体值。维度差异分别报告覆盖状态与有效值变化。`--from-base`、`--to-base` 指定基础视角，名称为 `base` 的变体仍是普通变体。
 
 统计返回参与数量、路径不可达、指定 Option 层不可达及空态数量和统计口径。枚举与布尔字段默认返回值分布；字段与指标在空结果时也会校验。整数总和使用精确十进制字符串，均值保留精确分子与分母，分位数采用 nearest-rank。字符串长度按 Unicode 标量计数。覆盖率分母为可覆盖的记录与字段组合数，零分母时覆盖率为空。引用统计只返回 `--direction` 所选方向，默认双向。
 
@@ -100,7 +100,9 @@ coflow stats refs --direction incoming --json
 coflow schema check --json
 coflow check --json
 coflow check --rules --explain --limit 20 --json
-coflow check --rule ItemPrices --json
+coflow rule list --json
+coflow rule inspect --rule Item::ValidPrice --json
+coflow check --rule Item::ValidPrice --explain --json
 coflow check --input changes.json --rules --json
 coflow explain DATA-011 --json
 coflow diff --base HEAD --summary --json
@@ -113,7 +115,7 @@ coflow codegen --check --json
 coflow build --json
 ```
 
-`schema check` 检查 Schema；`check` 检查结构、字段、引用和维度；`check --rules` 执行全部业务规则。重复 `--rule` 执行选定规则的并集，与 `--rules` 互斥。候选检查使用与 `apply` 相同的请求并保持只读。输出区分通过、失败、跳过、未执行和预算耗尽，诊断输出限制保留完整计数。
+`schema check` 检查 Schema；`check` 检查结构、字段、引用和维度；`check --rules` 执行全部业务规则。重复 `--rule` 执行选定规则的并集，与 `--rules` 互斥。候选检查使用与 `apply` 相同的请求并保持只读。规则使用稳定名称，类型内规则形如 `Item::ValidPrice`，项目规则使用自己的名称。`results` 汇总每个目标的整条规则，`tasks` 提供语句执行明细；状态区分通过、条件未触发、业务失败、求值错误、未执行和预算耗尽。`complete` 表示是否完成执行，诊断输出限制保留完整计数。
 
 `diff` 默认比较 Git HEAD 与当前项目，支持提交、分支及候选变更。`--view source|schema|record|field|dimension` 选择源码、Schema、记录、字段或维度视图；省略时返回全部视图。`--summary` 输出计数与对象摘要，`--include-source` 请求完整源码。语义不可用时保留源码差异并报告部分结果。
 

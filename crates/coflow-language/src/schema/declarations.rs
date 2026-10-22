@@ -79,6 +79,9 @@ pub struct CheckStatementInfo {
     pub id: CheckStatementId,
     pub owner: CheckOwner,
     pub root_index: usize,
+    pub block_index: usize,
+    pub rule_name: CheckName,
+    pub rule_id: String,
     pub dependencies: BTreeSet<CheckDependency>,
     pub dimensions: BTreeSet<DimensionName>,
 }
@@ -128,7 +131,7 @@ pub enum CftConstValue {
     },
     RecordReference {
         type_name: TypeName,
-        key: String,
+        id: String,
     },
 }
 
@@ -150,7 +153,7 @@ pub struct CftType {
     pub(crate) own_fields: Vec<Arc<CftField>>,
     pub(crate) all_fields: Vec<Arc<CftField>>,
     pub(crate) field_by_name: BTreeMap<FieldName, usize>,
-    pub check: Option<CftSchemaCheckBlock>,
+    pub checks: Vec<CftSchemaCheckBlock>,
     pub span: Span,
 }
 
@@ -196,12 +199,15 @@ pub enum CftSchemaDefaultValue {
     },
     RecordReference {
         type_name: TypeName,
-        key: String,
+        id: String,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftSchemaCheckBlock {
+    pub message: Option<CftSchemaCheckMessage>,
+    pub name: CheckName,
+    pub name_span: Span,
     pub stmts: Vec<CftSchemaCheckStmt>,
     pub span: Span,
     pub(crate) dimension_statements: BTreeMap<DimensionName, Vec<usize>>,
@@ -238,11 +244,13 @@ pub enum CftSchemaCheckStmt {
         bindings: CftSchemaQuantifierBindings,
         collection: CftSchemaCheckExpr,
         body: Vec<CftSchemaCheckStmt>,
+        message: Option<CftSchemaCheckMessage>,
         span: Span,
     },
     When {
         condition: CftSchemaCheckExpr,
         body: Vec<CftSchemaCheckStmt>,
+        message: Option<CftSchemaCheckMessage>,
         span: Span,
     },
 }

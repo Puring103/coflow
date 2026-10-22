@@ -179,8 +179,8 @@ fn const_value_to_string(value: &CftConstValue) -> String {
                 .join(", ")
         ),
         CftConstValue::Object { type_name, .. } => format!("{type_name} {{ ... }}"),
-        CftConstValue::RecordReference { type_name, key } => {
-            format!("&{type_name}::{key}")
+        CftConstValue::RecordReference { type_name, id } => {
+            format!("&{type_name}::{id}")
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::api::DiagnosticSet;
-use crate::data_model::{CfdPath, CfdPathSegment, CfdRecordId, CfdValue, DimensionValueLookup};
+use crate::data_model::{CfdPath, CfdPathSegment, CfdRecordHandle, CfdValue, DimensionValueLookup};
 use coflow_language::cft::{CftField, CftFieldDimension, CftValueType, VariantName};
 
 use crate::write_rules;
@@ -19,7 +19,7 @@ use super::{
 
 struct DimensionMutationTarget<'schema> {
     record: RecordCoordinate,
-    record_id: CfdRecordId,
+    record_id: CfdRecordHandle,
     field: &'schema CftField,
     binding: &'schema CftFieldDimension,
     variant: VariantName,
@@ -35,7 +35,7 @@ pub(super) fn prepare_dimension_value(
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     let DimensionValueCoordinate {
         actual_type,
-        record_key,
+        record_id,
         field,
         dimension,
         variant,
@@ -44,7 +44,7 @@ pub(super) fn prepare_dimension_value(
     let target = resolve_dimension_target(
         session,
         actual_type.as_str(),
-        record_key.as_str(),
+        record_id.as_str(),
         field.as_str(),
         dimension.as_str(),
         variant.as_str(),
@@ -77,7 +77,7 @@ pub(super) fn prepare_dimension_value(
     let write_file = if let Some(entry) = session.source_data.dimension_source(
         session.schema(),
         actual_type.as_str(),
-        record_key.as_str(),
+        record_id.as_str(),
         field.as_str(),
         dimension.as_str(),
         variant.as_str(),
@@ -96,7 +96,7 @@ pub(super) fn prepare_dimension_value(
         record: target.record,
         coordinate: DimensionSourceCoordinate {
             source_type: target.field.declaring_type.clone(),
-            source_key: record_key,
+            source_id: record_id,
             field: target.field.name.clone(),
             dimension: target.binding.dimension.clone(),
             variant: target.variant,
@@ -110,21 +110,21 @@ pub(super) fn prepare_dimension_value(
 fn resolve_dimension_target<'schema>(
     session: &'schema ProjectSession,
     actual_type: &str,
-    record_key: &str,
+    record_id: &str,
     field: &str,
     dimension: &str,
     variant: &str,
 ) -> Result<DimensionMutationTarget<'schema>, DiagnosticSet> {
-    let record = validated_record_coordinate(actual_type, record_key)?;
+    let record = validated_record_coordinate(actual_type, record_id)?;
     let record_id = session
         .records
-        .id_for_coordinate(&record.actual_type, &record.key)
+        .id_for_coordinate(&record.actual_type, &record.id)
         .ok_or_else(|| {
             one_mutation_error(
                 "MUTATION-DIMENSION",
                 format!(
                     "record `{}.{}` was not found",
-                    record.actual_type, record.key
+                    record.actual_type, record.id
                 ),
             )
         })?;

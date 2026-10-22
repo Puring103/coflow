@@ -519,7 +519,7 @@ fn record_states(
     let root = session.project.root_dir();
     for (_, record) in session.model.records() {
         let coordinate = record.coordinate();
-        let Some(source_path) = session.file_for_record(coordinate.actual_type(), coordinate.key())
+        let Some(source_path) = session.file_for_record(coordinate.actual_type(), coordinate.id())
         else {
             continue;
         };
@@ -551,7 +551,7 @@ fn record_states(
                 let Some(source) = session.source_data.dimension_source(
                     session.schema(),
                     coordinate.actual_type(),
-                    coordinate.key(),
+                    coordinate.id(),
                     field_name,
                     &dimensions.dimension,
                     variant,

@@ -79,15 +79,17 @@ pub(crate) fn completion_items(
             } else {
                 super::field_by_chain(build, document, offset, &chain).map(|(_, field)| field)
             };
-            if field.is_some_and(|field| field.dimension.is_some()) {
-                return [
-                    CftCheckBuiltin::Default,
+            if let Some(field) = field.filter(|field| field.dimension.is_some()) {
+                // 维度字段直接读取基础值，同时保留变体查询入口及原业务类型的方法。
+                let mut items = function_completion_items_for_type(&field.value_type);
+                items.extend([
+                    CftCheckBuiltin::HasVariant,
                     CftCheckBuiltin::For,
                     CftCheckBuiltin::Variants,
                 ]
                 .into_iter()
-                .map(builtin_completion_item)
-                .collect();
+                .map(builtin_completion_item));
+                return items;
             }
         }
         let mut items = dot_completion_items(build, document, offset, &chain);
@@ -132,11 +134,7 @@ pub(crate) fn completion_items(
             if is_value_typeerence_context(line_prefix) {
                 return type_completion_items(build);
             }
-            let mut items = type_member_completion_items();
-            if current_type_at(build, document, offset).is_some_and(|ty| ty.is_data()) {
-                items.retain(|item| item["label"] != "check");
-            }
-            items
+            type_member_completion_items()
         }
         CompletionScope::CheckBlock => check_expression_completion_items(build, document, offset),
         CompletionScope::EnumBody => enum_member_completion_items(),
@@ -186,7 +184,7 @@ fn type_member_completion_items() -> Vec<Value> {
         "CFT field",
         "Define a typed field.",
     )];
-    if let Some(check) = keyword_snippet_completion_item("check", "check {\n\t${1:condition};\n}") {
+    if let Some(check) = keyword_snippet_completion_item("check", "check ${1:Name} {\n\t${2:condition};\n}") {
         items.push(check);
     }
     items
@@ -222,7 +220,7 @@ pub(crate) fn check_expression_completion_items(
         items.push(completion_item(
             "id",
             COMPLETION_KIND_FIELD,
-            &format!("{} record key", current_type.name),
+            &format!("{} record id", current_type.name),
             None,
         ));
         for field in current_type.all_fields() {
@@ -330,7 +328,7 @@ fn builtin_supports_receiver(
     };
     let receiver = TypeRefLike::from(receiver);
     match builtin {
-        CftCheckBuiltin::Default | CftCheckBuiltin::Variants | CftCheckBuiltin::For => false,
+        CftCheckBuiltin::HasVariant | CftCheckBuiltin::Variants | CftCheckBuiltin::For => false,
         Len => matches!(
             receiver,
             TypeRefLike::String | TypeRefLike::Array | TypeRefLike::Dict
@@ -445,8 +443,7 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
         TypeRefKind::Bool => items.extend(literal_completion_items()),
         TypeRefKind::Int
         | TypeRefKind::Float
-        | TypeRefKind::String
-        | TypeRefKind::FormattedString => {}
+        | TypeRefKind::String => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .schema()
@@ -940,7 +937,7 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
                     return CompletionScope::EnumBody;
                 }
                 Item::Type(ty) if ty.span.start <= offset && offset <= ty.span.end => {
-                    if check_block_contains(ty.check.as_ref(), offset) {
+                    if ty.checks.iter().any(|check| check_block_contains(Some(check), offset)) {
                         return CompletionScope::CheckBlock;
                     }
                     return CompletionScope::TypeBody;

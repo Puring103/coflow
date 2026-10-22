@@ -15,7 +15,7 @@ import {
   replaceGroupedCoordinate,
 } from './manualRecordGroups'
 
-const coordinate = (key: string): RecordCoordinate => ({ actual_type: 'Item', key })
+const coordinate = (key: string): RecordCoordinate => ({ actual_type: 'Item', id: key})
 const row = (key: string): RecordRow => ({
   coordinate: coordinate(key),
   display_path: key,
@@ -105,8 +105,8 @@ describe('manual record groups', () => {
       [row('a'), row('b'), row('c')],
       [group('g1', 'a', 'b'), group('g2', 'b', 'missing')],
     )
-    expect(result.groups.map(view => view.records.map(record => record.coordinate.key))).toEqual([['a', 'b']])
-    expect(result.ungrouped.map(record => record.coordinate.key)).toEqual(['c'])
+    expect(result.groups.map(view => view.records.map(record => record.coordinate.id))).toEqual([['a', 'b']])
+    expect(result.ungrouped.map(record => record.coordinate.id)).toEqual(['c'])
   })
 
   it('renames groups and follows record key changes', () => {

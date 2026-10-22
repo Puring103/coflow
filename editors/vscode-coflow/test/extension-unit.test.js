@@ -142,7 +142,7 @@ async function main() {
   assert(!extension.__test.isPathWithin(extensionRoot, path.join(path.dirname(extensionRoot), "outside.cft")));
   assert(
     extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
-      "recordKey.declaration.record:cfd"
+      "recordId.declaration.record:cfd"
     ],
     "CFD record declarations should have a default semantic token color"
   );
@@ -171,7 +171,7 @@ async function main() {
     ),
     "CFT TextMate grammar must not include old typed reference rules"
   );
-  for (const syntax of ["Option", "fstring", "None", "Some"]) {
+  for (const syntax of ["Option", "string", "None", "Some"]) {
     assert(
       JSON.stringify(cftGrammar).includes(syntax),
       `CFT TextMate grammar should include migrated syntax: ${syntax}`
@@ -206,7 +206,7 @@ async function main() {
   assert.strictEqual(cfdGrammar.repository["comment-slash"], undefined);
   assert(JSON.stringify(cfdGrammar.repository.comments).includes("number-sign"));
   assert.strictEqual(cfdGrammar.repository.function, undefined);
-  for (const syntax of ["Option", "fstring", "Some"]) {
+  for (const syntax of ["Option", "string", "Some"]) {
     assert(
       JSON.stringify(cfdGrammar).includes(syntax),
       `CFD TextMate grammar should include migrated syntax: ${syntax}`

@@ -122,7 +122,7 @@ fn parse_value(
             "false" => Ok(LoadedValueDraft::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
-        CellType::FormattedString => {
+        CellType::String if text.starts_with("f\"") => {
             parse_formatted_string(text).map(LoadedValueDraft::FormattedString)
         }
         CellType::String => parse_string(text).map(LoadedValueDraft::String),

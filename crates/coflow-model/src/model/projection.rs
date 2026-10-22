@@ -4,9 +4,13 @@ use crate::{
 };
 use coflow_language::cft::CftSchema;
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use super::DimensionProjection;
 
 impl CfdDataModel {
-    /// 合并所选维度后重新解析整个模型，保证跨记录引用及嵌套 fstring 使用同一投影视角。
+    /// 合并所选维度后重新解析整个模型，保证引用及嵌套模板使用同一视图。
+    /// 连续调用保留其他维度选择，并从原始基础来源重新求值本次选择。
     pub fn project_dimensions(
         &self,
         schema: &CftSchema,
@@ -15,8 +19,27 @@ impl CfdDataModel {
         if dimensions.is_empty() {
             return Ok(self.clone());
         }
+        for dimension in dimensions.keys() {
+            if schema.resolve_dimension(dimension).is_none() {
+                return Err(CfdDiagnostic::error(
+                    CfdErrorCode::TypeMismatch,
+                    format!("unknown dimension `{dimension}`"),
+                )
+                .into());
+            }
+        }
+        let (source, mut selections) = self.projection.as_ref().map_or_else(
+            || (Arc::new(self.clone()), BTreeMap::new()),
+            |projection| {
+                (
+                    Arc::clone(&projection.source),
+                    projection.selections.clone(),
+                )
+            },
+        );
+        selections.extend(dimensions.clone());
         let mut builder = CfdModelBuilder::new(schema);
-        for (_, record) in self.records() {
+        for (_, record) in source.records() {
             let fields = record
                 .fields()
                 .iter()
@@ -25,7 +48,7 @@ impl CfdDataModel {
                         .dimension_fields
                         .get(name)
                         .and_then(|field| {
-                            dimensions
+                            selections
                                 .get(field.dimension.as_str())
                                 .and_then(|variant| field.variants.get(variant.as_str()))
                         })
@@ -34,21 +57,22 @@ impl CfdDataModel {
                 })
                 .collect::<Result<BTreeMap<_, _>, CfdDiagnostics>>()?;
             builder.add_loaded_record(
-                LoadedRecordDraft::new(record.key(), record.actual_type(), fields)
+                LoadedRecordDraft::new(record.id(), record.actual_type(), fields)
                     .with_origin(record.origin.clone()),
             );
         }
         let mut projected = builder.build()?;
-        // 投影改变基础有效值，保留覆盖元数据供来源查询与覆盖状态比较使用。
+        // 始终重新求值所选来源表达式，同时保留原始单维查询及显式覆盖元数据。
         for record in &mut projected.records {
-            if let Some(original) = self
-                .record_by_type_key(record.actual_type(), record.key())
-                .and_then(|id| self.record(id))
+            if let Some(original) = source
+                .record_by_type_id(record.actual_type(), record.id())
+                .and_then(|id| source.record(id))
             {
                 record.dimension_fields = original.dimension_fields.clone();
             }
         }
-        projected.dimension_variants = self.dimension_variants.clone();
+        projected.dimension_variants = source.dimension_variants.clone();
+        projected.projection = Some(DimensionProjection { source, selections });
         Ok(projected)
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::api::DiagnosticSet;
 use crate::data_model::{
-    CfdDataModel, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, RecordCoordinate,
+    CfdDataModel, CfdPath, CfdPathSegment, CfdRecordHandle, CfdValue, RecordCoordinate,
 };
 use crate::project::{normalize_path, path_is_same_or_descendant, path_to_slash, Project};
 use coflow_language::cft::{CftModuleSet, CftSchema};
@@ -93,7 +93,7 @@ impl ProjectSession {
     /// id. Returns `None` when no record matches — callers surface an
     /// `EditorError::NotFound` rather than panic.
     #[must_use]
-    pub(crate) fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
+    pub(crate) fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordHandle> {
         self.records.id_for_coordinate(actual_type, key)
     }
 
@@ -101,7 +101,7 @@ impl ProjectSession {
     /// return the wire coordinate. Lives here so model id leakage stays
     /// confined to the engine boundary.
     #[must_use]
-    pub(crate) fn coordinate_of(&self, id: CfdRecordId) -> Option<RecordCoordinate> {
+    pub(crate) fn coordinate_of(&self, id: CfdRecordHandle) -> Option<RecordCoordinate> {
         self.records.get(id).map(|r| r.coordinate.clone())
     }
 
@@ -158,7 +158,7 @@ impl ProjectSession {
     ) -> Option<EffectiveFieldWrite> {
         let record_ref = self
             .records
-            .get_by_coordinate(&coordinate.actual_type, &coordinate.key)?;
+            .get_by_coordinate(&coordinate.actual_type, &coordinate.id)?;
         let target_path = path.to_vec();
         let target_record = self.model.record(record_ref.id)?;
         let old_value = record_value_at_path(
@@ -186,7 +186,7 @@ impl ProjectSession {
         };
         for type_name in assignable_types {
             for (_, record) in self.model.records_of_type(&type_name) {
-                let Some(file_path) = self.file_for_record(record.actual_type(), &record.key)
+                let Some(file_path) = self.file_for_record(record.actual_type(), &record.id)
                 else {
                     continue;
                 };
@@ -200,7 +200,7 @@ impl ProjectSession {
             a.coordinate
                 .actual_type
                 .cmp(&b.coordinate.actual_type)
-                .then_with(|| a.coordinate.key.cmp(&b.coordinate.key))
+                .then_with(|| a.coordinate.id.cmp(&b.coordinate.id))
         });
         targets.dedup_by(|a, b| a.coordinate == b.coordinate);
         targets

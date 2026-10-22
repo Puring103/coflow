@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
-use crate::RecordKey;
+use crate::RecordId;
 use coflow_language::cft::{
     CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
     ValueDependencyMode,
@@ -44,7 +44,7 @@ pub fn default_value_for_value_type(
     DefaultValueMaterializer::new(schema).zero_for_ty(ty, materialization)
 }
 
-/// 语义修改只补齐声明默认值及 Option 的 None，不把编辑器形状初值写成业务数据。
+/// 语义修改只补齐声明默认值，不把编辑器形状初值写成业务数据。
 pub(crate) fn declared_field_default(
     schema: &CftSchema,
     field: &CftField,
@@ -59,9 +59,6 @@ pub(crate) fn declared_field_default(
                 DefaultMaterialization::EditableShape,
             )
             .map(Some),
-        None if matches!(field.value_type, CftValueType::Option(_)) => {
-            Ok(Some(CfdValue::OptionNone))
-        }
         None => Ok(None),
     }
 }
@@ -198,9 +195,6 @@ impl<'a> DefaultValueMaterializer<'a> {
                         default,
                         materialization,
                     )?),
-                    None if matches!(field.value_type, CftValueType::Option(_)) => {
-                        Some(CfdValue::OptionNone)
-                    }
                     None => None,
                 }
             } else {
@@ -442,11 +436,11 @@ impl<'a> DefaultValueMaterializer<'a> {
                 }
                 _ => self.zero_for_ty(ty, materialization),
             },
-            CftSchemaDefaultValue::RecordReference { type_name, key } => match ty {
+            CftSchemaDefaultValue::RecordReference { type_name, id: key } => match ty {
                 CftValueType::RecordRef(expected)
                     if self.schema.is_assignable(type_name, expected) =>
                 {
-                    RecordKey::new(key)
+                    RecordId::new(key)
                         .map(CfdValue::Ref)
                         .map_err(|error| one_mutation_error("MUTATION-DEFAULT", error.to_string()))
                 }
@@ -465,12 +459,6 @@ impl<'a> DefaultValueMaterializer<'a> {
             CftValueType::Float => Ok(CfdValue::Float(0.0)),
             CftValueType::Bool => Ok(CfdValue::Bool(false)),
             CftValueType::String => Ok(CfdValue::String(String::new())),
-            CftValueType::FormattedString => {
-                Ok(CfdValue::FormattedString(crate::CfdFormattedString {
-                    source: "f\"\"".to_string(),
-                    rendered: String::new(),
-                }))
-            }
             CftValueType::Option(_) => Ok(CfdValue::OptionNone),
             CftValueType::RecordRef(_) => Err(one_mutation_error(
                 "MUTATION-DEFAULT",

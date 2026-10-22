@@ -192,28 +192,28 @@ describe('groupFilterPredicate', () => {
       name: 'Potions',
       color: null,
       records: [
-        { actual_type: 'Item', key: 'a' },
-        { actual_type: 'Item', key: 'b' },
+        { actual_type: 'Item', id: 'a' },
+        { actual_type: 'Item', id: 'b' },
       ],
     },
   ]
 
   it('passes all when there is no group filter', () => {
     const predicate = groupFilterPredicate(resolveView(null, FILE, TYPE, DEFAULT_TABLE_VIEW_ID), groups)
-    expect(predicate({ actual_type: 'Item', key: 'z' })).toBe(true)
+    expect(predicate({ actual_type: 'Item', id: 'z' })).toBe(true)
   })
 
   it('passes all when the referenced group no longer exists', () => {
     const settings = settingsWith([tableView({ id: 'a', group_filter: 'missing' })])
     const predicate = groupFilterPredicate(resolveView(settings, FILE, TYPE, 'a'), groups)
-    expect(predicate({ actual_type: 'Item', key: 'a' })).toBe(true)
+    expect(predicate({ actual_type: 'Item', id: 'a' })).toBe(true)
   })
 
   it('restricts to group members when the filter is valid', () => {
     const settings = settingsWith([tableView({ id: 'a', group_filter: 'g1' })])
     const predicate = groupFilterPredicate(resolveView(settings, FILE, TYPE, 'a'), groups)
-    expect(predicate({ actual_type: 'Item', key: 'a' })).toBe(true)
-    expect(predicate({ actual_type: 'Item', key: 'z' })).toBe(false)
+    expect(predicate({ actual_type: 'Item', id: 'a' })).toBe(true)
+    expect(predicate({ actual_type: 'Item', id: 'z' })).toBe(false)
   })
 })
 

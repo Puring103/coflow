@@ -131,16 +131,16 @@ pub fn references(
                                 "location":location(project.root_dir(),module.path(),module.source(),span)}));
                         }
                     }
-                    if let Some(block) = &ty.check {
-                        check_static_paths(
-                            &block.stmts,
+                    for block in &ty.checks {
+                        check_block_paths(
+                            block,
                             &mut uses,
                             &schema
                                 .resolve_type(&ty.name)
                                 .map(|ty| {
                                     ty.all_fields()
                                         .map(|field| field.name.to_string())
-                                        .chain(std::iter::once("id".into()))
+                                        .chain((!ty.is_data()).then(|| "id".into()))
                                         .collect()
                                 })
                                 .unwrap_or_default(),
@@ -158,7 +158,7 @@ pub fn references(
                     }
                 }
                 Item::Check(check) => {
-                    check_static_paths(&check.block.stmts, &mut uses, &Default::default())
+                    check_block_paths(&check.block, &mut uses, &Default::default())
                 }
                 _ => {}
             }
@@ -200,22 +200,28 @@ pub fn references(
             }
         }
     }
-    for info in schema.all_check_statements() {
+    for info in super::rules::named_rules(schema) {
         if rule && super::rules::selected(info, symbol) {
             items.push(json!({"kind": "declaration", "symbol": super::rules::identity(info), "rule": super::rules::describe(schema, info, project.root_dir())}));
         }
-        if info.dependencies.iter().any(|d| match d {
-            coflow_language::cft::CheckDependency::Field(f) => {
-                f.owner.as_str() == symbol
-                    || field.is_some_and(|target| {
-                        schema.field(&f.owner, &f.field).is_some_and(|dependency| {
-                            dependency.declaring_type == target.declaring_type
-                                && dependency.name == target.name
-                        })
-                    })
-            }
-            coflow_language::cft::CheckDependency::RecordSet(t) => t.as_str() == symbol,
-        }) {
+        if schema
+            .check_statements_for_rule(&info.rule_id)
+            .filter_map(|id| schema.check_statement(id))
+            .any(|statement| {
+                statement.info.dependencies.iter().any(|d| match d {
+                    coflow_language::cft::CheckDependency::Field(f) => {
+                        f.owner.as_str() == symbol
+                            || field.is_some_and(|target| {
+                                schema.field(&f.owner, &f.field).is_some_and(|dependency| {
+                                    dependency.declaring_type == target.declaring_type
+                                        && dependency.name == target.name
+                                })
+                            })
+                    }
+                    coflow_language::cft::CheckDependency::RecordSet(t) => t.as_str() == symbol,
+                })
+            })
+        {
             items.push(json!({"kind": "rule_expression", "rule": super::rules::describe(schema,info,project.root_dir())}));
         }
     }
@@ -244,7 +250,7 @@ pub fn references(
             }
             let coordinate = super::RecordTarget {
                 actual_type: record.type_name.clone(),
-                key: record.key.clone(),
+                id: record.id.clone(),
             };
             if record.type_name == symbol {
                 items.push(
@@ -534,42 +540,68 @@ fn static_symbol_matches(
         })
 }
 
+fn check_block_paths(
+    block: &coflow_language::cft::syntax::ast::CheckBlock,
+    uses: &mut Vec<(String, coflow_language::source::Span)>,
+    shadowed: &std::collections::BTreeSet<String>,
+) {
+    check_message_paths(block.message.as_ref(), uses, shadowed);
+    check_static_paths(&block.stmts, uses, shadowed);
+}
+
+fn check_message_paths(
+    message: Option<&coflow_language::cft::syntax::ast::CheckMessage>,
+    uses: &mut Vec<(String, coflow_language::source::Span)>,
+    shadowed: &std::collections::BTreeSet<String>,
+) {
+    use coflow_language::cft::syntax::ast::{CheckFormatSegment, CheckMessageKind};
+    if let Some(coflow_language::cft::syntax::ast::CheckMessage {
+        kind: CheckMessageKind::Formatted(segments),
+        ..
+    }) = message
+    {
+        for segment in segments {
+            if let CheckFormatSegment::Expr(expression) = segment {
+                check_expression_paths(expression, uses, shadowed);
+            }
+        }
+    }
+}
+
 fn check_static_paths(
     statements: &[coflow_language::cft::syntax::ast::CheckStmt],
     uses: &mut Vec<(String, coflow_language::source::Span)>,
     shadowed: &std::collections::BTreeSet<String>,
 ) {
-    use coflow_language::cft::syntax::ast::{CheckFormatSegment, CheckMessageKind, CheckStmt as S};
+    use coflow_language::cft::syntax::ast::CheckStmt as S;
     for statement in statements {
         match statement {
             S::Expr {
                 condition, message, ..
             } => {
                 check_expression_paths(condition, uses, shadowed);
-                if let Some(message) = message {
-                    if let CheckMessageKind::Formatted(segments) = &message.kind {
-                        for segment in segments {
-                            if let CheckFormatSegment::Expr(expression) = segment {
-                                check_expression_paths(expression, uses, shadowed);
-                            }
-                        }
-                    }
-                }
+                check_message_paths(message.as_ref(), uses, shadowed);
             }
             S::Quantifier {
                 collection,
                 body,
                 bindings,
+                message,
                 ..
             } => {
+                check_message_paths(message.as_ref(), uses, shadowed);
                 check_expression_paths(collection, uses, shadowed);
                 let mut scope = shadowed.clone();
                 scope.extend(bindings.iter().map(|binding| binding.name.clone()));
                 check_static_paths(body, uses, &scope);
             }
             S::When {
-                condition, body, ..
+                condition,
+                body,
+                message,
+                ..
             } => {
+                check_message_paths(message.as_ref(), uses, shadowed);
                 check_expression_paths(condition, uses, shadowed);
                 let mut scope = shadowed.clone();
                 condition_bindings(condition, &mut scope);

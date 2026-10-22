@@ -2,7 +2,7 @@ use super::validate::CachedDefaultObject;
 use super::Validator;
 use crate::build::{RecordDraft, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, RecordOrigin};
-use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
+use crate::model::{CfdEnumValue, CfdRecordHandle, CfdValue};
 use coflow_language::cft::{CftField, CftSchemaDefaultValue, CftValueType};
 use coflow_language::limits::TraversalCursor;
 use std::collections::BTreeMap;
@@ -12,7 +12,7 @@ impl Validator<'_, '_> {
         &mut self,
         field: &CftField,
         value: &CftSchemaDefaultValue,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         parent: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -42,7 +42,7 @@ impl Validator<'_, '_> {
         &mut self,
         ty: &CftValueType,
         value: &CftSchemaDefaultValue,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -89,7 +89,7 @@ impl Validator<'_, '_> {
                 CfdValue::String(value.clone())
             }
             CftSchemaDefaultValue::FormattedString(source)
-                if type_accepts_default(ty, &CftValueType::FormattedString) =>
+                if type_accepts_default(ty, &CftValueType::String) =>
             {
                 let Ok(parsed) = crate::cell_value::parse_formatted_string(source) else {
                     self.push_default_type_mismatch(record, path);
@@ -178,7 +178,7 @@ impl Validator<'_, '_> {
                 }
                 return self.default_explicit_object_value(type_name, fields, record, path, cursor);
             }
-            CftSchemaDefaultValue::RecordReference { type_name, key } => {
+            CftSchemaDefaultValue::RecordReference { type_name, id: key } => {
                 let CftValueType::RecordRef(expected) = ty else {
                     self.push_default_type_mismatch(record, path);
                     return None;
@@ -189,7 +189,7 @@ impl Validator<'_, '_> {
                 }
                 return Some(ValueDraft::PendingRef {
                     explicit_type: Some(type_name.clone()),
-                    key: key.clone(),
+                    id: key.clone(),
                 });
             }
             _ => {
@@ -205,7 +205,7 @@ impl Validator<'_, '_> {
         &mut self,
         type_name: &coflow_language::cft::TypeName,
         supplied: &[(coflow_language::cft::FieldName, CftSchemaDefaultValue)],
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -244,7 +244,7 @@ impl Validator<'_, '_> {
             }
         }
         Some(ValueDraft::Object(Box::new(RecordDraft {
-            key: String::new(),
+            id: String::new(),
             actual_type: type_name.clone(),
             fields,
             origin: RecordOrigin::None,
@@ -254,7 +254,7 @@ impl Validator<'_, '_> {
     fn default_object_value(
         &mut self,
         type_name: &str,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -302,7 +302,7 @@ impl Validator<'_, '_> {
         Some(ValueDraft::Object(Box::new(draft)))
     }
 
-    fn push_default_type_mismatch(&mut self, record: Option<CfdRecordId>, path: CfdPath) {
+    fn push_default_type_mismatch(&mut self, record: Option<CfdRecordHandle>, path: CfdPath) {
         self.push(
             CfdDiagnostic::error(
                 CfdErrorCode::TypeMismatch,

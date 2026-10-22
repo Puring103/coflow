@@ -33,7 +33,7 @@ table Entity {
   parent: Option<&Entity> = None;
   related: [&Entity] = [];
 
-  check {
+  check Valid {
     level > 0: "实体 {id} 的等级必须大于 0";
     name.isBlank() == false;
     tags.isUnique();
@@ -62,7 +62,7 @@ table Quest {
   steps: [QuestStep];
   rewardGroups: {string: [RewardEntry]} = {};
 
-  check {
+  check Valid {
     displayId.isBlank() == false;
     steps.len() > 0;
     all step, index in steps {

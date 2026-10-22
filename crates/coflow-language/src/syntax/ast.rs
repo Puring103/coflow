@@ -107,7 +107,7 @@ pub struct TypeDef {
     pub sealed_span: Option<Span>,
     pub parent: Option<NameRef>,
     pub fields: Vec<FieldDef>,
-    pub check: Option<CheckBlock>,
+    pub checks: Vec<CheckBlock>,
     pub annotations: Vec<Annotation>,
     pub dangling_annotations: Vec<Annotation>,
     pub span: Span,
@@ -180,7 +180,6 @@ pub enum TypeRefKind {
     Float,
     Bool,
     String,
-    FormattedString,
     Named(String),
     Ref(Box<TypeRef>),
     Array(Box<TypeRef>),
@@ -235,6 +234,9 @@ pub enum DefaultBitOp {
 
 #[derive(Debug, Clone)]
 pub struct CheckBlock {
+    pub message: Option<CheckMessage>,
+    pub name: String,
+    pub name_span: Span,
     pub stmts: Vec<CheckStmt>,
     pub span: Span,
 }
@@ -269,11 +271,13 @@ pub enum CheckStmt {
         bindings: Vec<NameRef>,
         collection: CheckExpr,
         body: Vec<CheckStmt>,
+        message: Option<CheckMessage>,
         span: Span,
     },
     When {
         condition: CheckExpr,
         body: Vec<CheckStmt>,
+        message: Option<CheckMessage>,
         span: Span,
     },
 }

@@ -4,7 +4,7 @@ use super::super::semantic_tokens::{
     byte_spans_to_raw_tokens, comment_start_in_line, encode_semantic_tokens, push_semantic_span,
     push_semantic_span_plain, semantic_raw_tokens, semantic_token_data, RawSemanticToken,
     MOD_DECLARATION, MOD_PATH, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_FUNCTION, SEM_OPERATOR,
-    SEM_PROPERTY, SEM_RECORD_KEY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    SEM_PROPERTY, SEM_RECORD_ID, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
 };
 use super::super::text::{is_after_line_comment, is_inside_string};
 use super::super::uri::{hex_value, percent_decode};
@@ -50,14 +50,14 @@ fn encoded_semantic_tokens_preserve_modifiers() {
     push_semantic_span(
         source,
         Span::new(0, 2),
-        SEM_RECORD_KEY,
+        SEM_RECORD_ID,
         MOD_DECLARATION | MOD_RECORD,
         &mut tokens,
     );
     push_semantic_span(
         source,
         Span::new(3, 5),
-        SEM_RECORD_KEY,
+        SEM_RECORD_ID,
         MOD_REFERENCE | MOD_RECORD,
         &mut tokens,
     );
@@ -70,12 +70,12 @@ fn encoded_semantic_tokens_preserve_modifiers() {
             0,
             0,
             2,
-            SEM_RECORD_KEY,
+            SEM_RECORD_ID,
             MOD_DECLARATION | MOD_RECORD,
             0,
             3,
             2,
-            SEM_RECORD_KEY,
+            SEM_RECORD_ID,
             MOD_REFERENCE | MOD_RECORD,
         ]
     );
@@ -86,7 +86,7 @@ fn cft_semantic_tokens_distinguish_schema_declarations_references_and_paths() {
     let source = "data Target { key: string; value: int; }\n\
 table Holder {\n\
   target: Target;\n\
-  check { target.value == 1; }\n\
+  check Valid { target.value == 1; }\n\
 }\n";
     let (_cleanup, build) = test_lsp_build("lsp-cft-semantic-modifiers", source);
     let document = first_document(&build);
@@ -190,7 +190,7 @@ elite: Monster { target: &base }\n";
     assert!(
         tokens.contains(&DecodedSemanticToken {
             text: "base".to_string(),
-            token_type: SEM_RECORD_KEY,
+            token_type: SEM_RECORD_ID,
             modifiers: MOD_DECLARATION | MOD_RECORD,
         }),
         "{tokens:?}"
@@ -212,7 +212,7 @@ elite: Monster { target: &base }\n";
     }));
     assert!(tokens.contains(&DecodedSemanticToken {
         text: "base".to_string(),
-        token_type: SEM_RECORD_KEY,
+        token_type: SEM_RECORD_ID,
         modifiers: MOD_REFERENCE | MOD_RECORD,
     }));
 }
@@ -295,4 +295,20 @@ table Item { @ref(Target) target: string; }\n";
         .iter()
         .filter(token_matches_target)
         .any(|token| token.token_type == SEM_TYPE));
+}
+
+#[test]
+fn named_data_checks_appear_in_outline_and_semantic_tokens() {
+    let source = "data Reward { count: int; check Positive { count > 0; } check Limited { count < 100; } }";
+    let (_cleanup, build) = test_lsp_build("lsp-data-checks", source);
+    let document = first_document(&build);
+    let raw_tokens = semantic_raw_tokens(&build, document);
+    for name in ["Positive", "Limited"] {
+        assert!(has_semantic_token(source, &raw_tokens, &format!("check {name}"), name,
+            SEM_FUNCTION, MOD_DECLARATION | MOD_SCHEMA));
+    }
+    let symbols = document_symbols(document);
+    let children = symbols[0]["children"].as_array().expect("type children");
+    assert_eq!(children.iter().map(|child| child["name"].as_str().expect("name")).collect::<Vec<_>>(),
+        ["count", "Positive", "Limited"]);
 }

@@ -21,7 +21,7 @@ describe('built-in project search plugin', () => {
   })
 
   it('searches unopened mock files by key and nested field value', () => {
-    const keyResults = searchMockRecords(MOCK_FILE_RECORDS, 3, 1, 'npc_002', 'key', 200)
+    const keyResults = searchMockRecords(MOCK_FILE_RECORDS, 3, 1, 'npc_002', 'id', 200)
     expect(keyResults.data.hits[0].filePath).toBe('data/npc.cfd')
 
     const textResults = searchMockRecords(MOCK_FILE_RECORDS, 3, 1, '铁匠', 'full_text', 200)
@@ -34,7 +34,7 @@ describe('built-in project search plugin', () => {
   })
 
   it('reports truncation only when another match exists', () => {
-    const results = searchMockRecords(MOCK_FILE_RECORDS, 3, 1, 'item_', 'key', 1)
+    const results = searchMockRecords(MOCK_FILE_RECORDS, 3, 1, 'item_', 'id', 1)
     expect(results.data.hits).toHaveLength(1)
     expect(results.data.truncated).toBe(true)
   })
@@ -43,7 +43,7 @@ describe('built-in project search plugin', () => {
 function hit(filePath: string, actualType: string, key: string): PluginSearchHit {
   return {
     filePath,
-    coordinate: { actual_type: actualType, key },
+    coordinate: { actual_type: actualType, id: key},
     fieldPath: null,
     preview: null,
   }

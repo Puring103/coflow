@@ -12,14 +12,9 @@ using System.Globalization;
 internal static class CfdIdentifiers
 {
     internal static bool IsReserved(string value) => value is
-        "_" or "id" or "Id" or "ID" or "const" or
-        "enum" or "type" or "table" or "data" or "singleton" or "abstract" or "sealed" or "check" or "when" or "all" or
-        "any" or "none" or "in" or "is" or "true" or "false" or "null" or "int" or
-        "float" or "bool" or "string" or "fstring" or "len" or "contains" or "isUnique" or "min" or
-        "max" or "sum" or "keys" or "values" or "matches" or "if" or "else" or "match" or
-        "case" or "for" or "while" or "let" or "module" or "import" or "export" or "from" or
-        "fn" or "var" or "return" or "break" or "continue" or
-        "None" or "Some" or "Option" or "alert" or "records";
+        "_" or "const" or "enum" or "type" or "table" or "data" or "singleton" or
+        "abstract" or "sealed" or "check" or "when" or "all" or "any" or "none" or
+        "in" or "is" or "true" or "false" or "None" or "Some";
 
     internal static bool IsIdentifier(string value) =>
         IsIdentifierName(value) && !IsReserved(value);

@@ -52,8 +52,8 @@
   },
   "check block": {
     "prefix": "check",
-    "body": ["check {", "\t${1:condition};", "}"],
-    "description": "Define a check block."
+    "body": ["check ${1:RuleName} {", "\t${2:condition};", "}"],
+    "description": "Define a named check rule."
   },
   "when block": {
     "prefix": "when",

@@ -2,7 +2,7 @@ use super::ids::RecordCoordinate;
 use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{format_cfd_dict_key, CfdPath, CfdPathSegment};
 use coflow_language::cft::{
-    CftEnumValue, CftNameError, DimensionName, EnumName, EnumVariantName, FieldName, RecordKey,
+    CftEnumValue, CftNameError, DimensionName, EnumName, EnumVariantName, FieldName, RecordId,
     TypeName, VariantName,
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ use std::hash::{Hash, Hasher};
 )]
 pub struct CfdRecord {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
-    pub key: RecordKey,
+    pub id: RecordId,
     pub object: CfdObject,
     /// Where this record came from in its original source. Used by writers to
     /// dispatch edits back to the right source and by diagnostics to map
@@ -37,13 +37,13 @@ pub struct CfdRecord {
 
 impl CfdRecord {
     #[must_use]
-    pub fn key(&self) -> &str {
-        self.key.as_str()
+    pub fn id(&self) -> &str {
+        self.id.as_str()
     }
 
     #[must_use]
-    pub const fn record_key(&self) -> &RecordKey {
-        &self.key
+    pub const fn record_id(&self) -> &RecordId {
+        &self.id
     }
 
     #[must_use]
@@ -58,7 +58,7 @@ impl CfdRecord {
 
     #[must_use]
     pub fn coordinate(&self) -> RecordCoordinate {
-        RecordCoordinate::new(self.actual_type_name().clone(), self.record_key().clone())
+        RecordCoordinate::new(self.actual_type_name().clone(), self.record_id().clone())
     }
 
     #[must_use]
@@ -98,9 +98,9 @@ impl CfdRecord {
                     record.fields().get(field.as_str())?
                 }
                 (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
-                (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
+                (CfdPathSegment::DictKey(id), CfdValue::Dict(entries)) => entries
                     .iter()
-                    .find(|(entry_key, _)| format_cfd_dict_key(entry_key) == *key)
+                    .find(|(entry_key, _)| format_cfd_dict_key(entry_key) == *id)
                     .map(|(_, value)| value)?,
                 _ => return None,
             };
@@ -112,6 +112,8 @@ impl CfdRecord {
 pub struct CfdDimensionFieldValues {
     pub dimension: DimensionName,
     pub variants: BTreeMap<VariantName, CfdDimensionValue>,
+    /// 包含基础表达式回退的当前变体有效值，与显式覆盖来源分开保存。
+    pub effective_variants: BTreeMap<VariantName, CfdValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -209,7 +211,7 @@ pub enum CfdValue {
     FormattedString(CfdFormattedString),
     Enum(CfdEnumValue),
     Object(Box<CfdObject>),
-    Ref(#[cfg_attr(feature = "ts-export", ts(type = "string"))] RecordKey),
+    Ref(#[cfg_attr(feature = "ts-export", ts(type = "string"))] RecordId),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
 }
@@ -226,13 +228,13 @@ pub struct CfdFormattedString {
 }
 
 impl CfdValue {
-    /// Validates a raw reference key before constructing a successful value.
+    /// Validates a raw reference id before constructing a successful value.
     ///
     /// # Errors
     ///
-    /// Returns an error when `key` is not a valid record key.
-    pub fn record_ref(key: impl Into<String>) -> Result<Self, CftNameError> {
-        RecordKey::new(key).map(Self::Ref)
+    /// Returns an error when `id` is not a valid record id.
+    pub fn record_ref(id: impl Into<String>) -> Result<Self, CftNameError> {
+        RecordId::new(id).map(Self::Ref)
     }
 }
 

@@ -78,12 +78,12 @@ fn reorders_records_without_changing_document_slots() {
             operation: ReorderRecordsOperation::Swap {
                 first: WriteRecordRef {
                     origin: &origin,
-                    record_key: "a",
+                    record_id: "a",
                     actual_type: "Item",
                 },
                 second: WriteRecordRef {
                     origin: &origin,
-                    record_key: "c",
+                    record_id: "c",
                     actual_type: "Item",
                 },
             },
@@ -100,7 +100,7 @@ fn reorders_records_without_changing_document_slots() {
             operation: ReorderRecordsOperation::MoveBefore {
                 record: WriteRecordRef {
                     origin: &origin,
-                    record_key: "c",
+                    record_id: "c",
                     actual_type: "Item",
                 },
                 before: None,
@@ -142,12 +142,12 @@ top: Item {
             operation: ReorderRecordsOperation::Swap {
                 first: WriteRecordRef {
                     origin: &origin,
-                    record_key: "grouped",
+                    record_id: "grouped",
                     actual_type: "Item",
                 },
                 second: WriteRecordRef {
                     origin: &origin,
-                    record_key: "top",
+                    record_id: "top",
                     actual_type: "Item",
                 },
             },
@@ -199,7 +199,7 @@ shield: Item {
     let origin = origin_for(&file);
     let request = WriteCellRequest {
         origin: &origin,
-        record_key: "sword",
+        record_id: "sword",
         actual_type: "Item",
         field_path: &segments,
         new_value: &request_value,
@@ -238,7 +238,7 @@ fn inserts_missing_field_with_two_space_indentation() {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "sword",
+            record_id: "sword",
             actual_type: "Item",
             field_path: &segments,
             new_value: &value,
@@ -294,7 +294,7 @@ fn writes_field_inside_polymorphic_block_using_type_marker() {
     let origin = origin_for(&file);
     let request = WriteCellRequest {
         origin: &origin,
-        record_key: "stage_start",
+        record_id: "stage_start",
         actual_type: "Stage",
         field_path: &segments,
         new_value: &request_value,
@@ -344,7 +344,7 @@ shared: Skill {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "shared",
+            record_id: "shared",
             actual_type: "Skill",
             field_path: &segments,
             new_value: &request_value,
@@ -412,7 +412,7 @@ picker: Holder {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "picker",
+            record_id: "picker",
             actual_type: "Holder",
             field_path: &segments,
             new_value: &new_value,
@@ -431,7 +431,7 @@ picker: Holder {
     let records = parse_cfd_input_records(&schema, &after).expect("re-parse");
     let picker = records
         .iter()
-        .find(|r| r.key == "picker")
+        .find(|r| r.id == "picker")
         .expect("picker record");
     let _ = picker;
 }
@@ -476,7 +476,7 @@ picker: Holder {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "picker",
+            record_id: "picker",
             actual_type: "Holder",
             field_path: &segments,
             new_value: &new_value,
@@ -530,7 +530,7 @@ fn inserts_record_at_end_of_cfd_file() {
     let outcome = writer
         .insert_record(&InsertRecordRequest {
             source: &source,
-            record_key: "potion",
+            record_id: "potion",
             actual_type: "Item",
             fields: &fields,
             schema: schema,
@@ -578,7 +578,7 @@ fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
     writer
         .insert_record(&InsertRecordRequest {
             source: &source,
-            record_key: "shared",
+            record_id: "shared",
             actual_type: "Skill",
             fields: &fields,
             schema: schema,
@@ -641,7 +641,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     writer
         .insert_record(&InsertRecordRequest {
             source: &source,
-            record_key: "starter",
+            record_id: "starter",
             actual_type: "Loot",
             fields: &fields,
             schema: schema,
@@ -691,7 +691,7 @@ shield: Item {
     writer
         .delete_record(&DeleteRecordRequest {
             origin: &origin,
-            record_key: "sword",
+            record_id: "sword",
             actual_type: "Item",
         })
         .expect("delete succeeds");
@@ -727,7 +727,7 @@ shared: Skill {
     writer
         .delete_record(&DeleteRecordRequest {
             origin: &origin,
-            record_key: "shared",
+            record_id: "shared",
             actual_type: "Skill",
         })
         .expect("delete skill");
@@ -778,7 +778,7 @@ fn writes_enum_dict_key_path_using_member_display_text() {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "starter",
+            record_id: "starter",
             actual_type: "Loot",
             field_path: &segments,
             new_value: &new_value,
@@ -841,7 +841,7 @@ fn writes_group_record_without_required_commas() {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "eff_fireball_damage",
+            record_id: "eff_fireball_damage",
             actual_type: "DamageEffect",
             field_path: &segments,
             new_value: &new_value,
@@ -892,7 +892,7 @@ sword: Item {
     let err = writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "sword",
+            record_id: "sword",
             actual_type: "Item",
             field_path: &segments,
             new_value: &new_value,
@@ -948,7 +948,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "starter_effects",
+            record_id: "starter_effects",
             actual_type: "EffectBundle",
             field_path: &primary_path,
             new_value: &primary,
@@ -961,7 +961,7 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
-            record_key: "starter_effects",
+            record_id: "starter_effects",
             actual_type: "EffectBundle",
             field_path: &additional_path,
             new_value: &CfdValue::Array(appended_effects),

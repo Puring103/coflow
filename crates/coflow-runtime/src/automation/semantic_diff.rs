@@ -19,7 +19,7 @@ pub struct DiffFieldState {
 pub struct SemanticFieldDiff {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub field: String,
     pub dimension: Option<String>,
     pub variant: Option<String>,
@@ -33,7 +33,7 @@ pub struct SemanticFieldDiff {
 pub struct SemanticRecordDiff {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub change: String,
     pub before_file: Option<String>,
     pub after_file: Option<String>,
@@ -95,7 +95,7 @@ impl SemanticSnapshot {
                 }
             }
             if let Some(schema) = schema_session.schema() {
-                for info in schema.all_check_statements() {
+                for info in super::rules::named_rules(schema) {
                     let mut rule =
                         super::json(super::rules::describe(schema, info, project.root_dir()))?;
                     rule.as_object_mut().map(|rule| rule.remove("location"));
@@ -125,12 +125,12 @@ impl SemanticSnapshot {
         for (_, record) in session.model().records() {
             let file = session
                 .queries()
-                .file_for_record(record.actual_type(), record.key())
+                .file_for_record(record.actual_type(), record.id())
                 .map(|file| path(&project.resolve_path(Path::new(file))))
                 .transpose()?;
             snapshot
                 .records
-                .insert((record.actual_type().into(), record.key().into()), file);
+                .insert((record.actual_type().into(), record.id().into()), file);
             snapshot.capture_record(
                 project,
                 &session,
@@ -191,7 +191,7 @@ impl SemanticSnapshot {
             self.fields.insert(
                 (
                     record.actual_type().into(),
-                    record.key().into(),
+                    record.id().into(),
                     field.clone(),
                     dimension.map(str::to_string),
                     variant.map(str::to_string),
@@ -255,7 +255,7 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
             }
             let change = SemanticFieldDiff {
                 actual_type: key.0.clone(),
-                key: key.1.clone(),
+                id: key.1.clone(),
                 field: key.2.clone(),
                 dimension: key.3.clone(),
                 variant: key.4.clone(),
@@ -283,11 +283,11 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
                 || fields
                     .iter()
                     .chain(&dimensions)
-                    .any(|field| field.actual_type == key.0 && field.key == key.1)
+                    .any(|field| field.actual_type == key.0 && field.id == key.1)
             {
                 records.push(SemanticRecordDiff {
                     actual_type: key.0.clone(),
-                    key: key.1.clone(),
+                    id: key.1.clone(),
                     change: if previous.is_none() {
                         "added"
                     } else if current.is_none() {
@@ -305,7 +305,7 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
     let changed_fields = fields
         .iter()
         .chain(&dimensions)
-        .map(|field| (&field.actual_type, &field.key, &field.field))
+        .map(|field| (&field.actual_type, &field.id, &field.field))
         .collect::<BTreeSet<_>>()
         .len();
     SemanticDifference {
@@ -349,7 +349,7 @@ pub(crate) fn select(mut difference: SemanticDifference, args: &Arguments) -> Re
             .fields
             .iter()
             .chain(&difference.dimensions)
-            .map(|field| (&field.actual_type, &field.key, &field.field))
+            .map(|field| (&field.actual_type, &field.id, &field.field))
             .collect::<BTreeSet<_>>()
             .len();
         difference.changed_dimension_fields = difference.dimensions.len();

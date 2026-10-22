@@ -57,7 +57,6 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
-            TypeRefKind::FormattedString => InferredType::Value(CftValueType::FormattedString),
             TypeRefKind::Named(name) => {
                 let resolved_name = name.clone();
                 match self.symbols.get(&resolved_name).map(|symbol| symbol.kind) {
@@ -159,14 +158,6 @@ impl ResolvedTypes<'_> {
                     "singleton must be concrete",
                 ));
             }
-            if info.def.kind == TypeKind::Data && info.def.check.is_some() {
-                diagnostics.push(CftDiagnostic::error(
-                    CftErrorCode::InvalidTopLevelItem,
-                    info.module.clone(),
-                    info.def.span,
-                    "check belongs to table, singleton, or project scope",
-                ));
-            }
             if info.def.is_abstract && info.def.is_sealed {
                 let span = info
                     .def
@@ -235,7 +226,7 @@ impl ResolvedTypes<'_> {
         for info in self.types.values() {
             let mut fields: BTreeMap<String, Span> = BTreeMap::new();
             for field in &info.def.fields {
-                if crate::is_cft_reserved_identifier(&field.name) {
+                if crate::is_cft_reserved_identifier(&field.name) || (info.def.kind != TypeKind::Data && field.name == "id") {
                     diagnostics.push(CftDiagnostic::error(
                         CftErrorCode::ReservedIdentifier,
                         info.module.clone(),
@@ -390,7 +381,6 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
-            TypeRefKind::FormattedString => InferredType::Value(CftValueType::FormattedString),
             TypeRefKind::Named(name) => {
                 let name = name.clone();
                 match self.symbols.get(&name) {
@@ -436,7 +426,6 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
-            TypeRefKind::FormattedString => InferredType::Value(CftValueType::FormattedString),
             TypeRefKind::Named(name) => {
                 let resolved_name = name.clone();
                 match self.symbols.get(&resolved_name) {

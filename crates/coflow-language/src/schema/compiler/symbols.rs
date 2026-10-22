@@ -182,7 +182,7 @@ impl SymbolTable<'_> {
     }
 
     pub(super) fn validate_identifier(&mut self, name: &str, module_id: &ModuleId, span: Span) {
-        if crate::is_cft_reserved_identifier(name) {
+        if crate::is_cft_reserved_identifier(name) || matches!(name, "int" | "float" | "bool" | "string" | "Option") {
             self.push_diag(
                 CftErrorCode::ReservedIdentifier,
                 module_id,

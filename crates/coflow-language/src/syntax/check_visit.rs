@@ -7,6 +7,7 @@ pub trait CheckVisitor {
     type Error;
 
     fn visit_block(&mut self, block: &CheckBlock) -> Result<(), Self::Error> {
+        self.visit_message(block.message.as_ref())?;
         for stmt in &block.stmts {
             self.visit_stmt(stmt)?;
         }
@@ -18,6 +19,12 @@ pub trait CheckVisitor {
     }
 
     fn walk_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
+        match stmt {
+            CheckStmt::When { message, .. } | CheckStmt::Quantifier { message, .. } => {
+                self.visit_message(message.as_ref())?
+            }
+            _ => {}
+        }
         match stmt {
             CheckStmt::Expr {
                 condition, message, ..
@@ -51,6 +58,20 @@ pub trait CheckVisitor {
                     self.visit_stmt(stmt)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn visit_message(
+        &mut self,
+        message: Option<&super::ast::CheckMessage>,
+    ) -> Result<(), Self::Error> {
+        if let Some(super::ast::CheckMessage {
+            kind: CheckMessageKind::Formatted(segments),
+            ..
+        }) = message
+        {
+            self.visit_segments(segments)?;
         }
         Ok(())
     }

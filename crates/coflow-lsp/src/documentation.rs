@@ -23,7 +23,7 @@ pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
     ("float", "64-bit floating point number."),
     ("bool", "Boolean value."),
     ("string", "String value."),
-    ("fstring", "Explicit field-path interpolation template."),
+    ("string", "Explicit field-path interpolation template."),
     (
         "Option",
         "Optional value written as `None` or `Some(value)`.",
@@ -66,7 +66,7 @@ pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
         label: "@idAsEnum",
         insert_text: "@idAsEnum(${1:EnumName})",
         detail: "type annotation",
-        documentation: "Fill an empty enum placeholder from this type's record keys.",
+        documentation: "Fill an empty enum placeholder from this type's record ids.",
     },
     AnnotationCompletion {
         label: "@label",

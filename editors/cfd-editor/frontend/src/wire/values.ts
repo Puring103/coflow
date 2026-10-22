@@ -32,8 +32,8 @@ export function dictKeyPathText(key: DictKey): string {
     .replace(/\t/g, '\\t')}"`
 }
 
-export function recordKey(row: RecordRow): string {
-  return row.coordinate.key
+export function recordId(row: RecordRow): string {
+  return row.coordinate.id
 }
 
 export function recordActualType(row: RecordRow): string {

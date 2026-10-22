@@ -4,7 +4,7 @@ use crate::build::{BuildSchema, RecordDraft, ValueDraft};
 use crate::diagnostics::RecordOrigin;
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::LoadedValueDraft;
-use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
+use crate::model::{CfdEnumValue, CfdRecordHandle, CfdValue};
 use crate::semantics::{CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest};
 use coflow_language::cft::{CftField, CftValueType, TypeName};
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
@@ -55,10 +55,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     pub(super) fn validate_top_level_record(
         &mut self,
         expected_type: Option<&str>,
-        key: &str,
+        id: &str,
         actual_type: &str,
         input_fields: &BTreeMap<String, LoadedValueDraft>,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) -> Option<RecordDraft> {
         self.budget = StructuralBudget::new(self.structural_limits);
@@ -67,7 +67,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         let cursor = self.enter_value(TraversalCursor::root(), record, &path)?;
         self.validate_record(
             expected_type,
-            key,
+            id,
             actual_type,
             input_fields,
             record,
@@ -80,10 +80,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     pub(super) fn validate_record(
         &mut self,
         expected_type: Option<&str>,
-        key: &str,
+        id: &str,
         actual_type: &str,
         input_fields: &BTreeMap<String, LoadedValueDraft>,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<RecordDraft> {
@@ -164,8 +164,6 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 self.validate_field_value(field, value, record, field_path, cursor)
             } else if let Some(default) = &field.default {
                 self.default_field_value(field, default, record, field_path, cursor)
-            } else if matches!(field.value_type, CftValueType::Option(_)) {
-                Some(ValueDraft::Value(CfdValue::OptionNone))
             } else {
                 self.push(
                     CfdDiagnostic::error(
@@ -189,7 +187,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             )
         }) {
             Some(RecordDraft {
-                key: key.to_string(),
+                id: id.to_string(),
                 actual_type: actual_type_meta.name.clone(),
                 fields: out,
                 origin: RecordOrigin::None,
@@ -203,7 +201,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         field: &CftField,
         value: &LoadedValueDraft,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -214,7 +212,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         ty: &CftValueType,
         value: &LoadedValueDraft,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         parent: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -227,7 +225,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         ty: &CftValueType,
         value: &LoadedValueDraft,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         cursor: TraversalCursor,
     ) -> Option<ValueDraft> {
@@ -255,7 +253,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             (CftValueType::String, LoadedValueDraft::String(value)) => {
                 Some(ValueDraft::Value(CfdValue::String(value.clone())))
             }
-            (CftValueType::FormattedString, LoadedValueDraft::FormattedString(value)) => {
+            (CftValueType::String, LoadedValueDraft::FormattedString(value)) => {
                 Some(ValueDraft::FormattedString(value.clone()))
             }
             (
@@ -285,15 +283,15 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 )?;
                 Some(ValueDraft::Value(value))
             }
-            (CftValueType::RecordRef(_), LoadedValueDraft::RecordRef(key)) => {
+            (CftValueType::RecordRef(_), LoadedValueDraft::RecordRef(id)) => {
                 Some(ValueDraft::PendingRef {
                     explicit_type: None,
-                    key: key.clone(),
+                    id: id.clone(),
                 })
             }
             (
                 CftValueType::RecordRef(expected),
-                LoadedValueDraft::TypedRecordRef { type_name, key },
+                LoadedValueDraft::TypedRecordRef { type_name, id },
             ) => {
                 if !self
                     .schema
@@ -311,7 +309,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                 }
                 Some(ValueDraft::PendingRef {
                     explicit_type: Some(TypeName::new(type_name.clone()).ok()?),
-                    key: key.clone(),
+                    id: id.clone(),
                 })
             }
             (
@@ -374,7 +372,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         enum_name: &str,
         variant: &str,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) -> Option<CfdEnumValue> {
         let Some(value) = self.schema.enum_value(enum_name, variant) else {
@@ -394,7 +392,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         enum_name: &str,
         variant: &str,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) -> Option<CfdEnumValue> {
         let Some(value) = self.schema.enum_key_value(enum_name, variant) else {
@@ -414,7 +412,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         enum_name: &str,
         value: i64,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) -> Option<CfdEnumValue> {
         let Some(value) = self.schema.enum_value_from_int(enum_name, value) else {
@@ -434,7 +432,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         expected: &str,
         value: &LoadedValueDraft,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) {
         self.push(
@@ -450,7 +448,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         &mut self,
         expected: &CftValueType,
         value: &CfdValue,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
     ) -> Option<()> {
         let context = SourceValueSemanticContext;
@@ -475,7 +473,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     pub(super) fn enter_value(
         &mut self,
         parent: TraversalCursor,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: &CfdPath,
     ) -> Option<TraversalCursor> {
         if self.budget_exhausted {
@@ -494,7 +492,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     pub(super) fn charge_cached_subtree(
         &mut self,
         cursor: TraversalCursor,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: &CfdPath,
         nodes: u64,
         depth: u64,
@@ -519,7 +517,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         }
     }
 
-    fn push_budget_error(&mut self, message: String, record: Option<CfdRecordId>, path: CfdPath) {
+    fn push_budget_error(&mut self, message: String, record: Option<CfdRecordHandle>, path: CfdPath) {
         self.budget_exhausted = true;
         self.push(
             CfdDiagnostic::error(CfdErrorCode::DataStructureLimitExceeded, message)
@@ -531,15 +529,15 @@ impl<'s, 'schema> Validator<'s, 'schema> {
 struct SourceValueSemanticContext;
 
 impl CfdValueSemanticContext for SourceValueSemanticContext {
-    fn record_by_domain_key(
+    fn record_by_domain_id(
         &self,
         _inheritance_root: &TypeName,
         _key: &str,
-    ) -> Option<CfdRecordId> {
+    ) -> Option<CfdRecordHandle> {
         None
     }
 
-    fn record_actual_type(&self, _id: CfdRecordId) -> Option<&str> {
+    fn record_actual_type(&self, _id: CfdRecordHandle) -> Option<&str> {
         None
     }
 }

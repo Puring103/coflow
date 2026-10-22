@@ -3,10 +3,11 @@
 
 namespace Game.Config
 {
-public partial class Node
+public partial class Node : global::Coflow.Loader.ICfdRecord
 {
+    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
-    internal Node(string key) { id = key; }
+    internal Node(string id) { this.id = id; }
     public global::Coflow.Loader.Option<Node> next { get; internal set; } = default!;
 }
 }

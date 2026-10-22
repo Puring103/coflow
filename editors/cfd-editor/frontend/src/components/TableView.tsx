@@ -39,7 +39,7 @@ import {
   nullValue,
   presentationValue,
   recordActualType,
-  recordKey,
+  recordId,
   sameCoordinate,
   replacePresentationValue,
   type DiagnosticItem,
@@ -177,10 +177,10 @@ interface Props {
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onWriteFieldBatch?: (writes: readonly BatchWriteFieldInput[]) => Promise<void>
-  onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
+  onRenameRecord?: (coordinate: RecordCoordinate, newId: string) => Promise<RecordRow | void>
   /** Create a new record. Resolves once the back-end has persisted and the
    *  parent has refreshed `data` for this file. */
-  onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
+  onInsertRecord?: (recordId: string, actualType: string, fields: FieldValue) => Promise<void>
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
   /** Delete the records selected by the row context menu. */
   onDeleteRecords?: (coordinates: readonly RecordCoordinate[]) => Promise<void>
@@ -237,7 +237,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
   const [cellNotice, setCellNotice] = useState<string | null>(null)
   const [recordAction, setRecordAction] = useState<
-    | { kind: 'rename'; coordinate: RecordCoordinate; key: string }
+    | { kind: 'rename'; coordinate: RecordCoordinate; id: string }
     | { kind: 'delete'; records: RecordCoordinate[]; message: string }
     | null
   >(null)
@@ -462,10 +462,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
-        keyWidth = Math.max(keyWidth, measureMono(recordKey(record)) + PLAIN_CHROME + BADGE_ROOM + 18 /* 拖动手柄与间距 */)
+        keyWidth = Math.max(keyWidth, measureMono(recordId(record)) + PLAIN_CHROME + BADGE_ROOM + 18 /* 拖动手柄与间距 */)
       }
       const KEY_MAX = 500
-      const hints: Record<string, number> = { key: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
+      const hints: Record<string, number> = { id: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
       for (const column of snapshot.columns) {
         if (!column.type_names.includes(activeType)) continue
         const kind = columnKinds[column.name] ?? null
@@ -499,7 +499,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   )
 
   const canEdit = !readOnly && !!onWriteField
-  const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
+  const canRename = !readOnly && data.capabilities.can_edit_id && !!onRenameRecord
 
   // Cell renderers read these through refs so writes (which change
   // diagnostics + record identity every time) don't rebuild the `columns`
@@ -526,12 +526,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const columns = useMemo(() => {
     const helper = createColumnHelper<RecordRow>()
     return [
-      helper.accessor(row => recordKey(row), {
-        id: 'key',
+      helper.accessor(row => recordId(row), {
+        id: 'id',
         header: () => (
           <span className="th-label">
             <span className="th-label-name">{highlightSearchText('Key', highlightQueryRef.current)}</span>
-            <span className="th-label-type th-label-type-key">key</span>
+            <span className="th-label-type th-label-type-key">id</span>
           </span>
         ),
         cell: info => {
@@ -558,7 +558,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             </span>
           )
         },
-        size: columnWidths?.key ?? columnSizeHints.key ?? 140,
+        size: columnWidths?.id ?? columnSizeHints.id ?? 140,
         sortDescFirst: false,
         enableSorting: !rowPresentation,
       }),
@@ -811,7 +811,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     if (rowIndex < 0) return
     rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
     const columnId = target.kind === 'record'
-      ? 'key'
+      ? 'id'
       : selectedTopLevelField(target.fieldPath)
     if (!columnId) return
     const key = tableCellKey(target.coordinate, columnId)
@@ -851,7 +851,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         verticalTarget,
       )
 
-      if (columnId === 'key') return
+      if (columnId === 'id') return
       // Respect the sticky key column and reveal the whole selected range when
       // it fits. Otherwise keep the focused cell visible.
       const keyCol = scroller.querySelector<HTMLElement>('thead .sticky-key-column')
@@ -1273,7 +1273,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           event.stopPropagation()
                           setShortNameMenu({ x: event.clientX, y: event.clientY, field: column.name })
                         }}
-                        className={h.column.id === 'key' ? 'sticky-key-column' : undefined}
+                        className={h.column.id === 'id' ? 'sticky-key-column' : undefined}
                         style={{ width: h.getSize() }}
                         aria-sort={sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none'}
                       >
@@ -1429,7 +1429,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     }}
                   >
                     {row.getVisibleCells().map(cell => {
-                      const fieldPath = cell.column.id === 'key'
+                      const fieldPath = cell.column.id === 'id'
                         ? null
                         : [fieldPathField(cell.column.id)]
                       const selected = fieldPath !== null && selectionMatchesValue(
@@ -1457,13 +1457,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       return (
                         <td
                           key={cell.id}
-                          className={[classes, cell.column.id === 'key' ? 'sticky-key-column' : ''].filter(Boolean).join(' ') || undefined}
+                          className={[classes, cell.column.id === 'id' ? 'sticky-key-column' : ''].filter(Boolean).join(' ') || undefined}
                           data-table-cell-key={tableCellKey(row.original.coordinate, cell.column.id)}
                           data-table-value-cell={fieldPath ? 'true' : undefined}
                           data-coordinate-id={coordinateId(row.original.coordinate)}
                           data-field={fieldPath ? cell.column.id : undefined}
                           data-record-draggable={!fieldPath ? 'true' : undefined}
-                          data-record-label={!fieldPath ? recordKey(row.original) : undefined}
+                          data-record-label={!fieldPath ? recordId(row.original) : undefined}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
                           onMouseDown={e => {
@@ -1528,12 +1528,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         <CreateRecordDialog
           actualType={activeType || data.type_names[0] || ''}
           typeOptions={data.type_names}
-          existingKeys={data.records.map(r => r.coordinate.key)}
+          existingIds={data.records.map(r => r.coordinate.id)}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={async (key, type, fields) => {
             await onInsertRecord(key, type, fields)
             if (insertAfterRow && onMoveRecord) {
-              await onMoveRecord({ actual_type: type, key }, insertAfterRow.container_index + 1)
+              await onMoveRecord({ actual_type: type, id: key}, insertAfterRow.container_index + 1)
             }
           }}
           onClose={() => setShowNewRecord(false)}
@@ -1550,12 +1550,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             anchorY: contextMenu.anchorY,
             filePath: data.file_path,
             coordinates: contextMenu.records,
-            primaryKey: recordKey(contextMenu.row),
+            primaryId: recordId(contextMenu.row),
           }}
           groups={recordGroups}
           showOpenRecord={!!onOpenRecord}
           canRename={contextMenu.records.length === 1 && !readOnly
-            && data.capabilities.can_edit_key && !!onRenameRecord}
+            && data.capabilities.can_edit_id && !!onRenameRecord}
           canInsertBelow={contextMenu.records.length === 1 && !readOnly
             && data.capabilities.can_insert_record && data.capabilities.can_reorder_records
             && !!onInsertRecord && !!onCreateRecordDraft && !!onMoveRecord}
@@ -1567,7 +1567,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             setRecordAction({
               kind: 'rename',
               coordinate: contextMenu.row.coordinate,
-              key: recordKey(contextMenu.row),
+              id: recordId(contextMenu.row),
             })
           }}
           onInsertBelow={() => {
@@ -1577,7 +1577,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           onDelete={() => {
             const records = contextMenu.records
             const prompt = records.length === 1
-              ? `确认删除记录 ${recordKey(contextMenu.row)}？此操作不可撤销。`
+              ? `确认删除记录 ${recordId(contextMenu.row)}？此操作不可撤销。`
               : `确认删除选中的 ${records.length} 条记录？此操作不可撤销。`
             setRecordAction({ kind: 'delete', records, message: prompt })
           }}
@@ -1588,13 +1588,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       )}
       {recordAction?.kind === 'rename' && onRenameRecord && (
         <TextInputDialog
-          title="重命名 Key"
-          message="输入新的记录 Key"
-          initialValue={recordAction.key}
+          title="重命名 ID"
+          message="输入新的记录 ID"
+          initialValue={recordAction.id}
           confirmLabel="重命名"
           onClose={() => setRecordAction(null)}
           onConfirm={async next => {
-            if (next !== recordAction.key) await onRenameRecord(recordAction.coordinate, next)
+            if (next !== recordAction.id) await onRenameRecord(recordAction.coordinate, next)
             setRecordAction(null)
           }}
         />
@@ -1684,7 +1684,7 @@ function EditableCell(props: EditableCellProps) {
           value: cloneValue(value),
         }
       : null
-  ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.key, declaredType, value])
+  ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.id, declaredType, value])
   if (presentation?.slot === 'cell' && context) {
     return (
       <PluginContributionMount
@@ -1896,7 +1896,7 @@ function EditableKeyCell({
           }
         }}
         onClick={e => e.stopPropagation()}
-        aria-label="重命名记录 Key"
+        aria-label="重命名记录 ID"
       />
     )
   }
@@ -1909,7 +1909,7 @@ function EditableKeyCell({
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      title={editable ? '单击重命名 Key' : undefined}
+      title={editable ? '单击重命名 ID' : undefined}
     >
       {highlightSearchText(value, highlightQuery)}
     </span>

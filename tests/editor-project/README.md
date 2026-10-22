@@ -11,5 +11,5 @@ record groups, and workspace restoration.
 From the repository root, validate it with:
 
 ```bash
-cargo run -- check tests/editor-project
+cargo run -- check --project tests/editor-project
 ```

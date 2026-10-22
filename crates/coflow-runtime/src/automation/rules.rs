@@ -52,14 +52,18 @@ pub struct RuleQuery {
     pub rules: Vec<RuleDescription>,
 }
 
+// 编译器禁止空规则，每个命名块恰好有一个索引为 0 的根语句。
+pub(super) fn named_rules(schema: &CftSchema) -> impl Iterator<Item = &CheckStatementInfo> {
+    schema
+        .all_check_statements()
+        .filter(|info| info.root_index == 0)
+}
+
 pub fn identity(info: &CheckStatementInfo) -> String {
-    match &info.owner {
-        CheckOwner::Project(name) => format!("{name}#{}", info.root_index),
-        CheckOwner::Type(name) => format!("{name}#{}", info.root_index),
-    }
+    info.rule_id.clone()
 }
 pub fn selected(info: &CheckStatementInfo, id: &str) -> bool {
-    identity(info) == id || matches!(&info.owner, CheckOwner::Project(name) if name.as_str() == id)
+    info.rule_id == id
 }
 
 pub fn describe(
@@ -77,11 +81,13 @@ pub fn describe(
             schema.resolve_type(name).map(|r| &r.module),
         ),
     };
-    let span = schema.check_statement(info.id).map(|r| match r.statement {
-        CftSchemaCheckStmt::Expr { span, .. }
-        | CftSchemaCheckStmt::Quantifier { span, .. }
-        | CftSchemaCheckStmt::When { span, .. } => *span,
-    });
+    let block = match &info.owner {
+        CheckOwner::Project(name) => schema.resolve_check(name).map(|rule| &rule.block),
+        CheckOwner::Type(name) => schema
+            .resolve_type(name)
+            .and_then(|ty| ty.checks.get(info.block_index)),
+    };
+    let span = block.map(|block| block.span);
     let source = module.and_then(|m| schema.source(m));
     let text = source
         .zip(span)
@@ -100,14 +106,25 @@ pub fn describe(
             Some(root),
         )
     });
-    let dependencies: Vec<_> = info
-        .dependencies
+    // 同一命名规则的依赖是所有根语句依赖的并集，公开身份不随语句增删改变。
+    let statements: Vec<_> = schema
+        .check_statements_for_rule(&info.rule_id)
+        .filter_map(|id| schema.check_statement(id).map(|statement| statement.info))
+        .collect();
+    let dependency_set: std::collections::BTreeSet<_> = statements
         .iter()
+        .flat_map(|statement| &statement.dependencies)
+        .collect();
+    let dependencies: Vec<_> = dependency_set
+        .into_iter()
         .map(|d| match d {
             CheckDependency::Field(f) => RuleDependency::Field {
                 actual_type: f.owner.to_string(),
                 field: f.field.to_string(),
-                scope: if schema.check_dependency_is_cross_record(info.id, d) {
+                scope: if statements
+                    .iter()
+                    .any(|statement| schema.check_dependency_is_cross_record(statement.id, d))
+                {
                     DependencyScope::Conservative
                 } else {
                     DependencyScope::Exact
@@ -120,27 +137,37 @@ pub fn describe(
         })
         .collect();
     // 量词和条件块内的消息同样属于该规则，保留源码表达式以表达插值消息。
+    fn message_text(
+        message: Option<&coflow_language::cft::CftSchemaCheckMessage>,
+        source: &str,
+        output: &mut Vec<String>,
+    ) {
+        if let Some(text) =
+            message.and_then(|message| source.get(message.span.start..message.span.end))
+        {
+            output.push(text.to_string());
+        }
+    }
     fn messages(statement: &CftSchemaCheckStmt, source: &str, output: &mut Vec<String>) {
         match statement {
-            CftSchemaCheckStmt::Expr {
-                message: Some(message),
-                ..
-            } => {
-                if let Some(text) = source.get(message.span.start..message.span.end) {
-                    output.push(text.to_string());
-                }
+            CftSchemaCheckStmt::Expr { message, .. } => {
+                message_text(message.as_ref(), source, output)
             }
-            CftSchemaCheckStmt::Quantifier { body, .. } | CftSchemaCheckStmt::When { body, .. } => {
+            CftSchemaCheckStmt::Quantifier { body, message, .. }
+            | CftSchemaCheckStmt::When { body, message, .. } => {
+                message_text(message.as_ref(), source, output);
                 for statement in body {
                     messages(statement, source, output);
                 }
             }
-            _ => {}
         }
     }
     let mut rule_messages = Vec::new();
-    if let Some((statement, source)) = schema.check_statement(info.id).zip(source) {
-        messages(statement.statement, &source.source, &mut rule_messages);
+    if let Some((block, source)) = block.zip(source) {
+        message_text(block.message.as_ref(), &source.source, &mut rule_messages);
+        for statement in &block.stmts {
+            messages(statement, &source.source, &mut rule_messages);
+        }
     }
     RuleDescription {
         id: identity(info),
@@ -153,7 +180,13 @@ pub fn describe(
         expression: text.map(str::to_string),
         messages: rule_messages,
         dependencies,
-        dimensions: info.dimensions.iter().map(ToString::to_string).collect(),
+        dimensions: statements
+            .iter()
+            .flat_map(|statement| &statement.dimensions)
+            .map(ToString::to_string)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -164,7 +197,7 @@ pub fn query(
     args: &Arguments,
 ) -> Result<Value> {
     let mut items = Vec::new();
-    for info in schema.all_check_statements() {
+    for info in named_rules(schema) {
         if args.get("type").is_some_and(
             |ty| matches!(&info.owner, CheckOwner::Type(owner) if !schema.is_assignable(ty, owner)),
         ) {
@@ -259,12 +292,7 @@ pub(crate) fn check_with_limits(
     }
     let mut selected = std::collections::BTreeSet::new();
     for id in &requested {
-        let matches: Vec<_> = session
-            .schema()
-            .all_check_statements()
-            .filter(|info| self::selected(info, id))
-            .map(|info| info.id)
-            .collect();
+        let matches: Vec<_> = session.schema().check_statements_for_rule(id).collect();
         if matches.is_empty() {
             return Err(Failure::missing(format!("unknown rule `{id}`")));
         }
@@ -311,9 +339,16 @@ pub(crate) fn check_with_limits(
     };
     let output = crate::execute_checks(session.schema(), session.model(), tasks, limits);
     let raw: Vec<_> = output.diagnostics().cloned().collect();
-    let exhausted = output.statistics.rejected_tasks > 0
-        || raw.iter().any(|diagnostic| {
-            diagnostic.diagnostic.code == crate::CfdErrorCode::CheckBudgetExceeded
+    let exhausted = raw
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == crate::CfdErrorCode::CheckBudgetExceeded);
+    let complete = !exhausted
+        && !output.results.iter().any(|result| {
+            matches!(
+                result.status,
+                coflow_checker::CheckTaskStatus::EvaluationError
+                    | coflow_checker::CheckTaskStatus::NotExecuted
+            )
         });
     let origins: Vec<_> = session
         .model()
@@ -329,6 +364,14 @@ pub(crate) fn check_with_limits(
         |id| session.model().record(id).map(crate::CfdRecord::coordinate),
     );
     let offset = structural.diagnostics.len();
+    let evaluated_values: Vec<_> = if args.flag("explain") {
+        raw.iter()
+            .enumerate()
+            .map(|(index, diagnostic)| (index + offset, diagnostic.value_location.clone()))
+            .collect()
+    } else {
+        Vec::new()
+    };
     locations.extend(
         logical
             .into_iter()
@@ -340,16 +383,67 @@ pub(crate) fn check_with_limits(
         raw,
         &origins,
     ));
-    let states: Vec<_> = output.results.iter().map(|result| json!({
-        "rule": session.schema().check_statement(result.task.statement).map(|statement| identity(statement.info)),
-        "state": if result.diagnostics.iter().any(|diagnostic| diagnostic.diagnostic.code == crate::CfdErrorCode::CheckBudgetExceeded) { "budget_exhausted" }
-            else if result.diagnostics.is_empty() { "passed" } else { "failed" },
-        "target": match result.task.target { crate::CheckTarget::Project => json!({"kind":"project"}),
-            crate::CheckTarget::Record(id) => json!({"kind":"record", "record": session.model().record(id).map(|record| json!({"type":record.actual_type(),"key":record.key()}))}) }
-    })).collect();
+    let states: Vec<_> = output.results.iter().map(|result| {
+        let target = match &result.task.target {
+            crate::CheckTarget::Project => json!({"kind":"project"}),
+            crate::CheckTarget::Record(handle) => json!({"kind":"record", "record": session.model().record(*handle).map(|record| json!({"type":record.actual_type(),"id":record.id()}))}),
+            crate::CheckTarget::Data { record, path, dimension } => {
+                let host = session.model().record(*record);
+                let mut full_path = dimension.as_ref().map_or_else(crate::CfdPath::root, |(field, _)| crate::CfdPath::root().field(field));
+                full_path.segments.extend(path.segments.iter().cloned());
+                json!({"kind":"data", "record": host.map(|record| json!({"type":record.actual_type(),"id":record.id()})),
+                    "field_path":crate::format_field_path(&full_path),
+                    "dimension":dimension.as_ref().map(|(field,variant)| json!({"field":field,"variant":variant,
+                        "dimension":host.and_then(|record| session.schema().field(record.actual_type(),field)).and_then(|field| field.dimension.as_ref()).map(|binding| binding.dimension.as_str())}))})
+            },
+        };
+        json!({
+            "rule": session.schema().check_statement(result.task.statement).map(|statement| identity(statement.info)),
+            "statement": session.schema().check_statement(result.task.statement).map(|statement| statement.info.root_index),
+            "state": match result.status {
+                coflow_checker::CheckTaskStatus::Passed => "passed",
+                coflow_checker::CheckTaskStatus::NotTriggered => "not_triggered",
+                coflow_checker::CheckTaskStatus::Failed => "failed",
+                coflow_checker::CheckTaskStatus::EvaluationError => "evaluation_error",
+                coflow_checker::CheckTaskStatus::BudgetExceeded => "budget_exhausted",
+                coflow_checker::CheckTaskStatus::NotExecuted => "not_executed",
+            },
+            "target": target,
+            "diagnostic_count": result.diagnostics.len(),
+        })
+    }).collect();
+    // 对外按规则与实际对象汇总，同时保留根语句状态用于解释跳过与失败位置。
+    let mut rule_results = Vec::<Value>::new();
+    let mut result_indices = std::collections::BTreeMap::new();
+    let rank = |state: &str| match state {
+        "budget_exhausted" => 6,
+        "evaluation_error" => 5,
+        "not_executed" => 4,
+        "failed" => 3,
+        "passed" => 2,
+        _ => 1,
+    };
+    for state in &states {
+        let key = (state["rule"].to_string(), state["target"].to_string());
+        if let Some(index) = result_indices.get(&key).copied() {
+            let result: &mut Value = &mut rule_results[index];
+            if rank(state["state"].as_str().unwrap_or_default())
+                > rank(result["state"].as_str().unwrap_or_default())
+            {
+                result["state"] = state["state"].clone();
+            }
+            result["diagnostic_count"] = json!(
+                result["diagnostic_count"].as_u64().unwrap_or(0)
+                    + state["diagnostic_count"].as_u64().unwrap_or(0)
+            );
+        } else {
+            result_indices.insert(key, rule_results.len());
+            rule_results.push(json!({"rule":state["rule"], "state":state["state"], "target":state["target"], "diagnostic_count":state["diagnostic_count"]}));
+        }
+    }
     let mut validation = Validation {
         report: json!({"structure":"passed", "rules":if exhausted {"budget_exhausted"} else if super::has_errors(&diagnostics) {"failed"} else {"passed"},
-            "complete":!exhausted, "scope": if requested.is_empty() {json!("all")} else {json!(requested)}, "tasks":states,
+            "complete":complete, "scope": if requested.is_empty() {json!("all")} else {json!(requested)}, "tasks":states, "results":rule_results,
             "diagnostic_count": diagnostics.diagnostics.len(), "requested_tasks":output.statistics.requested_tasks,
             "executed_tasks":output.statistics.executed_tasks,"rejected_tasks":output.statistics.rejected_tasks}),
         diagnostics,
@@ -361,6 +455,38 @@ pub(crate) fn check_with_limits(
     }
     if args.flag("explain") {
         explain_diagnostics(session, &mut validation);
+        // 主报错位置与引用上下文不等价于求值来源；实际值只按执行器保存的游标读取。
+        for (index, location) in evaluated_values {
+            let Some(explanation) = validation
+                .explanations
+                .get_mut(&index)
+                .and_then(Value::as_object_mut)
+            else {
+                continue;
+            };
+            explanation.remove("actual_value");
+            let Some(location) = location else { continue };
+            let Some(record) = session.model().record(location.record) else {
+                continue;
+            };
+            let Ok(expected) = crate::write_rules::expected_type_for_cfd_path(
+                session.schema(),
+                record.actual_type(),
+                &location.full_path().segments,
+                "CLI-FIELD",
+                "CLI",
+            ) else {
+                continue;
+            };
+            explanation.insert("expected_type".into(), json!(expected.to_string()));
+            if let Some(value) = location.value(session.model()) {
+                if let Ok(encoded) =
+                    super::model_value::encode(session.schema(), &expected, Some(value))
+                {
+                    explanation.insert("actual_value".into(), encoded);
+                }
+            }
+        }
     }
     Ok(validation)
 }
@@ -383,8 +509,8 @@ pub(super) fn explain_diagnostics(session: &ReadOnlyProjectSession, validation: 
                         explanation["expected_type"] = json!(expected.to_string());
                     }
                 }
-                if let Some(key) = &location.record_key {
-                    if let Some(id) = session.model().record_by_type_key(ty, key) {
+                if let Some(key) = &location.record_id {
+                    if let Some(id) = session.model().record_by_type_id(ty, key) {
                         if let Some(value) = session.model().record(id).and_then(|record| {
                             super::query::value_at(session, record, path).ok().flatten()
                         }) {

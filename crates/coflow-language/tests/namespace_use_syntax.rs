@@ -65,10 +65,10 @@ fn qualified_type_names_are_rejected_but_static_paths_remain_valid() {
     for source in [
         "table Base {} table Item: group::Base {}",
         "table Item { value: group::Value; }",
-        "table Item { check { self is group::&Item; } }",
+        "table Item { check Valid { self is group::&Item; } }",
         "data Item { value: Item = group::Item {}; }",
         "table Item { value: &Item = &group::&Item::key; }",
-        "enum Quality { Good } table Item { check { Quality::Group::Good; } }",
+        "enum Quality { Good } table Item { check Valid { Quality::Group::Good; } }",
     ] {
         assert!(parse_module(&ModuleId::from("invalid.cft"), source).is_err());
     }

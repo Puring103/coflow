@@ -66,7 +66,7 @@ fn recovery_ignores_delimiters_inside_strings_and_comments() {
     let (ast, diagnostics) = parse_cfd(source);
     assert!(!diagnostics.is_empty());
     assert_eq!(ast.records.len(), 1);
-    assert_eq!(ast.records[0].key, "next");
+    assert_eq!(ast.records[0].id, "next");
 }
 
 #[test]

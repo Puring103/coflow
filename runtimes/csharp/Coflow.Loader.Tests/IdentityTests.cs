@@ -8,21 +8,21 @@ public sealed class IdentityTests
 {
     private class Node
     {
-        internal Node(string key) { Key = key; }
-        internal string Key { get; }
+        internal Node(string id) { Id = id; }
+        internal string Id { get; }
         internal Option<Node> Next { get; set; }
         internal string Label { get; set; } = null!;
     }
 
     private sealed class Child : Node
     {
-        internal Child(string key) : base(key) { }
+        internal Child(string id) : base(id) { }
     }
 
     private sealed class Other
     {
-        internal Other(string key) { Key = key; }
-        internal string Key { get; }
+        internal Other(string id) { Id = id; }
+        internal string Id { get; }
     }
 
     private sealed class Graph
@@ -38,8 +38,8 @@ public sealed class IdentityTests
 
     private static readonly CfdField[] Fields =
     {
-        new CfdField<Option<Node>>("next", CfdValues.Optional(CfdValues.Reference<Node>("Node"))),
-        new CfdField<string>("label", CfdValues.FormattedString, CfdDefaults.Template("f\"{self.id}\"")),
+        new CfdField<Option<Node>>("next", CfdValues.Optional(CfdValues.Reference<Node>("Node")), CfdDefaults.None()),
+        new CfdField<string>("label", CfdValues.String, CfdDefaults.Template("f\"{self.id}\"")),
     };
 
     private static void Fill(Node node, CfdReader reader)
@@ -50,9 +50,9 @@ public sealed class IdentityTests
 
     private static readonly CfdType[] Types =
     {
-        new CfdType<Node>("Node", CfdTypeKind.Table, Fields, key => new Node(key), Fill, construct: null),
-        new CfdType<Child>("Child", CfdTypeKind.Table, Fields, key => new Child(key), (node, reader) => Fill(node, reader), construct: null, parent: "Node"),
-        new CfdType<Other>("Other", CfdTypeKind.Table, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, construct: null),
+        new CfdType<Node>("Node", CfdTypeKind.Table, Fields, id => new Node(id), Fill, construct: null),
+        new CfdType<Child>("Child", CfdTypeKind.Table, Fields, id => new Child(id), (node, reader) => Fill(node, reader), construct: null, parent: "Node"),
+        new CfdType<Other>("Other", CfdTypeKind.Table, System.Array.Empty<CfdField>(), id => new Other(id), (_, _) => { }, construct: null),
     };
 
     private static LoadResult<Graph> Load(string source) => CfdLoader.Load(
@@ -70,14 +70,14 @@ public sealed class IdentityTests
     }
 
     [Fact]
-    public void UnrelatedTypesCanShareKeysWithoutAmbiguousTypedLookups()
+    public void UnrelatedTypesCanShareIdsWithoutAmbiguousTypedLookups()
     {
         var result = Load("same: Child { next: &Node::same, label: f\"{&Child::same.id}\" } same: Other {}");
         Assert.True(result.Success);
         var child = result.Data.Nodes["same"];
         Assert.Same(child, child.Next.Value);
         Assert.Equal("same", child.Label);
-        Assert.Equal("same", result.Data.Others["same"].Key);
+        Assert.Equal("same", result.Data.Others["same"].Id);
     }
 
     [Theory]
@@ -85,14 +85,14 @@ public sealed class IdentityTests
     [InlineData("Result", true)]
     [InlineData("Ok", true)]
     [InlineData("Err", true)]
-    [InlineData("fstring", false)]
+    [InlineData("fstring", true)]
     public void TypeIdentifiersFollowTheSharedLanguageReservations(string name, bool success)
     {
-        var type = new CfdType<Other>(name, CfdTypeKind.Table, System.Array.Empty<CfdField>(), key => new Other(key), (_, _) => { }, construct: null);
+        var type = new CfdType<Other>(name, CfdTypeKind.Table, System.Array.Empty<CfdField>(), id => new Other(id), (_, _) => { }, construct: null);
         var result = CfdLoader.Load(new[] { new CfdSource("names.cfd", "a: " + name + " {}") },
             new CfdType[] { type }, data => new System.Tuple<Table<Other>>(data.Table<Other>()));
         Assert.Equal(success, result.Success);
-        if (success) Assert.Equal("a", result.Data.Item1["a"].Key);
+        if (success) Assert.Equal("a", result.Data.Item1["a"].Id);
         else Assert.Equal("names.cfd", result.Diagnostics[0].Path);
     }
 

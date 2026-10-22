@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CftCheckBuiltin {
-    Default,
+    HasVariant,
     Variants,
     For,
     Len,
@@ -30,7 +30,7 @@ pub enum CftCheckBuiltin {
 
 impl CftCheckBuiltin {
     pub const ALL: [Self; 26] = [
-        Self::Default,
+        Self::HasVariant,
         Self::Variants,
         Self::For,
         Self::Len,
@@ -69,7 +69,7 @@ impl CftCheckBuiltin {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Default => "default",
+            Self::HasVariant => "hasVariant",
             Self::Variants => "variants",
             Self::For => "for",
             Self::Len => "len",
@@ -103,6 +103,7 @@ impl CftCheckBuiltin {
     pub const fn arity(self) -> usize {
         match self {
             Self::For
+            | Self::HasVariant
             | Self::Contains
             | Self::Matches
             | Self::StartsWith
@@ -114,8 +115,7 @@ impl CftCheckBuiltin {
             | Self::IsSubsetOf
             | Self::IsSupersetOf => 2,
             Self::ApproxEqual => 3,
-            Self::Default
-            | Self::Variants
+            Self::Variants
             | Self::Len
             | Self::Unique
             | Self::Min
@@ -139,7 +139,7 @@ impl CftCheckBuiltin {
     #[must_use]
     pub const fn documentation(self) -> &'static str {
         match self {
-            Self::Default => "value.default(): read the dimension field base value.",
+            Self::HasVariant => "value.hasVariant(variant): test whether this field explicitly defines a variant.",
             Self::Variants => {
                 "value.variants(): return all effective dimension values keyed by variant."
             }
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(
             entries,
             vec![
-                ("default", 1),
+                ("hasVariant", 2),
                 ("variants", 1),
                 ("for", 2),
                 ("len", 1),

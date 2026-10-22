@@ -212,8 +212,62 @@ impl<'a> ValidatedSchema<'a> {
         let mut check_statement_dependencies = BTreeMap::new();
         let mut diagnostics = Vec::new();
         for info in values.types.values() {
-            if let Some(check) = &info.def.check {
-                let analysis = CheckTypeAnalyzer::new(&values, info).check_root_stmts(&check.stmts);
+            // 只在本次声明处报告冲突，并关联最早的父类型/本地声明位置。
+            let mut names = BTreeMap::new();
+            for ancestor in values
+                .inheritance_chains
+                .get(&info.name)
+                .into_iter()
+                .flatten()
+                .filter(|name| *name != &info.name)
+            {
+                if let Some(owner) = values.types.get(ancestor) {
+                    for check in &owner.def.checks {
+                        names
+                            .entry(check.name.clone())
+                            .or_insert((owner.module.clone(), check.name_span));
+                    }
+                }
+            }
+            for check in &info.def.checks {
+                if crate::is_cft_reserved_identifier(&check.name) {
+                    diagnostics.push(CftDiagnostic::error(
+                        CftErrorCode::ReservedIdentifier,
+                        info.module.clone(),
+                        check.name_span,
+                        format!("`{}` is a reserved identifier", check.name),
+                    ));
+                }
+                if let Some((module, span)) = names.get(&check.name) {
+                    diagnostics.push(
+                        CftDiagnostic::error(
+                            CftErrorCode::DuplicateCheckBlock,
+                            info.module.clone(),
+                            check.name_span,
+                            format!(
+                                "duplicate check rule `{}` in inheritance chain of `{}`",
+                                check.name, info.name
+                            ),
+                        )
+                        .with_related(
+                            module.clone(),
+                            *span,
+                            "first rule declaration is here",
+                        ),
+                    );
+                } else {
+                    names.insert(check.name.clone(), (info.module.clone(), check.name_span));
+                }
+                if check.stmts.is_empty() {
+                    diagnostics.push(CftDiagnostic::error(
+                        CftErrorCode::InvalidCheckStatement,
+                        info.module.clone(),
+                        check.span,
+                        "check rule must contain at least one statement",
+                    ));
+                }
+                let analysis = CheckTypeAnalyzer::new(&values, info)
+                    .check_root_stmts(&check.stmts, check.message.as_ref());
                 check_dimensions.insert(
                     (info.module.clone(), check.span.start, check.span.end),
                     analysis.dimensions,
@@ -227,8 +281,16 @@ impl<'a> ValidatedSchema<'a> {
             }
         }
         for info in values.checks.values() {
+            if info.def.block.stmts.is_empty() {
+                diagnostics.push(CftDiagnostic::error(
+                    CftErrorCode::InvalidCheckStatement,
+                    info.module.clone(),
+                    info.def.block.span,
+                    "check rule must contain at least one statement",
+                ));
+            }
             let analysis = CheckTypeAnalyzer::top_level(&values, info.module.clone())
-                .check_root_stmts(&info.def.block.stmts);
+                .check_root_stmts(&info.def.block.stmts, info.def.block.message.as_ref());
             check_dimensions.insert(
                 (
                     info.module.clone(),

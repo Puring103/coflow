@@ -7,9 +7,9 @@ use crate::api::{
 };
 use crate::cfd_loader::CfdWriter;
 use crate::data_model::{
-    CfdPathSegment, CfdRecordId, CfdValue, DimensionRefCoordinate, RecordOrigin,
+    CfdPathSegment, CfdRecordHandle, CfdValue, DimensionRefCoordinate, RecordOrigin,
 };
-use coflow_language::cft::{CftSchema, RecordKey};
+use coflow_language::cft::{CftSchema, RecordId};
 
 use super::writer::lookup_source_writer;
 use crate::indexes::SourceId;
@@ -72,7 +72,7 @@ pub(super) struct OwnedDimensionWriteRequest {
     source_field: coflow_language::cft::FieldName,
     dimension: coflow_language::cft::DimensionName,
     variant: coflow_language::cft::VariantName,
-    source_key: RecordKey,
+    source_id: RecordId,
     new_value: CfdValue,
 }
 
@@ -109,7 +109,7 @@ impl OwnedDimensionWriteRequest {
                 source_type,
                 source_field,
             },
-            source_key: &self.source_key,
+            source_id: &self.source_id,
             variant: &self.variant,
             new_value: Some(&self.new_value),
         })
@@ -118,7 +118,7 @@ impl OwnedDimensionWriteRequest {
 
 pub(super) struct OwnedWriteCellRequest {
     origin: RecordOrigin,
-    record_key: String,
+    record_id: String,
     actual_type: String,
     field_path: Vec<WriteFieldPathSegment>,
     new_value: CfdValue,
@@ -128,7 +128,7 @@ impl OwnedWriteCellRequest {
     pub(super) fn as_request<'a>(&'a self, schema: &'a CftSchema) -> WriteCellRequest<'a> {
         WriteCellRequest {
             origin: &self.origin,
-            record_key: &self.record_key,
+            record_id: &self.record_id,
             actual_type: &self.actual_type,
             field_path: &self.field_path,
             new_value: &self.new_value,
@@ -142,17 +142,17 @@ impl OwnedWriteCellRequest {
 pub(super) fn reference_update_actions(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
-    target_id: CfdRecordId,
-    new_key: &str,
+    target_id: CfdRecordHandle,
+    new_id: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
-    let new_key = RecordKey::new(new_key.to_string()).map_err(|error| {
+    let new_id = RecordId::new(new_id.to_string()).map_err(|error| {
         transaction_invariant(format!(
             "new record key became invalid before rewrite: {error}"
         ))
     })?;
     let mut actions = Vec::new();
     let mut source_actions = BTreeMap::<SourceId, usize>::new();
-    let mut dimension_actions = BTreeMap::<(CfdRecordId, DimensionRefCoordinate), usize>::new();
+    let mut dimension_actions = BTreeMap::<(CfdRecordHandle, DimensionRefCoordinate), usize>::new();
     for edge in session.model.ref_edges_to_target(target_id) {
         let Some(host_ref) = session.records.get(edge.site.host) else {
             continue;
@@ -174,7 +174,7 @@ pub(super) fn reference_update_actions(
                         "dimension action index must point to a dimension write",
                     ));
                 };
-                if !replace_ref_value(&mut request.new_value, relative_path, &new_key) {
+                if !replace_ref_value(&mut request.new_value, relative_path, &new_id) {
                     return Err(transaction_invariant(
                         "indexed dimension reference disappeared before rename",
                     ));
@@ -188,7 +188,7 @@ pub(super) fn reference_update_actions(
                 continue;
             };
             let mut root = value.value.clone();
-            if !replace_ref_value(&mut root, relative_path, &new_key) {
+            if !replace_ref_value(&mut root, relative_path, &new_id) {
                 continue;
             }
             let field = session
@@ -206,7 +206,7 @@ pub(super) fn reference_update_actions(
                 .dimension_source(
                     session.schema(),
                     host_record.actual_type(),
-                    host_record.key(),
+                    host_record.id(),
                     field.name.as_str(),
                     dimension.dimension.as_str(),
                     dimension.variant.as_str(),
@@ -228,7 +228,7 @@ pub(super) fn reference_update_actions(
                     source_field: field.name.clone(),
                     dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
-                    source_key: RecordKey::new(host_record.key().to_string()).map_err(|error| {
+                    source_id: RecordId::new(host_record.id().to_string()).map_err(|error| {
                         transaction_invariant(format!(
                             "validated model record key became invalid before reference rewrite: {error}"
                         ))
@@ -246,10 +246,10 @@ pub(super) fn reference_update_actions(
             }
             let request = OwnedWriteCellRequest {
                 origin: host_ref.origin.clone(),
-                record_key: host_ref.coordinate.key.to_string(),
+                record_id: host_ref.coordinate.id.to_string(),
                 actual_type: host_ref.coordinate.actual_type.to_string(),
                 field_path: edge.site.path.segments.clone(),
-                new_value: CfdValue::Ref(new_key.clone()),
+                new_value: CfdValue::Ref(new_id.clone()),
             };
             if let Some(index) = source_actions.get(&host_ref.source_id).copied() {
                 let ReferenceUpdateAction::Source { requests, .. } = &mut actions[index] else {
@@ -281,10 +281,10 @@ fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
     ))
 }
 
-fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &RecordKey) -> bool {
+fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_id: &RecordId) -> bool {
     let Some((segment, rest)) = path.split_first() else {
         if matches!(current, CfdValue::Ref(_)) {
-            *current = CfdValue::Ref(new_key.clone());
+            *current = CfdValue::Ref(new_id.clone());
             return true;
         }
         return false;
@@ -300,5 +300,5 @@ fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_key: &
             .map(|(_, value)| value),
         _ => None,
     };
-    next.is_some_and(|next| replace_ref_value(next, rest, new_key))
+    next.is_some_and(|next| replace_ref_value(next, rest, new_id))
 }

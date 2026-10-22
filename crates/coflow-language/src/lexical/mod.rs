@@ -34,16 +34,16 @@ pub fn is_cft_identifier(name: &str) -> bool {
 }
 
 #[must_use]
-pub fn record_key_ident_error(name: &str) -> Option<String> {
+pub fn record_id_ident_error(name: &str) -> Option<String> {
     Some(match identifier_issue(name)? {
-        IdentifierIssue::Empty => "record key is empty".to_string(),
+        IdentifierIssue::Empty => "record ID is empty".to_string(),
         IdentifierIssue::InvalidStart => {
-            "record key must start with `_` or a Unicode identifier start".to_string()
+            "record ID must start with `_` or a Unicode identifier start".to_string()
         }
         IdentifierIssue::InvalidContinue => {
-            "record key must contain only `_` or Unicode identifier characters".to_string()
+            "record ID must contain only `_` or Unicode identifier characters".to_string()
         }
-        IdentifierIssue::Reserved => format!("record key `{name}` is a reserved CFT identifier"),
+        IdentifierIssue::Reserved => format!("record ID `{name}` is a reserved CFT identifier"),
     })
 }
 
@@ -74,64 +74,11 @@ fn identifier_issue(name: &str) -> Option<IdentifierIssue> {
 
 #[must_use]
 pub fn is_cft_reserved_identifier(name: &str) -> bool {
-    matches!(
-        name,
-        "_" | "id"
-            | "Id"
-            | "ID"
-            | "const"
-            | "enum"
-            | "type"
-            | "table"
-            | "data"
-            | "singleton"
-            | "abstract"
-            | "sealed"
-            | "check"
-            | "when"
-            | "all"
-            | "any"
-            | "none"
-            | "in"
-            | "is"
-            | "true"
-            | "false"
-            | "null"
-            | "int"
-            | "float"
-            | "bool"
-            | "string"
-            | "fstring"
-            | "len"
-            | "contains"
-            | "isUnique"
-            | "min"
-            | "max"
-            | "sum"
-            | "keys"
-            | "values"
-            | "matches"
-            | "if"
-            | "else"
-            | "match"
-            | "case"
-            | "for"
-            | "while"
-            | "let"
-            | "module"
-            | "import"
-            | "export"
-            | "from"
-            | "fn"
-            | "var"
-            | "return"
-            | "break"
-            | "continue"
-            | "None"
-            | "Some"
-            | "Option"
-            | "alert"
-            | "records"
+    // 只保留当前语法的结构词与字面量；方法名和目标语言关键字不占用业务名称。
+    matches!(name,
+        "_" | "const" | "enum" | "type" | "table" | "data" | "singleton"
+        | "abstract" | "sealed" | "check" | "when" | "all" | "any" | "none"
+        | "in" | "is" | "true" | "false" | "None" | "Some"
     )
 }
 
@@ -150,18 +97,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_all_target_language_reserved_identifiers() {
-        for name in [
-            "fn", "var", "return", "if", "else", "match", "for", "while", "break", "continue",
-            "None", "Some", "Option", "alert", "records",
-        ] {
+    fn reserves_only_current_syntax_and_literals() {
+        for name in ["check", "when", "all", "any", "none", "None", "Some", "table", "in"] {
             assert!(!is_cft_identifier(name), "`{name}` must be reserved");
         }
-        for name in ["namespace", "use", "as", "Result", "Ok", "Err"] {
-            assert!(
-                is_cft_identifier(name),
-                "`{name}` is an ordinary identifier"
-            );
+        for name in ["min", "max", "keys", "values", "records", "for", "return", "fn", "var", "id", "Id", "ID", "namespace", "null", "fstring"] {
+            assert!(is_cft_identifier(name), "`{name}` is an ordinary identifier");
         }
     }
 }

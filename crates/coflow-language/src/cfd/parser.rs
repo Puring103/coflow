@@ -93,11 +93,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_top_level(&mut self) -> Result<TopLevel, CfdSyntaxDiagnostic> {
-        let first = self.parse_key("record key or group type")?;
+        let first = self.parse_key("record id or group type")?;
         self.skip_ws_and_comments();
 
         if self.eat_char(':') {
-            // `key: TypeName { ... }`
+            // `id: TypeName { ... }`
             self.skip_ws_and_comments();
             let type_start = self.pos;
             let type_name = self.parse_type_name("record type")?;
@@ -105,8 +105,8 @@ impl<'a> Parser<'a> {
             let block = self.parse_block()?;
             let span = Span::new(first.span.start, block.span.end);
             let record = CfdRecord {
-                key: first.text,
-                key_span: first.span,
+                id: first.text,
+                id_span: first.span,
                 group_type: None,
                 type_name,
                 type_span,
@@ -159,7 +159,7 @@ impl<'a> Parser<'a> {
                 if self.is_eof() {
                     return Err(self.error("unterminated dimension block"));
                 }
-                let key = self.parse_key("override record key")?;
+                let id = self.parse_key("override record id")?;
                 self.skip_ws_and_comments();
                 self.expect_char(':', "override record separator `:`")?;
                 self.skip_ws_and_comments();
@@ -167,11 +167,11 @@ impl<'a> Parser<'a> {
                 let type_name = self.parse_type_name("override record type")?;
                 let type_span = Span::new(type_start, self.pos);
                 let block = self.parse_block()?;
-                let span = Span::new(key.span.start, block.span.end);
+                let span = Span::new(id.span.start, block.span.end);
                 self.charge_node(span)?;
                 records.push(CfdRecord {
-                    key: key.text,
-                    key_span: key.span,
+                    id: id.text,
+                    id_span: id.span,
                     group_type: None,
                     type_name,
                     type_span,
@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
             if self.is_eof() {
                 return Err(self.error("unterminated group body, expected `}`"));
             }
-            let key = self.parse_key("record key")?;
+            let id = self.parse_key("record id")?;
             self.skip_ws_and_comments();
 
             let (type_name, type_span) = if self.eat_char(':') {
@@ -226,10 +226,10 @@ impl<'a> Parser<'a> {
             };
 
             let block = self.parse_block()?;
-            let span = Span::new(key.span.start, block.span.end);
+            let span = Span::new(id.span.start, block.span.end);
             let record = CfdRecord {
-                key: key.text,
-                key_span: key.span,
+                id: id.text,
+                id_span: id.span,
                 group_type: Some((group_token.text.clone(), group_token.span)),
                 type_name,
                 type_span,
@@ -529,15 +529,15 @@ impl<'a> Parser<'a> {
         let start = self.pos;
         self.expect_char('&', "`&`")?;
         let reference_start = self.pos;
-        let reference = self.parse_ref_name("reference key")?;
+        let reference = self.parse_ref_name("reference id")?;
         let reference_span = Span::new(reference_start, self.pos);
         if matches!(self.peek_char(), Some('.' | '[')) {
             return Err(self.error("invalid record reference"));
         }
-        let (type_name, key) = if let Some((type_name, key)) = reference.rsplit_once("::") {
+        let (type_name, id) = if let Some((type_name, id)) = reference.rsplit_once("::") {
             if type_name.contains("::") {
                 return Err(CfdSyntaxDiagnostic {
-                    message: "record reference must use `&Type::key`".to_string(),
+                    message: "record reference must use `&Type::id`".to_string(),
                     span: reference_span,
                 });
             }
@@ -545,7 +545,7 @@ impl<'a> Parser<'a> {
             let key_start = type_end + 2;
             (
                 Some((type_name.to_string(), Span::new(reference_start, type_end))),
-                (key.to_string(), Span::new(key_start, self.pos)),
+                (id.to_string(), Span::new(key_start, self.pos)),
             )
         } else {
             (None, (reference, reference_span))
@@ -553,7 +553,7 @@ impl<'a> Parser<'a> {
         let span = Span::new(start, self.pos);
         Ok(CfdValue::Ref(CfdRef {
             type_name,
-            key,
+            id,
             span,
         }))
     }
@@ -612,10 +612,10 @@ fn parse_format_segments(
             // 在原始字面量上解析路径，转义与 Unicode 都不改变语义高亮和诊断坐标。
             let reference_span = Span::new(span.start + 2 + pos, span.start + 2 + pos + end + 1);
             let mut reference = parse_field_reference_text(rest[1..end].trim(), reference_span)?;
-            if reference.key.is_none() {
+            if reference.id.is_none() {
                 if reference.path.len() < 2 || reference.path[0] != "self" {
                     return Err(CfdSyntaxDiagnostic {
-                        message: "interpolation requires `self.field` or `&Type::key.field`"
+                        message: "interpolation requires `self.field` or `&Type::id.field`"
                             .to_string(),
                         span,
                     });
@@ -663,7 +663,7 @@ fn parse_field_reference_text(
     expression: &str,
     span: Span,
 ) -> Result<CfdFieldReference, CfdSyntaxDiagnostic> {
-    let (type_name, key, path) = expression.strip_prefix('&').map_or_else(
+    let (type_name, id, path) = expression.strip_prefix('&').map_or_else(
         || {
             (
                 None,
@@ -681,31 +681,31 @@ fn parse_field_reference_text(
                     (Some(type_name.to_string()), record)
                 });
             let mut parts = record.split('.');
-            let key = parts.next().unwrap_or_default();
+            let id = parts.next().unwrap_or_default();
             let path = parts.map(str::to_string).collect::<Vec<_>>();
-            (type_name, Some(key.to_string()), path)
+            (type_name, Some(id.to_string()), path)
         },
     );
     if path.is_empty()
         || path.len() > 128
-        || (key.is_some() && type_name.is_none())
+        || (id.is_some() && type_name.is_none())
         || type_name.as_deref().is_some_and(str::is_empty)
-        || key.as_deref().is_some_and(str::is_empty)
+        || id.as_deref().is_some_and(str::is_empty)
         || type_name
             .as_deref()
             .is_some_and(|name| !is_reference_name(name))
-        || key.as_deref().is_some_and(|name| !is_reference_name(name))
+        || id.as_deref().is_some_and(|name| !is_reference_name(name))
         || path.iter().any(|name| !is_reference_name(name))
         || expression.chars().any(char::is_whitespace)
     {
         return Err(CfdSyntaxDiagnostic {
-            message: "interpolation requires `self.field` or `&Type::key.field`".to_string(),
+            message: "interpolation requires `self.field` or `&Type::id.field`".to_string(),
             span,
         });
     }
     Ok(CfdFieldReference {
         type_name,
-        key,
+        id,
         path,
         span,
     })

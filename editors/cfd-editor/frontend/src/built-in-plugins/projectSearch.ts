@@ -65,7 +65,7 @@ function mountProjectSearch(
 ) {
   let context = initialContext
   let query = ''
-  let mode: PluginSearchMode = 'key'
+  let mode: PluginSearchMode = 'id'
   let results: SearchResult | null = null
   let busy = false
   let failure: string | null = null
@@ -98,7 +98,7 @@ function mountProjectSearch(
   const modes = element('div', 'project-search-modes')
   modes.setAttribute('role', 'group')
   modes.setAttribute('aria-label', '搜索范围')
-  const keyMode = modeButton('Key', 'key')
+  const keyMode = modeButton('ID', 'id')
   const fullTextMode = modeButton('全文', 'full_text')
   modes.append(keyMode, fullTextMode)
   controls.append(searchLabel, modes)
@@ -158,8 +158,8 @@ function mountProjectSearch(
   function render(): void {
     total.textContent = results ? `${results.data.hits.length} 条` : ''
     clear.hidden = query.length === 0
-    keyMode.classList.toggle('active', mode === 'key')
-    keyMode.setAttribute('aria-pressed', String(mode === 'key'))
+    keyMode.classList.toggle('active', mode === 'id')
+    keyMode.setAttribute('aria-pressed', String(mode === 'id'))
     fullTextMode.classList.toggle('active', mode === 'full_text')
     fullTextMode.setAttribute('aria-pressed', String(mode === 'full_text'))
     resultList.replaceChildren()
@@ -261,7 +261,7 @@ function mountProjectSearch(
     button.dataset.projectSearchIndex = String(index)
     button.setAttribute('role', 'treeitem')
     const key = element('span', 'project-search-hit-key')
-    key.textContent = hit.coordinate.key
+    key.textContent = hit.coordinate.id
     button.append(key)
     if (hit.preview) {
       const preview = element('span', 'project-search-hit-preview')
@@ -403,7 +403,7 @@ export function searchMockRecords(
   const hits: PluginSearchHit[] = []
   for (const filePath of Object.keys(files).sort()) {
     for (const record of files[filePath].records) {
-      const keyMatches = record.coordinate.key.toLowerCase().includes(normalized)
+      const keyMatches = record.coordinate.id.toLowerCase().includes(normalized)
       const fieldMatch = mode === 'full_text' && !keyMatches
         ? firstFieldMatch(record, normalized)
         : null

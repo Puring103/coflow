@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 pub struct RecordTarget {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -59,7 +59,7 @@ pub enum Operation {
     },
     RenameRecord {
         record: RecordTarget,
-        new_key: String,
+        new_id: String,
     },
     DeleteRecord {
         record: RecordTarget,
@@ -196,7 +196,7 @@ impl Candidate {
                     .collect::<Result<_>>()?;
                 writer.insert_record(&crate::InsertRecordRequest {
                     source: &source,
-                    record_key: &record.key,
+                    record_id: &record.id,
                     actual_type: &record.actual_type,
                     fields: &fields,
                     schema,
@@ -257,9 +257,12 @@ impl Candidate {
                                 ))
                             })
                             .transpose()?;
-                        self.materialized.push(json!({"record":record,"field":field,"origin":if meta.default.is_some(){"schema_default"}else{"option_default"},
+                        // 未赋值的父字段只有显式声明默认值后才可物化。
+                        self.materialized.push(
+                            json!({"record":record,"field":field,"origin":"schema_default",
                             "location":location,
-                            "value":super::ModelValue::from_model(schema,&meta.value_type,top)?}));
+                            "value":super::ModelValue::from_model(schema,&meta.value_type,top)?}),
+                        );
                     }
                 }
                 writer.write_field(&crate::WriteCellRequest {
@@ -267,7 +270,7 @@ impl Candidate {
                         path: file,
                         span: None,
                     },
-                    record_key: &record.key,
+                    record_id: &record.id,
                     actual_type: &record.actual_type,
                     field_path: &path,
                     new_value: &value,
@@ -293,40 +296,40 @@ impl Candidate {
                         path: file,
                         span: None,
                     },
-                    &record.key,
+                    &record.id,
                     &record.actual_type,
                     &internal,
                     schema,
                 )?;
                 writer.publish()?;
             }
-            Operation::RenameRecord { record, new_key } => {
+            Operation::RenameRecord { record, new_id } => {
                 let (file, _, _) = find_record(self, record)?;
                 if find_record(
                     self,
                     &RecordTarget {
                         actual_type: record.actual_type.clone(),
-                        key: new_key.clone(),
+                        id: new_id.clone(),
                     },
                 )
                 .is_ok()
                 {
                     return Err(Failure::conflict("new record key already exists"));
                 }
-                super::rewrite::rename_references(self, schema, record, new_key)?;
+                super::rewrite::rename_references(self, schema, record, new_id)?;
                 writer.rename_record(&crate::RenameRecordRequest {
                     origin: &RecordOrigin::File {
                         path: file,
                         span: None,
                     },
-                    old_key: &record.key,
-                    new_key,
+                    old_id: &record.id,
+                    new_id,
                     actual_type: &record.actual_type,
                 })?;
-                rewrite_dimensions(self, &writer, schema, record, Some(new_key))?;
+                rewrite_dimensions(self, &writer, schema, record, Some(new_id))?;
                 writer.publish()?;
-                super::rewrite::rename_mapping(self, schema, record, new_key)?;
-                self.rename_typed_references(schema, record, new_key);
+                super::rewrite::rename_mapping(self, schema, record, new_id)?;
+                self.rename_typed_references(schema, record, new_id);
             }
             Operation::DeleteRecord { record } => {
                 let (file, _, _) = find_record(self, record)?;
@@ -335,7 +338,7 @@ impl Candidate {
                         path: file,
                         span: None,
                     },
-                    record_key: &record.key,
+                    record_id: &record.id,
                     actual_type: &record.actual_type,
                 })?;
                 rewrite_dimensions(self, &writer, schema, record, None)?;
@@ -357,7 +360,7 @@ impl Candidate {
                             path: file,
                             span: None,
                         },
-                        record_key: &record.key,
+                        record_id: &record.id,
                         actual_type: &record.actual_type,
                     },
                     &CfdSource {
@@ -415,12 +418,12 @@ impl Candidate {
                     )));
                 }
                 self.operation_details = json!({"matched_count":records.len(),"targets":records.iter().map(|record|
-                    json!({"type":record.actual_type(),"key":record.key()})).collect::<Vec<_>>()});
+                    json!({"type":record.actual_type(),"id":record.id()})).collect::<Vec<_>>()});
                 for record in records {
                     self.apply_operation(&Operation::SetField {
                         record: RecordTarget {
                             actual_type: record.actual_type().into(),
-                            key: record.key().into(),
+                            id: record.id().into(),
                         },
                         path: path.clone(),
                         value: value.clone(),
@@ -596,7 +599,7 @@ impl Candidate {
                 .filter(|b| b.dimension == dimension && b.variant == variant)
             {
                 for target in block.records.iter().filter(|r| {
-                    r.key == record.key
+                    r.id == record.id
                         && schema.inheritance_root(&r.type_name)
                             == schema.inheritance_root(&record.actual_type)
                 }) {
@@ -692,7 +695,7 @@ impl Candidate {
                 source_type,
                 source_field,
             },
-            source_key: &crate::RecordKey::new(&record.key)
+            source_id: &crate::RecordId::new(&record.id)
                 .map_err(|e| Failure::request(e.to_string()))?,
             variant: &crate::VariantName::new(variant)
                 .map_err(|e| Failure::request(e.to_string()))?,
@@ -717,7 +720,7 @@ fn record_with_fields(
     fields: BTreeMap<String, CfdValue>,
 ) -> Result<crate::CfdRecord> {
     Ok(crate::CfdRecord {
-        key: crate::RecordKey::new(&record.key)
+        id: crate::RecordId::new(&record.id)
             .map_err(|error| Failure::request(error.to_string()))?,
         object: crate::CfdObject::try_new(&record.actual_type, fields)
             .map_err(|error| Failure::request(error.to_string()))?,
@@ -841,7 +844,7 @@ pub fn find_record(
             )));
         }
         for item in ast.records {
-            if item.type_name == record.actual_type && item.key == record.key {
+            if item.type_name == record.actual_type && item.id == record.id {
                 if found.is_some() {
                     return Err(Failure::conflict("record identity is ambiguous"));
                 }
@@ -852,7 +855,7 @@ pub fn find_record(
     found.ok_or_else(|| {
         Failure::missing(format!(
             "record `{}::{}` does not exist",
-            record.actual_type, record.key
+            record.actual_type, record.id
         ))
     })
 }
@@ -943,12 +946,12 @@ fn rewrite_dimensions(
     writer: &crate::cfd_loader::CfdWriter,
     schema: &CftSchema,
     record: &RecordTarget,
-    new_key: Option<&str>,
+    new_id: Option<&str>,
 ) -> Result<()> {
     let snapshot = super::InputSnapshot::capture(&candidate.project()?)?;
-    let old = crate::RecordKey::new(&record.key).map_err(|e| Failure::request(e.to_string()))?;
-    let new = new_key
-        .map(crate::RecordKey::new)
+    let old = crate::RecordId::new(&record.id).map_err(|e| Failure::request(e.to_string()))?;
+    let new = new_id
+        .map(crate::RecordId::new)
         .transpose()
         .map_err(|e| Failure::request(e.to_string()))?;
     for file in snapshot.files.iter().filter(|f| f.kind == "data") {
@@ -960,12 +963,11 @@ fn rewrite_dimensions(
             .iter()
             .flat_map(|block| &block.records)
             .filter(|entry| {
-                entry.key == record.key
-                    && schema.is_assignable(&record.actual_type, &entry.type_name)
+                entry.id == record.id && schema.is_assignable(&record.actual_type, &entry.type_name)
             })
             .count();
         if count > 0 {
-            candidate.automatic_updates.push(json!({"kind":"dimension_overrides","record":record,"new_key":new_key,"count":count,
+            candidate.automatic_updates.push(json!({"kind":"dimension_overrides","record":record,"new_id":new_id,"count":count,
             "file":crate::project_path(candidate.original.root_dir(),&candidate.unshadow(&file.absolute)?)}));
         }
         writer.rewrite_dimension_record(&crate::RewriteDimensionRecordRequest {
@@ -975,8 +977,8 @@ fn rewrite_dimensions(
             },
             schema,
             actual_type: &record.actual_type,
-            old_key: &old,
-            new_key: new.as_ref(),
+            old_id: &old,
+            new_id: new.as_ref(),
         })?;
     }
     Ok(())

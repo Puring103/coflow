@@ -56,11 +56,11 @@ export function useReferenceShortName(targetType: string | undefined, key: strin
     let active = true
     void lookups.loadRefTargets(targetType).then(result => {
       if (active && result.ok) setResolved({ lookups, type: targetType, key,
-        name: result.value.find(target => target.coordinate.key === key)?.short_name ?? undefined })
+        name: result.value.find(target => target.coordinate.id === key)?.short_name ?? undefined })
     })
     return () => { active = false }
   }, [lookups, targetType, key])
   // 同一会话刷新期间保留旧名称，避免每次字段保存都先回退为 key 再闪回名称。
   if (resolved?.lookups?.sessionId === lookups?.sessionId && resolved?.type === targetType && resolved?.key === key) return resolved.name
-  return targetType ? lookups?.cachedRefTargets(targetType)?.find(target => target.coordinate.key === key)?.short_name ?? undefined : undefined
+  return targetType ? lookups?.cachedRefTargets(targetType)?.find(target => target.coordinate.id === key)?.short_name ?? undefined : undefined
 }

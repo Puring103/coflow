@@ -10,7 +10,7 @@ pub fn rename_references(
     candidate: &mut Candidate,
     schema: &CftSchema,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<()> {
     let snapshot = InputSnapshot::capture(&candidate.project()?)?;
     for file in snapshot.files.iter().filter(|f| f.kind == "data") {
@@ -28,7 +28,7 @@ pub fn rename_references(
                 &r.type_name,
                 &r.fields,
                 record,
-                new_key,
+                new_id,
                 &r.type_name,
                 &mut patches,
             );
@@ -36,7 +36,7 @@ pub fn rename_references(
         patches.sort_by_key(|(span, _)| std::cmp::Reverse(span.start));
         if !patches.is_empty() {
             candidate.automatic_updates.push(serde_json::json!({"kind":"references","file":crate::project_path(candidate.original.root_dir(),&candidate.unshadow(&file.absolute)?),
-                "count":patches.len(),"record":record,"new_key":new_key}));
+                "count":patches.len(),"record":record,"new_id":new_id}));
         }
         for (span, value) in patches {
             text.replace_range(span.start..span.end, &value);
@@ -45,14 +45,14 @@ pub fn rename_references(
             fs::write(&file.absolute, text)?;
         }
     }
-    rename_schema_references(candidate, schema, record, new_key)
+    rename_schema_references(candidate, schema, record, new_id)
 }
 fn fields(
     schema: &CftSchema,
     ty: &str,
     fields: &[CfdField],
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
     host_type: &str,
     patches: &mut Vec<(Span, String)>,
 ) {
@@ -63,7 +63,7 @@ fn fields(
                 &meta.value_type,
                 &field.value,
                 record,
-                new_key,
+                new_id,
                 host_type,
                 patches,
             );
@@ -75,27 +75,27 @@ fn visit(
     ty: &CftValueType,
     value: &A,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
     host_type: &str,
     patches: &mut Vec<(Span, String)>,
 ) {
     if let CftValueType::Option(inner) = ty {
         if let A::OptionSome(value, _) = value {
-            visit(schema, inner, value, record, new_key, host_type, patches);
+            visit(schema, inner, value, record, new_id, host_type, patches);
         } else {
-            visit(schema, inner, value, record, new_key, host_type, patches);
+            visit(schema, inner, value, record, new_id, host_type, patches);
         }
         return;
     }
     match (ty, value) {
         (CftValueType::RecordRef(target), A::Ref(reference))
-            if reference.key.0 == record.key
+            if reference.id.0 == record.id
                 && schema.is_assignable(&record.actual_type, target) =>
         {
-            patches.push((reference.key.1, new_key.into()));
+            patches.push((reference.id.1, new_id.into()));
         }
         (CftValueType::Enum(name), A::Scalar(raw, span)) => {
-            if let Some(value) = renamed_enum(schema, name, raw, record, new_key) {
+            if let Some(value) = renamed_enum(schema, name, raw, record, new_id) {
                 patches.push((*span, value));
             }
         }
@@ -109,20 +109,20 @@ fn visit(
                 actual,
                 &block.fields,
                 record,
-                new_key,
+                new_id,
                 host_type,
                 patches,
             );
         }
         (CftValueType::Array(inner), A::Array(items, _)) => {
             for item in items {
-                visit(schema, inner, item, record, new_key, host_type, patches);
+                visit(schema, inner, item, record, new_id, host_type, patches);
             }
         }
         (CftValueType::Dict(key_type, inner), A::Block(block)) => {
             for field in &block.fields {
                 if let CftValueType::Enum(name) = key_type.as_ref() {
-                    if let Some(value) = renamed_enum(schema, name, &field.name, record, new_key) {
+                    if let Some(value) = renamed_enum(schema, name, &field.name, record, new_id) {
                         patches.push((field.name_span, value));
                     }
                 }
@@ -131,7 +131,7 @@ fn visit(
                     inner,
                     &field.value,
                     record,
-                    new_key,
+                    new_id,
                     host_type,
                     patches,
                 );
@@ -140,7 +140,7 @@ fn visit(
         (_, A::FormattedString(formatted)) => {
             for segment in &formatted.segments {
                 if let coflow_language::cfd::CfdFormatSegment::Reference(reference) = segment {
-                    if reference.key.as_deref() == Some(&record.key)
+                    if reference.id.as_deref() == Some(&record.id)
                         && schema.is_assignable(
                             &record.actual_type,
                             reference.type_name.as_deref().unwrap_or(host_type),
@@ -153,7 +153,7 @@ fn visit(
                             .unwrap_or_default();
                         patches.push((
                             reference.span,
-                            format!("&{target}{new_key}.{}", reference.path.join(".")),
+                            format!("&{target}{new_id}.{}", reference.path.join(".")),
                         ));
                     }
                 }
@@ -168,7 +168,7 @@ fn renamed_enum(
     name: &str,
     raw: &str,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
 ) -> Option<String> {
     if schema.inherited_id_as_enum(&record.actual_type)?.as_str() != name {
         return None;
@@ -176,12 +176,12 @@ fn renamed_enum(
     let (prefix, key) = raw
         .rsplit_once("::")
         .map_or((None, raw), |(prefix, key)| (Some(prefix), key));
-    if key != record.key {
+    if key != record.id {
         return None;
     }
     Some(prefix.map_or_else(
-        || new_key.to_string(),
-        |prefix| format!("{prefix}::{new_key}"),
+        || new_id.to_string(),
+        |prefix| format!("{prefix}::{new_id}"),
     ))
 }
 
@@ -189,7 +189,7 @@ fn rename_schema_references(
     candidate: &mut Candidate,
     schema: &CftSchema,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<()> {
     use coflow_language::cft::syntax::ast::Item;
     let session = crate::Runtime::open_schema_session(candidate.project()?)?;
@@ -209,13 +209,13 @@ fn rename_schema_references(
                                 module.source(),
                                 &ty.name,
                                 record,
-                                new_key,
+                                new_id,
                                 &mut patches,
                             );
                         }
                     }
-                    if let Some(check) = &ty.check {
-                        rename_rule_members(schema, check, record, new_key, &mut patches);
+                    for check in &ty.checks {
+                        rename_rule_members(schema, check, record, new_id, &mut patches);
                     }
                 }
                 Item::Const(constant) => visit_default(
@@ -224,11 +224,11 @@ fn rename_schema_references(
                     module.source(),
                     &record.actual_type,
                     record,
-                    new_key,
+                    new_id,
                     &mut patches,
                 ),
                 Item::Check(check) => {
-                    rename_rule_members(schema, &check.block, record, new_key, &mut patches)
+                    rename_rule_members(schema, &check.block, record, new_id, &mut patches)
                 }
                 _ => {}
             }
@@ -239,7 +239,7 @@ fn rename_schema_references(
         patches.sort_by_key(|(span, _)| std::cmp::Reverse(span.start));
         let mut text = module.source().to_string();
         candidate.automatic_updates.push(serde_json::json!({"kind":"schema_references","file":crate::project_path(candidate.original.root_dir(),&candidate.unshadow(module.path())?),
-            "count":patches.len(),"record":record,"new_key":new_key}));
+            "count":patches.len(),"record":record,"new_id":new_id}));
         for (span, value) in patches {
             text.replace_range(span.start..span.end, &value);
         }
@@ -252,7 +252,7 @@ fn rename_rule_members(
     schema: &CftSchema,
     block: &coflow_language::cft::syntax::ast::CheckBlock,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
     patches: &mut Vec<(Span, String)>,
 ) {
     use coflow_language::cft::syntax::{
@@ -262,7 +262,7 @@ fn rename_rule_members(
     struct Visitor<'a> {
         schema: &'a CftSchema,
         record: &'a RecordTarget,
-        new_key: &'a str,
+        new_id: &'a str,
         patches: &'a mut Vec<(Span, String)>,
     }
     impl CheckVisitor for Visitor<'_> {
@@ -271,7 +271,7 @@ fn rename_rule_members(
             if let CheckExprKind::StaticPath(path) = &expression.kind {
                 if let Some(name) = self.schema.inherited_id_as_enum(&self.record.actual_type) {
                     if let Some((member, types)) = path.segments.split_last() {
-                        if member.name == self.record.key
+                        if member.name == self.record.id
                             && types
                                 .iter()
                                 .map(|part| part.name.as_str())
@@ -279,7 +279,7 @@ fn rename_rule_members(
                                 .join("::")
                                 == name.as_str()
                         {
-                            self.patches.push((member.span, self.new_key.into()));
+                            self.patches.push((member.span, self.new_id.into()));
                         }
                     }
                 }
@@ -290,7 +290,7 @@ fn rename_rule_members(
     let _ = Visitor {
         schema,
         record,
-        new_key,
+        new_id,
         patches,
     }
     .visit_block(block);
@@ -302,7 +302,7 @@ fn visit_default(
     source: &str,
     host_type: &str,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
     patches: &mut Vec<(Span, String)>,
 ) {
     use coflow_language::cft::syntax::ast::DefaultExprKind as E;
@@ -314,15 +314,15 @@ fn visit_default(
                     .map(|part| part.name.as_str())
                     .collect::<Vec<_>>()
                     .join("::");
-                if key.name == record.key && schema.is_assignable(&record.actual_type, &target) {
-                    patches.push((key.span, new_key.into()));
+                if key.name == record.id && schema.is_assignable(&record.actual_type, &target) {
+                    patches.push((key.span, new_id.into()));
                 }
             }
         }
         E::StaticPath(path) => {
             if let Some(name) = schema.inherited_id_as_enum(&record.actual_type) {
                 if let Some((key, types)) = path.segments.split_last() {
-                    if key.name == record.key
+                    if key.name == record.id
                         && types
                             .iter()
                             .map(|part| part.name.as_str())
@@ -330,7 +330,7 @@ fn visit_default(
                             .join("::")
                             == name.as_str()
                     {
-                        patches.push((key.span, new_key.into()));
+                        patches.push((key.span, new_id.into()));
                     }
                 }
             }
@@ -348,10 +348,10 @@ fn visit_default(
                     let mut local = Vec::new();
                     visit(
                         schema,
-                        &CftValueType::FormattedString,
+                        &CftValueType::String,
                         value,
                         record,
-                        new_key,
+                        new_id,
                         host_type,
                         &mut local,
                     );
@@ -368,27 +368,27 @@ fn visit_default(
             }
         }
         E::OptionSome(value) => {
-            visit_default(schema, value, source, host_type, record, new_key, patches)
+            visit_default(schema, value, source, host_type, record, new_id, patches)
         }
         E::Array(values) => {
             for value in values {
-                visit_default(schema, value, source, host_type, record, new_key, patches);
+                visit_default(schema, value, source, host_type, record, new_id, patches);
             }
         }
         E::Object(fields) | E::TypedObject { fields, .. } => {
             for (_, value) in fields {
-                visit_default(schema, value, source, host_type, record, new_key, patches);
+                visit_default(schema, value, source, host_type, record, new_id, patches);
             }
         }
         E::Dictionary(values) => {
             for (key, value) in values {
-                visit_default(schema, key, source, host_type, record, new_key, patches);
-                visit_default(schema, value, source, host_type, record, new_key, patches);
+                visit_default(schema, key, source, host_type, record, new_id, patches);
+                visit_default(schema, value, source, host_type, record, new_id, patches);
             }
         }
         E::BitExpr { lhs, rhs, .. } => {
-            visit_default(schema, lhs, source, host_type, record, new_key, patches);
-            visit_default(schema, rhs, source, host_type, record, new_key, patches);
+            visit_default(schema, lhs, source, host_type, record, new_id, patches);
+            visit_default(schema, rhs, source, host_type, record, new_id, patches);
         }
         _ => {}
     }
@@ -398,7 +398,7 @@ pub fn rename_mapping(
     candidate: &mut Candidate,
     schema: &CftSchema,
     record: &RecordTarget,
-    new_key: &str,
+    new_id: &str,
 ) -> Result<()> {
     let Some(name) = schema.inherited_id_as_enum(&record.actual_type) else {
         return Ok(());
@@ -415,10 +415,10 @@ pub fn rename_mapping(
         .get_mut(name.as_str())
         .and_then(serde_json::Value::as_object_mut)
     {
-        if let Some(value) = entries.remove(&record.key) {
-            entries.insert(new_key.into(), value);
+        if let Some(value) = entries.remove(&record.id) {
+            entries.insert(new_id.into(), value);
             fs::write(&path, serde_json::to_vec_pretty(&values)?)?;
-            candidate.automatic_updates.push(serde_json::json!({"kind":"stable_mapping","file":"coflow.enum.lock.json","record":record,"new_key":new_key}));
+            candidate.automatic_updates.push(serde_json::json!({"kind":"stable_mapping","file":"coflow.enum.lock.json","record":record,"new_id":new_id}));
         }
     }
     Ok(())

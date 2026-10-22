@@ -21,7 +21,37 @@ region[cn] { sword: Item { price: 90 } }
 
 变体从全部所选 CFD 的覆盖块汇总，文件顺序不提供优先级。未覆盖或未知变体使用基础值；Option 字段的显式 None 是有效覆盖，保留当前层空态。
 
-编辑器检查使用 `.default()`、`.for("ja")` 和 `.variants()`。C# 字段使用 `DimensionValue<T>`，通过 `Default`、`For("ja")` 和 `Variants` 在同一份加载结果中读取多个变体。
+Check 中直接读取字段得到基础值，`.for("ja")` 读取有效变体，`.hasVariant("ja")` 判断该字段是否有显式覆盖。`.variants()` 返回所属维度全部已发现变体的有效值，包含没有填写覆盖的变体。
+
+```cft
+check TranslationComplete {
+  all variant, text in name.variants() {
+    name.hasVariant(variant): f"尚未填写 {variant} 名称";
+    text.len() > 0: f"{variant} 名称不能为空";
+  }
+}
+```
+
+此规则放在包含 `name` 字段的类型中。要强制要求某个变体，即使整个项目尚未出现它，也要明确检查 `name.hasVariant("ja")`。
+
+C# 直接访问 `item.name` 得到基础字符串。按需使用 `item.For("language", "ja").name`，不同用途可同时持有不同视图；`item.HasVariant("name", "ja")` 判断显式覆盖，`item.Variants("language")` 列出维度已知变体。多维组合可以链式调用 `For`，例如 `item.For("language", "ja").For("region", "cn")`。
+
+模板读取依赖时使用当前维度上下文。假设 `title` 是 language 字段，基础表达式为 `f"购买 {self.name}"`，日语只覆盖 `name = "剣"`，那么 `title.for("ja")` 得到 `"购买 剣"`，而 `title.hasVariant("ja")` 仍为 `false`。缺少覆盖时回退基础表达式，再在当前上下文中求值；其他维度的同名变体不会自动被选中。
+
+## 查询覆盖是否填写
+
+CLI 可以分别查询覆盖状态和有效值：
+
+```powershell
+coflow dimension get --type Item --id sword --field name --dimension language --variant ja --json
+coflow dimension missing --dimension language --variant ja --json
+```
+
+`dimension get` 的 `explicit` 表示该字段是否存在显式覆盖，`override` 是显式覆盖值，`effective` 是读取结果。`variant_exists` 表示整个维度中是否已存在该变体，与单个字段是否填写分别判断。显式 `None` 和等于基础值的覆盖都算已填写。
+
+`dimension missing` 列出缺少显式覆盖的字段，适合检查翻译完整性。`dimension clear` 清除覆盖并恢复基础值读取；清除后的字段重新计入缺失项。
+
+## 文件与编辑
 
 编辑器通过 `coflow.yaml` 中的 `dimensions.<维度名>.dir` 配置覆盖目录：
 

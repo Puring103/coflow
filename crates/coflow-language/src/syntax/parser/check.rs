@@ -14,7 +14,10 @@ impl Parser<'_> {
         let start = self
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
-        self.parse_check_block_after_keyword(start)
+        {
+            let name = self.expect_ident()?;
+            self.parse_check_block_after_keyword(start, name)
+        }
     }
 
     pub(super) fn parse_top_level_check(
@@ -25,7 +28,7 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
         let name = self.expect_ident()?;
-        let block = self.parse_check_block_after_keyword(start)?;
+        let block = self.parse_check_block_after_keyword(start, name.clone())?;
         Ok(crate::syntax::ast::TopLevelCheckDef {
             name: name.name,
             name_span: name.span,
@@ -38,19 +41,30 @@ impl Parser<'_> {
     fn parse_check_block_after_keyword(
         &mut self,
         start: usize,
+        name: crate::syntax::ast::NameRef,
     ) -> Result<CheckBlock, CftDiagnostics> {
+        let message = self.parse_check_message()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let stmts = self.parse_check_stmts()?;
         let end = self
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
             .end;
         let span = Span::new(start, end);
-        self.node(StructureKind::CheckAst, span, [stmts.depth], || {
-            CheckBlock {
+        self.node(
+            StructureKind::CheckAst,
+            span,
+            [
+                stmts.depth,
+                message.as_ref().map_or(0, |message| message.depth),
+            ],
+            || CheckBlock {
+                message: message.map(|message| message.value),
+                name: name.name,
+                name_span: name.span,
                 stmts: stmts.value,
                 span,
-            }
-        })
+            },
+        )
         .map(|block| block.value)
     }
 
@@ -81,7 +95,31 @@ impl Parser<'_> {
             return self.parse_when_stmt();
         }
         let expr = self.parse_or_expr()?;
-        let message = if self.eat(&TokenKind::Colon).is_some() {
+        let message = self.parse_check_message()?;
+        if self.eat(&TokenKind::Semicolon).is_none() {
+            return self.err(
+                CftErrorCode::InvalidCheckStatement,
+                "check expression statements must end with `;`",
+            );
+        }
+        let span = expr.value.span.join(
+            message
+                .as_ref()
+                .map_or(expr.value.span, |message| message.value.span),
+        );
+        let depths = message.as_ref().map_or_else(
+            || vec![expr.depth],
+            |message| vec![expr.depth, message.depth],
+        );
+        self.node(StructureKind::CheckAst, span, depths, || CheckStmt::Expr {
+            condition: expr.value,
+            message: message.map(|message| message.value),
+            span,
+        })
+    }
+
+    fn parse_check_message(&mut self) -> Result<Option<Parsed<CheckMessage>>, CftDiagnostics> {
+        Ok(if self.eat(&TokenKind::Colon).is_some() {
             let token = self.peek().clone();
             match token.kind {
                 TokenKind::String(value) => {
@@ -124,26 +162,6 @@ impl Parser<'_> {
             }
         } else {
             None
-        };
-        if self.eat(&TokenKind::Semicolon).is_none() {
-            return self.err(
-                CftErrorCode::InvalidCheckStatement,
-                "check expression statements must end with `;`",
-            );
-        }
-        let span = expr.value.span.join(
-            message
-                .as_ref()
-                .map_or(expr.value.span, |message| message.value.span),
-        );
-        let depths = message.as_ref().map_or_else(
-            || vec![expr.depth],
-            |message| vec![expr.depth, message.depth],
-        );
-        self.node(StructureKind::CheckAst, span, depths, || CheckStmt::Expr {
-            condition: expr.value,
-            message: message.map(|message| message.value),
-            span,
         })
     }
 
@@ -165,6 +183,7 @@ impl Parser<'_> {
         }
         self.expect_simple(&TokenKind::In, CftErrorCode::ExpectedToken)?;
         let collection = self.parse_or_expr()?;
+        let message = self.parse_check_message()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let body = self.nested(StructureKind::CheckAst, keyword, |parser| {
             parser.parse_check_stmts()
@@ -176,12 +195,17 @@ impl Parser<'_> {
         self.node(
             StructureKind::CheckAst,
             keyword,
-            [collection.depth, body.depth],
+            [
+                collection.depth,
+                body.depth,
+                message.as_ref().map_or(0, |message| message.depth),
+            ],
             || CheckStmt::Quantifier {
                 kind,
                 bindings,
                 collection: collection.value,
                 body: body.value,
+                message: message.map(|message| message.value),
                 span,
             },
         )
@@ -191,6 +215,7 @@ impl Parser<'_> {
         let keyword = self.expect_simple(&TokenKind::When, CftErrorCode::UnexpectedToken)?;
         let start = keyword.start;
         let condition = self.parse_or_expr()?;
+        let message = self.parse_check_message()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let body = self.nested(StructureKind::CheckAst, keyword, |parser| {
             parser.parse_check_stmts()
@@ -202,10 +227,15 @@ impl Parser<'_> {
         self.node(
             StructureKind::CheckAst,
             keyword,
-            [condition.depth, body.depth],
+            [
+                condition.depth,
+                body.depth,
+                message.as_ref().map_or(0, |message| message.depth),
+            ],
             || CheckStmt::When {
                 condition: condition.value,
                 body: body.value,
+                message: message.map(|message| message.value),
                 span,
             },
         )

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_model::CfdDataModel;
 use coflow_checker::CheckTask;
-use coflow_language::cft::{DimensionName, FieldName, RecordKey, TypeName, VariantName};
+use coflow_language::cft::{DimensionName, FieldName, RecordId, TypeName, VariantName};
 
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
 use crate::checks::{plan_full_checks, plan_full_checks_bounded, plan_incremental_checks};
@@ -13,7 +13,7 @@ use crate::RecordCoordinate;
 #[derive(Debug, Clone)]
 pub struct BenchmarkFieldChange {
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     pub field: String,
     pub projection: BenchmarkProjection,
 }
@@ -56,7 +56,7 @@ pub fn plan_incremental(
     for change in fields {
         let coordinate = RecordCoordinate::new(
             TypeName::new(&change.actual_type).map_err(|error| error.to_string())?,
-            RecordKey::new(&change.key).map_err(|error| error.to_string())?,
+            RecordId::new(&change.id).map_err(|error| error.to_string())?,
         );
         let projection = match change.projection {
             BenchmarkProjection::Base => ChangedProjection::Base,

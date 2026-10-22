@@ -7,3 +7,5 @@ beta: Item {
   nums: [], indexed: {}
 }
 Settings: Settings { start: &Item::alpha }
+
+keyword: class { namespace: "public" }

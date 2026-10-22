@@ -74,11 +74,11 @@ pub fn edges(session: &ReadOnlyProjectSession) -> Vec<ReferenceEdge> {
             result.push(ReferenceEdge {
                 host: RecordTarget {
                     actual_type: record.actual_type().to_string(),
-                    key: record.key().to_string(),
+                    id: record.id().to_string(),
                 },
                 target: RecordTarget {
                     actual_type: edge.target.actual_type.to_string(),
-                    key: edge.target.key.to_string(),
+                    id: edge.target.id.to_string(),
                 },
                 // 公共路径契约独立于数据模型内部类型，保留字典键的 CFD 表达式。
                 path: ReferencePath {
@@ -110,7 +110,7 @@ pub fn edges(session: &ReadOnlyProjectSession) -> Vec<ReferenceEdge> {
 
 pub fn query(session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {
     let ty = args.require("type")?;
-    let key = args.require("key")?;
+    let key = args.require("id")?;
     let record = session
         .queries()
         .record_view(ty, key)
@@ -128,7 +128,7 @@ pub fn query(session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value
     let all = edges(session);
     let mut frontier = BTreeSet::from([(
         record.coordinate.actual_type.to_string(),
-        record.coordinate.key.to_string(),
+        record.coordinate.id.to_string(),
     )]);
     let mut seen = frontier.clone();
     let mut included = BTreeSet::new();
@@ -175,5 +175,5 @@ pub fn query(session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value
 }
 
 pub fn pair(value: &RecordTarget) -> (String, String) {
-    (value.actual_type.clone(), value.key.clone())
+    (value.actual_type.clone(), value.id.clone())
 }

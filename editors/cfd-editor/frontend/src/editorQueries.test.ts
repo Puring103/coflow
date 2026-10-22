@@ -8,7 +8,7 @@ const records = (revision: number): FileRecords => ({
   revision, file_path: 'data.cfd', type_names: [], columns: [], records: [],
   capabilities: {
     can_edit_field: true,
-    can_edit_key: true,
+    can_edit_id: true,
     can_insert_record: true,
     can_delete_record: true,
     can_reorder_records: true,

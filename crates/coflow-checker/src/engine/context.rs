@@ -33,7 +33,7 @@ impl<'a> ExecutionContext<'a> {
         &self,
         check: &CftTopLevelCheck,
         statement: &CftSchemaCheckStmt,
-    ) -> (Vec<CheckDiagnostic>, u64) {
+    ) -> (Vec<CheckDiagnostic>, u64, bool) {
         let mut evaluator = CheckEvaluator::new(
             self.schema,
             self.model,
@@ -49,16 +49,23 @@ impl<'a> ExecutionContext<'a> {
         evaluator.contexts.push(CheckDiagnosticContext::Check {
             name: check.name.to_string(),
         });
-        let _ = statements::eval_root_statement(&mut evaluator, statement);
+        if statements::eval_root_statement(&mut evaluator, statement)
+            == super::evaluator::EvalFlow::Continue
+        {
+            let _ =
+                statements::apply_block_message(&mut evaluator, 0, check.block.message.as_ref());
+        }
         evaluator.into_execution()
     }
 
     pub(super) fn execute_record(
         &self,
         meta: &CftType,
+        rule: &coflow_language::cft::CftSchemaCheckBlock,
+        rule_id: &str,
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
-    ) -> (Vec<CheckDiagnostic>, u64) {
+    ) -> (Vec<CheckDiagnostic>, u64, bool) {
         let mut evaluator = CheckEvaluator::new(
             self.schema,
             self.model,
@@ -69,9 +76,16 @@ impl<'a> ExecutionContext<'a> {
         );
         evaluator.schema_location = Some(CheckSchemaLocation {
             module: meta.module.clone(),
-            span: meta.check.as_ref().map_or(meta.span, |check| check.span),
+            span: rule.span,
         });
-        let _ = statements::eval_root_statement(&mut evaluator, statement);
+        evaluator.contexts.push(CheckDiagnosticContext::Check {
+            name: rule_id.to_string(),
+        });
+        if statements::eval_root_statement(&mut evaluator, statement)
+            == super::evaluator::EvalFlow::Continue
+        {
+            let _ = statements::apply_block_message(&mut evaluator, 0, rule.message.as_ref());
+        }
         evaluator.into_execution()
     }
 }

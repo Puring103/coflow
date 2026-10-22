@@ -1,10 +1,10 @@
 use coflow_model::{
-    CfdDataModel, CfdDictKey, CfdPath, CfdRecordId, DimensionRefCoordinate, RefSite,
+    CfdDataModel, CfdDictKey, CfdPath, CfdRecordHandle, DimensionRefCoordinate, RefSite,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ModelCursor {
-    pub(crate) record: CfdRecordId,
+    pub(crate) record: CfdRecordHandle,
     pub(crate) path: CfdPath,
     pub(crate) dimension: Option<DimensionCursor>,
 }
@@ -16,7 +16,7 @@ pub(crate) struct DimensionCursor {
 }
 
 impl ModelCursor {
-    pub(crate) fn root(record: CfdRecordId) -> Self {
+    pub(crate) fn root(record: CfdRecordHandle) -> Self {
         Self {
             record,
             path: CfdPath::root(),
@@ -25,7 +25,7 @@ impl ModelCursor {
     }
 
     pub(crate) fn dimension(
-        record: CfdRecordId,
+        record: CfdRecordHandle,
         field: impl Into<String>,
         variant: impl Into<String>,
     ) -> Self {
@@ -101,14 +101,20 @@ impl ModelCursor {
             return Some(RefSite::new(self.record, self.path.clone()));
         };
         let record = model.record(self.record)?;
-        let (field, values) = record
-            .dimension_fields
-            .get_key_value(dimension.field.as_str())?;
-        let (variant, _) = values.variants.get_key_value(dimension.variant.as_str())?;
-        let mut edge_path = CfdPath::root().field(field.as_str());
+        let mut edge_path = CfdPath::root().field(&dimension.field);
         edge_path
             .segments
             .extend(self.path.segments.iter().cloned());
+        // 变体有效值可能来自基础表达式；引用边与实际存储来源保持一致。
+        let Some((field, values)) = record
+            .dimension_fields
+            .get_key_value(dimension.field.as_str())
+        else {
+            return Some(RefSite::new(self.record, edge_path));
+        };
+        let Some((variant, _)) = values.variants.get_key_value(dimension.variant.as_str()) else {
+            return Some(RefSite::new(self.record, edge_path));
+        };
         Some(RefSite::in_dimension(
             self.record,
             edge_path,
@@ -129,7 +135,7 @@ pub(crate) struct ValueLocation {
 }
 
 impl ValueLocation {
-    pub(crate) fn root(record: CfdRecordId) -> Self {
+    pub(crate) fn root(record: CfdRecordHandle) -> Self {
         let cursor = ModelCursor::root(record);
         Self {
             storage: cursor.clone(),
@@ -164,7 +170,7 @@ impl ValueLocation {
         }
     }
 
-    pub(crate) fn dereference(mut self, target: CfdRecordId) -> Self {
+    pub(crate) fn dereference(mut self, target: CfdRecordHandle) -> Self {
         self.references.push(self.blame);
         let target = ModelCursor::root(target);
         Self {

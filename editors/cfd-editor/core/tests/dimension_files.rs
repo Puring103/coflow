@@ -14,7 +14,7 @@ impl Drop for Fixture {
 fn coordinate(key: &str, field: &str, dimension: &str, variant: &str) -> DimensionValueCoordinate {
     DimensionValueCoordinate {
         actual_type: "Item".try_into().expect("type"),
-        record_key: key.try_into().expect("key"),
+        record_id: key.try_into().expect("key"),
         field: field.try_into().expect("field"),
         dimension: dimension.try_into().expect("dimension"),
         variant: variant.try_into().expect("variant"),

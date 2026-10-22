@@ -6,9 +6,10 @@ Coflow 是一个以 CFT schema 和 CFD 文本为唯一数据输入的配置工�
 
 - CFT table、data、singleton 声明、默认值、枚举、引用、多态和维度。
 - CFD 文本的结构化记录、内联对象、数组、字典和跨文件引用。
+- 命名 `check` 支持内联 data 自检、集合与关联检查、维度遍历和可定位诊断。
+- 字符串支持显式 `f"..."` 插值，字段省略由声明默认值控制。
 - `check`、`build`、`codegen` 三个构建入口，失败时不替换既有代码目录。
 - C# 通过 `Coflow.Loader` 将调用方提供的 CFD 直接加载为生成类型。
-- 代码生成接口支持继续增加其他目标语言；数据格式不再扩展。
 - CFT/CFD 的 LSP 和编辑器诊断、补全、跳转与语义高亮。
 
 ## 安装
@@ -50,14 +51,15 @@ var result = CoflowData.Load(new[] {
     new CfdSource("items.cfd", itemsText),
     new CfdSource("ja.cfd", japaneseText),
 });
-var data = result.Data;
-var sword = data.Table<Item>()["sword"];
-var japaneseName = sword.name.For("ja");
+if (result.Success) {
+    var sword = result.Data.Table<Item>()["sword"];
+    var japaneseName = sword.For("language", "ja").name;
+}
 ```
 
 加载结果包含成功状态和诊断。`int`、`float` 对应 C# `long`、`double`，可选值使用可嵌套的 `Option<T>`。
 table 和 singleton 生成 partial class；data 默认生成 partial class，`@struct sealed data` 生成 partial struct。
 通过 `Table<T>()`、`Singleton<T>()` 获取业务数据；枚举主键提供对应表的 `Get(enum)`、`TryGet(enum, out record)` 扩展。记录引用直接连接生成对象。
-维度字段通过 `Default` 和 `For(variant)` 读取；未覆盖的值回退到基础值。
-C# 加载只使用 CFD 和生成代码，CFT 用于编辑器声明检查和代码生成，check 规则由编辑器执行。
-详见 [C# 接入文档](docs/csharp-unity.md)。
+直接读取字段得到基础值；`record.For("language", "ja")` 返回独立的变体视图。缺少覆盖时，基础表达式在所选维度上下文中求值；`record.HasVariant("name", "ja")` 可以判断字段是否显式填写。
+C# 加载只使用 CFD 和生成代码，CFT 用于声明检查和代码生成，check 规则由编辑器和 CLI 的 `check --rules`、`build` 执行。
+详见 [C# 接入文档](docs/integration/csharp-unity.md)。

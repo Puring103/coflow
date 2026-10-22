@@ -220,7 +220,7 @@ fn string_defaults_project() -> PathBuf {
         concat!(
             "table Rule {\n",
             "  name: string = \"base\";\n",
-            "  label: fstring = f\"rule {self.name}\";\n",
+            "  label: string = f\"rule {self.name}\";\n",
             "}\n",
         ),
     )
@@ -389,7 +389,7 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
         .any(|target| target.short_name.as_deref() == Some("Blade")));
     assert!(targets
         .iter()
-        .any(|target| target.coordinate.key.as_str() == "shield" && target.short_name.is_none()));
+        .any(|target| target.coordinate.id.as_str() == "shield" && target.short_name.is_none()));
     // 修改字段值后，引用缓存必须读取新值，且记录 ID 保持不变。
     let coordinate = RecordCoordinate::try_new("Item", "sword").expect("coordinate");
     store
@@ -508,7 +508,33 @@ fn editor_field_write_preserves_a_self_referencing_record() {
 
 #[test]
 fn repository_projects_open_in_editor() {
-    let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let fixtures = tempfile::tempdir().expect("isolated repository fixtures");
+    let repository_root = fixtures.path();
+    // 本机设置按项目路径隔离；复制夹具避免读取或改写开发者已有的项目设置。
+    fn copy_directory(source: &Path, target: &Path) {
+        fs::create_dir_all(target).expect("create fixture directory");
+        for entry in fs::read_dir(source).expect("read fixture directory") {
+            let entry = entry.expect("fixture entry");
+            let output = target.join(entry.file_name());
+            if entry.file_type().expect("fixture type").is_dir() {
+                copy_directory(&entry.path(), &output);
+            } else {
+                fs::copy(entry.path(), output).expect("copy fixture file");
+            }
+        }
+    }
+    for relative in ["examples/showcase", "tests/editor-project", "examples/new"] {
+        let source = source_root.join(relative);
+        let target = repository_root.join(relative);
+        fs::create_dir_all(&target).expect("create isolated project");
+        fs::copy(source.join("coflow.yaml"), target.join("coflow.yaml")).expect("copy config");
+        for directory in ["schema", "data", "editor-setting"] {
+            if source.join(directory).exists() {
+                copy_directory(&source.join(directory), &target.join(directory));
+            }
+        }
+    }
 
     for (project, config) in [
         (
@@ -672,7 +698,7 @@ fn array_editor_mutations_round_trip_through_reload() {
         .expect("append array item");
 
     let renamed = store
-        .rename_record_key(session_id, &original, "featured_tags_v2")
+        .rename_record_id(session_id, &original, "featured_tags_v2")
         .expect("rename grouped record")
         .renamed;
     let draft = record_default(&store, session_id, "ArrayExample");
@@ -1040,7 +1066,7 @@ fn editor_language_features_are_served_by_embedded_lsp() {
     assert!(record_completion
         .insert_text
         .as_deref()
-        .is_some_and(|text| text.contains("${1:key}")));
+        .is_some_and(|text| text.contains("${1:id}")));
 
     let invalid = "broken: ArrayExample {";
     let first_invalid = store
@@ -1094,7 +1120,7 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
 
     assert!(cell("name").missing);
     assert!(matches!(cell("name").value, CfdValue::String(_)));
-    assert!(!cell("note").missing);
+    assert!(cell("note").missing);
     assert!(matches!(cell("note").value, CfdValue::OptionNone));
     assert!(!cell("count").missing);
     assert!(matches!(cell("count").value, CfdValue::Int(7)));
@@ -1126,6 +1152,14 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
             &CfdValue::String("fixed".to_string()),
         )
         .expect("repair missing scalar");
+    store
+        .write_field(
+            snapshot.session_id,
+            &coordinate,
+            &[field("note")],
+            &CfdValue::OptionNone,
+        )
+        .expect("explicitly supply the required nullable field");
     store
         .write_field(
             snapshot.session_id,
@@ -1284,7 +1318,7 @@ fn editor_check_command_runs_rules_while_build_only_generates_data_types() {
     let (root, data_file) = array_project();
     fs::write(
         root.join("schema.cft"),
-        "table Item { name: string; check { false : \"editor business issue\"; } }",
+        "table Item { name: string; check Valid { false : \"editor business issue\"; } }",
     )
     .expect("schema");
     fs::write(data_file, "item: Item { name: \"Item\" }").expect("data");
@@ -1308,8 +1342,8 @@ fn cell_templates_and_explicit_reference_constraints_survive_reload() {
     )
     .expect("config");
     fs::write(root.join("schema.cft"), r#"
-        data Payload { score: int; label: fstring = f"{self.score}"; labels: [fstring] = []; optional: Option<fstring> = None; }
-        table Node { label: fstring = f"{self.id}"; }
+        data Payload { score: int; label: string = f"{self.score}"; labels: [string] = []; optional: Option<string> = None; }
+        table Node { label: string = f"{self.id}"; }
         table Child: Node {}
         table Entry { payload: Payload; target: &Node; }
     "#).expect("schema");

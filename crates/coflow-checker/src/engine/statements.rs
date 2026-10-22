@@ -16,19 +16,23 @@ pub(super) fn eval_root_statement(
     evaluator: &mut CheckEvaluator<'_>,
     statement: &CftSchemaCheckStmt,
 ) -> EvalFlow {
-    eval_stmt(evaluator, statement)
+    eval_stmt(evaluator, statement, true)
 }
 
 fn eval_stmts(evaluator: &mut CheckEvaluator<'_>, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {
     for stmt in stmts {
-        if eval_stmt(evaluator, stmt) == EvalFlow::HardStop {
+        if eval_stmt(evaluator, stmt, false) == EvalFlow::HardStop {
             return EvalFlow::HardStop;
         }
     }
     EvalFlow::Continue
 }
 
-fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> EvalFlow {
+fn eval_stmt(
+    evaluator: &mut CheckEvaluator<'_>,
+    stmt: &CftSchemaCheckStmt,
+    root: bool,
+) -> EvalFlow {
     if let Some(location) = evaluator.schema_location.as_mut() {
         location.span = match stmt {
             CftSchemaCheckStmt::Expr { span, .. }
@@ -36,13 +40,14 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
             | CftSchemaCheckStmt::When { span, .. } => *span,
         };
     }
-    match stmt {
+    let diagnostic_start = evaluator.diagnostics.len();
+    let flow = match stmt {
         CftSchemaCheckStmt::Expr {
             condition, message, ..
         } => eval_expr_stmt(evaluator, condition, message.as_ref()),
         CftSchemaCheckStmt::When {
             condition, body, ..
-        } => eval_when_stmt(evaluator, condition, body),
+        } => eval_when_stmt(evaluator, condition, body, root),
         CftSchemaCheckStmt::Quantifier {
             kind,
             bindings,
@@ -50,7 +55,45 @@ fn eval_stmt(evaluator: &mut CheckEvaluator<'_>, stmt: &CftSchemaCheckStmt) -> E
             body,
             ..
         } => eval_quantifier_stmt(evaluator, *kind, bindings, collection, body, stmt),
+    };
+    let message = match stmt {
+        CftSchemaCheckStmt::When { message, .. }
+        | CftSchemaCheckStmt::Quantifier { message, .. } => message.as_ref(),
+        _ => None,
+    };
+    if flow == EvalFlow::Continue {
+        apply_block_message(evaluator, diagnostic_start, message)
+    } else {
+        flow
     }
+}
+
+// 整块说明补充断言的实际值与精确路径，不覆盖子语句产生的诊断证据。
+pub(super) fn apply_block_message(
+    evaluator: &mut CheckEvaluator<'_>,
+    start: usize,
+    message: Option<&CftSchemaCheckMessage>,
+) -> EvalFlow {
+    if evaluator.diagnostics.len() == start {
+        return EvalFlow::Continue;
+    }
+    let Some(message) = message else {
+        return EvalFlow::Continue;
+    };
+    let rendered = match &message.kind {
+        CftSchemaCheckMessageKind::String(text) => text.clone(),
+        CftSchemaCheckMessageKind::Formatted(segments) => {
+            match super::expressions::eval_formatted_segments(evaluator, segments) {
+                Ok(text) => text,
+                Err(EvalAbort::Error) => return EvalFlow::HardStop,
+            }
+        }
+    };
+    for diagnostic in &mut evaluator.diagnostics[start..] {
+        diagnostic.diagnostic.message = format!("{rendered}\n{}", diagnostic.diagnostic.message);
+        diagnostic.is_custom_message = true;
+    }
+    EvalFlow::Continue
 }
 
 fn eval_expr_stmt(
@@ -109,6 +152,7 @@ fn eval_when_stmt(
     evaluator: &mut CheckEvaluator<'_>,
     condition: &CftSchemaCheckExpr,
     body: &[CftSchemaCheckStmt],
+    root: bool,
 ) -> EvalFlow {
     match evaluator.eval_condition(condition) {
         Ok((value, bindings)) if matches!(value.value.scalar(), Some(ScalarValue::Bool(true))) => {
@@ -122,6 +166,9 @@ fn eval_when_stmt(
             flow
         }
         Ok((value, _)) if matches!(value.value.scalar(), Some(ScalarValue::Bool(false))) => {
+            if root {
+                evaluator.root_triggered = false;
+            }
             EvalFlow::Continue
         }
         Ok((value, _)) => {
@@ -198,6 +245,11 @@ fn eval_quantifier<'model>(
     let mut none_match_locations: Vec<Option<ValueLocation>> = Vec::new();
     let mut first_item_location = None;
     for index in 0..item_count {
+        if let (Some(location), CftSchemaCheckStmt::Quantifier { span, .. }) =
+            (evaluator.schema_location.as_mut(), stmt)
+        {
+            location.span = *span;
+        }
         let item = match evaluator.quantifier_item(collection_value, index) {
             Ok(Some(item)) => item,
             Ok(None) => return EvalFlow::HardStop,
@@ -261,11 +313,16 @@ fn eval_quantifier<'model>(
         }
     }
 
+    if let Some(location) = evaluator.schema_location.as_mut() {
+        if let CftSchemaCheckStmt::Quantifier { span, .. } = stmt {
+            location.span = *span;
+        }
+    }
     finish_quantifier(
         evaluator,
         kind,
         item_count,
-        first_item_location,
+        first_item_location.or_else(|| collection_value.location.clone()),
         collection,
         stmt,
         quantifier_diagnostic_start,

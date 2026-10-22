@@ -1,4 +1,4 @@
-use super::ids::CfdRecordId;
+use super::ids::CfdRecordHandle;
 use crate::diagnostics::CfdPath;
 use coflow_language::cft::{DimensionName, FieldName, VariantName};
 
@@ -6,14 +6,14 @@ use coflow_language::cft::{DimensionName, FieldName, VariantName};
 /// record and the `CfdPath` to the ref.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RefSite {
-    pub host: CfdRecordId,
+    pub host: CfdRecordHandle,
     pub path: CfdPath,
     pub dimension: Option<DimensionRefCoordinate>,
 }
 
 impl RefSite {
     #[must_use]
-    pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
+    pub const fn new(host: CfdRecordHandle, path: CfdPath) -> Self {
         Self {
             host,
             path,
@@ -23,7 +23,7 @@ impl RefSite {
 
     #[must_use]
     pub const fn in_dimension(
-        host: CfdRecordId,
+        host: CfdRecordHandle,
         path: CfdPath,
         dimension: DimensionRefCoordinate,
     ) -> Self {
@@ -60,5 +60,5 @@ impl RefEdgeId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefEdge {
     pub site: RefSite,
-    pub target: CfdRecordId,
+    pub target: CfdRecordHandle,
 }

@@ -111,7 +111,7 @@
     "builtin-types": { "patterns": [
       {
         "name": "storage.type.primitive.cft",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string|fstring|Option)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string|Option)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
       }
     ] },
     "constants": { "patterns": [

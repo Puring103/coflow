@@ -24,7 +24,7 @@ const cell = (name: string, value: FieldCell['value'], declaredType = 'string'):
   },
 })
 const row = (key: string, fields: FieldCell[]): RecordRow => ({
-  coordinate: { actual_type: 'Item', key },
+  coordinate: { actual_type: 'Item', id: key},
   display_path: 'data/items.cfd',
   container_index: 0,
   container_size: 1,

@@ -74,7 +74,7 @@ pub(crate) fn parse_formatted_string(
             coflow_language::cfd::CfdFormatSegment::Reference(reference) => {
                 LoadedFormatSegment::Reference(LoadedFieldReference {
                     type_name: reference.type_name.clone(),
-                    key: reference.key.clone(),
+                    id: reference.id.clone(),
                     path: reference.path.clone(),
                 })
             }

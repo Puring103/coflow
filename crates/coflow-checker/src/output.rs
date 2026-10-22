@@ -10,6 +10,7 @@ pub struct CheckExecutionStats {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckTaskResult {
+    pub status: CheckTaskStatus,
     pub task: CheckTask,
     pub diagnostics: Vec<CheckDiagnostic>,
 }
@@ -36,4 +37,14 @@ impl CheckOutput {
             .iter()
             .chain(self.results.iter().flat_map(|result| &result.diagnostics))
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckTaskStatus {
+    Passed,
+    NotTriggered,
+    Failed,
+    EvaluationError,
+    BudgetExceeded,
+    NotExecuted,
 }

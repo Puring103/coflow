@@ -1,10 +1,10 @@
-use coflow_language::cft::{CftNameError, RecordKey, TypeName};
+use coflow_language::cft::{CftNameError, RecordId, TypeName};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Stable business identity of a top-level record across model generations.
 ///
-/// [`CfdRecordId`] is only valid inside one model generation. Persisted and
+/// [`CfdRecordHandle`] is only valid inside one model generation. Persisted and
 /// wire-facing references to top-level records must use this coordinate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -16,13 +16,13 @@ pub struct RecordCoordinate {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub actual_type: TypeName,
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
-    pub key: RecordKey,
+    pub id: RecordId,
 }
 
 impl RecordCoordinate {
     #[must_use]
-    pub const fn new(actual_type: TypeName, key: RecordKey) -> Self {
-        Self { actual_type, key }
+    pub const fn new(actual_type: TypeName, id: RecordId) -> Self {
+        Self { actual_type, id }
     }
 
     /// Validates a raw wire coordinate before it enters the successful model
@@ -33,9 +33,9 @@ impl RecordCoordinate {
     /// Returns an error when either component is not a valid CFT identifier.
     pub fn try_new(
         actual_type: impl Into<String>,
-        key: impl Into<String>,
+        id: impl Into<String>,
     ) -> Result<Self, CftNameError> {
-        Ok(Self::new(TypeName::new(actual_type)?, RecordKey::new(key)?))
+        Ok(Self::new(TypeName::new(actual_type)?, RecordId::new(id)?))
     }
 
     #[must_use]
@@ -44,15 +44,15 @@ impl RecordCoordinate {
     }
 
     #[must_use]
-    pub fn key(&self) -> &str {
-        self.key.as_str()
+    pub fn id(&self) -> &str {
+        self.id.as_str()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CfdRecordId(usize);
+pub struct CfdRecordHandle(usize);
 
-impl CfdRecordId {
+impl CfdRecordHandle {
     #[must_use]
     pub(crate) fn new(index: usize) -> Self {
         Self(index)
@@ -64,7 +64,7 @@ impl CfdRecordId {
     }
 }
 
-impl fmt::Display for CfdRecordId {
+impl fmt::Display for CfdRecordHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }

@@ -9,7 +9,7 @@ fn overlays_are_syntactically_distinct_from_base_records() {
     assert_eq!(ast.dimensions.len(), 2);
     assert_eq!(ast.dimensions[0].dimension, "language");
     assert_eq!(ast.dimensions[0].variant, "ja");
-    assert_eq!(ast.dimensions[0].records[0].key, "sword");
+    assert_eq!(ast.dimensions[0].records[0].id, "sword");
     assert_eq!(ast.dimensions[0].records[0].fields.len(), 1);
     assert_eq!(ast.dimensions[1].records[0].fields[0].name, "price");
     let span = ast.dimensions[0].span;

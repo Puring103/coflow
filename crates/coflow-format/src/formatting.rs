@@ -58,7 +58,7 @@ fn format_source(source: &str, language: FormatLanguage) -> String {
             && is_grouped_record_start(&formatted);
         let is_type_check = language == FormatLanguage::Cft
             && line_indent > 0
-            && (formatted == "check {" || formatted.starts_with("check "));
+            && (formatted.starts_with("check "));
         let is_comment = formatted.starts_with('#');
         let is_closing = formatted.starts_with('}') || formatted.starts_with(']');
 

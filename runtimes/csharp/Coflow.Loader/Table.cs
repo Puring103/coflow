@@ -20,13 +20,13 @@ public sealed class Table<T> : IReadOnlyDictionary<string, T>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
-/// <summary>Maps generated enum keys to their declared CFD record keys.</summary>
-public sealed class TableKeyMap<TKey> where TKey : struct, Enum
+/// <summary>Maps generated enum IDs to their declared CFD record IDs.</summary>
+public sealed class TableIdMap<TId> where TId : struct, Enum
 {
-    private readonly IReadOnlyDictionary<TKey, string> _keys;
-    public TableKeyMap(IReadOnlyDictionary<TKey, string> keys) => _keys = keys;
-    public string GetKey(TKey key) => _keys.TryGetValue(key, out var text)
-        ? text : throw new KeyNotFoundException($"Unknown table key `{key}`.");
-    public bool TryGetKey(TKey key, out string text) => _keys.TryGetValue(key, out text!);
+    private readonly IReadOnlyDictionary<TId, string> _ids;
+    public TableIdMap(IReadOnlyDictionary<TId, string> ids) => _ids = ids;
+    public string GetId(TId id) => _ids.TryGetValue(id, out var text)
+        ? text : throw new KeyNotFoundException($"Unknown table id `{id}`.");
+    public bool TryGetId(TId id, out string text) => _ids.TryGetValue(id, out text!);
 }
 }

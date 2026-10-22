@@ -19,12 +19,12 @@ pub(super) fn apply_patch(
     ast: &CfdAst,
     request: &WriteCellRequest<'_>,
 ) -> Result<String, DiagnosticSet> {
-    let record = find_record(ast, request.actual_type, request.record_key).ok_or_else(|| {
+    let record = find_record(ast, request.actual_type, request.record_id).ok_or_else(|| {
         DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!(
                 "record `{}.{}` not found in AST",
-                request.actual_type, request.record_key
+                request.actual_type, request.record_id
             ),
         ))
     })?;
@@ -177,7 +177,7 @@ pub(super) fn find_record<'a>(
 ) -> Option<&'a AstRecord> {
     ast.records
         .iter()
-        .find(|record| record.type_name == actual_type && record.key == key)
+        .find(|record| record.type_name == actual_type && record.id == key)
 }
 
 pub(super) fn apply_unset_field_patch(
@@ -185,7 +185,7 @@ pub(super) fn apply_unset_field_patch(
     source: &str,
     ast: &CfdAst,
     actual_type: &str,
-    record_key: &str,
+    record_id: &str,
     field_path: &[WriteFieldPathSegment],
 ) -> Result<String, DiagnosticSet> {
     if field_path.is_empty() {
@@ -194,10 +194,10 @@ pub(super) fn apply_unset_field_patch(
             "field_path must not be empty",
         )));
     }
-    let record = find_record(ast, actual_type, record_key).ok_or_else(|| {
+    let record = find_record(ast, actual_type, record_id).ok_or_else(|| {
         DiagnosticSet::one(diag(
             "CFD-WRITE",
-            format!("record `{actual_type}.{record_key}` not found in AST"),
+            format!("record `{actual_type}.{record_id}` not found in AST"),
         ))
     })?;
     let WriteTarget::Replace { span, .. } = locate_target(schema, actual_type, record, field_path)?
@@ -207,7 +207,10 @@ pub(super) fn apply_unset_field_patch(
             "field_path must identify an existing field to unset",
         )));
     };
-    let removed = removed_field_span(source, span);
+    let field_span = field_span_for_value(record, span).ok_or_else(|| {
+        DiagnosticSet::one(diag("CFD-WRITE", "unset must identify a named field"))
+    })?;
+    let removed = removed_field_span(source, field_span);
     Ok(format!(
         "{}{}",
         source.get(..removed.start).ok_or_else(|| {
@@ -225,18 +228,35 @@ pub(super) fn apply_unset_field_patch(
     ))
 }
 
-fn removed_field_span(source: &str, value_span: Span) -> Span {
-    let mut start = value_span.start.min(source.len());
-    while start > 0 {
-        let Some(previous) = source[..start].chars().next_back() else {
-            break;
-        };
-        if previous == '\n' {
-            break;
+fn field_span_for_value(record: &AstRecord, value_span: Span) -> Option<Span> {
+    use coflow_language::cfd::CfdValue as V;
+    let mut fields = record.fields.iter().collect::<Vec<_>>();
+    while let Some(field) = fields.pop() {
+        if field.value.span() == value_span {
+            return Some(field.span);
         }
-        start -= previous.len_utf8();
+        let mut values = vec![&field.value];
+        while let Some(value) = values.pop() {
+            match value {
+                V::Block(block) => fields.extend(block.fields.iter()),
+                V::Array(items, _) => values.extend(items.iter()),
+                V::OptionSome(inner, _) => values.push(inner),
+                _ => {}
+            }
+        }
     }
-    let mut end = value_span.end.min(source.len());
+    None
+}
+
+fn removed_field_span(source: &str, field_span: Span) -> Span {
+    // 使用字段 AST 跨度，单行记录不能把同一行的其他字段或记录头一起删除。
+    let mut start = field_span.start.min(source.len());
+    let line_start = source[..start].rfind('\n').map_or(0, |index| index + 1);
+    let whole_line = source[line_start..start].trim().is_empty();
+    if whole_line {
+        start = line_start;
+    }
+    let mut end = field_span.end.min(source.len());
     end += source[end..]
         .chars()
         .take_while(|c| c.is_whitespace() && *c != '\n')
@@ -249,13 +269,15 @@ fn removed_field_span(source: &str, value_span: Span) -> Span {
             .take_while(|c| c.is_whitespace() && *c != '\n')
             .map(char::len_utf8)
             .sum::<usize>();
+    } else if !whole_line {
+        // 删除末尾字段时消除它前面的分隔逗号，保留右花括号及后面的源码。
+        let prefix = source[..start].trim_end();
+        if prefix.ends_with(',') {
+            start = prefix.len() - 1;
+        }
     }
-    if source[end..].starts_with("\r\n") {
-        end += 2;
-    } else if source[end..].starts_with('\n') {
+    if whole_line && source[end..].starts_with('\n') {
         end += 1;
-    } else {
-        end = source.len();
     }
     Span::new(start, end)
 }
@@ -293,14 +315,14 @@ pub(super) fn validate_values<'a>(
     Ok(())
 }
 
-pub(super) fn validate_record_key(key: &str) -> Result<(), DiagnosticSet> {
+pub(super) fn validate_record_id(key: &str) -> Result<(), DiagnosticSet> {
     if key.trim().is_empty() {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             "record key must not be empty",
         )));
     }
-    if let Some(reason) = coflow_language::lexical::record_key_ident_error(key) {
+    if let Some(reason) = coflow_language::lexical::record_id_ident_error(key) {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("record key `{key}` is invalid: {reason}"),
@@ -409,7 +431,7 @@ fn explicit_record_fragment(fragment: &str, record: &AstRecord) -> Result<String
     if record.type_span.start >= record.span.start {
         return Ok(fragment.to_string());
     }
-    let insert_at = record.key_span.end.saturating_sub(record.span.start);
+    let insert_at = record.id_span.end.saturating_sub(record.span.start);
     let Some((prefix, suffix)) = fragment.get(..insert_at).zip(fragment.get(insert_at..)) else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",

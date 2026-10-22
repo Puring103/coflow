@@ -15,9 +15,10 @@ pub struct CheckStatementRef<'schema> {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CheckIndex {
     statements: Vec<CheckStatementInfo>,
+    by_rule: BTreeMap<String, Vec<CheckStatementId>>,
     by_dependency: BTreeMap<CheckDependency, BTreeSet<CheckStatementId>>,
     cross_record_dependencies: BTreeSet<(CheckStatementId, CheckDependency)>,
-    by_actual_type: BTreeMap<TypeName, BTreeSet<CheckStatementId>>,
+    by_actual_type: BTreeMap<TypeName, Vec<CheckStatementId>>,
     owners_by_actual_type: BTreeMap<TypeName, Vec<TypeName>>,
 }
 
@@ -32,12 +33,13 @@ impl CheckIndex {
 
         let mut roots = Vec::new();
         for ty in types.values() {
-            if let Some(block) = &ty.check {
+            for (block_index, block) in ty.checks.iter().enumerate() {
                 for root_index in 0..block.stmts.len() {
                     roots.push((
                         ty.module.clone(),
                         ty.span.start,
                         CheckOwner::Type(ty.name.clone()),
+                        block_index,
                         root_index,
                     ));
                 }
@@ -49,6 +51,7 @@ impl CheckIndex {
                     check.module.clone(),
                     check.span.start,
                     CheckOwner::Project(check.name.clone()),
+                    0,
                     root_index,
                 ));
             }
@@ -56,33 +59,39 @@ impl CheckIndex {
         roots.sort();
 
         let mut statements = Vec::with_capacity(roots.len());
+        let mut by_rule = BTreeMap::<String, Vec<CheckStatementId>>::new();
         let mut by_dependency = BTreeMap::<CheckDependency, BTreeSet<CheckStatementId>>::new();
         let mut cross_record_dependencies = BTreeSet::new();
         let mut by_owner = BTreeMap::<CheckOwner, Vec<CheckStatementId>>::new();
-        for (_, _, owner, root_index) in roots {
+        for (_, _, owner, block_index, root_index) in roots {
             let id = CheckStatementId::new(u32::try_from(statements.len()).unwrap_or(u32::MAX));
+            // roots 直接由同一批已编译块产生，索引在构造期间始终有效。
             let block = match &owner {
-                CheckOwner::Type(name) => types.get(name).and_then(|ty| ty.check.as_ref()),
-                CheckOwner::Project(name) => project_checks.get(name).map(|check| &check.block),
+                CheckOwner::Type(name) => &types[name].checks[block_index],
+                CheckOwner::Project(name) => &project_checks[name].block,
             };
-            let dependencies = block
-                .and_then(|block| block.statement_dependencies.get(root_index))
-                .map(|dependencies| dependencies.dependencies().cloned().collect())
-                .unwrap_or_default();
+            let dependencies = block.statement_dependencies[root_index]
+                .dependencies()
+                .cloned()
+                .collect();
             let dimensions = block
-                .map(|block| {
-                    block
-                        .dimension_statements
-                        .iter()
-                        .filter(|(_, indices)| indices.contains(&root_index))
-                        .map(|(dimension, _)| dimension.clone())
-                        .collect()
-                })
-                .unwrap_or_default();
+                .dimension_statements
+                .iter()
+                .filter(|(_, indices)| indices.contains(&root_index))
+                .map(|(dimension, _)| dimension.clone())
+                .collect();
             let info = CheckStatementInfo {
                 id,
                 owner: owner.clone(),
                 root_index,
+                block_index,
+                rule_name: block.name.clone(),
+                rule_id: match &owner {
+                    CheckOwner::Type(name) => {
+                        format!("{name}::{}", block.name)
+                    }
+                    CheckOwner::Project(name) => name.to_string(),
+                },
                 dependencies,
                 dimensions,
             };
@@ -92,9 +101,7 @@ impl CheckIndex {
                     .or_default()
                     .insert(id);
             }
-            if let Some(dependencies) =
-                block.and_then(|block| block.statement_dependencies.get(root_index))
-            {
+            if let Some(dependencies) = block.statement_dependencies.get(root_index) {
                 cross_record_dependencies.extend(
                     dependencies
                         .cross_record_dependencies()
@@ -102,13 +109,14 @@ impl CheckIndex {
                         .map(|dependency| (id, dependency)),
                 );
             }
+            by_rule.entry(info.rule_id.clone()).or_default().push(id);
             by_owner.entry(owner).or_default().push(id);
             statements.push(info);
         }
 
         let mut by_actual_type = BTreeMap::new();
         for actual_type in types.keys() {
-            let mut ids = BTreeSet::new();
+            let mut ids = Vec::new();
             for owner in owners_by_actual_type.get(actual_type).into_iter().flatten() {
                 ids.extend(
                     by_owner
@@ -123,6 +131,7 @@ impl CheckIndex {
 
         Ok(Self {
             statements,
+            by_rule,
             by_dependency,
             cross_record_dependencies,
             by_actual_type,
@@ -132,6 +141,13 @@ impl CheckIndex {
 
     pub(in crate::schema) fn statement(&self, id: CheckStatementId) -> Option<&CheckStatementInfo> {
         self.statements.get(id.index())
+    }
+
+    pub(in crate::schema) fn for_rule(
+        &self,
+        rule: &str,
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.by_rule.get(rule).into_iter().flatten().copied()
     }
 
     pub(in crate::schema) fn statements(&self) -> impl Iterator<Item = &CheckStatementInfo> {
@@ -227,7 +243,7 @@ mod tests {
     fn dependency_index_compilation_obeys_the_schema_budget() {
         let modules = parse_modules([CftFile::from_source(
             ModuleId::from("main"),
-            "data Part { value: int; } table Item { part: Part; check { part.value > 0; } }",
+            "data Part { value: int; } table Item { part: Part; check Valid { part.value > 0; } }",
         )]);
         let schema = build_schema(&modules).expect("schema");
         let mut budget = AnalysisBudget::new(StructuralLimits::new(1, 1, 1));

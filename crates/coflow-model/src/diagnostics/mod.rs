@@ -8,7 +8,7 @@ pub use mapping::{
 };
 pub use paths::{format_cfd_dict_key, CfdPath, CfdPathSegment};
 
-use crate::model::CfdRecordId;
+use crate::model::CfdRecordHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdDiagnostics {
@@ -64,7 +64,7 @@ impl CfdDiagnostic {
     }
 
     #[must_use]
-    pub fn with_primary(mut self, record: Option<CfdRecordId>, path: CfdPath) -> Self {
+    pub fn with_primary(mut self, record: Option<CfdRecordHandle>, path: CfdPath) -> Self {
         self.primary = Some(CfdLabel {
             record,
             path,
@@ -93,7 +93,7 @@ impl CfdDiagnostic {
     #[must_use]
     pub fn with_related(
         mut self,
-        record: Option<CfdRecordId>,
+        record: Option<CfdRecordHandle>,
         path: CfdPath,
         message: impl Into<String>,
     ) -> Self {
@@ -109,7 +109,7 @@ impl CfdDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdLabel {
-    pub record: Option<CfdRecordId>,
+    pub record: Option<CfdRecordHandle>,
     pub path: CfdPath,
     pub message: Option<String>,
     pub origin: Option<RecordOrigin>,

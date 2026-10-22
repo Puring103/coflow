@@ -143,7 +143,7 @@ fn object_aliases_are_transparent_in_check_type_positions() {
         r#"
             data Item { value: int; }
             type ItemAlias = Item;
-            table Holder { target: Item; check { target is ItemAlias; } }
+            table Holder { target: Item; check Valid { target is ItemAlias; } }
         "#,
     )
     .expect("object aliases should work in is predicates");

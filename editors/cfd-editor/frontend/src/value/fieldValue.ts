@@ -25,7 +25,7 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
     case 'string':
       return { kind: 'string', value: raw }
     case 'formatted_string':
-      // 模板类型由声明决定，普通字符串不根据花括号自动转成模板。
+      // 模板由显式源码模式决定，普通文本不根据花括号自动转成模板。
       return { kind: 'formatted_string', value: { ...original.value, source: `f${JSON.stringify(raw)}` } }
     case 'enum':
       return { kind: 'enum', value: { ...original.value, variant: raw } }
@@ -62,12 +62,12 @@ function scalarText(value: FieldValue): string | null {
     case 'string': return value.value
     case 'formatted_string': return value.value.rendered
     case 'enum': return enumVariantText(value)
-    case 'ref': return referenceKeyText(value.value)
+    case 'ref': return referenceIdText(value.value)
     default: return null
   }
 }
 
-export function referenceKeyText(reference: string): string {
+export function referenceIdText(reference: string): string {
   const withoutPrefix = reference.startsWith('&') ? reference.slice(1) : reference
   const separator = withoutPrefix.lastIndexOf('.')
   return separator >= 0 ? withoutPrefix.slice(separator + 1) : withoutPrefix
@@ -78,7 +78,6 @@ export function scalarDefaultForDeclaredType(declaredType?: string): FieldValue 
   const stripped = stripNullableType(declaredType)
   switch (stripped) {
     case 'string': return { kind: 'string', value: '' }
-    case 'fstring': return { kind: 'formatted_string', value: { source: 'f""', rendered: '' } }
     case 'int': return { kind: 'int', value: 0n }
     case 'float': return { kind: 'float', value: 0 }
     case 'bool': return { kind: 'bool', value: false }
@@ -125,14 +124,14 @@ export function summaryOf(value: FieldValue): string {
 
 export function recordMatchesSearch(record: RecordRow, query: string): boolean {
   const normalized = query.trim().toLowerCase()
-  return !normalized || record.coordinate.key.toLowerCase().includes(normalized)
+  return !normalized || record.coordinate.id.toLowerCase().includes(normalized)
 }
 
 /** Matches a query against a record's complete, recursively traversed value tree. */
 export function recordMatchesFullTextSearch(record: RecordRow, query: string): boolean {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
-  if (record.coordinate.key.toLowerCase().includes(normalized)) return true
+  if (record.coordinate.id.toLowerCase().includes(normalized)) return true
   return record.fields.some(field => (
     field.name.toLowerCase().includes(normalized)
     || fullTextOf(field.value).toLowerCase().includes(normalized)
@@ -216,5 +215,5 @@ function valueKindLabel(value: FieldValue): string {
 
 /** 仅匹配记录键，不把名称、类型或字段内容纳入搜索。 */
 export function recordMatchesKeySearch(record: RecordRow, query: string): boolean {
-  return record.coordinate.key.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+  return record.coordinate.id.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
 }

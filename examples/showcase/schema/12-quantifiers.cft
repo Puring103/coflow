@@ -3,7 +3,7 @@
 table QuantifierRule {
   numbers: [int];
 
-  check {
+  check Valid {
     all value in numbers {
       value >= 0;
     }

@@ -36,9 +36,11 @@ mod task;
 
 use coflow_language::cft::CftSchema;
 use coflow_model::CfdDataModel;
-pub use diagnostics::{CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation};
+pub use diagnostics::{
+    CheckDiagnostic, CheckDiagnosticContext, CheckSchemaLocation, CheckValueLocation,
+};
 pub use limits::EvaluationLimits;
-pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult};
+pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult, CheckTaskStatus};
 pub use task::{CheckLimits, CheckTarget, CheckTask};
 
 /// Executes the requested CFT `check` statement tasks.

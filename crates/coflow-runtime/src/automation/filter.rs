@@ -101,7 +101,7 @@ pub(crate) fn compile(
                     failure
                 })?;
             Ok((
-                (record.actual_type().to_string(), record.key().to_string()),
+                (record.actual_type().to_string(), record.id().to_string()),
                 filter,
             ))
         })
@@ -193,20 +193,13 @@ impl Expression {
                             "boolean negation requires a boolean field",
                         ));
                     }
-                    let comparison_type = if expected == CftValueType::FormattedString {
-                        &CftValueType::String
-                    } else {
-                        &expected
-                    };
-                    let value =
-                        super::values::expression(session.schema(), comparison_type, literal)?;
+                    let value = super::values::expression(session.schema(), &expected, literal)?;
                     if !matches!(comparison, Comparison::Equal | Comparison::NotEqual)
                         && !matches!(
                             expected,
                             CftValueType::Int
                                 | CftValueType::Float
                                 | CftValueType::String
-                                | CftValueType::FormattedString
                                 | CftValueType::Enum(_)
                         )
                     {
@@ -219,7 +212,7 @@ impl Expression {
                 Self::Contains(name, literal) => {
                     let (path, expected) = field(name)?;
                     let element = match &expected {
-                        CftValueType::String | CftValueType::FormattedString => {
+                        CftValueType::String => {
                             &CftValueType::String
                         }
                         CftValueType::Array(inner) | CftValueType::Dict(inner, _) => inner.as_ref(),

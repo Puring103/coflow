@@ -147,14 +147,14 @@ export function visibleFieldsFor(view: ResolvedView): Set<string> | undefined {
 export function groupFilterPredicate(
   view: ResolvedView,
   groups: readonly EditorRecordGroup[],
-): (coordinate: Pick<RecordCoordinate, 'actual_type' | 'key'>) => boolean {
+): (coordinate: Pick<RecordCoordinate, 'actual_type' | 'id'>) => boolean {
   if (!view.groupFilter) return () => true
   const group = groups.find(g => g.id === view.groupFilter)
   if (!group) return () => true
   const members = new Set(
-    group.records.map(r => `${r.actual_type}${r.key}`),
+    group.records.map(r => `${r.actual_type}${r.id}`),
   )
-  return coordinate => members.has(`${coordinate.actual_type}${coordinate.key}`)
+  return coordinate => members.has(`${coordinate.actual_type}${coordinate.id}`)
 }
 
 let viewIdCounter = 0

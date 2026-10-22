@@ -23,8 +23,8 @@ coflow skill install -g
 
 | Skill | 使用场景 |
 | --- | --- |
-| `coflow-workflow` | 项目流程、`coflow.yaml`、`check/codegen`、CI、诊断处理和最佳实践 |
-| `coflow-schema` | CFT schema、类型/字段/默认值、引用、多态、`check {}`、本地化和数据结构设计 |
+| `coflow-workflow` | 项目流程、`coflow.yaml`、检查与构建、CI、诊断处理和最佳实践 |
+| `coflow-schema` | CFT schema、类型/字段/默认值、引用、多态、`check Valid {}`、本地化和数据结构设计 |
 
 ## Agent 工作流
 
@@ -39,10 +39,10 @@ coflow project files --kind schema --project <project>
 
 ```powershell
 coflow source write --project <project> --file schema/main.cft --input candidates/main.cft --dry-run
-coflow check --project <project>
+coflow check --rules --project <project>
 ```
 
-修改 CFD 后运行 `coflow check --project <project>`，需要目标语言源文件时运行 `coflow codegen --project <project>`。
+修改 CFD 后运行 `coflow check --rules --project <project>`。需要检查并生成代码时运行 `coflow build --project <project>`；仅生成代码时使用 `coflow codegen`。批量修改可以先使用 `apply --dry-run` 预览，正式提交时按需加 `--rules` 验证业务规则。
 
 ## 文档引用
 

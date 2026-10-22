@@ -37,7 +37,7 @@ internal static class CfdParser
     private sealed class Parser
     {
         private readonly CfdSource _source;
-        private readonly HashSet<(string Type, string Key)> _recordKeys = new();
+        private readonly HashSet<(string Type, string Id)> _recordIds = new();
         private int _index;
         private int _depth;
         private int _line = 1;
@@ -59,7 +59,7 @@ internal static class CfdParser
                 if (End) break;
                 var start = Cursor;
                 var firstWasQuoted = Peek() == '"';
-                var first = ParseKey("record key or type");
+                var first = ParseKey("record id or type");
                 SkipTrivia();
                 if (Match(':'))
                 {
@@ -84,9 +84,9 @@ internal static class CfdParser
                         if (Match('}')) break;
                         if (End) Error("CFD-SYNTAX-DIMENSION", "unterminated dimension block", SpanFrom(start));
                         var recordStart = Cursor;
-                        var key = ParseKey("override record key");
+                        var key = ParseKey("override record id");
                         SkipTrivia();
-                        Expect(':', "expected `:` after override record key");
+                        Expect(':', "expected `:` after override record id");
                         var type = ParseTypeName("override record type");
                         overrides.Add(ParseRecord(key, type, recordStart));
                         SkipTrivia();
@@ -126,7 +126,7 @@ internal static class CfdParser
                 SkipTrivia();
                 if (Match('}')) return;
                 var keyStart = Cursor;
-                var key = ParseKey("record key");
+                var key = ParseKey("record id");
                 SkipTrivia();
                 string type = groupType;
                 if (Match(':')) type = ParseTypeName("record type");
@@ -139,14 +139,14 @@ internal static class CfdParser
 
         private void AddRecord(List<CfdRecordNode> records, CfdRecordNode record)
         {
-            if (!IsRecordKey(record.Key))
-                Error("CFD-SYNTAX-RECORD-KEY", $"invalid record key `{record.Key}`", record.Span);
-            if (!_recordKeys.Add((record.DeclaredType, record.Key)))
-                Error("CFD-SYNTAX-DUPLICATE-RECORD", $"record `{record.DeclaredType}.{record.Key}` is declared more than once", record.Span);
+            if (!IsRecordId(record.Id))
+                Error("CFD-SYNTAX-RECORD-ID", $"invalid record id `{record.Id}`", record.Span);
+            if (!_recordIds.Add((record.DeclaredType, record.Id)))
+                Error("CFD-SYNTAX-DUPLICATE-RECORD", $"record `{record.DeclaredType}.{record.Id}` is declared more than once", record.Span);
             records.Add(record);
         }
 
-        private static bool IsRecordKey(string value)
+        private static bool IsRecordId(string value)
         {
             if (string.IsNullOrEmpty(value) || IsReservedIdentifier(value))
                 return false;
@@ -220,12 +220,12 @@ internal static class CfdParser
             if (Match('"')) return new CfdStringValue(ParseString(), SpanFrom(start));
             if (Match('&'))
             {
-                var reference = ParseName("reference key");
+                var reference = ParseName("reference id");
                 var separator = reference.LastIndexOf("::", StringComparison.Ordinal);
                 var typeName = separator < 0 ? null : reference[..separator];
                 var key = separator < 0 ? reference : reference[(separator + 2)..];
-                if (!IsRecordKey(key) || (typeName is not null && !IsQualifiedName(typeName)))
-                    Error("CFD-SYNTAX-RECORD-KEY", $"invalid record key `{key}`", SpanFrom(start));
+                if (!IsRecordId(key) || (typeName is not null && !IsQualifiedName(typeName)))
+                    Error("CFD-SYNTAX-RECORD-ID", $"invalid record id `{key}`", SpanFrom(start));
                 return new CfdReferenceValue(typeName, key, SpanFrom(start));
             }
             if (Match('[')) return ParseArray(start);
@@ -239,11 +239,6 @@ internal static class CfdParser
                 SkipTrivia();
                 Expect(')', "expected `)` after Some value");
                 return new CfdSomeValue(value, SpanFrom(start));
-            }
-            if (MatchKeyword("null"))
-            {
-                Error("CFD-SYNTAX-NULL", "`null` is not part of the language; use `None` for Option values", SpanFrom(start));
-                return new CfdInvalidValue(SpanFrom(start));
             }
 
             // A type marker followed by a block is an inline object. Rewind and
@@ -327,7 +322,7 @@ internal static class CfdParser
             return new CfdArrayValue(values, SpanFrom(start));
         }
 
-        private static (string? TypeName, string? Key, IReadOnlyList<string> Path) ParseFormatReferenceText(string expression)
+        private static (string? TypeName, string? Id, IReadOnlyList<string> Path) ParseFormatReferenceText(string expression)
         {
             var reference = expression.StartsWith('&') ? expression[1..] : expression;
             string? typeName = null;
@@ -361,12 +356,12 @@ internal static class CfdParser
                 if (end < 0) Error("CFD-SYNTAX-013", "unterminated interpolation", span);
                 var expression = value[(i + 1)..end].Trim();
                 var parsed = ParseFormatReferenceText(expression);
-                if (!IsValidFormatReference(expression, parsed.TypeName, parsed.Key, parsed.Path))
+                if (!IsValidFormatReference(expression, parsed.TypeName, parsed.Id, parsed.Path))
                 {
-                    Error("CFD-SYNTAX-013", "interpolation requires `self.field` or `&Type::key.field`", span);
+                    Error("CFD-SYNTAX-013", "interpolation requires `self.field` or `&Type::id.field`", span);
                 }
                 if (text.Length != 0) { segments.Add(new CfdFormatText(text.ToString())); text.Clear(); }
-                segments.Add(new CfdFormatReference(parsed.TypeName, parsed.Key, parsed.Path));
+                segments.Add(new CfdFormatReference(parsed.TypeName, parsed.Id, parsed.Path));
                 i = end;
             }
             if (text.Length != 0) segments.Add(new CfdFormatText(text.ToString()));

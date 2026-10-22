@@ -30,20 +30,20 @@ internal sealed class CfdDocument
 public sealed class CfdRecordNode
 {
     internal CfdRecordNode(
-        string key,
+        string id,
         string declaredType,
         IReadOnlyList<CfdFieldNode> fields,
         CfdSpan span,
         string? groupType = null)
     {
-        Key = key;
+        Id = id;
         DeclaredType = declaredType;
         Fields = fields;
         Span = span;
         GroupType = groupType;
     }
 
-    public string Key { get; }
+    public string Id { get; }
     public string DeclaredType { get; }
     public IReadOnlyList<CfdFieldNode> Fields { get; }
     public CfdSpan Span { get; }
@@ -147,7 +147,7 @@ internal sealed record CfdFormatText(string Text) : CfdFormatSegment;
 
 internal sealed record CfdFormatReference(
     string? TypeName,
-    string? Key,
+    string? Id,
     IReadOnlyList<string> Path) : CfdFormatSegment;
 
 internal sealed class CfdBitExpressionValue : CfdValueNode
@@ -203,14 +203,14 @@ internal enum CfdBitOperator
 
 internal sealed class CfdReferenceValue : CfdValueNode
 {
-    public CfdReferenceValue(string? typeName, string key, CfdSpan span) : base(span)
+    public CfdReferenceValue(string? typeName, string id, CfdSpan span) : base(span)
     {
         TypeName = typeName;
-        Key = key;
+        Id = id;
     }
 
     public string? TypeName { get; }
-    public string Key { get; }
+    public string Id { get; }
 }
 
 internal sealed class CfdObjectValue : CfdValueNode

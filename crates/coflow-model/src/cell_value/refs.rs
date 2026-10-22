@@ -1,8 +1,8 @@
 use crate::LoadedValueDraft;
-use coflow_language::lexical::record_key_ident_error;
+use coflow_language::lexical::record_id_ident_error;
 
 use super::diagnostics::{reference_needs_marker, syntax, type_mismatch, CellValueDiagnostics};
-use super::markers::looks_like_bare_record_key;
+use super::markers::looks_like_bare_record_id;
 
 pub(super) fn parse_ref(
     schema: &coflow_language::cft::CftSchema,
@@ -10,27 +10,27 @@ pub(super) fn parse_ref(
     text: &str,
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let text = text.trim();
-    let Some(key) = text.strip_prefix('&') else {
+    let Some(id) = text.strip_prefix('&') else {
         if text.starts_with('@') {
             return Err(syntax("invalid record reference"));
         }
-        if looks_like_bare_record_key(text) {
+        if looks_like_bare_record_id(text) {
             return Err(reference_needs_marker(text));
         }
         return Err(type_mismatch(&format!("&{expected_type}")));
     };
-    if key.contains('.') || key.contains('[') || key.contains(']') {
+    if id.contains('.') || id.contains('[') || id.contains(']') {
         return Err(syntax("invalid record reference"));
     }
-    if key.trim() != key {
-        return Err(syntax("direct reference key cannot contain whitespace"));
+    if id.trim() != id {
+        return Err(syntax("direct reference id cannot contain whitespace"));
     }
-    if key.is_empty() {
-        return Err(syntax("reference key is missing"));
+    if id.is_empty() {
+        return Err(syntax("reference id is missing"));
     }
-    let (explicit_type, key) = key
+    let (explicit_type, id) = id
         .rsplit_once("::")
-        .map_or((None, key), |(ty, key)| (Some(ty), key));
+        .map_or((None, id), |(ty, id)| (Some(ty), id));
     if let Some(type_name) = explicit_type {
         if !schema
             .resolve_type(type_name)
@@ -42,15 +42,15 @@ pub(super) fn parse_ref(
             )));
         }
     }
-    if let Some(reason) = record_key_ident_error(key) {
-        return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
+    if let Some(reason) = record_id_ident_error(id) {
+        return Err(syntax(format!("invalid reference id `{id}`: {reason}")));
     }
     Ok(if let Some(type_name) = explicit_type {
         LoadedValueDraft::TypedRecordRef {
             type_name: type_name.to_string(),
-            key: key.to_string(),
+            id: id.to_string(),
         }
     } else {
-        LoadedValueDraft::record_ref(key)
+        LoadedValueDraft::record_ref(id)
     })
 }

@@ -22,7 +22,7 @@ pub(crate) fn assert_has_code(diags: &CfdDiagnostics, code: CfdErrorCode) {
     );
 }
 
-pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordId {
+pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordHandle {
     model
         .records()
         .map(|(record_id, _)| record_id)

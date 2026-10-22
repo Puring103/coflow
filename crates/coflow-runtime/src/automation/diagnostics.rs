@@ -131,7 +131,7 @@ impl CommandDiagnostic {
             record: logical.and_then(|location| {
                 Some(RecordTarget {
                     actual_type: location.actual_type.clone()?,
-                    key: location.record_key.clone()?,
+                    id: location.record_id.clone()?,
                 })
             }),
             field_path: logical.and_then(|location| location.field_path.clone()),

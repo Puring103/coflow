@@ -30,7 +30,7 @@ pub struct RecordDraft {
 #[derive(Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct DraftResult {
     pub draft: RecordDraft,
-    pub key: Option<String>,
+    pub id: Option<String>,
     pub complete: bool,
     pub required_inputs: Vec<String>,
 }
@@ -246,7 +246,7 @@ pub fn read_command(
                         });
                     }
                     if let Some(view) = schema.schema() {
-                        for info in view.all_check_statements() {
+                        for info in super::rules::named_rules(view) {
                             items.push(SchemaSymbol::Rule {
                                 name: super::rules::identity(info),
                                 definition: super::rules::describe(view, info, project.root_dir()),
@@ -321,11 +321,11 @@ fn data_command(
         "data.list" | "data.search" => to_json(query::query_records(project, session, &selector)?),
         "data.get" => {
             let ty = args.require("type")?;
-            let key = args.require("key")?;
+            let key = args.require("id")?;
             let records = query::selected_records(session, &selector)?;
             let record = records
                 .iter()
-                .find(|r| r.actual_type() == ty && r.key() == key)
+                .find(|r| r.actual_type() == ty && r.id() == key)
                 .ok_or_else(|| Failure::missing(format!("record `{ty}::{key}` does not exist")))?;
             query::record_json(project, session, record, &selector)
         }
@@ -373,7 +373,7 @@ fn data_command(
                     actual_type: draft.actual_type,
                     fields,
                 },
-                key: args.get("key").map(str::to_string),
+                id: args.get("id").map(str::to_string),
                 complete: required.is_empty(),
                 required_inputs: required,
             })

@@ -29,7 +29,7 @@ pub struct RecordStatistics {
 pub struct ReferenceStatistics {
     #[serde(rename = "type")]
     pub actual_type: String,
-    pub key: String,
+    pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub incoming: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,7 +179,7 @@ pub fn query(
                 let key = if group == "file" {
                     session
                         .queries()
-                        .file_for_record(record.actual_type(), record.key())
+                        .file_for_record(record.actual_type(), record.id())
                         .unwrap_or_default()
                 } else {
                     record.actual_type()
@@ -230,7 +230,6 @@ pub fn query(
                 matches!(
                     expected,
                     coflow_language::cft::CftValueType::String
-                        | coflow_language::cft::CftValueType::FormattedString
                         | coflow_language::cft::CftValueType::Array(_)
                         | coflow_language::cft::CftValueType::Dict(_, _)
                 )
@@ -393,7 +392,6 @@ pub fn query(
                 matches!(
                     expected,
                     coflow_language::cft::CftValueType::String
-                        | coflow_language::cft::CftValueType::FormattedString
                 )
             }) {
                 "unicode_scalar_values"
@@ -426,7 +424,7 @@ pub fn query(
                     Some("type") => record.actual_type(),
                     Some("file") => session
                         .queries()
-                        .file_for_record(record.actual_type(), record.key())
+                        .file_for_record(record.actual_type(), record.id())
                         .unwrap_or_default(),
                     _ => "all",
                 };
@@ -485,7 +483,7 @@ pub fn query(
             let items = records
                 .iter()
                 .map(|record| {
-                    let id = (record.actual_type().to_string(), record.key().to_string());
+                    let id = (record.actual_type().to_string(), record.id().to_string());
                     let incoming = edges
                         .iter()
                         .filter(|e| super::references::pair(&e.target) == id)
@@ -496,7 +494,7 @@ pub fn query(
                         .count();
                     ReferenceStatistics {
                         actual_type: record.actual_type().to_string(),
-                        key: record.key().to_string(),
+                        id: record.id().to_string(),
                         incoming: (direction != "outgoing").then_some(incoming),
                         outgoing: (direction != "incoming").then_some(outgoing),
                         zero_incoming: (direction != "outgoing").then_some(incoming == 0),

@@ -1,14 +1,21 @@
-# 诊断模型
+# 诊断与问题定位
 
-每条诊断包含：
+CLI、编辑器和 LSP 使用错误码、说明与源码位置帮助定位问题。通过 `coflow check --rules --json` 获取结构化诊断；通过 `coflow explain <错误码> --json` 查看含义与修复方向。
 
-```text
-code, stage, severity, message
-primary: { location, message? }
-related: [ label ]
-contexts: [ structured context ]
-```
+## CLI 诊断
 
-位置类型包括项目配置 key path、CFT/CFD 文件 span 和 record field path。CLI 人类输出、JSON、LSP 和编辑器都渲染同一 canonical 诊断，不通过解析 message 重新推断位置。
+JSON 响应的 `diagnostics` 包含以下信息：
 
-解析预算、文件大小、递归深度、节点数和 record 数超限时，runtime 返回稳定错误码并放弃发布该 generation。
+| 字段 | 含义 |
+| --- | --- |
+| `code` / `stage` / `severity` | 错误码、检查阶段与严重性 |
+| `message` | 问题说明 |
+| `location` | 来源路径、源码范围或项目配置项路径 |
+| `record` / `field_path` | 已识别的记录类型、ID 和字段路径 |
+| `related` | 相关声明或数据的来源位置与说明 |
+| `contexts` | 规则、量词、维度等上下文 |
+| `explanation` | 使用 `--explain` 时提供的解释 |
+
+源码范围的行与列从零开始，列以 UTF-16 偏移计数。无法提供的位置或记录坐标为空；调用方应同时展示错误码与问题说明。编辑器和 LSP 将这些位置转换为可跳转的源码或字段位置。
+
+输入规模或结构深度超过限制时，检查返回对应错误码。业务规则达到执行预算时，结果会明确报告检查未完成；完整通过要求没有错误且所选检查全部完成。错误码说明见[错误码索引](./02-codes.md)，命令退出状态见 [CLI 参考](../08-cli.md)。

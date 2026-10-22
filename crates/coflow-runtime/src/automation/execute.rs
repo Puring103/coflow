@@ -221,7 +221,7 @@ pub fn execute(
             } else {
                 let record = RecordTarget {
                     actual_type: args.require("type")?.into(),
-                    key: args.require("key")?.into(),
+                    id: args.require("id")?.into(),
                 };
                 let path = || -> Result<Vec<FieldPath>> { public_path(args.require("path")?) };
                 let value = || -> Result<InputValue> {
@@ -249,7 +249,7 @@ pub fn execute(
                     },
                     "data.rename" => Operation::RenameRecord {
                         record,
-                        new_key: args.require("new-key")?.into(),
+                        new_id: args.require("new-id")?.into(),
                     },
                     "data.delete" => Operation::DeleteRecord { record },
                     "data.transfer" => Operation::TransferRecord {

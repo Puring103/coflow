@@ -14,7 +14,7 @@ export function ObjectDraftHost({
   lookups: EditorLookupController
   generationKey: string
   sessionId?: number
-  onOpenReference: (targetType: string, recordKey: string) => void
+  onOpenReference: (targetType: string, recordId: string) => void
   onLookupError?: (key: string) => void
   children: ReactNode
 }) {

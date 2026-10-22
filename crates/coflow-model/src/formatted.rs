@@ -12,6 +12,6 @@ pub fn stringify_value(value: &CfdValue) -> Result<String, String> {
         CfdValue::String(value) => value.clone(),
         CfdValue::FormattedString(value) => value.rendered.clone(),
         CfdValue::Enum(value) => value.variant.as_ref().map_or_else(|| value.value.to_string(), ToString::to_string),
-        _ => return Err("formatted string interpolation must end at a string, number, bool, enum or fstring field".to_string()),
+        _ => return Err("formatted string interpolation must end at a string, number, bool or enum field".to_string()),
     })
 }

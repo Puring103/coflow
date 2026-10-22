@@ -68,7 +68,7 @@ pub struct RecordColumn {
 
 /// One top-level record's view inside a file.
 ///
-/// The record's stable identity is its `(actual_type, key)` coordinate.
+/// The record's stable identity is its `(actual_type, id)` coordinate.
 /// `display_path` repeats the file path for hosts that already have a row.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
@@ -135,8 +135,8 @@ pub struct FieldCell {
 /// - `enum_type`: the enum type name when this field's declared type resolves
 ///   to an enum. Set regardless of value kind so the front-end can show an
 ///   enum dropdown even for `null` cells.
-/// - `nullable`: true when the declared type outer-wraps a `?`, so the UI
-///   can offer a "clear to null" option in dropdowns.
+/// - `nullable`: true when the declared type outer-wraps `Option<T>`, so the UI
+///   can offer a "set to None" option in dropdowns.
 /// - `children`: nested annotations for object fields, array items, or dict
 ///   values. Keys are field names, zero-based array indexes, or dict-key text.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

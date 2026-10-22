@@ -8,7 +8,7 @@ import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   recordActualType,
-  recordKey,
+  recordId,
   sameCoordinate,
   coordinateId,
   errorMessage,
@@ -91,7 +91,7 @@ interface Props {
   onRenameRecord?: (
     filePath: string,
     coordinate: RecordCoordinate,
-    newKey: string,
+    newId: string,
   ) => Promise<RecordRow | void>
   onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
   focusRequest?: number
@@ -245,7 +245,7 @@ export function InspectorPanel({
   const fieldDiags = diagnosticProjection.fieldDiagnostics
   const recordSeverity = diagnosticProjection.severity
 
-  const canRename = !readOnly && data?.capabilities.can_edit_key && !!onRenameRecord
+  const canRename = !readOnly && data?.capabilities.can_edit_id && !!onRenameRecord
   const selectedTopField = selection?.kind === 'value' && selection.fieldPath[0]?.kind === 'field'
     ? selection.fieldPath[0].value
     : null
@@ -470,7 +470,7 @@ export function InspectorPanel({
               {!inspectingValue && (
                 <>
                   <CardHeader
-                    recordKey={recordKey(record)}
+                    recordId={recordId(record)}
                     fields={record.fields}
                     actualType={recordActualType(record)}
                     filePath={data.file_path}

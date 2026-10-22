@@ -70,7 +70,7 @@ fn validate_module(
                         walk_default(budget, module, default)?;
                     }
                 }
-                if let Some(check) = &definition.check {
+                for check in &definition.checks {
                     walk_check(budget, module, check)?;
                 }
             }
@@ -160,7 +160,6 @@ fn walk_value_type(
             | TypeRefKind::Float
             | TypeRefKind::Bool
             | TypeRefKind::String
-            | TypeRefKind::FormattedString
             | TypeRefKind::Named(_) => {}
         }
     }
@@ -240,6 +239,13 @@ fn walk_check(
         .rev()
         .map(|stmt| (CheckNode::Stmt(stmt), root))
         .collect::<Vec<_>>();
+    pending.extend(
+        check
+            .message
+            .iter()
+            .flat_map(message_exprs)
+            .map(|expr| (CheckNode::Expr(expr), root)),
+    );
     while let Some((node, parent)) = pending.pop() {
         let (span, children) = match node {
             CheckNode::Stmt(stmt) => {
@@ -263,13 +269,21 @@ fn walk_check(
                         }))
                         .collect(),
                     CheckStmt::When {
-                        condition, body, ..
+                        condition,
+                        body,
+                        message,
+                        ..
                     } => std::iter::once(CheckNode::Expr(condition))
+                        .chain(message.iter().flat_map(message_exprs).map(CheckNode::Expr))
                         .chain(body.iter().map(CheckNode::Stmt))
                         .collect(),
                     CheckStmt::Quantifier {
-                        collection, body, ..
+                        collection,
+                        body,
+                        message,
+                        ..
                     } => std::iter::once(CheckNode::Expr(collection))
+                        .chain(message.iter().flat_map(message_exprs).map(CheckNode::Expr))
                         .chain(body.iter().map(CheckNode::Stmt))
                         .collect(),
                 };
@@ -317,5 +331,18 @@ fn check_expr_children(expr: &CheckExpr) -> Vec<CheckNode<'_>> {
         | CheckExprKind::Name(_)
         | CheckExprKind::StaticPath(_)
         | CheckExprKind::Records { .. } => Vec::new(),
+    }
+}
+
+fn message_exprs(message: &crate::syntax::ast::CheckMessage) -> Vec<&CheckExpr> {
+    match &message.kind {
+        CheckMessageKind::String(_) => Vec::new(),
+        CheckMessageKind::Formatted(segments) => segments
+            .iter()
+            .filter_map(|segment| match segment {
+                CheckFormatSegment::Expr(expr) => Some(expr),
+                _ => None,
+            })
+            .collect(),
     }
 }

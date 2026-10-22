@@ -111,13 +111,21 @@ impl CftSchema {
     pub fn check_statement(&self, id: CheckStatementId) -> Option<CheckStatementRef<'_>> {
         let info = self.check_index.statement(id)?;
         let block = match &info.owner {
-            CheckOwner::Type(name) => self.types.get(name)?.check.as_ref()?,
+            CheckOwner::Type(name) => self.types.get(name)?.checks.get(info.block_index)?,
             CheckOwner::Project(name) => &self.top_level_checks.get(name)?.block,
         };
         Some(CheckStatementRef {
             info,
             statement: block.stmts.get(info.root_index)?,
         })
+    }
+
+    /// Returns the complete declaration-ordered execution plan for a named rule.
+    pub fn check_statements_for_rule(
+        &self,
+        rule: &str,
+    ) -> impl Iterator<Item = CheckStatementId> + '_ {
+        self.check_index.for_rule(rule)
     }
 
     pub fn all_check_statements(&self) -> impl Iterator<Item = &CheckStatementInfo> {

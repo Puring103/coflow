@@ -137,7 +137,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "data value dependency cycle",
-            schema: "table Item { first: fstring; second: fstring; }",
+            schema: "table Item { first: string; second: string; }",
             phase: Phase::Build(build_data_value_dependency_cycle),
             code: CfdErrorCode::ValueDependencyCycle,
             adjacent: adjacent_acyclic_data_value_dependency,
@@ -175,14 +175,14 @@ fn cases() -> Vec<Case> {
             schema: "table Item { value: int; }",
             phase: Phase::Build(build_missing_id_field),
             code: CfdErrorCode::MissingIdField,
-            adjacent: adjacent_non_empty_record_key,
+            adjacent: adjacent_non_empty_record_id,
         },
         Case {
             name: "invalid record key",
             schema: "table Item { value: int; }",
-            phase: Phase::Build(build_invalid_record_key),
-            code: CfdErrorCode::InvalidRecordKey,
-            adjacent: adjacent_identifier_record_key,
+            phase: Phase::Build(build_invalid_record_id),
+            code: CfdErrorCode::InvalidRecordId,
+            adjacent: adjacent_identifier_record_id,
         },
         Case {
             name: "duplicate id",
@@ -221,7 +221,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check comparison failed",
-            schema: "table Item { value: int; check { value > 0; } }",
+            schema: "table Item { value: int; check Valid { value > 0; } }",
             phase: Phase::Check(build_check_failed_model, run_checks),
             code: CfdErrorCode::CheckComparisonFailed,
             adjacent: adjacent_true_check,
@@ -312,21 +312,21 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check index out of bounds",
-            schema: "table Item { nums: [int]; check { nums[0] > 0; } }",
+            schema: "table Item { nums: [int]; check Valid { nums[0] > 0; } }",
             phase: Phase::Check(build_empty_nums_model, run_checks),
             code: CfdErrorCode::CheckIndexOutOfBounds,
             adjacent: adjacent_in_bounds_index,
         },
         Case {
             name: "check missing dict key",
-            schema: "table Item { attrs: {string: int}; check { attrs[\"missing\"] > 0; } }",
+            schema: "table Item { attrs: {string: int}; check Valid { attrs[\"missing\"] > 0; } }",
             phase: Phase::Check(build_present_attr_model, run_checks),
             code: CfdErrorCode::CheckMissingDictKey,
             adjacent: adjacent_existing_dict_key,
         },
         Case {
             name: "check empty min max",
-            schema: "table Item { nums: [int] = []; check { nums.min() > 0; } }",
+            schema: "table Item { nums: [int] = []; check Valid { nums.min() > 0; } }",
             phase: Phase::Check(build_default_item_model, run_checks),
             code: CfdErrorCode::CheckEmptyMinMax,
             adjacent: adjacent_non_empty_min,
@@ -386,7 +386,7 @@ fn adjacent_singleton_count_valid() {
 
 fn build_singleton_key_invalid(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     // A singleton record with an invalid identifier key. We use a leading
-    // digit to slip past the generic InvalidRecordKey path's prerequisites
+    // digit to slip past the generic InvalidRecordId path's prerequisites
     // and reach the singleton-specific check.
     model_from_records(
         schema,
@@ -499,7 +499,7 @@ fn formatted_field_reference(source: &str, field: &str) -> LoadedValueDraft {
         source: source.to_string(),
         segments: vec![LoadedFormatSegment::Reference(LoadedFieldReference {
             type_name: None,
-            key: None,
+            id: None,
             path: vec![field.to_string()],
         })],
     })
@@ -586,7 +586,7 @@ fn build_missing_id_field(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnos
     )
 }
 
-fn build_invalid_record_key(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
+fn build_invalid_record_id(schema: &CftSchema) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(
         schema,
         [one_record(
@@ -691,7 +691,7 @@ const fn scalar_false_schema() -> &'static str {
             reward: &Reward;
             tags: [string];
             name: string;
-            check {
+            check Valid {
                 enabled;
                 !negated;
                 left && right;
@@ -739,7 +739,7 @@ const fn quantifier_false_schema() -> &'static str {
             any_flags: [bool];
             none_flags: [bool];
             all_flags: [bool];
-            check {
+            check Valid {
                 any flag in any_flags { flag; }
                 none flag in none_flags { flag; }
                 all flag in all_flags { flag; }
@@ -881,7 +881,7 @@ fn adjacent_required_field_present() {
 }
 
 fn check_budget_exceeded() -> CfdDiagnostics {
-    let schema = compile_schema("table Item { nums: [int]; check { nums.isUnique(); } }");
+    let schema = compile_schema("table Item { nums: [int]; check Valid { nums.isUnique(); } }");
     let model = model_from_records(
         &schema,
         [one_record(
@@ -902,7 +902,7 @@ fn check_budget_exceeded() -> CfdDiagnostics {
 }
 
 fn adjacent_check_budget_valid() {
-    let schema = compile_schema("table Item { nums: [int]; check { nums.isUnique(); } }");
+    let schema = compile_schema("table Item { nums: [int]; check Valid { nums.isUnique(); } }");
     let model = model_from_records(
         &schema,
         [one_record(
@@ -941,7 +941,7 @@ fn adjacent_data_structure_at_limit() {
 
 fn adjacent_acyclic_data_value_dependency() {
     assert_builds(
-        "table Item { first: string; second: fstring; }",
+        "table Item { first: string; second: string; }",
         [one_record(
             "item",
             "Item",
@@ -985,11 +985,11 @@ fn adjacent_unique_dict_keys() {
     );
 }
 
-fn adjacent_non_empty_record_key() {
+fn adjacent_non_empty_record_id() {
     adjacent_known_record_type();
 }
 
-fn adjacent_identifier_record_key() {
+fn adjacent_identifier_record_id() {
     adjacent_known_record_type();
 }
 
@@ -1051,7 +1051,7 @@ fn adjacent_assignable_ref_target() {
 
 fn adjacent_true_check() {
     assert_checks(
-        "table Item { value: int; check { value > 0; } }",
+        "table Item { value: int; check Valid { value > 0; } }",
         [one_record(
             "item",
             "Item",
@@ -1073,7 +1073,7 @@ fn adjacent_scalar_false_checks() {
                 reward: &Reward;
                 tags: [string];
                 name: string;
-                check {
+                check Valid {
                     enabled;
                     !negated;
                     left && right;
@@ -1117,7 +1117,7 @@ fn adjacent_quantifier_checks() {
                 any_flags: [bool];
                 none_flags: [bool];
                 all_flags: [bool];
-                check {
+                check Valid {
                     any flag in any_flags { flag; }
                     none flag in none_flags { flag; }
                     all flag in all_flags { flag; }
@@ -1156,7 +1156,7 @@ fn adjacent_quantifier_checks() {
 
 fn adjacent_in_bounds_index() {
     assert_checks(
-        "table Item { nums: [int]; check { nums[0] > 0; } }",
+        "table Item { nums: [int]; check Valid { nums[0] > 0; } }",
         [one_record(
             "item",
             "Item",
@@ -1170,7 +1170,7 @@ fn adjacent_in_bounds_index() {
 
 fn adjacent_existing_dict_key() {
     assert_checks(
-        "table Item { attrs: {string: int}; check { attrs[\"present\"] > 0; } }",
+        "table Item { attrs: {string: int}; check Valid { attrs[\"present\"] > 0; } }",
         [one_record(
             "item",
             "Item",
@@ -1187,7 +1187,7 @@ fn adjacent_existing_dict_key() {
 
 fn adjacent_non_empty_min() {
     assert_checks(
-        "table Item { nums: [int]; check { nums.min() > 0; } }",
+        "table Item { nums: [int]; check Valid { nums.min() > 0; } }",
         [one_record(
             "item",
             "Item",

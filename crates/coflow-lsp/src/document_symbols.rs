@@ -58,7 +58,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                 ));
             }
             Item::Type(ty) => {
-                let children = ty
+                let mut children = ty
                     .fields
                     .iter()
                     .map(|field| {
@@ -73,6 +73,17 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                         )
                     })
                     .collect::<Vec<_>>();
+                children.extend(ty.checks.iter().map(|check| {
+                    document_symbol_item(
+                        &index,
+                        &document.source,
+                        &check.name,
+                        SYMBOL_KIND_FUNCTION,
+                        check.span,
+                        check.name_span,
+                        &[],
+                    )
+                }));
                 symbols.push(document_symbol_item(
                     &index,
                     &document.source,

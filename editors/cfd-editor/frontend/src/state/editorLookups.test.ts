@@ -21,7 +21,7 @@ function backend(overrides: Partial<EditorLookupBackend> = {}): EditorLookupBack
 
 function refTarget(key: string): RefTarget {
   return {
-    coordinate: { actual_type: 'Item', key },
+    coordinate: { actual_type: 'Item', id: key},
     file_path: 'data/items.cfd',
     short_name: null,
   }

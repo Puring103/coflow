@@ -25,8 +25,8 @@ values: [string] = [\n\
 }
 #[test]
 fn formatter_covers_data_defaults_and_is_idempotent() {
-    let source = "table Rule {\nlabel:fstring=f\"rule {self.name} {{literal}}\";\nmask:int=READ|WRITE;\neffect:Effect=HealEffect { amount:1,label:\"{literal}\",};\n}\n";
-    let expected = "table Rule {\n  label: fstring = f\"rule {self.name} {{literal}}\";\n  mask: int = READ | WRITE;\n  effect: Effect = HealEffect { amount: 1, label: \"{literal}\", };\n}\n";
+    let source = "table Rule {\nlabel:string=f\"rule {self.name} {{literal}}\";\nmask:int=READ|WRITE;\neffect:Effect=HealEffect { amount:1,label:\"{literal}\",};\n}\n";
+    let expected = "table Rule {\n  label: string = f\"rule {self.name} {{literal}}\";\n  mask: int = READ | WRITE;\n  effect: Effect = HealEffect { amount: 1, label: \"{literal}\", };\n}\n";
     assert_eq!(format_cft(source), expected);
     assert_eq!(format_cft(expected), expected);
 }
@@ -133,19 +133,19 @@ lookup : { string :int};\n\n\n\
 name :string;\n\
 enabled:bool;\n\n\n\
 calculate :int;\n\n\
-check{\n\
+check Valid {\n\
 enabled&&calculate>=10;\n\
 calculate - 1!=- 1;    # keep  comment\n\
 }\n\
 }\n\n";
 
-    let expected = "table Item : Base {\n  idRef: &Item;\n  tags: [string];\n  lookup: {string: int};\n\n  @label(\"Display Name\")\n  @description(\"Shown in editor\")\n  name: string;\n\n  enabled: bool;\n\n  calculate: int;\n\n  check {\n    enabled && calculate >= 10;\n    calculate - 1 != -1; # keep  comment\n  }\n}\n";
+    let expected = "table Item : Base {\n  idRef: &Item;\n  tags: [string];\n  lookup: {string: int};\n\n  @label(\"Display Name\")\n  @description(\"Shown in editor\")\n  name: string;\n\n  enabled: bool;\n\n  calculate: int;\n\n  check Valid {\n    enabled && calculate >= 10;\n    calculate - 1 != -1; # keep  comment\n  }\n}\n";
     assert_eq!(format_cft(source), expected);
     assert_eq!(format_cft(expected), expected);
 
     assert_eq!(
-        format_cft("table Box {\nvalue:Option<Option<int>>;\ncheck { a>b; c<d; }\n}"),
-        "table Box {\n  value: Option<Option<int>>;\n\n  check {\n    a > b;\n    c < d;\n  }\n}\n"
+        format_cft("table Box {\nvalue:Option<Option<int>>;\ncheck Valid { a>b; c<d; }\n}"),
+        "table Box {\n  value: Option<Option<int>>;\n\n  check Valid {\n    a > b;\n    c < d;\n  }\n}\n"
     );
     assert_eq!(format_cft("type Scores=[int];"), "type Scores = [int];\n");
 }
@@ -161,7 +161,7 @@ details: Details\n\
 value:int;\n\
 }\n\
 enabled:bool;\n\
-check\n\
+check Valid\n\
 {\n\
 enabled;\n\
 }\n\
@@ -169,6 +169,6 @@ enabled;\n\
 
     assert_eq!(
         format_cft(source),
-        "table Item {\n\n  @label(\"Details\")\n  details: Details {\n    value: int;\n  }\n\n  enabled: bool;\n  check {\n    enabled;\n  }\n}\n"
+        "table Item {\n\n  @label(\"Details\")\n  details: Details {\n    value: int;\n  }\n\n  enabled: bool;\n\n  check Valid {\n    enabled;\n  }\n}\n"
     );
 }

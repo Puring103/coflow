@@ -51,7 +51,7 @@ export function filterSearchableOptions(
   if (terms.length === 0) return [...options]
 
   return options.filter(option => {
-    // 缩略显示名与完整标签、记录 Key 都参与搜索。
+    // 缩略显示名与完整标签、记录 ID 都参与搜索。
     const searchableText = `${option.selectedLabel ?? ''} ${option.label ?? ''} ${option.value}`.toLocaleLowerCase()
     return terms.every(term => searchableText.includes(term))
   })

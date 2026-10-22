@@ -55,15 +55,25 @@ impl CheckTypeAnalyzer<'_, '_> {
         args: &[CheckExpr],
         span: Span,
     ) -> InferredType {
-        let receiver_ty = self.check_expr_value(receiver);
+        let raw_receiver = self.check_expr(receiver);
+        let receiver_ty = match (&raw_receiver, CftCheckBuiltin::by_name(&name.name)) {
+            (InferredType::Dimension(inner), Some(builtin))
+                if !matches!(
+                    builtin,
+                    CftCheckBuiltin::For | CftCheckBuiltin::Variants | CftCheckBuiltin::HasVariant
+                ) =>
+            {
+                *inner.clone()
+            }
+            _ => raw_receiver,
+        };
         match CftCheckBuiltin::by_name(&name.name) {
-            Some(builtin @ (CftCheckBuiltin::Default | CftCheckBuiltin::Variants)) => {
+            Some(CftCheckBuiltin::Variants) => {
                 let _ = self.expect_arity(args, 0, span);
                 for arg in args {
                     self.check_expr_value(arg);
                 }
                 match receiver_ty {
-                    InferredType::Dimension(inner) if builtin == CftCheckBuiltin::Default => *inner,
                     InferredType::Dimension(inner) => {
                         InferredType::dict(InferredType::string(), *inner)
                     }
@@ -72,13 +82,13 @@ impl CheckTypeAnalyzer<'_, '_> {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
                             receiver.span,
-                            "dimension method requires a dimension field",
+                            "variants() requires a dimension field",
                         );
                         InferredType::Unknown
                     }
                 }
             }
-            Some(CftCheckBuiltin::For) => {
+            Some(builtin @ (CftCheckBuiltin::For | CftCheckBuiltin::HasVariant)) => {
                 let _ = self.expect_arity(args, 1, span);
                 for arg in args {
                     let ty = self.check_expr_value(arg);
@@ -86,18 +96,24 @@ impl CheckTypeAnalyzer<'_, '_> {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
                             arg.span,
-                            "dimension variant must be string",
+                            format!("{}() variant must be string", builtin.name()),
                         );
                     }
                 }
                 match receiver_ty {
-                    InferredType::Dimension(inner) => *inner,
+                    InferredType::Dimension(inner) => {
+                        if builtin == CftCheckBuiltin::HasVariant {
+                            InferredType::bool()
+                        } else {
+                            *inner
+                        }
+                    }
                     InferredType::Unknown => InferredType::Unknown,
                     _ => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
                             receiver.span,
-                            "for() requires a dimension field",
+                            format!("{}() requires a dimension field", builtin.name()),
                         );
                         InferredType::Unknown
                     }

@@ -49,7 +49,6 @@ fn declaration_categories_reject_cross_category_inheritance_and_old_protocols() 
         "table Base {} data Item: Base {}",
         "singleton Base {} table Item: Base {}",
         "abstract singleton Settings {}",
-        "data Payload { check { true; } }",
         "data Payload { @localized name: string; }",
         "enum Key {} @idAsEnum(Key) data Payload {}",
         "singleton Settings {} table Item { settings: Settings; }",

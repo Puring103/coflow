@@ -88,7 +88,7 @@ fn compares_published_session_with_heads_own_project_model() {
     let changes = diff
         .records
         .iter()
-        .map(|record| (record.coordinate.key().to_string(), record.change))
+        .map(|record| (record.coordinate.id().to_string(), record.change))
         .collect::<Vec<_>>();
     assert_eq!(
         changes,
@@ -101,7 +101,7 @@ fn compares_published_session_with_heads_own_project_model() {
     let changed = diff
         .records
         .iter()
-        .find(|record| record.coordinate.key() == "changed")
+        .find(|record| record.coordinate.id() == "changed")
         .expect("changed record");
     assert!(changed.fields.iter().any(|field| field.path == "enabled"));
     assert!(changed.fields.iter().any(|field| field.path == "value"));
@@ -327,7 +327,7 @@ fn respects_nested_excludes_and_keeps_force_added_files() {
     assert_eq!(
         diff.records
             .iter()
-            .map(|record| record.coordinate.key())
+            .map(|record| record.coordinate.id())
             .collect::<Vec<_>>(),
         ["base", "staged", "visible"],
     );

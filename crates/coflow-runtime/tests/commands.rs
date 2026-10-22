@@ -92,7 +92,7 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
             ops: vec![MutationOp::RenameRecord {
                 record: old,
                 file: None,
-                new_key: new.key.to_string(),
+                new_id: new.id.to_string(),
             }],
         },
     )
@@ -413,7 +413,7 @@ fn csharp_codegen_emits_shared_loader_descriptors_for_dimensions() {
     let root = fs::read_to_string(dir.path().join("generated/csharp/CoflowData.cs")).expect("root");
     let ty = fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("type");
     assert!(root.contains("CfdValues.Dimension(\"language\""));
-    assert!(ty.contains("DimensionValue<string> welcome"));
+    assert!(ty.contains("public string welcome"));
     assert!(!root.contains("data/ja.cfd"));
     assert!(!root.contains("__coflow_"));
 }
@@ -481,7 +481,7 @@ fn editor_rules_do_not_execute_in_data_sessions_or_block_cli_generation() {
     let dir = write_project();
     fs::write(
         dir.path().join("schema.cft"),
-        "table Item { name: string; check { false : \"editor business issue\"; } }",
+        "table Item { name: string; check Valid { false : \"editor business issue\"; } }",
     )
     .expect("schema with check");
     let project = Project::open(Some(dir.path())).expect("project");

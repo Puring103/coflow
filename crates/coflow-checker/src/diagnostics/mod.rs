@@ -36,6 +36,40 @@ pub struct CheckDiagnostic {
     pub contexts: Vec<CheckDiagnosticContext>,
     pub(crate) is_custom_message: bool,
     pub schema_location: Option<CheckSchemaLocation>,
+    pub value_location: Option<CheckValueLocation>,
+}
+
+/// 精确的求值来源独立于报错位置及引用上下文，供宿主读取诊断中的实际值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckValueLocation {
+    pub record: coflow_model::CfdRecordHandle,
+    pub path: CfdPath,
+    pub dimension: Option<(String, String)>,
+}
+
+impl CheckValueLocation {
+    #[must_use]
+    pub fn value<'a>(
+        &self,
+        model: &'a coflow_model::CfdDataModel,
+    ) -> Option<&'a coflow_model::CfdValue> {
+        let mut cursor = self.dimension.as_ref().map_or_else(
+            || crate::eval::ModelCursor::root(self.record),
+            |(field, variant)| crate::eval::ModelCursor::dimension(self.record, field, variant),
+        );
+        cursor.path = self.path.clone();
+        crate::eval::model_value(model, &cursor)
+    }
+
+    #[must_use]
+    pub fn full_path(&self) -> CfdPath {
+        let mut path = self
+            .dimension
+            .as_ref()
+            .map_or_else(CfdPath::root, |(field, _)| CfdPath::root().field(field));
+        path.segments.extend(self.path.segments.iter().cloned());
+        path
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +85,7 @@ impl From<coflow_model::CfdDiagnostic> for CheckDiagnostic {
             contexts: Vec::new(),
             is_custom_message: false,
             schema_location: None,
+            value_location: None,
         }
     }
 }

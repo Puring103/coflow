@@ -33,7 +33,7 @@ fn emits_typed_business_objects_and_shared_loader_descriptors() {
     assert!(text.contains("public Option<Item> next { get; internal set; }"));
     assert!(text.contains("new CfdType<Stats>"));
     assert!(text.contains("reader => new Stats"));
-    assert!(text.contains("key => new Item(key)"));
+    assert!(text.contains("id => new Item(id)"));
     assert!(text.contains("CfdValues.Reference<Item>(\"Item\")"));
     assert!(text.contains("CfdLoader.Load(sources, Types"));
     for forbidden in [
@@ -57,7 +57,7 @@ fn inheritance_preserves_shared_record_identity() {
     .expect("generate"));
     assert!(text.contains("public abstract partial class Base"));
     assert!(text.contains("public partial class Child : Base"));
-    assert!(text.contains("internal Child(string key) : base(key)"));
+    assert!(text.contains("internal Child(string id) : base(id)"));
     assert!(text.contains("value.name = reader.Get<string>(\"name\")"));
     assert!(text.contains("parent: \"Base\""));
     assert!(text.contains("abstractType: true"));
@@ -66,7 +66,7 @@ fn inheritance_preserves_shared_record_identity() {
 #[test]
 fn emitted_metadata_is_data_only_even_when_schema_has_checks() {
     let text = all(&generate_csharp(&schema(
-        r#"table Item { value: int; check { value > 0: "positive"; } } check Validate { 1 > 0; }"#,
+        r#"table Item { value: int; check Valid { value > 0: "positive"; } } check Validate { 1 > 0; }"#,
     ))
     .expect("generate"));
     assert!(!text.contains("positive"));
@@ -79,14 +79,14 @@ fn descriptor_defaults_preserve_literal_strings_and_explicit_templates() {
         r#"
         table Item {
             name: string = "{literal}";
-            label: fstring = f"{{text}} {self.name}";
+            label: string = f"{{text}} {self.name}";
             nums: [int] = [1, 2];
         }
     "#,
     ))
     .expect("generate"));
     assert!(text.contains("CfdDefaults.String(\"{literal}\")"));
-    assert!(text.contains("CfdValues.FormattedString"));
+    assert!(text.contains("CfdValues.String"));
     assert!(text.contains("CfdDefaults.Template(\"f\\\"{{text}} {self.name}\\\"\")"));
     assert!(text.contains("CfdDefaults.Array(CfdDefaults.Int(1L), CfdDefaults.Int(2L))"));
 }
@@ -99,7 +99,7 @@ fn dimension_fields_load_all_variants() {
     )]);
     let schema = build_schema(&modules).expect("schema");
     let text = all(&generate_csharp(&schema).expect("generate"));
-    assert!(text.contains("DimensionValue<string> name"));
+    assert!(text.contains("string name"));
     assert!(text.contains("CfdValues.Dimension(\"language\", CfdValues.String)"));
     assert!(
         !text.contains("\"ja\""),
@@ -123,8 +123,8 @@ fn enums_flags_constants_and_namespaces_use_loader_contracts() {
 #[test]
 fn invalid_identifiers_and_generated_name_collisions_are_reported() {
     for source in [
-        "table class {}",
         "table CoflowData {}",
+        "table id {}",
         "table Item { Item: int; }",
         "enum Kind { Kind }",
         "enum Kind { value__ }",
@@ -185,4 +185,19 @@ fn id_enum_keeps_active_keys_and_stable_numbers() {
         .expect("enum source");
     assert!(en.contents.contains("live = 7L"));
     assert!(!en.contents.contains("deleted"));
+}
+
+#[test]
+fn language_names_are_escaped_only_in_generated_csharp_identifiers() {
+    let text = all(&emit::generate(&schema(
+        r#"enum event { public } table class { namespace: string; state: event = event::public; }"#,
+    ), "namespace.class", &IdAsEnumValues::new()).expect("generate"));
+    assert!(text.contains("namespace @namespace.@class"));
+    assert!(text.contains("public partial class @class : ICfdRecord"));
+    assert!(text.contains("public string @namespace"));
+    assert!(text.contains("public enum @event"));
+    assert!(text.contains("@public = 0L"));
+    assert!(text.contains("value.@namespace = reader.Get<string>(\"namespace\")"));
+    assert!(text.contains("CfdType<@class>(\"class\""));
+    assert!(text.contains("[\"public\"] = @event.@public"));
 }

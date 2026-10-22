@@ -27,7 +27,7 @@ export function buildRecordDiagnosticIndex(
   if (!diagnostics) return undefined
   const targetsByAnchor = new Map<string, RecordDiagnosticTarget[]>()
   for (const target of targets) {
-    const anchor = diagnosticAnchor(target.filePath, target.coordinate.key)
+    const anchor = diagnosticAnchor(target.filePath, target.coordinate.id)
     const existing = targetsByAnchor.get(anchor)
     if (existing) existing.push(target)
     else targetsByAnchor.set(anchor, [target])
@@ -38,7 +38,7 @@ export function buildRecordDiagnosticIndex(
     const diagnosticTarget = diagnosticRecordTarget(diagnostic)
     if (!diagnosticTarget) continue
     const candidates = targetsByAnchor.get(
-      diagnosticAnchor(diagnosticTarget.file_path, diagnosticTarget.coordinate.key),
+      diagnosticAnchor(diagnosticTarget.file_path, diagnosticTarget.coordinate.id),
     )
     if (!candidates) continue
     for (const target of candidates) {
@@ -79,8 +79,8 @@ export function diagnosticsForRecord(
   }
 }
 
-function diagnosticAnchor(filePath: string, recordKey: string): string {
-  return `${filePath}\u001f${recordKey}`
+function diagnosticAnchor(filePath: string, recordId: string): string {
+  return `${filePath}\u001f${recordId}`
 }
 
 function recordDiagnosticKey(filePath: string, coordinate: RecordCoordinate): string {

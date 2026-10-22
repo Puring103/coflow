@@ -22,10 +22,10 @@ pub enum LoadedValueDraft {
         fields: BTreeMap<String, LoadedValueDraft>,
     },
     RecordRef(String),
-    /// 显式 &Type::key 保留目标类型限定，不能在降低阶段只剩 key。
+    /// 显式 &Type::id 保留目标类型限定，不能在降低阶段只剩 id。
     TypedRecordRef {
         type_name: String,
-        key: String,
+        id: String,
     },
     Array(Vec<LoadedValueDraft>),
     Dict(Vec<(LoadedDictKeyDraft, LoadedValueDraft)>),
@@ -46,7 +46,7 @@ pub enum LoadedFormatSegment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedFieldReference {
     pub type_name: Option<String>,
-    pub key: Option<String>,
+    pub id: Option<String>,
     pub path: Vec<String>,
 }
 
@@ -100,8 +100,8 @@ impl LoadedValueDraft {
     }
 
     #[must_use]
-    pub fn record_ref(key: impl Into<String>) -> Self {
-        Self::RecordRef(key.into())
+    pub fn record_ref(id: impl Into<String>) -> Self {
+        Self::RecordRef(id.into())
     }
 }
 

@@ -244,28 +244,28 @@ pub(crate) async fn edit_collection(
 pub(crate) async fn insert_record(
     session_id: u32,
     file_path: String,
-    record_key: String,
+    record_id: String,
     actual_type: String,
     fields: CfdValue,
     host: State<'_, EditorHost>,
 ) -> Result<InsertRecordOutcome, EditorError> {
     run_host_command(host, move |host| {
         host.sessions()
-            .insert_record(session_id, &file_path, &record_key, &actual_type, fields)
+            .insert_record(session_id, &file_path, &record_id, &actual_type, fields)
     })
     .await
 }
 
 #[tauri::command]
-pub(crate) async fn rename_record_key(
+pub(crate) async fn rename_record_id(
     session_id: u32,
     coordinate: RecordCoordinate,
-    new_key: String,
+    new_id: String,
     host: State<'_, EditorHost>,
 ) -> Result<RenameRecordOutcome, EditorError> {
     run_host_command(host, move |host| {
         host.sessions()
-            .rename_record_key(session_id, &coordinate, &new_key)
+            .rename_record_id(session_id, &coordinate, &new_id)
     })
     .await
 }

@@ -10,7 +10,7 @@ use coflow_language::source::Span;
 use super::{enum_name_exists, enum_variant_exists, LspBuild, LspDocument};
 
 pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
-    "recordKey",
+    "recordId",
     "type",
     "enum",
     "enumMember",
@@ -28,7 +28,7 @@ pub(crate) const SEMANTIC_TOKEN_TYPES: &[&str] = &[
 pub(crate) const SEMANTIC_TOKEN_MODIFIERS: &[&str] =
     &["declaration", "reference", "path", "record", "schema"];
 
-pub(crate) const SEM_RECORD_KEY: u32 = 0;
+pub(crate) const SEM_RECORD_ID: u32 = 0;
 pub(crate) const SEM_TYPE: u32 = 1;
 pub(crate) const SEM_ENUM: u32 = 2;
 pub(crate) const SEM_ENUM_MEMBER: u32 = 3;
@@ -410,7 +410,14 @@ fn add_ast_semantic_tokens(
                         add_default_expr_semantic(document, default, tokens);
                     }
                 }
-                if let Some(check) = &ty.check {
+                for check in &ty.checks {
+                    push_semantic_span(
+                        &document.source,
+                        check.name_span,
+                        SEM_FUNCTION,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
                     for stmt in &check.stmts {
                         add_check_stmt_semantic(build, document, stmt, tokens);
                     }
@@ -484,8 +491,7 @@ fn add_value_type_semantic(
         TypeRefKind::Int
         | TypeRefKind::Float
         | TypeRefKind::Bool
-        | TypeRefKind::String
-        | TypeRefKind::FormattedString => {
+        | TypeRefKind::String => {
             push_semantic_span(
                 &document.source,
                 ty.span,

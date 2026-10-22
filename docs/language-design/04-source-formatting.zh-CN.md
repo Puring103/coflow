@@ -42,13 +42,13 @@ table Item : Entity {
   name: string;
   tags: [string] = [];
 
-  check {
+  check NameRequired {
     name != "";
   }
 }
 ```
 
-- 字段、const、类型别名和 check 条件以分号结束。
+- 字段、const、类型别名和 check 条件使用已有分号分隔；格式化器保留分隔 token，缺失的分号由源码编辑补齐。
 - enum 变体以逗号分隔；多项 enum 展开为每行一个变体。
 - 注解单独占行并紧贴它修饰的声明；字段注解组前保留一个空行。
 - 多行泛型和续行相对所属行再缩进一级。
@@ -63,7 +63,7 @@ type Labels = {
 
 ## 4. CFD 布局
 
-顶层记录、group 记录和带 type marker 的多态对象使用展开块。字段每行一个并保留尾逗号：
+顶层记录、group 记录和带 type marker 的多态对象使用展开块。字段每行一个并保留源码已有的逗号，包括尾逗号：
 
 ```cfd
 Item {
@@ -78,7 +78,7 @@ Item {
 }
 ```
 
-- 记录写作 `key: Type {`，冒号后一个空格。
+- 记录写作 `id: Type {`，冒号后一个空格。
 - 维度覆盖块写作 `dimension[variant] {`，方括号内外不添加空格；块内记录各占一个展开块。
 - group 中相邻记录之间保留一个空行。
 - 展开块的右花括号单独占行；若它是字段值，逗号跟在右花括号后。
@@ -95,11 +95,14 @@ formatter，但不能把“格式化成功”解释为文件已经通过解析�
 runtime writer 负责 schema-guided CFD 局部写入，直接生成规范局部文本，不调用通用 formatter，避免
 单字段修改引发整文件重排。writer 测试使用 `coflow-format` 验证完整输出已满足规范格式。
 
-项目级 `coflow format [CONFIG_OR_DIR] [--check]` 遵循以下发现与写入规则：
+项目级 `coflow format [--project <目录或配置>] [--file <项目文件>] [--check | --dry-run]` 遵循以下发现与写入规则：
 
-- 只处理目标 `coflow.yaml` 配置的 schema 和 data 路径，以及小写扩展名 `.cft` / `.cfd` 文件。
+- 从项目配置的 schema、data 和维度目录发现小写扩展名 `.cft` / `.cfd` 文件；重复的 `--file` 在项目输入内选择文件。
 - 重叠配置路径解析为真实路径后去重，每个文件最多处理一次。
-- 默认模式只替换发生变化的文件，并使用同目录临时文件完成原子替换。
-- `--check` 不写文件；任一文件与规范输出不同即返回非零状态并列出文件。
+- 默认模式只替换发生变化的文件；发布前验证输入快照，使用共享 staging 事务发布文件变更。
+- `--check` 返回格式差异；任一文件与规范输出不同即返回非零状态。
+- `--dry-run` 返回变更预览；`--check` 与 `--dry-run` 均保持文件原状。
 
-项目提交前，格式检查仍需与相应的 `coflow cft check` / `coflow check` 配合使用。
+`coflow format --stdin --language cft|cfd` 格式化独立源码；它与项目选择和 `--file` 互斥。
+格式检查和语义检查各自独立，声明、数据和业务规则分别通过 `coflow schema check`、`coflow check`、
+`coflow check --rules` 执行。完整命令协议见[CLI 设计](../runtime-design/cli.md)。

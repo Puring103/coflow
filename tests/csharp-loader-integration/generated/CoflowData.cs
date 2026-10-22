@@ -29,6 +29,10 @@ public sealed partial class CoflowData
         ["Read"] = Flags.Read,
         ["Write"] = Flags.Write,
     }, bits => (Flags)bits);
+    private static readonly global::Coflow.Loader.CfdValueType<@event> Enum_Cft_6576656E74 = global::Coflow.Loader.CfdValues.Enum<@event>("event", new global::System.Collections.Generic.Dictionary<string, @event>
+    {
+        ["public"] = @event.@public,
+    });
     private static readonly global::Coflow.Loader.CfdType[] Types = new global::Coflow.Loader.CfdType[]
     {
         new global::Coflow.Loader.CfdType<CfdField>("CfdField", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
@@ -43,7 +47,7 @@ public sealed partial class CoflowData
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyList<long>>("samples", global::Coflow.Loader.CfdValues.List(global::Coflow.Loader.CfdValues.Int)),
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<string, long>>("lookup", global::Coflow.Loader.CfdValues.Dictionary(global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdValues.Int)),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<Payload>>("optional", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Object<Payload>("Payload"))),
-        }, create: key => new ComplexValues(key), fill: (value, reader) =>
+        }, create: id => new ComplexValues(id), fill: (value, reader) =>
         {
             value.samples = reader.Get<global::System.Collections.Generic.IReadOnlyList<long>>("samples");
             value.lookup = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<string, long>>("lookup");
@@ -64,9 +68,9 @@ public sealed partial class CoflowData
         }, parent: "ContractBase"),
         new global::Coflow.Loader.CfdType<ContractChildNode>("ContractChildNode", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
-            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"node {self.id}\"")),
+            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"node {self.id}\"")),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<ContractNode>>("next", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Reference<ContractNode>("ContractNode")), global::Coflow.Loader.CfdDefaults.None()),
-        }, create: key => new ContractChildNode(key), fill: (value, reader) =>
+        }, create: id => new ContractChildNode(id), fill: (value, reader) =>
         {
             value.label = reader.Get<string>("label");
             value.next = reader.Get<global::Coflow.Loader.Option<ContractNode>>("next");
@@ -74,7 +78,7 @@ public sealed partial class CoflowData
         new global::Coflow.Loader.CfdType<ContractDetails>("ContractDetails", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<long>("score", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(42L)),
-            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"details {self.score}\"")),
+            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"details {self.score}\"")),
         }, create: null, fill: null, construct: reader => new ContractDetails()
         {
             score = reader.Get<long>("score"),
@@ -86,28 +90,28 @@ public sealed partial class CoflowData
             new global::Coflow.Loader.CfdField<ContractShape>("shape", global::Coflow.Loader.CfdValues.Object<ContractShape>("ContractShape")),
             new global::Coflow.Loader.CfdField<ContractBase>("polymorphic", global::Coflow.Loader.CfdValues.Object<ContractBase>("ContractBase")),
             new global::Coflow.Loader.CfdField<ContractChild>("child", global::Coflow.Loader.CfdValues.Object<ContractChild>("ContractChild")),
-            new global::Coflow.Loader.CfdField<global::Coflow.Loader.DimensionValue<ContractNode>>("target", global::Coflow.Loader.CfdValues.Dimension("contract_ref", global::Coflow.Loader.CfdValues.Reference<ContractNode>("ContractNode"))),
+            new global::Coflow.Loader.CfdField<ContractNode>("target", global::Coflow.Loader.CfdValues.Dimension("contract_ref", global::Coflow.Loader.CfdValues.Reference<ContractNode>("ContractNode"))),
             new global::Coflow.Loader.CfdField<long>("wide", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(-9223372036854775808L)),
             new global::Coflow.Loader.CfdField<double>("precise", global::Coflow.Loader.CfdValues.Float, global::Coflow.Loader.CfdDefaults.Float(1.0000000000000002d)),
             new global::Coflow.Loader.CfdField<double>("large", global::Coflow.Loader.CfdValues.Float, global::Coflow.Loader.CfdDefaults.Float(1e100d)),
-            new global::Coflow.Loader.CfdField<string>("scalar_text", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"{self.wide}|{self.precise}|{self.large}\"")),
+            new global::Coflow.Loader.CfdField<string>("scalar_text", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"{self.wide}|{self.precise}|{self.large}\"")),
             new global::Coflow.Loader.CfdField<string>("plain_text", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.String("{self.id}")),
-            new global::Coflow.Loader.CfdField<string>("own_id", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"{self.id}\"")),
-            new global::Coflow.Loader.CfdField<string>("other_id", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"{&ContractEntry::entry.id}\"")),
+            new global::Coflow.Loader.CfdField<string>("own_id", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"{self.id}\"")),
+            new global::Coflow.Loader.CfdField<string>("other_id", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"{&ContractEntry::entry.id}\"")),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>>>("nested", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Int)), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.None())),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>>>("constant_nested", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Int)), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.None())),
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyList<long>>("samples", global::Coflow.Loader.CfdValues.List(global::Coflow.Loader.CfdValues.Int), global::Coflow.Loader.CfdDefaults.Array(global::Coflow.Loader.CfdDefaults.Int(2147483648L), global::Coflow.Loader.CfdDefaults.Int(-9223372036854775808L))),
             new global::Coflow.Loader.CfdField<ContractFlags>("flags", Enum_Cft_436F6E7472616374466C616773, global::Coflow.Loader.CfdDefaults.Enum("ContractFlags", 3L)),
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<ContractFlags, long>>("indexed", global::Coflow.Loader.CfdValues.Dictionary(Enum_Cft_436F6E7472616374466C616773, global::Coflow.Loader.CfdValues.Int), global::Coflow.Loader.CfdDefaults.Dictionary(new global::Coflow.Loader.CfdDefaultEntry(global::Coflow.Loader.CfdDefaults.Enum("ContractFlags", 3L), global::Coflow.Loader.CfdDefaults.Int(7L)))),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>>>("some_nested", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Int)), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Int(9223372036854775807L)))),
-            new global::Coflow.Loader.CfdField<global::Coflow.Loader.DimensionValue<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>>("localized", global::Coflow.Loader.CfdValues.Dimension("contract_language", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.String))), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.String("base")))),
-        }, create: key => new ContractEntry(key), fill: (value, reader) =>
+            new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>("localized", global::Coflow.Loader.CfdValues.Dimension("contract_language", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.String))), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.String("base")))),
+        }, create: id => new ContractEntry(id), fill: (value, reader) =>
         {
             value.payload = reader.Get<ContractPayload>("payload");
             value.shape = reader.Get<ContractShape>("shape");
             value.polymorphic = reader.Get<ContractBase>("polymorphic");
             value.child = reader.Get<ContractChild>("child");
-            value.target = reader.Get<global::Coflow.Loader.DimensionValue<ContractNode>>("target");
+            value.target = reader.Get<ContractNode>("target");
             value.wide = reader.Get<long>("wide");
             value.precise = reader.Get<double>("precise");
             value.large = reader.Get<double>("large");
@@ -121,13 +125,13 @@ public sealed partial class CoflowData
             value.flags = reader.Get<ContractFlags>("flags");
             value.indexed = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<ContractFlags, long>>("indexed");
             value.some_nested = reader.Get<global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>>>("some_nested");
-            value.localized = reader.Get<global::Coflow.Loader.DimensionValue<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>>("localized");
+            value.localized = reader.Get<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>("localized");
         }, construct: null),
         new global::Coflow.Loader.CfdType<ContractNode>("ContractNode", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
-            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"node {self.id}\"")),
+            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"node {self.id}\"")),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<ContractNode>>("next", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Reference<ContractNode>("ContractNode")), global::Coflow.Loader.CfdDefaults.None()),
-        }, create: key => new ContractNode(key), fill: (value, reader) =>
+        }, create: id => new ContractNode(id), fill: (value, reader) =>
         {
             value.label = reader.Get<string>("label");
             value.next = reader.Get<global::Coflow.Loader.Option<ContractNode>>("next");
@@ -135,10 +139,10 @@ public sealed partial class CoflowData
         new global::Coflow.Loader.CfdType<ContractPayload>("ContractPayload", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<long>("score", global::Coflow.Loader.CfdValues.Int),
-            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"score {self.score}\"")),
-            new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyList<string>>("labels", global::Coflow.Loader.CfdValues.List(global::Coflow.Loader.CfdValues.FormattedString), global::Coflow.Loader.CfdDefaults.Array(global::Coflow.Loader.CfdDefaults.Template("f\"array {self.score}\""))),
-            new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<string, string>>("indexed_labels", global::Coflow.Loader.CfdValues.Dictionary(global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdValues.FormattedString), global::Coflow.Loader.CfdDefaults.Dictionary(new global::Coflow.Loader.CfdDefaultEntry(global::Coflow.Loader.CfdDefaults.String("label"), global::Coflow.Loader.CfdDefaults.Template("f\"dict {self.score}\"")))),
-            new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<string>>("template", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.FormattedString), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Template("f\"optional {self.score}\""))),
+            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"score {self.score}\"")),
+            new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyList<string>>("labels", global::Coflow.Loader.CfdValues.List(global::Coflow.Loader.CfdValues.String), global::Coflow.Loader.CfdDefaults.Array(global::Coflow.Loader.CfdDefaults.Template("f\"array {self.score}\""))),
+            new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<string, string>>("indexed_labels", global::Coflow.Loader.CfdValues.Dictionary(global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdValues.String), global::Coflow.Loader.CfdDefaults.Dictionary(new global::Coflow.Loader.CfdDefaultEntry(global::Coflow.Loader.CfdDefaults.String("label"), global::Coflow.Loader.CfdDefaults.Template("f\"dict {self.score}\"")))),
+            new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<string>>("template", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.String), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Template("f\"optional {self.score}\""))),
             new global::Coflow.Loader.CfdField<ContractDetails>("nested", global::Coflow.Loader.CfdValues.Object<ContractDetails>("ContractDetails"), global::Coflow.Loader.CfdDefaults.Object("ContractDetails")),
         }, create: null, fill: null, construct: reader => new ContractPayload()
         {
@@ -153,7 +157,7 @@ public sealed partial class CoflowData
         {
             new global::Coflow.Loader.CfdField<long>("count", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(2147483648L)),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<ContractShape>>("inner", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Object<ContractShape>("ContractShape")), global::Coflow.Loader.CfdDefaults.None()),
-            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"shape {self.count}\"")),
+            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"shape {self.count}\"")),
         }, create: null, fill: null, construct: reader => new ContractShape
         {
             count = reader.Get<long>("count"),
@@ -169,22 +173,22 @@ public sealed partial class CoflowData
         }),
         new global::Coflow.Loader.CfdType<Entity>("Entity", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
-            new global::Coflow.Loader.CfdField<global::Coflow.Loader.DimensionValue<string>>("name", global::Coflow.Loader.CfdValues.Dimension("language", global::Coflow.Loader.CfdValues.String)),
+            new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.Dimension("language", global::Coflow.Loader.CfdValues.String)),
         }, create: null, fill: null, construct: null, abstractType: true),
         new global::Coflow.Loader.CfdType<Item>("Item", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
-            new global::Coflow.Loader.CfdField<global::Coflow.Loader.DimensionValue<string>>("name", global::Coflow.Loader.CfdValues.Dimension("language", global::Coflow.Loader.CfdValues.String)),
+            new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.Dimension("language", global::Coflow.Loader.CfdValues.String)),
             new global::Coflow.Loader.CfdField<Stats>("stats", global::Coflow.Loader.CfdValues.Object<Stats>("Stats")),
             new global::Coflow.Loader.CfdField<long>("price", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(3L)),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<Item>>("next", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Reference<Item>("Item")), global::Coflow.Loader.CfdDefaults.None()),
-            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"{{item}} {self.name}: {self.stats.hp}\"")),
+            new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"{{item}} {self.name}: {self.stats.hp}\"")),
             new global::Coflow.Loader.CfdField<Flags>("permissions", Enum_Cft_466C616773, global::Coflow.Loader.CfdDefaults.Enum("Flags", 3L)),
-            new global::Coflow.Loader.CfdField<string>("enum_label", global::Coflow.Loader.CfdValues.FormattedString, global::Coflow.Loader.CfdDefaults.Template("f\"{self.permissions}\"")),
+            new global::Coflow.Loader.CfdField<string>("enum_label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"{self.permissions}\"")),
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyList<long>>("nums", global::Coflow.Loader.CfdValues.List(global::Coflow.Loader.CfdValues.Int)),
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<string, long>>("indexed", global::Coflow.Loader.CfdValues.Dictionary(global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdValues.Int)),
-        }, create: key => new Item(key), fill: (value, reader) =>
+        }, create: id => new Item(id), fill: (value, reader) =>
         {
-            value.name = reader.Get<global::Coflow.Loader.DimensionValue<string>>("name");
+            value.name = reader.Get<string>("name");
             value.stats = reader.Get<Stats>("stats");
             value.price = reader.Get<long>("price");
             value.next = reader.Get<global::Coflow.Loader.Option<Item>>("next");
@@ -197,7 +201,7 @@ public sealed partial class CoflowData
         new global::Coflow.Loader.CfdType<Node>("Node", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<Node>>("next", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Reference<Node>("Node")), global::Coflow.Loader.CfdDefaults.None()),
-        }, create: key => new Node(key), fill: (value, reader) =>
+        }, create: id => new Node(id), fill: (value, reader) =>
         {
             value.next = reader.Get<global::Coflow.Loader.Option<Node>>("next");
         }, construct: null),
@@ -213,7 +217,7 @@ public sealed partial class CoflowData
         new global::Coflow.Loader.CfdType<Settings>("Settings", global::Coflow.Loader.CfdTypeKind.Singleton, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<Item>("start", global::Coflow.Loader.CfdValues.Reference<Item>("Item")),
-        }, create: key => new Settings(key), fill: (value, reader) =>
+        }, create: id => new Settings(id), fill: (value, reader) =>
         {
             value.start = reader.Get<Item>("start");
         }, construct: null),
@@ -226,6 +230,15 @@ public sealed partial class CoflowData
             hp = reader.Get<long>("hp"),
             extra = reader.Get<CfdField>("extra"),
         }),
+        new global::Coflow.Loader.CfdType<@class>("class", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
+        {
+            new global::Coflow.Loader.CfdField<string>("namespace", global::Coflow.Loader.CfdValues.String),
+            new global::Coflow.Loader.CfdField<@event>("state", Enum_Cft_6576656E74, global::Coflow.Loader.CfdDefaults.Enum("event", 0L)),
+        }, create: id => new @class(id), fill: (value, reader) =>
+        {
+            value.@namespace = reader.Get<string>("namespace");
+            value.state = reader.Get<@event>("state");
+        }, construct: null),
     };
 
     private static readonly global::System.Collections.Generic.IReadOnlyDictionary<string, global::Coflow.Loader.CfdValueNode> Constants = new global::System.Collections.Generic.Dictionary<string, global::Coflow.Loader.CfdValueNode>
@@ -239,33 +252,33 @@ public sealed partial class CoflowData
     };
 }
 
-public static partial class CoflowKeys_Cft_456E74697479
+public static partial class CoflowIds_Cft_456E74697479
 {
-    private static readonly global::Coflow.Loader.TableKeyMap<EntityId> Keys = new global::Coflow.Loader.TableKeyMap<EntityId>(new global::System.Collections.Generic.Dictionary<EntityId, string>
+    private static readonly global::Coflow.Loader.TableIdMap<EntityId> Ids = new global::Coflow.Loader.TableIdMap<EntityId>(new global::System.Collections.Generic.Dictionary<EntityId, string>
     {
         [EntityId.alpha] = "alpha",
         [EntityId.beta] = "beta",
     });
-    public static Entity Get(this global::Coflow.Loader.Table<Entity> table, EntityId key) => table[Keys.GetKey(key)];
-    public static bool TryGet(this global::Coflow.Loader.Table<Entity> table, EntityId key, out Entity value)
+    public static Entity Get(this global::Coflow.Loader.Table<Entity> table, EntityId id) => table[Ids.GetId(id)];
+    public static bool TryGet(this global::Coflow.Loader.Table<Entity> table, EntityId id, out Entity value)
     {
-        if (Keys.TryGetKey(key, out var text)) return table.TryGetValue(text, out value);
+        if (Ids.TryGetId(id, out var text)) return table.TryGetValue(text, out value);
         value = null!;
         return false;
     }
 }
 
-public static partial class CoflowKeys_Cft_4974656D
+public static partial class CoflowIds_Cft_4974656D
 {
-    private static readonly global::Coflow.Loader.TableKeyMap<EntityId> Keys = new global::Coflow.Loader.TableKeyMap<EntityId>(new global::System.Collections.Generic.Dictionary<EntityId, string>
+    private static readonly global::Coflow.Loader.TableIdMap<EntityId> Ids = new global::Coflow.Loader.TableIdMap<EntityId>(new global::System.Collections.Generic.Dictionary<EntityId, string>
     {
         [EntityId.alpha] = "alpha",
         [EntityId.beta] = "beta",
     });
-    public static Item Get(this global::Coflow.Loader.Table<Item> table, EntityId key) => table[Keys.GetKey(key)];
-    public static bool TryGet(this global::Coflow.Loader.Table<Item> table, EntityId key, out Item value)
+    public static Item Get(this global::Coflow.Loader.Table<Item> table, EntityId id) => table[Ids.GetId(id)];
+    public static bool TryGet(this global::Coflow.Loader.Table<Item> table, EntityId id, out Item value)
     {
-        if (Keys.TryGetKey(key, out var text)) return table.TryGetValue(text, out value);
+        if (Ids.TryGetId(id, out var text)) return table.TryGetValue(text, out value);
         value = null!;
         return false;
     }

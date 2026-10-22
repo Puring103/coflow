@@ -10,7 +10,7 @@
 //! *which loader* produced it. Loaders set the appropriate variant when they
 //! parse records; writers branch on the variant to perform an edit.
 use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath};
-use crate::model::CfdRecordId;
+use crate::model::CfdRecordHandle;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -134,12 +134,12 @@ pub struct MappedDiagnostic {
 }
 
 /// Map a set of [`CfdDiagnostics`] using a function that resolves a
-/// [`CfdRecordId`] to its origin. Records without an origin yield a label-less
+/// [`CfdRecordHandle`] to its origin. Records without an origin yield a label-less
 /// mapped diagnostic so callers still see the message.
 #[must_use]
 pub fn map_diagnostics(
     diagnostics: CfdDiagnostics,
-    resolve: impl Fn(CfdRecordId) -> Option<RecordOrigin>,
+    resolve: impl Fn(CfdRecordHandle) -> Option<RecordOrigin>,
 ) -> Vec<MappedDiagnostic> {
     diagnostics
         .diagnostics

@@ -16,7 +16,7 @@ import {
   valueSelectionCells,
 } from './editorSelection'
 
-const coordinate: RecordCoordinate = { actual_type: 'Npc', key: 'guard' }
+const coordinate: RecordCoordinate = { actual_type: 'Npc', id: 'guard' }
 
 describe('editor selection', () => {
   it('keeps record selection distinct from a value in that record', () => {
@@ -51,7 +51,7 @@ describe('editor selection', () => {
       coordinate,
       [fieldPathField('name')],
     )
-    const renamed = { ...coordinate, key: 'captain' }
+    const renamed = { ...coordinate, id: 'captain' }
 
     expect(rebindSelection(selection, 'data/items.cfd', coordinate, renamed)).toBe(selection)
     expect(rebindSelection(selection, 'data/npc.cfd', coordinate, renamed)).toEqual({
@@ -73,20 +73,20 @@ describe('editor selection', () => {
   it('toggles records and selects visible ranges from a stable anchor', () => {
     const rows: RecordCoordinate[] = [
       coordinate,
-      { actual_type: 'Npc', key: 'merchant' },
-      { actual_type: 'Npc', key: 'captain' },
+      { actual_type: 'Npc', id: 'merchant' },
+      { actual_type: 'Npc', id: 'captain' },
     ]
     const first = recordSelection('data/npc.cfd', rows[0])
     const toggled = updateRecordSelection(first, 'data/npc.cfd', rows[2], rows, 'toggle')
     const ranged = updateRecordSelection(toggled, 'data/npc.cfd', rows[1], rows, 'range')
 
-    expect(recordSelectionCoordinates(toggled).map(item => item.key)).toEqual(['guard', 'captain'])
-    expect(recordSelectionCoordinates(ranged).map(item => item.key)).toEqual(['guard', 'merchant'])
+    expect(recordSelectionCoordinates(toggled).map(item => item.id)).toEqual(['guard', 'captain'])
+    expect(recordSelectionCoordinates(ranged).map(item => item.id)).toEqual(['guard', 'merchant'])
     expect(ranged?.coordinate).toEqual(rows[1])
   })
 
   it('removes one coordinate from a multi-record selection', () => {
-    const second = { actual_type: 'Npc', key: 'merchant' }
+    const second = { actual_type: 'Npc', id: 'merchant' }
     const selection = updateRecordSelection(
       recordSelection('data/npc.cfd', coordinate),
       'data/npc.cfd',
@@ -101,7 +101,7 @@ describe('editor selection', () => {
   })
 
   it('enumerates a rectangular value range in visible row-major order', () => {
-    const second = { actual_type: 'Npc', key: 'merchant' }
+    const second = { actual_type: 'Npc', id: 'merchant' }
     const rows = [coordinate, second]
     const start = valueSelection('data/npc.cfd', coordinate, [fieldPathField('name')])
     const range = updateValueSelection(
@@ -113,7 +113,7 @@ describe('editor selection', () => {
     )
 
     expect(valueSelectionCells(range, rows, ['name', 'hp']).map(cell => (
-      `${cell.coordinate.key}:${cell.fieldPath[0].value}`
+      `${cell.coordinate.id}:${cell.fieldPath[0].value}`
     ))).toEqual(['guard:name', 'guard:hp', 'merchant:name', 'merchant:hp'])
     expect(selectionMatchesValue(
       range,
@@ -128,8 +128,8 @@ describe('editor selection', () => {
   it('keeps the original anchor across consecutive range updates', () => {
     const rows = [
       coordinate,
-      { actual_type: 'Npc', key: 'merchant' },
-      { actual_type: 'Npc', key: 'captain' },
+      { actual_type: 'Npc', id: 'merchant' },
+      { actual_type: 'Npc', id: 'captain' },
     ]
     const start = valueSelection('data/npc.cfd', rows[0], [fieldPathField('name')])
     const first = updateValueSelection(start, start.filePath, rows[1], [fieldPathField('hp')], 'range')
@@ -144,7 +144,7 @@ describe('editor selection', () => {
     const health = valueSelection('data/npc.cfd', coordinate, [fieldPathField('health')])
     const merchant = valueSelection(
       'data/npc.cfd',
-      { actual_type: 'Npc', key: 'merchant' },
+      { actual_type: 'Npc', id: 'merchant' },
       [fieldPathField('name')],
     )
 
@@ -154,14 +154,14 @@ describe('editor selection', () => {
 
   it('keeps files and field paths with separators distinct', () => {
     const a = valueSelection('data:a', coordinate, [fieldPathField('x:y')])
-    const b = valueSelection('data', { actual_type: 'a:Npc', key: 'guard' }, [fieldPathField('x:y')])
+    const b = valueSelection('data', { actual_type: 'a:Npc', id: 'guard' }, [fieldPathField('x:y')])
     expect(editorSelectionIdentity(a)).not.toBe(editorSelectionIdentity(b))
     expect(cellAnchorsIdentity('data:a', [{ coordinate, fieldPath: [fieldPathField('x:y')] }]))
       .not.toBe(cellAnchorsIdentity('data', [{ coordinate, fieldPath: [fieldPathField('a:x:y')] }]))
   })
 
   it('uses an order-independent identity for batch record and cell targets', () => {
-    const merchant = { actual_type: 'Npc', key: 'merchant' }
+    const merchant = { actual_type: 'Npc', id: 'merchant' }
     const first = updateRecordSelection(
       recordSelection('data/npc.cfd', coordinate),
       'data/npc.cfd',

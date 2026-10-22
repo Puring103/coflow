@@ -17,7 +17,7 @@ fn option_patterns_bind_scalars_objects_collections_and_nested_options() {
             reward: Option<Reward>;
             amounts: Option<[int]> = Some([1, 2]);
             mapping: Option<{string: int}> = Some({"a": 3});
-            check {
+            check Valid {
                 missing == None;
                 None == missing;
                 amount != None;
@@ -60,7 +60,7 @@ fn pattern_binding_preserves_reference_dependencies_and_diagnostic_paths() {
         table Coins : Reward { amount: int; }
         table Item {
             reward: Option<&Reward>;
-            check { when (reward is Some(r) && r is Coins) { r.amount > 0; } }
+            check Valid { when (reward is Some(r) && r is Coins) { r.amount > 0; } }
         }
     ",
     );
@@ -99,7 +99,7 @@ fn polymorphic_fields_narrow_in_when_and_short_circuit_conjunctions() {
         data Gem : Reward { color: string; }
         table Item {
             reward: Reward = Coins { amount: 3 };
-            check {
+            check Valid {
                 reward is Coins && reward.amount == 3;
                 when (reward is Coins) { reward.amount > 0; }
                 when (reward is Gem) { reward.color == "red"; }
@@ -127,7 +127,7 @@ fn option_comparison_and_pattern_scopes_reject_invalid_access() {
         "reward is Coins || reward.amount > 0;",
         "1 is Some(v);",
     ] {
-        let source = format!("abstract data Reward {{}} data Coins : Reward {{ amount: int; }} table Item {{ amount: Option<int>; reward: Reward; check {{ {check} }} }}");
+        let source = format!("abstract data Reward {{}} data Coins : Reward {{ amount: int; }} table Item {{ amount: Option<int>; reward: Reward; check Valid {{ {check} }} }}");
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
         assert!(build_schema(&modules).is_err(), "accepted {check}");
     }
@@ -144,7 +144,7 @@ fn narrowing_respects_aliases_ancestor_predicates_and_shadowing() {
             reward: Reward = Coins { amount: 3 };
             optional: Option<int> = Some(5);
             amounts: [int] = [1, 2];
-            check {
+            check Valid {
                 when (reward is Currency && reward is Reward) { reward.amount == 3; }
                 when (reward is Coins) {
                     all reward in amounts { reward > 0; }
@@ -163,7 +163,7 @@ fn narrowing_respects_aliases_ancestor_predicates_and_shadowing() {
 
 #[test]
 fn missing_option_reports_pattern_failure_without_evaluating_the_bound_operand() {
-    let schema = compile_schema("table Item { amount: Option<int> = None; check { amount is Some(v); amount is Some(v) && 10 // v > 0; } }");
+    let schema = compile_schema("table Item { amount: Option<int> = None; check Valid { amount is Some(v); amount is Some(v) && 10 // v > 0; } }");
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item", "Item", [] as [(&str, LoadedValueDraft); 0]);
     let model = builder.build().expect("model");

@@ -4,4 +4,4 @@
  * Editing capabilities exposed to the front-end so the UI can grey out
  * disabled actions.
  */
-export type WriterCapabilities = { can_edit_field: boolean, can_edit_key: boolean, can_insert_record: boolean, can_delete_record: boolean, can_reorder_records: boolean, requires_full_refresh_after_write: boolean, };
+export type WriterCapabilities = { can_edit_field: boolean, can_edit_id: boolean, can_insert_record: boolean, can_delete_record: boolean, can_reorder_records: boolean, requires_full_refresh_after_write: boolean, };

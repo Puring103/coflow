@@ -4,7 +4,7 @@ import { coordinateId } from './ids'
 
 export type GraphNodeView = GraphNode & {
   id: string
-  key: string
+  record_id: string
   actual_type: string
 }
 
@@ -19,7 +19,7 @@ export function graphNodeView(node: GraphNode): GraphNodeView {
   return {
     ...node,
     id: coordinateId(node.coordinate),
-    key: node.coordinate.key,
+    record_id: node.coordinate.id,
     actual_type: node.coordinate.actual_type,
   }
 }

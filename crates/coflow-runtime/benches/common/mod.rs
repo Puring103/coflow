@@ -65,7 +65,7 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
             attrs: {string: int};
             owner: &Character;
             optional: Option<int> = None;
-            check {
+            check Valid {
                 price > 0;
                 name != "";
                 enabled;
@@ -133,7 +133,7 @@ pub(crate) fn fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
 
 pub(crate) fn nested_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
     let schema =
-        compile("data Part { value: int; } table Item { parts: [Part]; check { all part in parts { part.value >= 0; } } }");
+        compile("data Part { value: int; } table Item { parts: [Part]; check Valid { all part in parts { part.value >= 0; } } }");
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
         builder.add_record(
@@ -163,7 +163,7 @@ pub(crate) fn dimension_fixture(
                 @localized
                 name: string;
                 price: int;
-                check { name.default() != "" && price > 0; all variant, text in name.variants() { text != ""; } }
+                check Valid { name != "" && price > 0; all variant, text in name.variants() { text != ""; } }
             }
         "#,
     );
@@ -185,7 +185,7 @@ pub(crate) fn dimension_fixture(
         for index in 0..record_count {
             builder.add_dimension_value_draft(coflow_runtime::DimensionValueDraft {
                 source_type: coflow_language::cft::TypeName::new("Item").expect("type"),
-                source_key: coflow_language::cft::RecordKey::new(item_key(index)).expect("key"),
+                source_id: coflow_language::cft::RecordId::new(item_key(index)).expect("id"),
                 field: coflow_language::cft::FieldName::new("name").expect("field"),
                 dimension: dimension.clone(),
                 variant: name.clone(),
@@ -203,7 +203,7 @@ pub(crate) fn inheritance_fixture(record_count: usize) -> (CftSchema, CfdDataMod
         r#"
             abstract table Base {
                 value: int;
-                check {
+                check Valid {
                     value >= 0;
                     value < 100;
                 }
@@ -224,7 +224,7 @@ pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataMode
         r#"
             table Item {
                 nums: [int];
-                check {
+                check Valid {
                     all value, index in nums {
                         value > 0: "value {value} at {index} must be positive";
                     }
@@ -245,7 +245,7 @@ pub(crate) fn diagnostic_fixture(record_count: usize) -> (CftSchema, CfdDataMode
 }
 
 pub(crate) fn limit_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
-    let schema = compile("table Item { value: int; check { value >= 0; } }");
+    let schema = compile("table Item { value: int; check Valid { value >= 0; } }");
     let mut builder = CfdDataModel::builder(&schema);
     for index in 0..record_count {
         builder.add_record(item_key(index), "Item", [("value", 1_i64.into())]);
@@ -259,7 +259,7 @@ pub(crate) fn worst_fixture(record_count: usize) -> (CftSchema, CfdDataModel) {
         .map(|threshold| format!("owner.level > {threshold};"))
         .collect::<String>();
     let source = format!(
-        "table Character {{ level: int; }} table Item {{ owner: &Character; check {{ {checks} }} }}"
+        "table Character {{ level: int; }} table Item {{ owner: &Character; check Valid {{ {checks} }} }}"
     );
     let schema = compile(&source);
     let mut builder = CfdDataModel::builder(&schema);
@@ -327,7 +327,7 @@ pub(crate) fn incremental_tasks(
         Scenario::DimensionVariant => (
             vec![BenchmarkFieldChange {
                 actual_type: "Item".to_string(),
-                key: item_key(0),
+                id: item_key(0),
                 field: "name".to_string(),
                 projection: BenchmarkProjection::Dimension {
                     dimension: "language".to_string(),
@@ -360,7 +360,7 @@ pub(crate) fn incremental_tasks(
 fn field_change(actual_type: &str, key: &str, field: &str) -> BenchmarkFieldChange {
     BenchmarkFieldChange {
         actual_type: actual_type.to_string(),
-        key: key.to_string(),
+        id: key.to_string(),
         field: field.to_string(),
         projection: BenchmarkProjection::Base,
     }

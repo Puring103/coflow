@@ -27,13 +27,13 @@ impl CfdDefinitionIndex {
                 let range = cfd::byte_range_with_index(
                     &line_index,
                     text,
-                    record.key_span.start,
-                    record.key_span.end,
+                    record.id_span.start,
+                    record.id_span.end,
                 );
                 records
                     .entry(record.type_name.clone())
                     .or_default()
-                    .entry(record.key.clone())
+                    .entry(record.id.clone())
                     .or_default()
                     .push(json!({
                         "uri": uri,
