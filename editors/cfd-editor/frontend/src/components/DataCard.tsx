@@ -52,7 +52,7 @@ import {
 } from '../wire'
 import { Icon } from './Icon'
 import { RichTextString } from './RichTextString'
-import { RichTextInput } from './RichTextInput'
+import { StringValueInput } from './StringValueInput'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, fieldTypeColor } from '../utils/typeColor'
 import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
@@ -1314,49 +1314,26 @@ function StringDirectEditor({ value, onCommit }: {
   onCommit: (next: FieldValue) => void
 }) {
   return <span className="dc-string-editor">
-    <select className="dc-string-mode" aria-label="字符串模式" value={value.kind}
+    <select className="dc-string-mode" aria-label="字符串模式" title={value.kind === 'string' ? '普通文本' : '格式化模板'} value={value.kind}
       onChange={event => {
         const text = plainFieldValueText(value)
         onCommit(event.target.value === 'string'
           ? { kind: 'string', value: text }
           : { kind: 'formatted_string', value: { source: `f${JSON.stringify(text)}`, rendered: text } })
       }}>
-      <option value="string">文本</option>
-      <option value="formatted_string">模板</option>
+      <option value="string">T</option>
+      <option value="formatted_string">ƒ</option>
     </select>
-    {value.kind === 'formatted_string'
-      ? <FormattedTextDirectInput value={value} onCommit={onCommit} />
-      : <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('string')} />}
+    <StringValueInput value={value} onCommit={onCommit} />
   </span>
-}
-
-// 预览使用基础核心已解析的文本；进入编辑时才展示格式化字符串源码。
-function FormattedTextDirectInput({ value, onCommit }: {
-  value: FieldValue & { kind: 'formatted_string' }
-  onCommit: (next: FieldValue) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  if (editing) return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor('string')} autoFocus onEditingFinished={() => setEditing(false)} />
-  return (
-    <span className="dc-template-preview" role="button" tabIndex={0}
-      title={value.value.source}
-      onClick={() => setEditing(true)}
-      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEditing(true) } }}>
-      <RichTextString text={value.value.rendered} />
-    </span>
-  )
 }
 
 function TextDirectInput({
   value,
   onCommit,
   color,
-  onEditingFinished,
-  autoFocus = false,
 }: {
-  onEditingFinished?: () => void
-  autoFocus?: boolean
-  value: FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }
+  value: FieldValue & { kind: 'int' | 'float' }
   onCommit: (next: FieldValue) => void
   color: string
 }) {
@@ -1373,37 +1350,6 @@ function TextDirectInput({
     else setText(initial)
   }
 
-  if (value.kind === 'string' || value.kind === 'formatted_string') {
-    return (
-      <RichTextInput
-        className="dc-input dc-input-flat dc-input-textarea"
-        value={text}
-        rows={1}
-        autoFocus={autoFocus}
-        onValueChange={value => {
-          setText(value)
-          const el = document.activeElement as HTMLTextAreaElement | null
-          if (!el || el.tagName !== 'TEXTAREA') return
-          el.style.height = 'auto'
-          el.style.height = el.scrollHeight + 'px'
-        }}
-        onBlur={() => {
-          if (!cancelled.current) commit()
-          cancelled.current = false
-          onEditingFinished?.()
-          requestAnimationFrame(() => rowSelection?.onEditingFinished?.())
-        }}
-        onKeyDown={e => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            (e.target as HTMLTextAreaElement).blur()
-          }
-          if (e.key === 'Escape') { cancelled.current = true; setText(initial); (e.target as HTMLTextAreaElement).blur() }
-        }}
-      />
-    )
-  }
-
   return (
     <input
       className="dc-input dc-input-flat dc-input-themed"
@@ -1412,12 +1358,18 @@ function TextDirectInput({
       value={text}
       onChange={e => setText(e.target.value)}
       onBlur={() => {
-        commit()
-        requestAnimationFrame(() => rowSelection?.onEditingFinished?.())
+        if (!cancelled.current) commit()
+        cancelled.current = false
       }}
       onKeyDown={e => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        if (e.key === 'Escape') { setText(initial); (e.target as HTMLInputElement).blur() }
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          e.preventDefault()
+          if (e.key === 'Escape') { cancelled.current = true; setText(initial) }
+          e.currentTarget.blur()
+          // 只有显式结束键盘编辑才返回行导航；鼠标失焦不抢回焦点。
+          rowSelection?.onEditingFinished?.()
+        }
       }}
     />
   )

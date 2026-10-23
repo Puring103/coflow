@@ -73,7 +73,7 @@
   --fs-base: 13px;
   --fs-ui:   12px;
   --fs-sm:   11px;
-  --fs-xs:   10px;
+  --fs-xs:   11px;
 
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 13px;
@@ -324,6 +324,10 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 }
 .btn:hover { background: var(--bg-3); color: var(--text); }
 .btn:active { background: var(--bg-4); }
+.btn:focus-visible, .activity-btn:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .btn:disabled, .btn.disabled { opacity: 0.35; cursor: default; }
 .btn:disabled:hover, .btn.disabled:hover { background: transparent; color: var(--text-dim); }
 
@@ -355,20 +359,6 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 
 .topbar-spacer { flex: 1; }
 .icon-spin { animation: update-icon-spin 0.9s linear infinite; }
-
-.undo-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 9px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
-  margin-right: 4px;
-  white-space: nowrap;
-}
 
 .project-root {
   margin-left: 10px;
@@ -1072,8 +1062,10 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   min-width: 120px;
   gap: 3px;
 }
-.dimension-cell-editor > :first-child { flex: 1; min-width: 0; }
-.dimension-cell-editor.busy { opacity: 0.6; pointer-events: none; }
+.dimension-cell-editor > :not(.dimension-value-state):not(.dimension-cell-clear) { flex: 1; min-width: 0; }
+.dimension-value-state { flex: none; width: 14px; color: var(--accent); align-self: flex-start; line-height: 20px; }
+.dimension-cell-editor.inherited .dimension-value-state { color: var(--text-mute); }
+.dimension-cell-editor.busy .dimension-value-state { color: var(--yellow); }
 .dimension-cell-clear {
   width: 20px;
   height: 20px;
@@ -1089,6 +1081,7 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   opacity: 0;
 }
 .dimension-cell-editor:hover .dimension-cell-clear, .dimension-cell-clear:focus-visible { opacity: 1; }
+.dimension-cell-editor.inherited .dimension-cell-clear { visibility: hidden; }
 .dimension-cell-clear:hover { background: var(--bg-4); color: var(--text); }
 .dimension-record-layout { flex: 1; min-height: 0; display: flex; }
 .dimension-record-list {
@@ -1768,6 +1761,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 .table-row:hover td { background: var(--bg-3) !important; }
 
 .table-scroll {
+  overflow-anchor: none;
   flex: 1;
   overflow: auto;
   outline: none;
@@ -1944,12 +1938,9 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 .cell-edit-wrap.editable {
   cursor: text;
   border-radius: 3px;
-  transition: background 80ms;
 }
 .cell-edit-wrap.editable:hover {
-  background: var(--bg-3);
-  outline: 1px solid var(--border-strong);
-  outline-offset: 2px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 .dc-missing-value {
   display: inline-flex;
@@ -2751,7 +2742,6 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 .vc-num { color: var(--text); font-variant-numeric: tabular-nums; }
 .vc-str { color: var(--text-dim); }
 /* 字符串模板的求值只影响展示；源码进入编辑态后仍可直接修改。 */
-.dc-template-preview { cursor: text; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .dc-template-error { color: var(--red); margin-left: 6px; font-size: var(--fs-xs); }
 .rich-text-string {
   display: inline;
@@ -2785,6 +2775,44 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   display: block;
   width: 100%;
 }
+/* 正文和输入共用几何尺寸。焦点仅显示光标、按内容向下展开，不增加输入框边界。 */
+.string-value-input { display: block; width: 100%; min-width: 0; }
+.cell-string-input { font: inherit; line-height: 20px; }
+.cell-string-preview {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  color: var(--text);
+}
+.cell-string-input.focused .cell-string-preview { visibility: hidden; }
+.cell-string-textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  font: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: transparent;
+  caret-color: var(--text);
+}
+.cell-string-input.focused .cell-string-textarea { color: var(--text); }
+.cell-string-textarea[aria-invalid="true"] { box-shadow: inset 0 -1px var(--red); }
+.string-value-error { display: block; color: var(--red); font-size: var(--fs-sm); white-space: normal; }
 .rich-text-suggestions {
   position: fixed;
   z-index: 5400;
@@ -4744,7 +4772,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .topbar-center { width: 100%; }
 .app .btn { border-radius: 5px; }
 .app .topbar-right .btn { padding: 0 12px; height: 29px; }
-.app .activity-btn { width: 100%; height: 34px; justify-content: flex-start; gap: 10px; padding: 0 11px; color: var(--text-dim); font-size: 13px; border-radius: 5px; }
+.app .activity-btn { width: 34px; height: 34px; justify-content: center; padding: 0; color: var(--text-dim); border-radius: 5px; flex: none; }
 .app .activity-btn svg { width: 17px; height: 17px; }
 .app .activity-btn.active::before { display: none; }
 .app .activity-brand { order: -1; }
@@ -4814,7 +4842,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .global-search-bar { background: var(--bg-1); height: auto; flex-wrap: nowrap; gap: 8px; padding: 8px 14px; min-height: 42px; padding-top: 6px; padding-bottom: 6px; }
 .app .layout-navigation { width: var(--sidebar-w, 220px); flex: 0 0 var(--sidebar-w, 220px); min-height: 0; display: flex; flex-direction: column; background: var(--bg-0); position: relative; padding-bottom: 0; }
 .app.navigation-collapsed .navigation-toggle { width: 32px; justify-content: center; }
-.app .activity-bar { width: 100%; padding: 12px 10px 10px; gap: 3px; align-items: stretch; border: 0; background: transparent; z-index: 5; position: static; flex-shrink: 0; padding-top: 8px; padding-bottom: 8px; }
+.app .activity-bar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 8px 10px; gap: 4px; align-items: center; border: 0; border-bottom: 1px solid var(--border); background: transparent; z-index: 5; position: static; flex-shrink: 0; }
 .app .inspector-head { min-height: 36px; height: 36px; background: var(--bg-0); }
 .app .inspector-head > button[aria-label="关闭记录面板"] { display: none; }
 .app .inspector-panel.collapsed .inspector-head { padding: 0; justify-content: center; }
@@ -4912,7 +4940,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .data-table .table-row.selected > td { background-color: var(--bg-3); }
 .app .data-table .sticky-key-column { border-right: 1px solid var(--border); border-right-color: var(--border); }
 .app .navigation-toggle[aria-expanded="false"] { color: var(--accent); background: var(--bg-3); }
-.app .view-picker { position: relative; flex: 0 0 auto; min-width: 120px; }
+.app .view-picker { position: relative; flex: 0 0 auto; min-width: 44px; }
 .app .view-picker summary { display: flex; align-items: center; gap: 8px; list-style: none; height: 29px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-1); cursor: pointer; font-size: 12px; }
 .app .view-picker summary::-webkit-details-marker { display: none; }
 .app .view-picker summary > span { flex: 1; }
@@ -4969,7 +4997,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .key-only-toggle { order: 5; display: flex; align-items: center; justify-content: center; flex: 0 0 24px; border: 0; background: transparent; cursor: pointer; border-radius: 4px; width: 26px; height: 26px; color: var(--text-dim); }
 .app .key-only-toggle:hover { background: var(--bg-3); }
 
-.view-toolbar { display: flex; align-items: center; min-height: 42px; padding: 6px 14px; border-bottom: 1px solid var(--border); }
+.view-toolbar { display: flex; align-items: center; min-height: 34px; padding: 3px 12px; border-bottom: 1px solid var(--border); }
 .editor-settings > summary { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 5px; }
 .view-discard-confirm, .view-save-error { padding: 12px 22px; font-size: 12px; color: var(--red); }
 .view-discard-confirm .btn { margin-left: 8px; }
@@ -4984,5 +5012,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 
 /* 文本和模板共用 string 字段，模式选择与正文保持同一编辑行。 */
 .dc-string-editor { display: flex; align-items: start; gap: 6px; min-width: 0; width: 100%; }
-.dc-string-editor > .dc-input, .dc-string-editor > .dc-template-preview { flex: 1; }
-.dc-string-mode { flex: none; font-size: var(--fs-xs); color: var(--text-muted); background: transparent; border: 1px solid var(--border); border-radius: 4px; }
+.dc-string-editor > .string-value-input { flex: 1; }
+.dc-string-mode { flex: none; font-size: var(--fs-xs); color: var(--text-dim); background: transparent; border: 1px solid transparent; border-radius: 4px; }
+.dc-string-mode:hover, .dc-string-mode:focus-visible { border-color: var(--border-strong); }

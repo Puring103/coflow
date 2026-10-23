@@ -4,7 +4,6 @@ import { Icon } from './Icon'
 export type ActivePane = 'files' | 'changes' | 'plugins' | `plugin:${string}`
 
 interface Props {
-  expanded?: boolean
   activePane: ActivePane
   registry: PluginRegistrySnapshot
   onSelectPane: (pane: ActivePane) => void
@@ -13,7 +12,6 @@ interface Props {
 }
 
 export function ActivityBar({
-  expanded = false,
   activePane,
   registry,
   onSelectPane,
@@ -36,7 +34,6 @@ export function ActivityBar({
           onClick={() => onSelectPane(pane)}
         >
           <Icon name={sidebar.icon ?? 'extensions'} size={20} />
-          {expanded && <span>{sidebar.title}</span>}
         </button>
       )
     })
@@ -51,7 +48,6 @@ export function ActivityBar({
         onClick={onSelectFiles}
       >
         <Icon name="folder" size={20} />
-        {expanded && <span>项目资源</span>}
       </button>
       <button
         className={`activity-btn${activePane === 'changes' ? ' active' : ''}`}
@@ -61,7 +57,6 @@ export function ActivityBar({
         onClick={onSelectChanges}
       >
         <Icon name="git-branch" size={20} />
-        {expanded && <span>变更检查</span>}
       </button>
       {sidebars(true)}
       <button
@@ -72,7 +67,6 @@ export function ActivityBar({
         onClick={() => onSelectPane('plugins')}
       >
         <Icon name="extensions" size={20} />
-        {expanded && <span>插件</span>}
       </button>
       {sidebars(false)}
     </nav>

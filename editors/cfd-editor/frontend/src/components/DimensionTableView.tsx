@@ -328,14 +328,14 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
 
   const isRangeSelection = rangeEnd !== null && (rangeEnd.row !== anchor.row || rangeEnd.column !== anchor.column)
 
-  const select = (next: DimensionCellSelection, extend = false) => {
+  const select = (next: DimensionCellSelection, extend = false, reveal = true) => {
     if (extend) {
       setRangeEnd(next)
     } else {
       setAnchor(next)
       setRangeEnd(null)
     }
-    requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(
+    if (reveal) requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(
       `[data-dimension-row="${next.row}"][data-dimension-column="${next.column}"]`,
     )?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
   }
@@ -623,7 +623,7 @@ function cellProps(
   anchor: DimensionCellSelection,
   isRangeSelection: boolean,
   range: DimensionRange,
-  onSelect: (selection: DimensionCellSelection, extend?: boolean) => void,
+  onSelect: (selection: DimensionCellSelection, extend?: boolean, reveal?: boolean) => void,
 ) {
   const isAnchor = anchor.row === row && anchor.column === column
   const isSelected = isRangeSelection ? inRange(range, row, column) : isAnchor
@@ -631,7 +631,11 @@ function cellProps(
     'data-dimension-row': row,
     'data-dimension-column': column,
     className: isSelected ? (isAnchor ? 'keyboard-selected' : 'range-selected') : undefined,
-    onMouseDown: (e: React.MouseEvent) => onSelect({ row, column }, e.shiftKey),
+    onMouseDown: (e: React.MouseEvent) => {
+      if (e.button !== 0) return
+      if (e.shiftKey) e.preventDefault()
+      onSelect({ row, column }, e.shiftKey, false)
+    },
   }
 }
 
@@ -716,7 +720,9 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
       setBusy(false)
     }
   }
-  if (state.kind === 'missing') {
+  const effective = state.kind === 'value' ? state.value : row.default_value
+  const directString = effective.kind === 'string' || effective.kind === 'formatted_string'
+  if (state.kind === 'missing' && !directString) {
     if (creating) {
       return (
         <div className={`dimension-cell-editor${busy ? ' busy' : ''}`}>
@@ -733,15 +739,17 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
         type="button"
         className="dimension-value-missing"
         onClick={() => setCreating(true)}
-        title="设置值"
+        title="继承基础值；点击设置覆盖"
+        aria-label="设置覆盖"
       >
-        -
+        ↳
       </button>
     )
   }
   return (
-    <div className={`dimension-cell-editor${busy ? ' busy' : ''}`}>
-      <DirectEditor value={state.value} onCommit={commit} />
+    <div className={`dimension-cell-editor${busy ? ' busy' : ''}${state.kind === 'missing' ? ' inherited' : ''}`} aria-busy={busy}>
+      <span className="dimension-value-state" title={state.kind === 'missing' ? '继承基础值' : effective.kind === 'option_none' ? '显式空值' : '已覆盖基础值'} aria-label={state.kind === 'missing' ? '继承基础值' : effective.kind === 'option_none' ? '显式空值' : '已覆盖基础值'}>{state.kind === 'missing' ? '↳' : effective.kind === 'option_none' ? '∅' : '•'}</span>
+      <DirectEditor value={effective} onCommit={commit} />
       <button
         type="button"
         className="dimension-cell-clear"
@@ -753,11 +761,11 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
             setBusy(false)
           }
         }}
-        disabled={busy}
-        title="清除变体值"
-        aria-label="清除变体值"
+        disabled={busy || state.kind === 'missing'}
+        title="清除覆盖，恢复基础值"
+        aria-label="清除覆盖，恢复基础值"
       >
-        <Icon name="close" size={11} aria-hidden />
+        <Icon name="undo" size={12} aria-hidden />
       </button>
     </div>
   )

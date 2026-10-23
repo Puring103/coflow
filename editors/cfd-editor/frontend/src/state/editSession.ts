@@ -5,6 +5,6 @@
 export function finishActiveDataEdit(): void {
   const active = document.activeElement
   if (!(active instanceof HTMLElement)) return
-  if (!active.matches('.gn-key-editor, .dc-input, .searchable-select')) return
+  if (!active.matches('.gn-key-editor, .dc-input, .searchable-select, .cell-string-textarea')) return
   active.blur()
 }

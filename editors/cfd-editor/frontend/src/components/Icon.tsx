@@ -9,13 +9,15 @@ interface IconProps {
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
     | 'download' | 'refresh' | 'build' | 'copy' | 'paste'
     | 'sparkles' | 'gear' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
-    | 'extensions' | 'code' | 'git-branch' | 'save' | 'trash'
+    | 'extensions' | 'code' | 'git-branch' | 'save' | 'trash' | 'undo' | 'redo'
     | 'key' | 'panel-bottom' | 'panel-bottom-closed' | 'panel-left-closed' | 'panel-right-closed' | 'panel-left' | 'panel-right' | 'layout' | 'overview' | 'center'
   size?: number
   className?: string
 }
 
 const PATHS: Record<IconProps['name'], string> = {
+  'undo': 'M9 4L4 9l5 5M4 9h10a6 6 0 010 12',
+  'redo': 'M15 4l5 5-5 5M20 9H10a6 6 0 000 12',
   // Lucide KeyRound：圆头钥匙。
   'key': 'M2.586 17.414A2 2 0 002 18.828V21a1 1 0 001 1h3a1 1 0 001-1v-1a1 1 0 011-1h1a1 1 0 001-1v-1a1 1 0 011-1h.172a2 2 0 001.414-.586l.814-.814a6.5 6.5 0 10-4-4zM16.5 7.5h.01',
   'panel-left-closed': 'M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM9 3v18',

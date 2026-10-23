@@ -26,3 +26,11 @@ export function isNativeEditorTarget(
     || target.tagName === 'SELECT'
     || (includeButton && target.tagName === 'BUTTON')
 }
+
+/** 键盘从网格进入正文时，通过原生 setter 通知 React，保留现有输入节点。 */
+export function replaceInputText(editor: HTMLInputElement | HTMLTextAreaElement, text: string): void {
+  const prototype = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(editor, text)
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  editor.setSelectionRange(text.length, text.length)
+}
