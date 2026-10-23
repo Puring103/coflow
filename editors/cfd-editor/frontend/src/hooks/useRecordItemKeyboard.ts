@@ -6,7 +6,7 @@ import {
   type VisibleRecordItem,
 } from '../state/recordItemNavigation'
 import { selectionEditIntentForKey } from '../state/selectionKeyboard'
-import { isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
+import { isNativeEditorTarget, parseWireFieldPath, replaceInputText } from '../utils/dom'
 
 interface Options {
   rootRef: RefObject<HTMLElement | null>
@@ -191,12 +191,7 @@ function focusRecordValueEditor(row: HTMLElement, replacement: string | null) {
     return
   }
   if (replacement !== null) {
-    const prototype = editor instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype
-    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(editor, replacement)
-    editor.dispatchEvent(new Event('input', { bubbles: true }))
-    editor.setSelectionRange(replacement.length, replacement.length)
+    replaceInputText(editor, replacement)
     return
   }
   editor.select()

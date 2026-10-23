@@ -79,6 +79,15 @@ Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述
 
 ## 测试要求
 
+编辑器交互修改可在 `editors/cfd-editor/frontend` 下执行专项无界面回归：
+
+```powershell
+npx playwright install chromium
+npm run test:browser
+```
+
+测试启动临时 Vite 服务和无界面 Chromium，结束时关闭测试资源，不操作桌面编辑器进程。已有 Chromium 可以通过 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指定可执行文件。用例覆盖表格选择、输入节点与草稿保留、长文本展开、输入法、拖选与虚拟滚动、维度覆盖和工作区焦点。常规提交与发布的检查门禁仍以根目录 `AGENTS.md` 为准。
+
 测试不能只有 happy path。每类核心行为都需要覆盖：
 
 - 正向情况。

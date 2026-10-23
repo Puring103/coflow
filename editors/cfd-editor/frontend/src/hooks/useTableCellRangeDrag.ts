@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, RefObject } from 'react'
+import { finishActiveDataEdit } from '../state/editSession'
 
 interface Options {
   rootRef: RefObject<HTMLElement | null>
@@ -26,11 +27,16 @@ export function useTableCellRangeDrag(options: Options) {
     const field = cell.dataset.field
     if (!coordinateId || !field) return
     const native = target.closest('input, select, textarea, button, a, [contenteditable="true"]')
+    // Shift 点击只扩展选区，不把焦点交给目标字符串编辑器。
+    if (event.shiftKey) event.preventDefault()
     // 同一单元格内继续操作编辑器时保留焦点，仅切换选择才结束编辑。
     const activeCell = document.activeElement?.closest('[data-table-value-cell="true"]')
     if (activeCell !== cell || event.shiftKey) {
+      // 先保存旧详情面板，再发布选择，避免面板卸载后丢失尚未触发 blur 的草稿。
+      finishActiveDataEdit()
       optionsRef.current.onSelectCell(coordinateId, field, event.shiftKey ? 'range' : 'replace')
     }
+    if (event.shiftKey) root.focus({ preventScroll: true })
     if (native) return
 
     const startX = event.clientX
@@ -39,6 +45,7 @@ export function useTableCellRangeDrag(options: Options) {
     let clientX = startX
     let clientY = startY
     let frame = 0
+    let lastCell = `${coordinateId}\u001f${field}`
 
     const selectAtPoint = () => {
       const rect = root.getBoundingClientRect()
@@ -50,7 +57,12 @@ export function useTableCellRangeDrag(options: Options) {
       if (!hit || !root.contains(hit)) return
       const nextCoordinate = hit.dataset.coordinateId
       const nextField = hit.dataset.field
-      if (nextCoordinate && nextField) optionsRef.current.onSelectCell(nextCoordinate, nextField, 'range')
+      if (nextCoordinate && nextField) {
+        const key = `${nextCoordinate}\u001f${nextField}`
+        if (key === lastCell) return
+        lastCell = key
+        optionsRef.current.onSelectCell(nextCoordinate, nextField, 'range')
+      }
     }
     const tick = () => {
       if (!dragging) return

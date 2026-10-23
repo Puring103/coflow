@@ -158,6 +158,8 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
       <button
         type="button"
         className="diag-header"
+        title={`诊断 · ${errors} 个错误，${warnings} 个警告`}
+        aria-label={`诊断 · ${errors} 个错误，${warnings} 个警告`}
         aria-expanded={!collapsed && !isEmpty}
         aria-controls="diag-list-region"
         disabled={isEmpty}
@@ -165,7 +167,6 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
       >
         <span className="diag-title">
           <Icon name={collapsed || isEmpty ? 'panel-bottom-closed' : 'panel-bottom'} size={15} aria-hidden />
-          诊断
         </span>
         {errors > 0 && (
           <span className="diag-badge error">
@@ -182,7 +183,6 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
         {errors === 0 && warnings === 0 && (
           <span className="diag-badge ok">
             <Icon name="check" size={11} aria-hidden />
-            无问题
           </span>
         )}
       </button>

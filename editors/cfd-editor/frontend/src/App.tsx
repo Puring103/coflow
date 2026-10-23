@@ -106,6 +106,7 @@ import {
   recordSelection,
   rebindSelection,
   removeSelection,
+  selectionMatchesValue,
   updateRecordSelection,
   updateValueSelection,
   valueSelection,
@@ -2039,7 +2040,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const tableOnSelectValue = useCallback(
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
       if (currentRoute?.view !== 'table') return
-      finishActiveDataEdit()
+      // 表格在 pointerdown 阶段提交旧目标；选择同步不能再次 blur 刚获得焦点的输入。
       setInspectorCollapsed(false)
       setInspectorSelection(current => updateValueSelection(
         current,
@@ -2558,13 +2559,13 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         </div>
         <div className="topbar-center">
           {(
-            <button className="project-search-trigger"
+            <button className="project-search-trigger" title="搜索记录、Key 或字段值 (Ctrl+Shift+F)" aria-label="搜索项目"
               disabled={!pluginRegistry.sidebars.some(sidebar => sidebar.pluginId === 'project-search')}
               onClick={() => {
                 setProjectSearchOpen(true)
               }}>
               <Icon name="search" size={14} />
-              <span>搜索记录、Key 或字段值</span>
+              <span>搜索</span>
               <kbd>Ctrl ⇧ F</kbd>
             </button>
           )}
@@ -2579,11 +2580,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             </button>
           )}
           <EditorSettingsMenu theme={theme} onToggleTheme={toggleTheme} onShowHelp={() => setShowHelp(true)} />
-          {(historySnapshot.undo.length > 0 || historySnapshot.redo.length > 0) && (
-            <span className="undo-badge" title={`可撤销 ${historySnapshot.undo.length} 步 / 可重做 ${historySnapshot.redo.length} 步 (Ctrl+Z / Ctrl+Y)`}>
-              {historySnapshot.undo.length > 0 ? `可撤销 ${historySnapshot.undo.length}` : `可重做 ${historySnapshot.redo.length}`}
-            </span>
-          )}
+          <button className="btn btn-icon" title={`撤销 (Ctrl+Z) · ${historySnapshot.undo.length}`} aria-label="撤销"
+            disabled={historySnapshot.undo.length === 0} onClick={() => { void undo() }}><Icon name="undo" size={16} /></button>
+          <button className="btn btn-icon" title={`重做 (Ctrl+Y) · ${historySnapshot.redo.length}`} aria-label="重做"
+            disabled={historySnapshot.redo.length === 0} onClick={() => { void redo() }}><Icon name="redo" size={16} /></button>
         </div>
       </div>
 
@@ -2602,7 +2602,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         {/* 导航入口和资源面板共享宽度，收起时保留图标入口。 */}
         <div className="layout-navigation">
         <ActivityBar
-          expanded={!navigationCollapsed}
           activePane={activePane}
           registry={pluginRegistry}
           onSelectPane={pane => {
@@ -2908,14 +2907,14 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                   className="global-search-count"
                   title={documentSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
                 >
-                  {matchedCount} / {typeCount} 条
+                  {matchedCount} / {typeCount}
                 </span>
                 {(
                   <div className="record-edit-actions">
-                    <button className="btn btn-primary"
+                    <button className="btn btn-primary btn-icon" title="新增记录" aria-label="新增记录"
                       disabled={readOnly || !activeFileData.capabilities.can_insert_record || !activeType}
                       onClick={() => void createRecordFromTree(currentRoute.file, activeType)}>
-                      <Icon name="plus" size={13} />新增记录
+                      <Icon name="plus" size={16} />
                     </button>
                   </div>
                 )}
@@ -3009,6 +3008,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                     )}
                     selection={inspectorSelection}
                     onSelectValue={(coordinate, path) => {
+                      if (selectionMatchesValue(inspectorSelection, currentRoute.file, coordinate, path)) return
                       finishActiveDataEdit()
                       setInspectorSelection(valueSelection(currentRoute.file, coordinate, path))
                     }}

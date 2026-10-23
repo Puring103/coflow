@@ -20,7 +20,7 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
   const renderTab = (tab: ViewTab) => <button key={tab.id} className="btn" aria-current={!plugin && tab.id === activeId ? 'true' : undefined} onClick={() => onSelect(tab)}>
     <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={14} /><span>{tab.name}</span>{!plugin && tab.id === activeId && <Icon name="check" size={13} />}
   </button>
-  return <Menu className="view-picker" title="切换视图" label={<><Icon name={icon} size={14} /><span>{plugin?.title ?? active?.name ?? '视图'}</span><Icon name="chevron-down" size={12} /></>}>
+  return <Menu className="view-picker" title={`切换视图 · ${plugin?.title ?? active?.name ?? '视图'}`} label={<><Icon name={icon} size={16} />{(plugin || !active?.isDefault) && <span>{plugin?.title ?? active?.name}</span>}<Icon name="chevron-down" size={12} /></>}>
     <div className="view-picker-menu">
       <div className="view-picker-group">{tabs.filter(tab => tab.isDefault).map(renderTab)}</div>
       {tabs.some(tab => !tab.isDefault) && <div className="view-picker-group"><span className="view-picker-heading">自定义视图</span>{tabs.filter(tab => !tab.isDefault).map(renderTab)}</div>}

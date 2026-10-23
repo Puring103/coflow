@@ -13,7 +13,7 @@ import {
   type SortingState,
   type ColumnSizingState,
 } from '@tanstack/react-table'
-import type { Row as TanStackRow } from '@tanstack/react-table'
+import type { Cell, Row as TanStackRow } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
@@ -57,7 +57,7 @@ import { CreateRecordDialog } from './CreateRecordDialog'
 import { ConfirmDialog, TextInputDialog } from './ActionDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
-import { RichTextInput } from './RichTextInput'
+import { StringValueInput } from './StringValueInput'
 import { visibilityScrollDelta } from '../state/scrollVisibility'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
 import {
@@ -104,7 +104,7 @@ import {
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
 import { RecordContextMenu } from './RecordContextMenu'
 
-import { isNativeEditorTarget } from '../utils/dom'
+import { isNativeEditorTarget, replaceInputText } from '../utils/dom'
 import {
   boundedPasteMatrix,
   columnDropdownKind,
@@ -442,6 +442,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   // and snap the whole column to a new width — visible as jitter. Editing a
   // value shouldn't reflow the layout; the user can drag-resize if a newly
   // added cell needs more room.
+  const columnStructureKey = JSON.stringify([allFieldNames, columnKinds, columnDeclaredTypes, columnDisplay])
   const columnSizeHints = useMemo(
     () => cachedColumnPrep(data, columnPrepKey('sizeHints', activeType, allFieldNames.join(',')), () => {
       const snapshot = dataForCellsRef.current
@@ -493,9 +494,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       }
       return hints
     }),
-    // Deps intentionally stable: file, active type, column identity/count,
-    // and record count. Content edits don't move the layout.
-    [data, activeType, columnDisplay, columnKinds, columnDeclaredTypes],
+    // 只在文件、类型或字段结构改变时重新估宽，保存数据不移动列边界。
+    [data.file_path, activeType, columnStructureKey],
   )
 
   const canEdit = !readOnly && !!onWriteField
@@ -764,11 +764,27 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     [visibleRows],
   )
   const selectedValueRange = valueSelectionRange(selection ?? null, visibleCoordinates, allFieldNames)
+  const pointerSelectionRef = useRef(false)
+  const pointerCellKeyRef = useRef<string | null>(null)
+  const revealFrameRef = useRef(0)
+  useEffect(() => {
+    const finishPointer = () => { pointerSelectionRef.current = false }
+    document.addEventListener('pointerup', finishPointer)
+    document.addEventListener('pointercancel', finishPointer)
+    return () => {
+      document.removeEventListener('pointerup', finishPointer)
+      document.removeEventListener('pointercancel', finishPointer)
+      cancelAnimationFrame(revealFrameRef.current)
+    }
+  }, [])
   const cellRangeDrag = useTableCellRangeDrag({
     rootRef: tableScrollRef,
     onSelectCell: (id, field, mode) => {
       const coordinate = visibleCoordinates.find(item => coordinateId(item) === id)
-      if (coordinate) onSelectValue?.(coordinate, [fieldPathField(field)], mode)
+      if (coordinate) {
+        pointerCellKeyRef.current = tableCellKey(coordinate, field)
+        onSelectValue?.(coordinate, [fieldPathField(field)], mode)
+      }
     },
   })
   const recordPointerDrag = useRecordPointerDrag({
@@ -804,12 +820,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const padAfter = virtualRows.length > 0 ? totalHeight - virtualRows[virtualRows.length - 1].end : 0
 
   const revealTableSelection = (target: EditorSelection) => {
+    cancelAnimationFrame(revealFrameRef.current)
     if (target.filePath !== data.file_path) return
     const rowIndex = displayItems.findIndex(item => (
       item.kind === 'row' && sameCoordinate(item.row.original.coordinate, target.coordinate)
     ))
     if (rowIndex < 0) return
-    rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
     const columnId = target.kind === 'record'
       ? 'id'
       : selectedTopLevelField(target.fieldPath)
@@ -823,7 +839,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       )
       if (!cell && attempts < 4) {
         attempts += 1
-        requestAnimationFrame(reveal)
+        if (attempts === 1) rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' })
+        revealFrameRef.current = requestAnimationFrame(reveal)
         return
       }
       if (!cell || !scroller) return
@@ -869,23 +886,25 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         horizontalTarget,
       )
     }
-    reveal()
+    revealFrameRef.current = requestAnimationFrame(reveal)
   }
 
   useEffect(() => {
     if (!focusRequest || !selection) return
+    pointerSelectionRef.current = false
+    pointerCellKeyRef.current = null
     tableScrollRef.current?.focus({ preventScroll: true })
     revealTableSelection(selection)
   }, [focusRequest])
 
-  // Any selection change (click, keyboard nav, inspector-driven) should
-  // reveal the selected cell so its full column stays visible under the
-  // sticky Key column.
+  // 鼠标选择保持点击位置稳定；仅键盘或外部定位负责滚动，拖选由边缘滚动负责。
   const selectionKeyForReveal = selection
     ? `${selection.filePath}::${coordinateId(selection.coordinate)}::${selection.kind === 'value' ? JSON.stringify(selection.fieldPath) : '__record__'}`
     : null
   useEffect(() => {
     if (!selection) return
+    const field = selection.kind === 'value' ? selectedTopLevelField(selection.fieldPath) : 'id'
+    if (field && pointerCellKeyRef.current === tableCellKey(selection.coordinate, field)) return
     revealTableSelection(selection)
   }, [selectionKeyForReveal])
 
@@ -925,12 +944,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     }
     onFirstRecordFocusConsumed?.(firstRecordFocusRequest)
   }, [firstRecordFocusRequest])
-
-  useEffect(() => {
-    if (selection) revealTableSelection(selection)
-  // Row/column identity and selection are the only inputs that can move the target.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, displayItems.length, allFieldNames.join('\u001f')])
 
   const contextMenuCanAddToGroup = contextMenu !== null && (
     ((recordGroups?.length ?? 0) > 0 && !!onDropRecordIntoGroup)
@@ -978,6 +991,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           }}
           tabIndex={0}
           onPointerDown={event => {
+            pointerSelectionRef.current = true
+            cancelAnimationFrame(revealFrameRef.current)
             cellRangeDrag.onPointerDown(event)
             recordPointerDrag.onPointerDown(event)
           }}
@@ -986,12 +1001,32 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             if (!event.isPropagationStopped()) recordPointerDrag.onClickCapture(event)
           }}
           onFocus={e => {
-            if (e.target !== e.currentTarget || selection || visibleRows.length === 0) return
+            if (e.target !== e.currentTarget || pointerSelectionRef.current || selection || visibleRows.length === 0) return
             onSelectRecord?.(visibleRows[0].original.coordinate, 'replace', visibleCoordinates)
           }}
           onKeyDown={async e => {
+            pointerSelectionRef.current = false
+            pointerCellKeyRef.current = null
             if (isNativeEditorTarget(e.target, false)) return
             if (!selection || selection.filePath !== data.file_path) return
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+
+            if (selection.kind === 'value' && !e.ctrlKey && !e.metaKey && !e.altKey
+              && (e.key === 'Enter' || e.key === 'F2' || e.key.length === 1)) {
+              const range = valueSelectionRange(selection, visibleCoordinates, allFieldNames)
+              const field = selectedTopLevelField(selection.fieldPath)
+              if (field && range?.rowStart === range?.rowEnd && range?.columnStart === range?.columnEnd) {
+                const input = tableScrollRef.current?.querySelector<HTMLTextAreaElement>(
+                  `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] .cell-string-textarea`,
+                )
+                if (input) {
+                  e.preventDefault()
+                  input.focus({ preventScroll: true })
+                  if (e.key.length === 1) replaceInputText(input, e.key)
+                  return
+                }
+              }
+            }
 
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && visibleCoordinates.length > 0) {
               e.preventDefault()
@@ -1466,6 +1501,18 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           data-record-label={!fieldPath ? recordId(row.original) : undefined}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
+                          onClick={event => {
+                            if (!fieldPath || event.shiftKey || event.ctrlKey || event.metaKey) return
+                            const target = event.target as HTMLElement
+                            if (target.closest('button, a, input, textarea, select, [contenteditable="true"]')) return
+                            // 点击单元格留白也直接输入；拖选结束的 click 已由拖选控制器拦截。
+                            event.currentTarget.querySelector<HTMLTextAreaElement>('.cell-string-textarea')?.focus({ preventScroll: true })
+                          }}
+                          onFocusCapture={e => {
+                            if (fieldPath && !selected && isNativeEditorTarget(e.target, false)) {
+                              onSelectValue?.(row.original.coordinate, fieldPath, 'replace')
+                            }
+                          }}
                           onMouseDown={e => {
                             if (e.button !== 0) return
                             // Runs before native selects open, so the inspector
@@ -1474,9 +1521,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             const containsEditor = e.currentTarget.contains(document.activeElement)
                             if (!isNativeEditorTarget(e.target, false)) {
                               if (containsEditor) e.preventDefault()
-                              else tableScrollRef.current?.focus({ preventScroll: true })
+                              else {
+                                // 聚焦滚动容器不能再触发默认首行选择，覆盖 pointerdown 的目标。
+                                e.preventDefault()
+                                tableScrollRef.current?.focus({ preventScroll: true })
+                              }
                             }
                             if (!fieldPath && !containsEditor) {
+                              pointerCellKeyRef.current = tableCellKey(row.original.coordinate, 'id')
                               const mode: RecordSelectionMode = e.shiftKey
                                 ? 'range'
                                 : (e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
@@ -1484,7 +1536,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             }
                           }}
                         >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          <TableCellContent cell={cell} />
                         </td>
                       )
                     })}
@@ -1668,6 +1720,12 @@ interface EditableCellProps {
   onEditingFinished?: () => void
 }
 
+// 列定义随快照刷新时渲染函数身份会变化；固定组件边界才能保留输入节点、光标和草稿。
+function TableCellContent({ cell }: { cell: Cell<RecordRow, unknown> }) {
+  const render = cell.column.columnDef.cell
+  return typeof render === 'function' ? render(cell.getContext()) : render ?? null
+}
+
 function EditableCell(props: EditableCellProps) {
   const { filePath, coordinate, fieldPath, value, declaredType } = props
   const identity = currentPluginIdentity()
@@ -1717,6 +1775,10 @@ function EditableCellBuiltIn({
     requestAnimationFrame(() => onEditingFinished?.())
   }
 
+  if (canEdit && (shownValue.kind === 'string' || shownValue.kind === 'formatted_string')) {
+    return <StringValueInput value={shownValue} onCommit={commitValue!} />
+  }
+
   // Bool: checkbox, always visible
   if (canEdit && shownValue.kind === 'bool') {
     return (
@@ -1764,12 +1826,12 @@ function EditableCellBuiltIn({
 
 
 
-  // String / int / float: click-to-edit
+  // 数值保留点击编辑；字符串始终直接输入。
   if (editing && canEdit) {
     return (
       <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CellTextEditor
-          value={shownValue as FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }}
+          value={shownValue as FieldValue & { kind: 'int' | 'float' }}
           onCommit={next => commitValue!(next)}
           onCancel={() => setEditing(false)}
         />
@@ -1811,38 +1873,15 @@ function selectionOwnsRow(
 function CellTextEditor({
   value, onCommit, onCancel,
 }: {
-  value: FieldValue & { kind: 'int' | 'float' | 'string' | 'formatted_string' }
+  value: FieldValue & { kind: 'int' | 'float' }
   onCommit: (next: FieldValue) => void
   onCancel: () => void
 }) {
-  const [text, setText] = useState(
-    value.kind === 'int' || value.kind === 'float'
-      ? String(value.value)
-      : plainFieldValueText(value)
-  )
+  const [text, setText] = useState(String(value.value))
   function commit() {
     const next = parseFieldValueText(value, text)
     if (next) onCommit(next)
     else setText(plainFieldValueText(value))
-  }
-  if (value.kind === 'string' || value.kind === 'formatted_string') {
-    return (
-      <RichTextInput
-        className="dc-input dc-input-flat"
-        value={text}
-        rows={1}
-        autoFocus
-        onValueChange={setText}
-        onBlur={() => { commit(); onCancel() }}
-        onKeyDown={event => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            commit()
-          }
-          if (event.key === 'Escape') setText(plainFieldValueText(value))
-        }}
-      />
-    )
   }
   return (
     <input

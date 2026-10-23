@@ -95,14 +95,37 @@ export function applyRichTextCompletion(
 type RichTextInputProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> & {
   value: string
   onValueChange: (value: string) => void
+  /** 单元格始终保留同一个输入节点；仅聚焦时按正文高度展开。 */
+  cell?: boolean
 }
 
-export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFocus, ...props }: RichTextInputProps) {
+export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFocus, onBlur, cell = false, ...props }: RichTextInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [focused, setFocused] = useState(false)
   const [cursor, setCursor] = useState(0)
   const [active, setActive] = useState(0)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
-  const suggestions = useMemo(() => richTextSuggestions(value, cursor), [value, cursor])
+  const suggestions = useMemo(() => focused && !props.readOnly ? richTextSuggestions(value, cursor) : [], [value, cursor, focused, props.readOnly])
+
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!cell || !input) return
+    const resize = () => {
+      input.style.height = '0px'
+      input.style.height = focused ? `${input.scrollHeight}px` : ''
+    }
+    resize()
+    // 只监听宽度，避免自身高度变化触发 ResizeObserver 循环。
+    let width = input.getBoundingClientRect().width
+    const observer = new ResizeObserver(() => {
+      const nextWidth = input.getBoundingClientRect().width
+      if (nextWidth === width) return
+      width = nextWidth
+      resize()
+    })
+    observer.observe(input)
+    return () => observer.disconnect()
+  }, [cell, focused, value])
 
   useLayoutEffect(() => {
     if (suggestions.length === 0) return
@@ -143,6 +166,8 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // 中文输入法确认候选词不能触发补全或提交。
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
     if (suggestions.length > 0) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
@@ -165,7 +190,8 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
   }
 
   return (
-    <span className="rich-text-input">
+    <span className={`rich-text-input${cell ? ' cell-string-input' : ''}${focused ? ' focused' : ''}`}>
+      {cell && <span className="cell-string-preview" aria-hidden>{value || '\u00a0'}</span>}
       <textarea
         {...props}
         ref={inputRef}
@@ -175,8 +201,13 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
           updateCursor(event.currentTarget)
         }}
         onFocus={event => {
+          setFocused(true)
           updateCursor(event.currentTarget)
           onFocus?.(event)
+        }}
+        onBlur={event => {
+          setFocused(false)
+          onBlur?.(event)
         }}
         onSelect={event => {
           updateCursor(event.currentTarget)

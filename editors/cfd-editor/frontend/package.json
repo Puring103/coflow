@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:browser": "node --test tests/browser/*.browser.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -36,6 +37,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
+    "playwright": "^1.64.1",
     "typescript": "^5",
     "vitest": "^4.1.0"
   }
