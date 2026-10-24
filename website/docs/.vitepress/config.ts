@@ -8,7 +8,7 @@ const projectUrl = 'https://github.com/Puring103/coflow'
 
 export default withMermaid(defineConfig({
   title: 'Coflow',
-  description: 'A typed, validated, AI-friendly game configuration workflow.',
+  description: 'AI 原生的数据配置工作流。人与AI共同配置；同一份数据，多种视图，自由切换。',
   base: pagesBase,
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${pagesBase}logo.svg` }]
@@ -28,7 +28,7 @@ export default withMermaid(defineConfig({
   },
   lastUpdated: true,
   themeConfig: {
-    logo: { src: '/logo.svg', alt: 'Coflow' },
+    logo: { light: '/logo.svg', dark: '/logo-dark.svg', alt: 'Coflow' },
     search: {
       provider: 'local'
     },

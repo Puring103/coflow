@@ -1,0 +1,16 @@
+enum Element { Arcane, Fire, Ice }
+table Skill {
+  @localized name: string;
+  element: Element = Element::Arcane;
+  tier: int;
+  power: int = 0;
+  cooldown: float = 0.0;
+  prerequisites: [&Skill] = [];
+  @dimension("platform") asset_bundle: string = "skills_pc.bundle";
+  check Progression {
+    power >= 0: "技能威力不能为负";
+    all required in prerequisites {
+      tier > required.tier: "技能阶级必须高于前置技能";
+    }
+  }
+}

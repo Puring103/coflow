@@ -9,6 +9,8 @@ const bodyMatch = prototypeDocument.match(/<body>([\s\S]*?)<script src="app\.js"
 
 const prototypeBody = (bodyMatch?.[1] ?? '')
   .replaceAll('assets/coflow-mark.svg', withBase('/logo.svg'))
+  .replaceAll('assets/skill-tree-light.png', withBase('/assets/skill-tree-light.png'))
+  .replaceAll('assets/skill-tree-dark.png', withBase('/assets/skill-tree-dark.png'))
   .replaceAll('https://puring103.github.io/coflow/docs/guide/install.html', withBase('/docs/guide/install'))
   .replaceAll('https://puring103.github.io/coflow/docs/', withBase('/docs/'))
 
@@ -104,27 +106,74 @@ onMounted(async () => {
   const updateHeader = () => header?.classList.toggle('is-scrolled', scrollY > 12)
   listen(window, 'scroll', updateHeader, { passive: true })
 
-  root.querySelectorAll<HTMLElement>('[data-cardstack]').forEach((stack) => {
+  root.querySelectorAll<HTMLElement>('[data-cardstack]').forEach((stack, stackIndex) => {
     const tabs = [...stack.querySelectorAll<HTMLButtonElement>('.stack-tabs button[data-view]')]
     const cards = [...stack.querySelectorAll<HTMLElement>('.stack-card')]
     const order = cards.map((card) => card.dataset.card)
     const activate = (view?: string) => {
       const front = order.indexOf(view)
       if (front < 0) return
-      tabs.forEach((tab) => tab.classList.toggle('is-active', tab.dataset.view === view))
+      // 视觉叠放保留相邻卡片，无障碍阅读只进入当前视图。
+      tabs.forEach((tab) => {
+        const selected = tab.dataset.view === view
+        tab.classList.toggle('is-active', selected)
+        tab.setAttribute('aria-selected', String(selected))
+        tab.tabIndex = selected ? 0 : -1
+      })
       cards.forEach((card) => {
         let offset = order.indexOf(card.dataset.card) - front
         if (offset > order.length / 2) offset -= order.length
         if (offset < -order.length / 2) offset += order.length
         card.dataset.offset = String(offset)
+        card.setAttribute('aria-hidden', String(offset !== 0))
       })
     }
     cards.forEach((card) => listen(card, 'click', () => card.dataset.offset !== '0' && activate(card.dataset.card)))
     tabs.forEach((tab) => {
+      const panel = cards.find((card) => card.dataset.card === tab.dataset.view)
+      tab.id = `view-tab-${stackIndex}-${tab.dataset.view}`
+      tab.setAttribute('role', 'tab')
+      if (panel) {
+        panel.id = `view-panel-${stackIndex}-${tab.dataset.view}`
+        panel.setAttribute('role', 'tabpanel')
+        panel.setAttribute('aria-labelledby', tab.id)
+        tab.setAttribute('aria-controls', panel.id)
+      }
       listen(tab, 'click', () => activate(tab.dataset.view))
       listen(tab, 'focus', () => activate(tab.dataset.view))
+      listen(tab, 'keydown', ((event: KeyboardEvent) => {
+        const index = tabs.indexOf(tab)
+        const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+          : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+        if (next < 0) return
+        event.preventDefault()
+        tabs[next].focus()
+      }) as EventListener)
     })
     activate((tabs.find((tab) => tab.classList.contains('is-active')) ?? tabs[0])?.dataset.view)
+  })
+
+  // 官网使用可安装示例插件的同一挂载函数，输入变化走插件 update 生命周期。
+  const formulaInput = root.querySelector<HTMLInputElement>('[data-chemical-input]')!
+  const formulaOutput = root.querySelector<HTMLElement>('[data-chemical-output]')!
+  const formulaController = new AbortController()
+  cleanups.push(() => formulaController.abort())
+  const formulaModule = await import(/* @vite-ignore */ withBase('/examples/chemistry/plugin.js'))
+  if (formulaController.signal.aborted) return
+  const formulaContext = () => ({ value: { kind: 'object', value: { actual_type: 'Formula', fields: {
+    expression: { kind: 'string', value: formulaInput.value },
+  } } } })
+  const formulaView = formulaModule.mountFormula(formulaContext(), {
+    element: formulaOutput, signal: formulaController.signal,
+    replace: (content: Node) => formulaOutput.replaceChildren(content),
+  })
+  listen(formulaInput, 'input', () => formulaView.update(formulaContext()))
+  root.querySelectorAll<HTMLButtonElement>('[data-formula]').forEach(button => {
+    listen(button, 'click', () => {
+      formulaInput.value = button.dataset.formula!
+      formulaView.update(formulaContext())
+    })
   })
 
   const stageList = root.querySelector<HTMLElement>('.stage-list')
