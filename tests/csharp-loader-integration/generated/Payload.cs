@@ -7,6 +7,6 @@ public partial class Payload
 {
     internal Payload() { }
     public bool enabled { get; internal set; } = default!;
-    public long score { get; internal set; } = default!;
+    public int score { get; internal set; } = default!;
 }
 }

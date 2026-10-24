@@ -47,12 +47,14 @@ var japaneseName = sword.For("language", "ja").name;
 | table / singleton | partial class |
 | data | partial class |
 | @struct sealed data | partial struct |
-| int / float / bool / string | long / double / bool / string |
-| enum | 以 long 为基础的 enum |
+| int / long / float / double / bool / string | 同名 C# 类型 |
+| enum | 默认以 int 为基础；`@int64` 使用 long |
 | `&TableName` | 对应业务对象引用 |
 | data 类型字段 | 内联业务值 |
 | `Option<T>` | `Coflow.Loader.Option<T>` |
 | `[T]` / `{K: V}` | `IReadOnlyList<T>` / `IReadOnlyDictionary<K, V>` |
+
+位枚举生成 `[Flags]`，并包含 `None = 0` 和随实际标志位计算的 `Everything`。`@int64` 可与 `@flag`、记录 ID 枚举配合使用。
 
 记录和单例具有 `string id`。维度字段保持原本的业务类型，直接访问就是基础值。C# 关键字名称在生成源码中自动使用 `@` 转义。
 

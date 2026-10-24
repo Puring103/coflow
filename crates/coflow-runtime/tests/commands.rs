@@ -123,7 +123,7 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
     let generated = fs::read_to_string(flag_dir.path().join("generated/csharp/ItemId.cs"))
         .expect("generated flag enum");
     assert!(generated.contains("[global::System.Flags]"));
-    assert!(generated.contains("first = 1L"));
+    assert!(generated.contains("first = 1"));
 }
 
 #[test]
@@ -183,8 +183,16 @@ fn codegen_publishes_to_an_external_relative_directory() {
     let root = parent.path().join("project");
     fs::create_dir(&root).expect("root");
     fs::write(root.join("schema.cft"), "table Item { name: string; }\n").expect("schema");
-    fs::write(root.join("data.cfd"), "Item { sword { name: \"Sword\" } }\n").expect("data");
-    fs::write(root.join("coflow.yaml"), "schema: schema.cft\ndata: data.cfd\ncodegen: [{language: csharp, dir: ../generated}]\n").expect("config");
+    fs::write(
+        root.join("data.cfd"),
+        "Item { sword { name: \"Sword\" } }\n",
+    )
+    .expect("data");
+    fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen: [{language: csharp, dir: ../generated}]\n",
+    )
+    .expect("config");
     let opened = Project::open(Some(&root.join("coflow.yaml"))).expect("open");
     coflow_runtime::commands::generate_project_code(&opened).expect("external codegen");
     assert!(parent.path().join("generated/Item.cs").is_file());
@@ -511,4 +519,41 @@ fn editor_rules_do_not_execute_in_data_sessions_or_block_cli_generation() {
         .expect("generated loader");
     assert!(!root.contains("editor business issue"));
     assert!(!root.contains("CftSchema"));
+}
+
+#[test]
+fn id_enum_width_and_everything_follow_active_records() {
+    let dir = write_id_as_enum_project(true, "a: Item { name: \"A\" } b: Item { name: \"B\" }");
+    let config = dir.path().join("coflow.yaml");
+    let generate = || {
+        coflow_runtime::commands::generate_project_code(
+            &Project::open(Some(&config)).expect("project"),
+        )
+    };
+    generate().expect("generate");
+    let output = dir.path().join("generated/csharp/ItemId.cs");
+    assert!(fs::read_to_string(&output)
+        .expect("source")
+        .contains("Everything = 3,"));
+    assert!(!active_enum_values(&dir).contains_key("Everything"));
+    fs::write(dir.path().join("data/items.cfd"), "b: Item { name: \"B\" }").expect("remove");
+    generate().expect("regenerate");
+    assert!(fs::read_to_string(&output)
+        .expect("source")
+        .contains("Everything = 2,"));
+    fs::write(
+        dir.path().join("coflow.enum.lock.json"),
+        r#"{"ItemId":{"b":2147483648}}"#,
+    )
+    .expect("wide stable value");
+    assert!(generate().is_err());
+    fs::write(
+        dir.path().join("schema.cft"),
+        "@flag @int64 enum ItemId {} @idAsEnum(ItemId) table Item { name: string; }",
+    )
+    .expect("int64");
+    generate().expect("wide enum");
+    let source = fs::read_to_string(&output).expect("source");
+    assert!(source.contains("enum ItemId : long"));
+    assert!(source.contains("Everything = 2147483648L,"));
 }

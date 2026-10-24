@@ -38,12 +38,12 @@ public sealed class LoadingTests
     private static readonly CfdType[] Types =
     {
         new CfdType<Stats>("Stats", CfdTypeKind.Data, new CfdField[] {
-            new CfdField<long>("hp", CfdValues.Int, CfdDefaults.Int(10)),
+            new CfdField<long>("hp", CfdValues.Long, CfdDefaults.Int(10)),
             new CfdField<string>("label", CfdValues.String, CfdDefaults.Template("f\"HP {self.hp}\"")),
         }, create: null, fill: null, construct:
         reader => new Stats(reader.Get<long>("hp"), reader.Get<string>("label"))),
         new CfdType<Item>("Item", CfdTypeKind.Table, new CfdField[] {
-            new CfdField<long>("price", CfdValues.Dimension("balance", CfdValues.Int), CfdDefaults.Int(5)),
+            new CfdField<long>("price", CfdValues.Dimension("balance", CfdValues.Long), CfdDefaults.Int(5)),
             new CfdField<Permission>("permissions", CfdValues.Enum("Permission", new Dictionary<string, Permission> {
                 ["Read"] = Permission.Read, ["Write"] = Permission.Write, ["High"] = Permission.High,
             }, bits => (Permission)(uint)bits), CfdDefaults.Enum("Permission", 1)),

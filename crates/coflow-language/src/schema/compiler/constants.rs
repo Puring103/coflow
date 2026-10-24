@@ -71,7 +71,7 @@ impl ValueResolver<'_, '_> {
         expected: Option<&CftValueType>,
         visiting: &mut Vec<String>,
     ) -> Option<(CftValueType, CftConstValue)> {
-        let resolved = match &expression.kind {
+        let mut resolved = match &expression.kind {
             DefaultExprKind::Int(value) => {
                 if let Some(CftValueType::Enum(enum_name)) = expected {
                     if self
@@ -81,13 +81,15 @@ impl ValueResolver<'_, '_> {
                     {
                         self.resolve_flag_mask(module, expression, enum_name, *value)?
                     } else {
-                        (CftValueType::Int, CftConstValue::Int(*value))
+                        self.resolve_integer_literal(module, expression, *value, expected)?
                     }
                 } else {
-                    (CftValueType::Int, CftConstValue::Int(*value))
+                    self.resolve_integer_literal(module, expression, *value, expected)?
                 }
             }
-            DefaultExprKind::Float(value) => (CftValueType::Float, CftConstValue::Float(*value)),
+            DefaultExprKind::Float(value) => {
+                self.resolve_float_literal(module, expression, *value, expected)?
+            }
             DefaultExprKind::Bool(value) => (CftValueType::Bool, CftConstValue::Bool(*value)),
             DefaultExprKind::String(value) => {
                 (CftValueType::String, CftConstValue::String(value.clone()))
@@ -236,11 +238,111 @@ impl ValueResolver<'_, '_> {
                 return self.const_type_mismatch(module, expression, expected, &resolved.0);
             }
         }
+        if let Some(expected) = expected {
+            // 常量引用提升后保留目标类型，后续引用不能再按原始数值隐式缩窄。
+            if resolved.0.numeric_rank().is_some() && expected.numeric_rank().is_some() {
+                resolved = self.convert_numeric_constant(module, expression, resolved, expected)?;
+            }
+        }
         Some(resolved)
     }
 
+    fn resolve_integer_literal(
+        &mut self,
+        module: &ModuleId,
+        expression: &DefaultExpr,
+        value: i64,
+        expected: Option<&CftValueType>,
+    ) -> Option<(CftValueType, CftConstValue)> {
+        let inferred = if i32::try_from(value).is_ok() {
+            CftValueType::Int
+        } else {
+            CftValueType::Long
+        };
+        let target = expected
+            .filter(|ty| ty.numeric_rank().is_some())
+            .unwrap_or(&inferred);
+        self.convert_numeric_constant(
+            module,
+            expression,
+            (inferred.clone(), CftConstValue::Long(value)),
+            target,
+        )
+    }
+
+    fn resolve_float_literal(
+        &mut self,
+        module: &ModuleId,
+        expression: &DefaultExpr,
+        value: f64,
+        expected: Option<&CftValueType>,
+    ) -> Option<(CftValueType, CftConstValue)> {
+        let target = match expected {
+            Some(CftValueType::Float) => CftValueType::Float,
+            _ => CftValueType::Double,
+        };
+        self.convert_numeric_constant(
+            module,
+            expression,
+            (CftValueType::Double, CftConstValue::Double(value)),
+            &target,
+        )
+    }
+
+    fn convert_numeric_constant(
+        &mut self,
+        module: &ModuleId,
+        expression: &DefaultExpr,
+        actual: (CftValueType, CftConstValue),
+        target: &CftValueType,
+    ) -> Option<(CftValueType, CftConstValue)> {
+        let value = match (target, &actual.1) {
+            (CftValueType::Int, CftConstValue::Int(value) | CftConstValue::Long(value))
+                if i32::try_from(*value).is_ok() =>
+            {
+                Some(CftConstValue::Int(*value))
+            }
+            (CftValueType::Long, CftConstValue::Int(value) | CftConstValue::Long(value)) => {
+                Some(CftConstValue::Long(*value))
+            }
+            (CftValueType::Float | CftValueType::Double, value) => {
+                let number = match value {
+                    CftConstValue::Int(v) | CftConstValue::Long(v) => *v as f64,
+                    CftConstValue::Float(v) | CftConstValue::Double(v) => *v,
+                    _ => return None,
+                };
+                let number = if *target == CftValueType::Float {
+                    f64::from(number as f32)
+                } else {
+                    number
+                };
+                number.is_finite().then(|| {
+                    if *target == CftValueType::Float {
+                        CftConstValue::Float(number)
+                    } else {
+                        CftConstValue::Double(number)
+                    }
+                })
+            }
+            _ => None,
+        };
+        if let Some(value) = value {
+            Some((target.clone(), value))
+        } else {
+            self.push_diag(
+                CftErrorCode::InvalidConstValue,
+                module,
+                expression.span,
+                format!("numeric value is outside the range of {target}"),
+            );
+            None
+        }
+    }
+
     fn default_type_assignable(&self, actual: &CftValueType, expected: &CftValueType) -> bool {
-        if actual == expected {
+        if actual == expected
+            || matches!((actual.numeric_rank(), expected.numeric_rank()), (Some(a), Some(b)) if a <= b)
+        {
             return true;
         }
         match (actual, expected) {
@@ -439,7 +541,10 @@ impl ValueResolver<'_, '_> {
                 self.resolve_static_value(module, value, value_type.as_ref(), visiting)?;
             if !matches!(
                 resolved_key_type,
-                CftValueType::Int | CftValueType::String | CftValueType::Enum(_)
+                CftValueType::Int
+                    | CftValueType::Long
+                    | CftValueType::String
+                    | CftValueType::Enum(_)
             ) {
                 self.push_diag(
                     CftErrorCode::InvalidDictKeyType,

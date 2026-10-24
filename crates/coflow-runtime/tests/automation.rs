@@ -958,7 +958,7 @@ fn filter_type_checks_cover_empty_data_and_both_boolean_branches() {
 #[test]
 fn filter_dictionary_keys_keep_integer_precision_and_enum_identity() {
     let root = fixture();
-    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ntable Item { weights: {int: string}; palette: {Color: int}; caption: string = f\"Hello\"; }\n").unwrap();
+    fs::write(root.path().join("schema.cft"), "enum Color { Red, Blue }\ntable Item { weights: {long: string}; palette: {Color: int}; caption: string = f\"Hello\"; }\n").unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item { weights: {9007199254740993: \"big\"}, palette: {Color::Red: 1} }\nb: Item { weights: {-3: \"small\"}, palette: {Color::Blue: 1} }\n").unwrap();
     for (condition, expected) in [
         ("contains(weights, 9007199254740993)", vec!["a"]),
@@ -1203,7 +1203,10 @@ fn cursor_rejects_changed_data_and_default_check_skips_business_rules() {
     );
     let failure = execute("data.list", &project, &snapshot, &args, None, root.path()).unwrap_err();
     assert_eq!(failure.status, Status::Conflict);
-    assert_eq!(failure.result.as_ref().unwrap()["precondition"]["kind"], "cursor_revision");
+    assert_eq!(
+        failure.result.as_ref().unwrap()["precondition"]["kind"],
+        "cursor_revision"
+    );
     assert_eq!(run(root.path(), "check", &[], None).status, Status::Success);
     assert_eq!(
         run(root.path(), "check", &[("rules", "true")], None).status,
@@ -1279,7 +1282,7 @@ table Item {
     next: Option<&Item> = None;
     quality: Quality;
     details: Details;
-    numbers: [int];
+    numbers: [long];
     labels: {string: int};
     indexed: {int: int};
     by_quality: {Quality: int};
@@ -1890,7 +1893,7 @@ fn sorting_orders_unreachable_none_and_large_signed_values_without_precision_los
     let root = fixture();
     fs::write(
         root.path().join("schema.cft"),
-        "data Details { value: Option<int> = None; }\ntable Item { details: Option<Details> = None; }\n",
+        "data Details { value: Option<long> = None; }\ntable Item { details: Option<Details> = None; }\n",
     )
     .unwrap();
     fs::write(root.path().join("data/items.cfd"), "z: Item { details: { value: 9223372036854775807 } }\ny: Item { details: { value: 9223372036854775806 } }\nx: Item { details: { value: None } }\nw: Item { details: None }\n").unwrap();
@@ -2067,4 +2070,70 @@ fn option_sources_distinguish_explicit_none_declared_defaults_and_unreachable_pa
         false
     );
     assert!(variant.result["origins"]["details.value"]["location"].is_null());
+}
+
+#[test]
+fn numeric_mutations_round_float_and_reject_out_of_range_int_without_writing() {
+    let root = fixture();
+    fs::write(
+        root.path().join("schema.cft"),
+        "table Item { value: int = 0; precise: double = 0.0; rounded: float = 0.0; }",
+    )
+    .unwrap();
+    fs::write(root.path().join("data/items.cfd"), "a: Item {}\n").unwrap();
+    let operations: Vec<_> = ["precise", "rounded"]
+        .into_iter()
+        .map(|field| {
+            json!({
+                "op":"set_field", "record":{"type":"Item","id":"a"},
+                "path":[{"kind":"field","name":field}],
+                "value":{"kind":"model","value":{"kind":"float","value":0.1}}
+            })
+        })
+        .collect();
+    let response = run(
+        root.path(),
+        "apply",
+        &[],
+        Some(json!({"protocol_version":1,"kind":"operations","ops":operations})),
+    );
+    assert_eq!(response.status, Status::Success, "{response:?}");
+    let read = run(
+        root.path(),
+        "data.get",
+        &[("type", "Item"), ("id", "a")],
+        None,
+    );
+    assert_eq!(
+        read.result["fields"]["rounded"]["value"],
+        json!(f64::from(0.1_f32))
+    );
+    assert_eq!(read.result["fields"]["precise"]["value"], json!(0.1_f64));
+    let original = fs::read(root.path().join("data/items.cfd")).unwrap();
+    let project = Project::open_schema_only(Some(root.path())).unwrap();
+    let snapshot = InputSnapshot::capture(&project).unwrap();
+    let response = execute(
+        "apply",
+        &project,
+        &snapshot,
+        &Arguments(Default::default()),
+        Some(
+            &json!({
+                "protocol_version":1,"kind":"operations","ops":[{
+                    "op":"set_field","record":{"type":"Item","id":"a"},
+                    "path":[{"kind":"field","name":"value"}],
+                    "value":{"kind":"model","value":{"kind":"int","value":"2147483648"}}
+                }]
+            })
+            .to_string(),
+        ),
+        root.path(),
+    );
+    if let Ok(response) = response {
+        assert_ne!(response.status, Status::Success);
+    }
+    assert_eq!(
+        fs::read(root.path().join("data/items.cfd")).unwrap(),
+        original
+    );
 }

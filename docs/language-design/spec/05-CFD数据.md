@@ -39,7 +39,7 @@ entry: Entry {
 
 省略字段只按显式声明的 schema 默认值物化；无默认值的 Option 字段同样必填。必填字段缺失属于数据诊断，编辑器可以保留记录及明确的 missing 状态。类型不一致的值不伪装成缺失字段。
 
-数字按 int64 或有限 binary64 验证；enum 使用成员名或 `Enum::Member`。flag 组合使用同类型成员的 `&`、`^`、`|` 和括号。常量通过项目全局名称解析。
+数字按声明的 int、long、float、double 范围验证，float 按 binary32 精度舍入；enum 使用成员名或 `Enum::Member`。flag 组合使用同类型成员的 `&`、`^`、`|` 和括号。常量通过项目全局名称解析。
 
 ## 引用与 Option
 

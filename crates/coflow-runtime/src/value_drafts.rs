@@ -17,7 +17,11 @@ pub(crate) fn convert(
     Ok(match value {
         D::Bool(v) => CfdValue::Bool(v),
         D::Int(v) => CfdValue::Int(v),
-        D::Float(v) => CfdValue::Float(v),
+        D::Float(v) => CfdValue::Float(if *expected == CftValueType::Float {
+            f64::from(v as f32)
+        } else {
+            v
+        }),
         D::String(v) => CfdValue::String(v),
         D::FormattedString(v) => CfdValue::FormattedString(crate::CfdFormattedString {
             source: v.source,

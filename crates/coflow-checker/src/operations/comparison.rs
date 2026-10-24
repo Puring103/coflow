@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
 
 use coflow_diagnostics::CfdErrorCode;
-use coflow_language::cft::{CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp};
+use coflow_language::cft::{
+    CftSchema, CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp, CftValueType,
+};
 
 use super::builtins;
 use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
@@ -117,6 +119,18 @@ pub(crate) fn compare_order(
     rhs: &EvalValue<'_>,
     location: Option<ValueLocation>,
 ) -> OpsResult<Ordering> {
+    if let Some(ty @ (CftValueType::Float | CftValueType::Double)) = lhs
+        .numeric_type()
+        .zip(rhs.numeric_type())
+        .and_then(|(a, b)| a.promote_numeric(&b))
+    {
+        return lhs
+            .numeric_float(&ty)
+            .unwrap()
+            .partial_cmp(&rhs.numeric_float(&ty).unwrap())
+            .ok_or_else(|| OpsError::eval_type(location, "numeric comparison failed"));
+    }
+
     if matches!(lhs.scalar(), Some(ScalarValue::Null))
         || matches!(rhs.scalar(), Some(ScalarValue::Null))
     {
@@ -160,7 +174,7 @@ pub(crate) fn compare_order(
     }
 }
 
-pub(crate) fn unary_op<'model>(
+fn unary_op_raw<'model>(
     schema: &CftSchema,
     op: CftSchemaUnaryOp,
     value: LocatedEvalValue<'model>,
@@ -176,7 +190,7 @@ pub(crate) fn unary_op<'model>(
             format!("整数取负溢出: -({value})"),
         ),
         (CftSchemaUnaryOp::Neg, Some(ScalarValue::Float(value))) => {
-            Ok(LocatedEvalValue::new(EvalValue::float(-value), location))
+            Ok(LocatedEvalValue::new(EvalValue::double(-value), location))
         }
         (CftSchemaUnaryOp::BitNot, Some(ScalarValue::Int(value))) => {
             Ok(LocatedEvalValue::new(EvalValue::int(!value), location))
@@ -201,7 +215,7 @@ pub(crate) fn unary_op<'model>(
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn eager_bin_op<'model>(
+fn eager_bin_op_raw<'model>(
     schema: &CftSchema,
     op: CftSchemaBinOp,
     lhs: &EvalValue<'model>,
@@ -287,20 +301,20 @@ pub(crate) fn eager_bin_op<'model>(
                 format!("整数右移失败: {lhs} >> {rhs}"),
             )
         }
-        (CftSchemaBinOp::Add, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => {
-            Ok(LocatedEvalValue::new(EvalValue::float(lhs + rhs), location))
-        }
-        (CftSchemaBinOp::Sub, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => {
-            Ok(LocatedEvalValue::new(EvalValue::float(lhs - rhs), location))
-        }
-        (CftSchemaBinOp::Mul, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => {
-            Ok(LocatedEvalValue::new(EvalValue::float(lhs * rhs), location))
-        }
-        (CftSchemaBinOp::Div, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => {
-            Ok(LocatedEvalValue::new(EvalValue::float(lhs / rhs), location))
-        }
+        (CftSchemaBinOp::Add, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => Ok(
+            LocatedEvalValue::new(EvalValue::double(lhs + rhs), location),
+        ),
+        (CftSchemaBinOp::Sub, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => Ok(
+            LocatedEvalValue::new(EvalValue::double(lhs - rhs), location),
+        ),
+        (CftSchemaBinOp::Mul, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => Ok(
+            LocatedEvalValue::new(EvalValue::double(lhs * rhs), location),
+        ),
+        (CftSchemaBinOp::Div, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => Ok(
+            LocatedEvalValue::new(EvalValue::double(lhs / rhs), location),
+        ),
         (CftSchemaBinOp::Pow, Some(ScalarValue::Float(lhs)), Some(ScalarValue::Float(rhs))) => Ok(
-            LocatedEvalValue::new(EvalValue::float(lhs.powf(rhs)), location),
+            LocatedEvalValue::new(EvalValue::double(lhs.powf(rhs)), location),
         ),
         (CftSchemaBinOp::BitOr, Some(ScalarValue::Int(lhs)), Some(ScalarValue::Int(rhs))) => {
             Ok(LocatedEvalValue::new(EvalValue::int(lhs | rhs), location))
@@ -348,4 +362,89 @@ pub(crate) fn eager_bin_op<'model>(
             ),
         )),
     }
+}
+
+// 先按共同类型转换操作数，再按结果类型检查范围并舍入，禁止运行时悄悄升级位宽。
+pub(crate) fn normalize_numeric<'a>(
+    mut result: LocatedEvalValue<'a>,
+    ty: Option<CftValueType>,
+) -> OpsResult<LocatedEvalValue<'a>> {
+    result.value = match (ty, result.value.scalar()) {
+        (Some(CftValueType::Int), Some(ScalarValue::Int(v))) => {
+            if i32::try_from(v).is_err() {
+                return Err(OpsError::eval_type(
+                    result.location,
+                    "32-bit integer overflow",
+                ));
+            }
+            EvalValue::int(v)
+        }
+        (Some(CftValueType::Long), Some(ScalarValue::Int(v))) => EvalValue::long(v),
+        (Some(CftValueType::Float), Some(ScalarValue::Float(v))) => EvalValue::float(v),
+        (Some(CftValueType::Double), Some(ScalarValue::Float(v))) => EvalValue::double(v),
+        _ => return Ok(result),
+    };
+    Ok(result)
+}
+
+pub(crate) fn unary_op<'a>(
+    schema: &CftSchema,
+    op: CftSchemaUnaryOp,
+    value: LocatedEvalValue<'a>,
+) -> OpsResult<LocatedEvalValue<'a>> {
+    let ty = value.value.numeric_type();
+    normalize_numeric(unary_op_raw(schema, op, value)?, ty)
+}
+
+pub(crate) fn eager_bin_op<'a>(
+    schema: &CftSchema,
+    op: CftSchemaBinOp,
+    lhs: &EvalValue<'a>,
+    rhs: &EvalValue<'a>,
+    location: Option<ValueLocation>,
+) -> OpsResult<LocatedEvalValue<'a>> {
+    let ty = lhs
+        .numeric_type()
+        .zip(rhs.numeric_type())
+        .and_then(|(a, b)| a.promote_numeric(&b));
+    if ty == Some(CftValueType::Float) {
+        let left = lhs.numeric_float(&CftValueType::Float).unwrap() as f32;
+        let right = rhs.numeric_float(&CftValueType::Float).unwrap() as f32;
+        let result = match op {
+            CftSchemaBinOp::Add => left + right,
+            CftSchemaBinOp::Sub => left - right,
+            CftSchemaBinOp::Mul => left * right,
+            CftSchemaBinOp::Div => left / right,
+            CftSchemaBinOp::Pow => left.powf(right),
+            _ => {
+                return Err(OpsError::eval_type(
+                    location,
+                    "operator requires integer operands",
+                ))
+            }
+        };
+        return Ok(LocatedEvalValue::new(
+            EvalValue::float(f64::from(result)),
+            location,
+        ));
+    }
+    if let Some(ty @ CftValueType::Double) = &ty {
+        let left = EvalValue::double(lhs.numeric_float(ty).unwrap());
+        let right = EvalValue::double(rhs.numeric_float(ty).unwrap());
+        return normalize_numeric(
+            eager_bin_op_raw(schema, op, &left, &right, location)?,
+            Some(ty.clone()),
+        );
+    }
+    if ty == Some(CftValueType::Int) && matches!(op, CftSchemaBinOp::Shl | CftSchemaBinOp::Shr) {
+        if let Some(ScalarValue::Int(shift)) = rhs.scalar() {
+            if !(0..32).contains(&shift) {
+                return Err(OpsError::eval_type(
+                    location,
+                    "int shift count must be between 0 and 31",
+                ));
+            }
+        }
+    }
+    normalize_numeric(eager_bin_op_raw(schema, op, lhs, rhs, location)?, ty)
 }

@@ -4,9 +4,11 @@
 namespace Game.Config
 {
 [global::System.Flags]
-public enum ContractFlags : long
+public enum ContractFlags : int
 {
-    A = 1L,
-    B = 2L,
+    A = 1,
+    B = 2,
+    None = 0,
+    Everything = 3,
 }
 }

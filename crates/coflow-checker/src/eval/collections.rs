@@ -60,7 +60,7 @@ impl EvalItems {
                 Ok(Some(LocatedEvalValue::new(value, Some(location))))
             }
             Self::DictKeys(entries) => Ok(entries
-                .key_at(model, index)
+                .key_at(model, index, element_type)
                 .map(|key| LocatedEvalValue::new(key, projected_location))),
             Self::DictValues(entries) => {
                 entries.projected_value_at(index, element_type, projected_location, model, budget)
@@ -135,6 +135,7 @@ impl EvalEntries {
         &self,
         model: &'a CfdDataModel,
         index: usize,
+        key_type: Option<&CftValueType>,
     ) -> Option<EvalValue<'a>> {
         if let Some(dimension) = &self.dimension {
             return dimension
@@ -144,7 +145,7 @@ impl EvalEntries {
         }
         model_dict(model, &self.storage)
             .and_then(|items| items.get(index))
-            .map(|(key, _)| EvalValue::from_dict_key(key))
+            .map(|(key, _)| EvalValue::from_dict_key(key, key_type))
     }
 
     // 变体集合只保存选择坐标，读取时复用模型里的值，避免复制业务数据。
@@ -186,7 +187,7 @@ impl EvalEntries {
     pub(crate) fn located_entry_at<'a>(
         &self,
         index: usize,
-        _key_type: Option<&CftValueType>,
+        key_type: Option<&CftValueType>,
         value_type: Option<&CftValueType>,
         collection_location: Option<&ValueLocation>,
         model: &'a CfdDataModel,
@@ -196,7 +197,7 @@ impl EvalEntries {
             let Some(value) = self.dimension_value_at(index, value_type, model, budget)? else {
                 return Ok(None);
             };
-            let Some(key) = self.key_at(model, index) else {
+            let Some(key) = self.key_at(model, index, key_type) else {
                 return Ok(None);
             };
             return Ok(Some(LocatedEvalValue::new(
@@ -230,7 +231,7 @@ impl EvalEntries {
             budget,
             self.traversal,
         )?;
-        let key = EvalValue::from_dict_key(key);
+        let key = EvalValue::from_dict_key(key, key_type);
         let key_label = format_check_key_for_path(&key).unwrap_or_else(|| index.to_string());
         let location = collection_location.map(|location| location.dict_key(key_label));
         Ok(Some(LocatedEvalValue::new(

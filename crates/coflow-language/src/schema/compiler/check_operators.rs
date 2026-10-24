@@ -21,19 +21,27 @@ impl CheckTypeAnalyzer<'_, '_> {
                 InferredType::bool()
             }
             UnaryOp::Neg | UnaryOp::BitNot
-                if matches!(unwrapped.value_type(), Some(CftValueType::Int)) =>
+                if matches!(
+                    unwrapped.value_type(),
+                    Some(CftValueType::Int | CftValueType::Long)
+                ) =>
             {
-                InferredType::int()
+                ty.clone()
             }
-            UnaryOp::Neg if matches!(unwrapped.value_type(), Some(CftValueType::Float)) => {
-                InferredType::float()
+            UnaryOp::Neg
+                if matches!(
+                    unwrapped.value_type(),
+                    Some(CftValueType::Float | CftValueType::Double)
+                ) =>
+            {
+                ty.clone()
             }
             UnaryOp::BitNot if self.is_flag_enum(ty) => ty.clone(),
             UnaryOp::BitNot => {
                 self.diag(
                     CftErrorCode::BitwiseRequiresIntOrFlagEnum,
                     span,
-                    "bitwise not requires int or flag enum",
+                    "bitwise not requires int, long or flag enum",
                 );
                 InferredType::Unknown
             }
@@ -55,6 +63,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         rhs: &InferredType,
         span: Span,
     ) -> InferredType {
+        let promoted = lhs
+            .value_type()
+            .zip(rhs.value_type())
+            .and_then(|(a, b)| a.promote_numeric(b));
         match op {
             BinOp::Or | BinOp::And => {
                 if (!types_comparable(lhs, &InferredType::bool())
@@ -71,55 +83,43 @@ impl CheckTypeAnalyzer<'_, '_> {
                 InferredType::bool()
             }
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => {
-                if types_comparable(lhs, &InferredType::int())
-                    && types_comparable(rhs, &InferredType::int())
-                {
-                    InferredType::int()
-                } else if types_comparable(lhs, &InferredType::float())
-                    && types_comparable(rhs, &InferredType::float())
-                {
-                    InferredType::float()
+                if let Some(promoted) = promoted {
+                    InferredType::Value(promoted)
                 } else {
                     self.operator_mismatch(lhs, rhs, span);
                     InferredType::Unknown
                 }
             }
             BinOp::IntDiv | BinOp::Mod => {
-                if types_comparable(lhs, &InferredType::int())
-                    && types_comparable(rhs, &InferredType::int())
-                {
-                    InferredType::int()
+                if let Some(promoted) = promoted.filter(CftValueType::is_integer) {
+                    InferredType::Value(promoted)
                 } else {
                     self.operator_mismatch(lhs, rhs, span);
                     InferredType::Unknown
                 }
             }
             BinOp::Shl | BinOp::Shr => {
-                if types_comparable(lhs, &InferredType::int())
-                    && types_comparable(rhs, &InferredType::int())
-                {
-                    InferredType::int()
+                if let Some(promoted) = promoted.filter(CftValueType::is_integer) {
+                    InferredType::Value(promoted)
                 } else {
                     self.diag(
                         CftErrorCode::ShiftRequiresInt,
                         span,
-                        "shift operators require int operands",
+                        "shift operators require int or long operands",
                     );
                     InferredType::Unknown
                 }
             }
             BinOp::BitOr | BinOp::BitXor | BinOp::BitAnd => {
-                if types_comparable(lhs, &InferredType::int())
-                    && types_comparable(rhs, &InferredType::int())
-                {
-                    InferredType::int()
+                if let Some(promoted) = promoted.filter(CftValueType::is_integer) {
+                    InferredType::Value(promoted)
                 } else if types_comparable(lhs, rhs) && self.is_flag_enum(lhs) {
                     lhs.clone()
                 } else {
                     self.diag(
                         CftErrorCode::BitwiseRequiresIntOrFlagEnum,
                         span,
-                        "bitwise operators require int or the same flag enum",
+                        "bitwise operators require int, long or the same flag enum",
                     );
                     InferredType::Unknown
                 }

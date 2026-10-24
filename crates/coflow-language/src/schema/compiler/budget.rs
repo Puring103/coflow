@@ -157,6 +157,8 @@ fn walk_value_type(
                 pending.push((key, cursor));
             }
             TypeRefKind::Int
+            | TypeRefKind::Long
+            | TypeRefKind::Double
             | TypeRefKind::Float
             | TypeRefKind::Bool
             | TypeRefKind::String

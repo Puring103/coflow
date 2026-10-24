@@ -466,14 +466,7 @@ pub(super) fn rename_prepared_field_references(
         "MUTATION-PATH",
         "MUTATION",
     )?;
-    rename_pending_value_references(
-        schema,
-        target_actual_type,
-        &expected,
-        value,
-        old_id,
-        new_id,
-    );
+    rename_pending_value_references(schema, target_actual_type, &expected, value, old_id, new_id);
     Ok(())
 }
 
@@ -658,8 +651,11 @@ fn prepare_provided_insert_fields(
         }
         MutationFields::Cfd(fields) => {
             for (name, value) in fields {
-                schema_field(schema, actual_type, &name)?;
-                out.insert(name, coerce_cfd_field_value(session, value)?);
+                let field = schema_field(schema, actual_type, &name)?;
+                out.insert(
+                    name,
+                    coerce_cfd_field_value(session, &field.value_type, value)?,
+                );
             }
         }
     }

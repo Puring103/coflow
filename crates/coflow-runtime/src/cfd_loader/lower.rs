@@ -231,8 +231,8 @@ pub(super) fn lower_value_resolved(
         }
     }
     match ty {
-        CftValueType::Int => lower_int(value),
-        CftValueType::Float => lower_float(value),
+        CftValueType::Int | CftValueType::Long => lower_int(value, ty),
+        CftValueType::Float | CftValueType::Double => lower_float(value, ty),
         CftValueType::Bool => lower_bool(value),
         CftValueType::String => lower_string(value),
         CftValueType::Enum(name) => lower_enum(schema, value, name, preserve_repairable_values),
@@ -265,18 +265,38 @@ fn scalar<'a>(value: &'a CfdValue, expected: &str) -> Result<(&'a str, Span), Cf
     Ok((text, *span))
 }
 
-fn lower_int(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+fn lower_int(value: &CfdValue, ty: &CftValueType) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (text, span) = scalar(value, "int")?;
-    text.parse::<i64>()
-        .map(LoadedValueDraft::Int)
-        .map_err(|_| error(CfdTextErrorCode::TypeMismatch, "expected int", span))
+    let number = text.parse::<i64>().map_err(|_| {
+        error(
+            CfdTextErrorCode::TypeMismatch,
+            format!("expected {ty}"),
+            span,
+        )
+    })?;
+    if *ty == CftValueType::Int && i32::try_from(number).is_err() {
+        return Err(error(
+            CfdTextErrorCode::TypeMismatch,
+            "integer value is outside the 32-bit int range",
+            span,
+        ));
+    }
+    Ok(LoadedValueDraft::Int(number))
 }
 
-fn lower_float(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
+fn lower_float(
+    value: &CfdValue,
+    ty: &CftValueType,
+) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     let (text, span) = scalar(value, "float")?;
     let number = text
         .parse::<f64>()
         .map_err(|_| error(CfdTextErrorCode::TypeMismatch, "expected float", span))?;
+    let number = if *ty == CftValueType::Float {
+        f64::from(number as f32)
+    } else {
+        number
+    };
     if !number.is_finite() {
         return Err(error(
             CfdTextErrorCode::TypeMismatch,
@@ -627,7 +647,7 @@ fn lower_dict_key(
 ) -> Result<LoadedDictKeyDraft, CfdTextDiagnostics> {
     match ty {
         CftValueType::String => Ok(LoadedDictKeyDraft::String(raw.to_string())),
-        CftValueType::Int => raw
+        CftValueType::Int | CftValueType::Long => raw
             .parse::<i64>()
             .map(LoadedDictKeyDraft::Int)
             .map_err(|_| {

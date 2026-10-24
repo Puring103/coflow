@@ -62,7 +62,7 @@
     "annotations": { "patterns": [
       {
         "name": "storage.modifier.annotation.cft",
-        "match": "@(struct|flag|expand|idAsEnum|localized|dimension|label|description)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        "match": "@(struct|flag|int64|expand|idAsEnum|localized|dimension|label|description)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
       },
       {
         "name": "invalid.illegal.annotation.cft",
@@ -111,7 +111,7 @@
     "builtin-types": { "patterns": [
       {
         "name": "storage.type.primitive.cft",
-        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string|Option)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|long|float|double|bool|string|Option)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
       }
     ] },
     "constants": { "patterns": [

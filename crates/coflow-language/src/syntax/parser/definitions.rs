@@ -298,6 +298,8 @@ impl Parser<'_> {
             let name = self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)?;
             let kind = match name.name.as_str() {
                 "int" => TypeRefKind::Int,
+                "long" => TypeRefKind::Long,
+                "double" => TypeRefKind::Double,
                 "float" => TypeRefKind::Float,
                 "bool" => TypeRefKind::Bool,
                 "string" => TypeRefKind::String,

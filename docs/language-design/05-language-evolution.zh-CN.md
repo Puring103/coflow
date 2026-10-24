@@ -89,3 +89,11 @@ CLI `rule list` 与 `rule inspect` 汇总整条规则；`check --rule Type::Rule
 C# 测试验证生成代码、Option 省略、独立视图、引用身份、多维组合、模板和显式覆盖；编辑器测试验证公开 DTO、文本/模板编辑与记录坐标。
 
 当前规格、开发设计、网站用法和 skills 参考保持一致。网站参考通过 `scripts/sync-skill-references.ps1` 同步到用户技能。普通开发的必需门禁为 `cargo check --workspace` 与 `cargo test --workspace`；发布遵循 [AGENTS.md](../../AGENTS.md)。
+
+## 8. 数值位宽与枚举
+
+schema 区分 Int、Long、Float、Double，C# 业务类型和值描述符使用对应的 int、long、float、double。语言常量保留声明类型，引用常量只允许提升；默认值按消费位置展开。模型和 wire 使用 i64 / f64 承载数值，字段及容器的 schema 决定合法范围，float 保存已舍入到 binary32 的数值。写入前递归规范化目标精度并校验范围。
+
+检查器保留字段、常量、Option 解包、字典键及集合投影的数值类型。混合运算先求共同类型，再计算并检查目标位宽；32 位整数溢出不能隐式变为 long。C# Loader 的常量节点携带数值类型顺序，读取时拒绝隐式缩窄。
+
+enum 保存 is_int64，默认 int，@int64 使用 long。位枚举在符号解析阶段合成 None 和 Everything，schema、检查、补全和代码生成共享这些成员。用户成员检查与合成成员分开，合成组合值允许同值。@idAsEnum 的稳定数值受声明位宽限制，代码生成按当前有效 ID 求 Everything；内建成员不进入稳定 ID 分配。

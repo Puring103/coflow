@@ -139,7 +139,9 @@ impl CftCheckBuiltin {
     #[must_use]
     pub const fn documentation(self) -> &'static str {
         match self {
-            Self::HasVariant => "value.hasVariant(variant): test whether this field explicitly defines a variant.",
+            Self::HasVariant => {
+                "value.hasVariant(variant): test whether this field explicitly defines a variant."
+            }
             Self::Variants => {
                 "value.variants(): return all effective dimension values keyed by variant."
             }
@@ -151,9 +153,9 @@ impl CftCheckBuiltin {
                 "value.contains(val): test string substring, array element, or dict key presence."
             }
             Self::Unique => "value.isUnique(): true when supported scalar elements are unique.",
-            Self::Min => "value.min(): minimum value in a non-empty int, float, or enum array.",
-            Self::Max => "value.max(): maximum value in a non-empty int, float, or enum array.",
-            Self::Sum => "value.sum(): sum an int or float array.",
+            Self::Min => "value.min(): minimum value in a non-empty numeric or enum array.",
+            Self::Max => "value.max(): maximum value in a non-empty numeric or enum array.",
+            Self::Sum => "value.sum(): sum an numeric array.",
             Self::Keys => "value.keys(): return dict keys as an array.",
             Self::Values => "value.values(): return dict values as an array.",
             Self::Matches => "value.matches(pattern): match a static regular expression.",
@@ -162,7 +164,7 @@ impl CftCheckBuiltin {
             Self::IsBlank => {
                 "value.isBlank(): test whether a string is empty or Unicode whitespace."
             }
-            Self::Abs => "value.abs(): return the absolute int or float value.",
+            Self::Abs => "value.abs(): return the absolute numeric value.",
             Self::IsFinite => "value.isFinite(): test whether a float is finite.",
             Self::ApproxEqual => {
                 "value.approxEqual(other, epsilon): compare floats by absolute error."

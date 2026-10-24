@@ -24,9 +24,13 @@ pub(super) fn lower_constant(
         };
     }
     Ok(match (value, expected) {
-        (V::Int(value), T::Int) => LoadedValueDraft::Int(*value),
-        (V::Float(value), T::Float) => LoadedValueDraft::Float(*value),
-        (V::Int(value), T::Float) => {
+        (V::Int(value), T::Int | T::Long) | (V::Long(value), T::Long) => {
+            LoadedValueDraft::Int(*value)
+        }
+        (V::Float(value), T::Float | T::Double) | (V::Double(value), T::Double) => {
+            LoadedValueDraft::Float(*value)
+        }
+        (V::Int(value) | V::Long(value), T::Float | T::Double) => {
             #[allow(clippy::cast_precision_loss)]
             let number = *value as f64;
             LoadedValueDraft::Float(number)
@@ -101,7 +105,8 @@ fn lower_key(
     span: Span,
 ) -> Result<LoadedDictKeyDraft, CfdTextDiagnostics> {
     Ok(match (value, expected) {
-        (CftConstValue::Int(value), CftValueType::Int) => LoadedDictKeyDraft::Int(*value),
+        (CftConstValue::Int(value), CftValueType::Int | CftValueType::Long)
+        | (CftConstValue::Long(value), CftValueType::Long) => LoadedDictKeyDraft::Int(*value),
         (CftConstValue::String(value), CftValueType::String) => {
             LoadedDictKeyDraft::String(value.clone())
         }

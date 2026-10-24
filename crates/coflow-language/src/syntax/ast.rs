@@ -177,7 +177,9 @@ pub struct SignedInt {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeRefKind {
     Int,
+    Long,
     Float,
+    Double,
     Bool,
     String,
     Named(String),

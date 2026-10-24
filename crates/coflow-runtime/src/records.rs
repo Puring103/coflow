@@ -150,6 +150,7 @@ pub struct IdAsEnumInfo {
     pub enum_name: String,
     pub ids: Vec<String>,
     pub is_flags: bool,
+    pub is_int64: bool,
 }
 
 #[derive(Debug, Clone)]

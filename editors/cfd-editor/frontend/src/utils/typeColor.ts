@@ -42,7 +42,7 @@ export function fieldTypeColor(declaredType: string): string {
     : document.documentElement.getAttribute('data-theme') !== 'light'
   const lightness = dark ? 62 : 40
   if (primitive === 'bool') return `hsl(145, 48%, ${lightness}%)`
-  if (primitive === 'int' || primitive === 'float') return `hsl(35, 72%, ${lightness}%)`
+  if (['int', 'long', 'float', 'double'].includes(primitive)) return `hsl(35, 72%, ${lightness}%)`
   if (primitive === 'string') return `hsl(190, 52%, ${lightness}%)`
   return typeColor(normalized || declaredType)
 }

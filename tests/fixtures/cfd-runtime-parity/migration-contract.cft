@@ -1,10 +1,10 @@
-const CONTRACT_NESTED: Option<Option<int>> = Some(None);
+const CONTRACT_NESTED: Option<Option<long>> = Some(None);
 @flag enum ContractFlags { A = 1, B = 2 }
 const CONTRACT_MASK: ContractFlags = ContractFlags::A | ContractFlags::B;
-const CONTRACT_VALUES: [int] = [2147483648, -9223372036854775808];
+const CONTRACT_VALUES: [long] = [2147483648, -9223372036854775808];
 const CONTRACT_INDEX: {ContractFlags: int} = { ContractFlags::A | ContractFlags::B: 7 };
 data ContractPayload {
-  score: int;
+  score: long;
   label: string = f"score {self.score}";
   labels: [string] = [f"array {self.score}"];
   indexed_labels: {string: string} = { "label": f"dict {self.score}" };
@@ -18,7 +18,7 @@ data ContractDetails {
 abstract data ContractBase { name: string; }
 sealed data ContractChild: ContractBase { score: int; }
 @struct sealed data ContractShape {
-  count: int = 2147483648;
+  count: long = 2147483648;
   inner: Option<ContractShape> = None;
   label: string = f"shape {self.count}";
 }
@@ -35,19 +35,19 @@ table ContractEntry {
   child: ContractChild;
   @dimension("contract_ref")
   target: &ContractNode;
-  wide: int = -9223372036854775808;
-  precise: float = 1.0000000000000002;
-  large: float = 1e100;
+  wide: long = -9223372036854775808;
+  precise: double = 1.0000000000000002;
+  large: double = 1e100;
   scalar_text: string = f"{self.wide}|{self.precise}|{self.large}";
   plain_text: string = "{self.id}";
   own_id: string = f"{self.id}";
   other_id: string = f"{&ContractEntry::entry.id}";
-  nested: Option<Option<int>> = Some(None);
-  constant_nested: Option<Option<int>> = CONTRACT_NESTED;
-  samples: [int] = CONTRACT_VALUES;
+  nested: Option<Option<long>> = Some(None);
+  constant_nested: Option<Option<long>> = CONTRACT_NESTED;
+  samples: [long] = CONTRACT_VALUES;
   flags: ContractFlags = CONTRACT_MASK;
   indexed: {ContractFlags: int} = CONTRACT_INDEX;
-  some_nested: Option<Option<int>> = Some(Some(9223372036854775807));
+  some_nested: Option<Option<long>> = Some(Some(9223372036854775807));
   @dimension("contract_language")
   localized: Option<Option<string>> = Some(Some("base"));
 }

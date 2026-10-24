@@ -58,6 +58,14 @@ internal static class Program
             var result = CoflowData.Load(input);
             var valid = fixture.EndsWith(".valid.cfd", StringComparison.Ordinal);
             Require(result.Success == valid, fixture + ": " + string.Join("; ", result.Diagnostics));
+            if (Path.GetFileName(fixture) == "numeric-widths.valid.cfd")
+            {
+                var numbers = result.Data.Table<NumericValues>()["numeric"];
+                Require(numbers.small == int.MaxValue && numbers.wide == long.MaxValue, "declared integer widths");
+                Require(numbers.rounded == 0.1f && numbers.precise == 0.1d && (double)numbers.rounded != numbers.precise, "declared floating point precision");
+                Require(numbers.bits == NumericBits.Everything && (int)NumericBits.Everything == 9 && (int)NumericBits.None == 0, "built-in flag members");
+                Require((long)numbers.code == 4294967296L, "int64 enum");
+            }
             if (Path.GetFileName(fixture) == "complex-values.valid.cfd")
                 Require(result.Data.Table<ComplexValues>()["sample"].optional.Value.score == 13, "inline class within Some");
             if (Path.GetFileName(fixture) == "record-references.valid.cfd")

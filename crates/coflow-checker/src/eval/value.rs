@@ -8,7 +8,7 @@ use super::location::{ModelCursor, ValueLocation};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum EvalValue<'a> {
-    Model(&'a CfdValue),
+    Model(&'a CfdValue, Option<CftValueType>),
     DictKey(&'a CfdDictKey),
     Temporary(TemporaryValue),
     Constant(CftConstValue),
@@ -38,7 +38,9 @@ pub(crate) enum TemporaryValue {
     Null,
     Bool(bool),
     Int(i64),
+    Long(i64),
     Float(f64),
+    Double(f64),
     String(String),
     Enum(CfdEnumValue),
 }
@@ -57,6 +59,8 @@ impl<'a> EvalValue<'a> {
     pub(crate) fn from_const(value: &CftConstValue) -> Self {
         match value {
             CftConstValue::Int(value) => Self::Temporary(TemporaryValue::Int(*value)),
+            CftConstValue::Long(value) => Self::Temporary(TemporaryValue::Long(*value)),
+            CftConstValue::Double(value) => Self::Temporary(TemporaryValue::Double(*value)),
             CftConstValue::Float(value) => Self::Temporary(TemporaryValue::Float(*value)),
             CftConstValue::Bool(value) => Self::Temporary(TemporaryValue::Bool(*value)),
             CftConstValue::String(value) => Self::Temporary(TemporaryValue::String(value.clone())),
@@ -88,14 +92,26 @@ impl<'a> EvalValue<'a> {
                 location: Box::new(Some(location.clone())),
             })?;
         Ok(match value {
+            CfdValue::Int(value) => {
+                if ty == Some(&CftValueType::Long) {
+                    Self::long(*value)
+                } else {
+                    Self::int(*value)
+                }
+            }
+            CfdValue::Float(value) => {
+                if ty == Some(&CftValueType::Double) {
+                    Self::double(*value)
+                } else {
+                    Self::float(*value)
+                }
+            }
             CfdValue::OptionNone
             | CfdValue::OptionSome(_)
             | CfdValue::Bool(_)
-            | CfdValue::Int(_)
-            | CfdValue::Float(_)
             | CfdValue::String(_)
             | CfdValue::FormattedString(_)
-            | CfdValue::Enum(_) => Self::Model(value),
+            | CfdValue::Enum(_) => Self::Model(value, ty.cloned()),
             CfdValue::Object(_) => Self::Record(EvalRecordRef::Resolved(location)),
             CfdValue::Ref(_key) => {
                 let resolved = location
@@ -129,7 +145,14 @@ impl<'a> EvalValue<'a> {
         })
     }
 
-    pub(crate) const fn from_dict_key(key: &'a CfdDictKey) -> Self {
+    pub(crate) fn from_dict_key(key: &'a CfdDictKey, ty: Option<&CftValueType>) -> Self {
+        if let CfdDictKey::Int(value) = key {
+            return if ty == Some(&CftValueType::Int) {
+                Self::int(*value)
+            } else {
+                Self::long(*value)
+            };
+        }
         Self::DictKey(key)
     }
 
@@ -155,7 +178,7 @@ impl<'a> EvalValue<'a> {
 
     pub(crate) fn scalar(&self) -> Option<ScalarValue<'_>> {
         match self {
-            Self::Model(value) => scalar_from_cfd(value),
+            Self::Model(value, _) => scalar_from_cfd(value),
             Self::DictKey(key) => Some(match key {
                 CfdDictKey::String(value) => ScalarValue::String(value),
                 CfdDictKey::Int(value) => ScalarValue::Int(*value),
@@ -164,14 +187,22 @@ impl<'a> EvalValue<'a> {
             Self::Temporary(value) => Some(match value {
                 TemporaryValue::Null => ScalarValue::Null,
                 TemporaryValue::Bool(value) => ScalarValue::Bool(*value),
-                TemporaryValue::Int(value) => ScalarValue::Int(*value),
-                TemporaryValue::Float(value) => ScalarValue::Float(*value),
+                TemporaryValue::Int(value) | TemporaryValue::Long(value) => {
+                    ScalarValue::Int(*value)
+                }
+                TemporaryValue::Float(value) | TemporaryValue::Double(value) => {
+                    ScalarValue::Float(*value)
+                }
                 TemporaryValue::String(value) => ScalarValue::String(value),
                 TemporaryValue::Enum(value) => ScalarValue::Enum(value),
             }),
             Self::Constant(value) => match value {
-                CftConstValue::Int(value) => Some(ScalarValue::Int(*value)),
-                CftConstValue::Float(value) => Some(ScalarValue::Float(*value)),
+                CftConstValue::Int(value) | CftConstValue::Long(value) => {
+                    Some(ScalarValue::Int(*value))
+                }
+                CftConstValue::Float(value) | CftConstValue::Double(value) => {
+                    Some(ScalarValue::Float(*value))
+                }
                 CftConstValue::Bool(value) => Some(ScalarValue::Bool(*value)),
                 CftConstValue::String(value) => Some(ScalarValue::String(value)),
                 _ => None,
@@ -194,11 +225,53 @@ impl<'a> EvalValue<'a> {
     }
 
     pub(crate) const fn int(value: i64) -> Self {
-        Self::Temporary(TemporaryValue::Int(value))
+        if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
+            Self::Temporary(TemporaryValue::Int(value))
+        } else {
+            Self::long(value)
+        }
     }
 
-    pub(crate) const fn float(value: f64) -> Self {
-        Self::Temporary(TemporaryValue::Float(value))
+    pub(crate) const fn long(value: i64) -> Self {
+        Self::Temporary(TemporaryValue::Long(value))
+    }
+    pub(crate) const fn double(value: f64) -> Self {
+        Self::Temporary(TemporaryValue::Double(value))
+    }
+    pub(crate) fn float(value: f64) -> Self {
+        Self::Temporary(TemporaryValue::Float(f64::from(value as f32)))
+    }
+
+    pub(crate) fn numeric_type(&self) -> Option<CftValueType> {
+        match self {
+            Self::Temporary(TemporaryValue::Int(_)) => Some(CftValueType::Int),
+            Self::Temporary(TemporaryValue::Long(_)) => Some(CftValueType::Long),
+            Self::Temporary(TemporaryValue::Float(_)) => Some(CftValueType::Float),
+            Self::Temporary(TemporaryValue::Double(_)) => Some(CftValueType::Double),
+            Self::Constant(CftConstValue::Int(_)) => Some(CftValueType::Int),
+            Self::Constant(CftConstValue::Long(_)) => Some(CftValueType::Long),
+            Self::Constant(CftConstValue::Float(_)) => Some(CftValueType::Float),
+            Self::Constant(CftConstValue::Double(_)) => Some(CftValueType::Double),
+            Self::Dimension { base, .. } => base.value.numeric_type(),
+            Self::Model(CfdValue::Int(_), _) | Self::DictKey(CfdDictKey::Int(_)) => {
+                Some(CftValueType::Long)
+            }
+            Self::Model(CfdValue::Float(_), _) => Some(CftValueType::Double),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn numeric_float(&self, ty: &CftValueType) -> Option<f64> {
+        let value = match self.scalar()? {
+            ScalarValue::Int(v) => v as f64,
+            ScalarValue::Float(v) => v,
+            _ => return None,
+        };
+        Some(if *ty == CftValueType::Float {
+            f64::from(value as f32)
+        } else {
+            value
+        })
     }
 
     pub(crate) fn string(value: impl Into<String>) -> Self {
@@ -469,10 +542,19 @@ pub(crate) enum ComparableKey {
 }
 
 pub(crate) fn values_equal(lhs: &EvalValue<'_>, rhs: &EvalValue<'_>) -> bool {
+    if let Some(ty @ (CftValueType::Float | CftValueType::Double)) = lhs
+        .numeric_type()
+        .zip(rhs.numeric_type())
+        .and_then(|(a, b)| a.promote_numeric(&b))
+    {
+        return lhs.numeric_float(&ty) == rhs.numeric_float(&ty);
+    }
+
     let is_none = |value: &EvalValue<'_>| {
         matches!(
             value,
-            EvalValue::Model(CfdValue::OptionNone) | EvalValue::Constant(CftConstValue::OptionNone)
+            EvalValue::Model(CfdValue::OptionNone, _)
+                | EvalValue::Constant(CftConstValue::OptionNone)
         )
     };
     if is_none(lhs) || is_none(rhs) {

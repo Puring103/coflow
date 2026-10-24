@@ -13,8 +13,8 @@
 | `table`、`singleton` | `partial class`，保留继承、abstract、sealed |
 | `data` | `partial class` |
 | `@struct sealed data` | `partial struct` |
-| `int`、`float`、`bool`、`string` | `long`、`double`、`bool`、`string` |
-| `enum` | 基础类型为 `long` 的枚举 |
+| `int`、`long`、`float`、`double`、`bool`、`string` | 同名 C# 类型 |
+| `enum` | 默认基础类型为 `int`，`@int64` 使用 `long` |
 | `&TableName` | 相应记录对象引用 |
 | `data` 类型字段 | 内联业务值 |
 | `Option<T>` | 独立保存存在状态的 `Option<T>` |

@@ -90,11 +90,7 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst, schema: Option<&CftSchema>) -
 
     // Walk the AST for structured tokens.
     for record in &ast.records {
-        collector.add(
-            record.id_span,
-            SEM_RECORD_ID,
-            MOD_DECLARATION | MOD_RECORD,
-        );
+        collector.add(record.id_span, SEM_RECORD_ID, MOD_DECLARATION | MOD_RECORD);
         collector.add(record.type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
         for field in &record.fields {
             collector.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
@@ -784,7 +780,9 @@ fn value_completion_items(
         }
         CftValueType::Object(name) => object_value_completion_items(schema, name),
         CftValueType::Int
+        | CftValueType::Long
         | CftValueType::Float
+        | CftValueType::Double
         | CftValueType::String => Vec::new(),
         CftValueType::RecordRef(name) => {
             record_reference_completion_items(schema, name, build, true)
@@ -991,8 +989,8 @@ fn required_field_snippets(
 
 fn value_placeholder(value_type: &CftValueType) -> String {
     match value_type {
-        CftValueType::Int => "0".to_string(),
-        CftValueType::Float => "0.0".to_string(),
+        CftValueType::Int | CftValueType::Long => "0".to_string(),
+        CftValueType::Float | CftValueType::Double => "0.0".to_string(),
         CftValueType::Bool => "true".to_string(),
         CftValueType::String => "\"value\"".to_string(),
         CftValueType::Enum(name) => name.to_string(),

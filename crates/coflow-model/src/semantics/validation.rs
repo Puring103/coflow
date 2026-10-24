@@ -94,7 +94,11 @@ pub struct PendingInsertRef<'a> {
 }
 
 pub trait CfdValueSemanticContext {
-    fn record_by_domain_id(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordHandle>;
+    fn record_by_domain_id(
+        &self,
+        inheritance_root: &TypeName,
+        key: &str,
+    ) -> Option<CfdRecordHandle>;
     fn record_actual_type(&self, id: CfdRecordHandle) -> Option<&str>;
 
     fn pending_record_actual_type(&self, _inheritance_root: &TypeName, _key: &str) -> Option<&str> {
@@ -201,16 +205,31 @@ fn validate_value_inner<C: CfdValueSemanticContext>(
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
     match expected {
-        CftValueType::Int => match value {
-            CfdValue::Int(_) => Ok(()),
-            _ => Err(type_mismatch("int", value, path)),
+        CftValueType::Int | CftValueType::Long => match value {
+            CfdValue::Int(number)
+                if *expected == CftValueType::Long || i32::try_from(*number).is_ok() =>
+            {
+                Ok(())
+            }
+            CfdValue::Int(_) => Err(CfdValueSemanticError::new(
+                CfdValueSemanticErrorKind::TypeMismatch,
+                path,
+                "integer value is outside the 32-bit int range",
+            )),
+            _ => Err(type_mismatch(&expected.to_string(), value, path)),
         },
-        CftValueType::Float => match value {
-            CfdValue::Float(float) if float.is_finite() => Ok(()),
+        CftValueType::Float | CftValueType::Double => match value {
+            CfdValue::Float(float)
+                if float.is_finite()
+                    && (*expected == CftValueType::Double
+                        || f64::from(*float as f32) == *float) =>
+            {
+                Ok(())
+            }
             CfdValue::Float(_) => Err(CfdValueSemanticError::new(
                 CfdValueSemanticErrorKind::TypeMismatch,
                 path,
-                "float value must be finite",
+                "floating point value must be finite and normalized to the declared precision",
             )),
             _ => Err(type_mismatch("float", value, path)),
         },
@@ -441,9 +460,9 @@ fn validate_dict_key(
     path: CfdPath,
 ) -> Result<(), CfdValueSemanticError> {
     match (expected, value) {
-        (CftValueType::String, CfdDictKey::String(_)) | (CftValueType::Int, CfdDictKey::Int(_)) => {
-            Ok(())
-        }
+        (CftValueType::String, CfdDictKey::String(_))
+        | (CftValueType::Long, CfdDictKey::Int(_)) => Ok(()),
+        (CftValueType::Int, CfdDictKey::Int(value)) if i32::try_from(*value).is_ok() => Ok(()),
         (CftValueType::Enum(enum_name), CfdDictKey::Enum(enum_value)) => {
             validate_enum(schema, enum_name, enum_value, path)
         }

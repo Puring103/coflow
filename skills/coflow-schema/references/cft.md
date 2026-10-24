@@ -40,13 +40,25 @@ singleton Settings { start: &Item; }
 
 | 类型 | 数据含义 |
 | --- | --- |
-| `int` / `float` | 有符号 64 位整数 / 有限 binary64 浮点 |
+| `int` / `long` | 有符号 32 位 / 64 位整数 |
+| `float` / `double` | 有限 binary32 / binary64 浮点数 |
 | `bool` / `string` | 布尔 / 字符串 |
 | `&TableName` | 记录引用 |
 | data 名称 | 内联对象 |
 | `Option<T>` | `None` 或 `Some(T)`，允许嵌套 |
 | `[T]` / `{K: V}` | 数组 / 字典 |
 | enum 名称 | 命名枚举值 |
+
+数值混合计算按 `int → long → float → double` 提升。数字字面量按目标类型检查范围，float 按 32 位精度舍入；已声明的数值类型不能隐式缩窄。没有目标类型时，整数字面量在 32 位范围内推断为 int，否则为 long；浮点字面量推断为 double。
+
+```cft
+data Metrics {
+  count: int = 10;
+  total: long = 4294967296;
+  ratio: float = 0.1;
+  precise: double = 0.1;
+}
+```
 
 **字段只有声明了默认值才可以省略。** `Option<T>` 表示值可以为空；无默认值的 Option 字段也必须填写。
 
@@ -66,7 +78,7 @@ const EMPTY: Option<int> = None;
 type ItemLink = Option<&Item>;
 ```
 
-常量可推断无歧义类型，`None` 和空集合需要明确类型。别名与常量依赖必须无环。字典 key 使用 int、string 或 enum。
+常量可推断无歧义类型，`None` 和空集合需要明确类型。别名与常量依赖必须无环。字典 key 使用 int、long、string 或 enum。
 
 ## 字符串与名称
 
@@ -90,11 +102,21 @@ data Label {
 | --- | --- |
 | `@label` / `@description` | 类型、枚举、成员、字段的展示信息 |
 | `@struct` | 无基类 sealed data 生成目标结构体 |
-| `@flag` | enum 的标志约束 |
+| `@flag` | 位枚举，自动提供 None 和 Everything |
+| `@int64` | enum 使用 64 位 long，默认使用 32 位 int |
 | `@idAsEnum(Name)` | 为 table 的 ID 填充已声明的空 enum |
 | `@localized` / `@dimension("名称")` | table 或 singleton 字段的维度绑定 |
 | `@expand` | 具体 data 字段的展开信息 |
 
-enum 的值为有符号 64 位整数，省略时递增，名称和数值不能重复。`@flag` 的非零成员为正的二次幂，支持同类型成员的 `&`、`^`、`|` 组合。
+enum 默认使用 32 位 int，需要 64 位时添加 `@int64`。省略成员值时递增，用户成员名称和数值不能重复；超过声明范围时报错，不会自动升级位宽。
+
+```cft
+enum Status { Pending = 0, Done = 1 }
+@int64 enum LargeCode { Special = 4294967296 }
+@flag enum Permission { Read = 1, Write = 2, Execute = 8 }
+@flag @int64 enum LargePermission { Manage = 4294967296 }
+```
+
+位枚举自动提供 `None = 0` 和 `Everything`。Everything 等于所有实际标志位的按位或，随成员变化重新计算；上例 `Permission::Everything` 为 11。两个内建名称不能自行声明。用户非零成员必须为正的二次幂；32 位支持 31 个独立标志位，64 位支持 63 个。支持同类型成员的 `&`、`^`、`|` 组合。普通枚举不自动添加这两个成员。
 
 data、table、singleton 的字段之后可以声明多个命名 `check`。规则按父类到子类、同类型声明顺序执行；同一继承链中的规则名不能重复。项目级规则独立命名，使用 `records(TypeName)` 检查集合与记录之间的关系。

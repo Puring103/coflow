@@ -700,7 +700,7 @@ table Settings { access: Access; }\n";
 
     let items = cfd::completion(source, &ast, Some(schema), offset);
     let labels = completion_labels(items.as_array().expect("flag completions").clone());
-    assert_eq!(labels, vec!["Write", "Execute"]);
+    assert_eq!(labels, vec!["Write", "Execute", "None", "Everything"]);
 }
 
 #[test]

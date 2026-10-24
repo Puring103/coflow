@@ -106,11 +106,21 @@ fn parse_value(
             parse_value(schema, inner, value, ValueContext::Nested)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
         }
-        CellType::Int => Ok(LoadedValueDraft::Int(
+        CellType::Int => Ok(LoadedValueDraft::Int(i64::from(
+            text.parse::<i32>().map_err(|_| type_mismatch("int"))?,
+        ))),
+        CellType::Long => Ok(LoadedValueDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int"))?,
         )),
-        CellType::Float => {
-            let value = text.parse::<f64>().map_err(|_| type_mismatch("float"))?;
+        CellType::Float | CellType::Double => {
+            let value = text
+                .parse::<f64>()
+                .map_err(|_| type_mismatch("floating point number"))?;
+            let value = if *ty == CellType::Float {
+                f64::from(value as f32)
+            } else {
+                value
+            };
             if value.is_finite() {
                 Ok(LoadedValueDraft::Float(value))
             } else {

@@ -398,7 +398,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::OneName,
             },
-            "flag" => Self {
+            "flag" | "int64" => Self {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },

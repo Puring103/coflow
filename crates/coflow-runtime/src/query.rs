@@ -419,9 +419,12 @@ impl<'a> ProjectQueries<'a> {
                     ids.dedup();
                 }
                 Some(IdAsEnumInfo {
-                    enum_name,
+                    enum_name: enum_name.clone(),
                     ids,
                     is_flags,
+                    is_int64: schema
+                        .resolve_enum(&enum_name)
+                        .is_some_and(|en| en.is_int64),
                 })
             })
             .collect()

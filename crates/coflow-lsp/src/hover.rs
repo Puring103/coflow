@@ -148,8 +148,8 @@ fn type_hover_text(ty: &CftType) -> String {
 
 fn const_value_to_string(value: &CftConstValue) -> String {
     match value {
-        CftConstValue::Int(value) => value.to_string(),
-        CftConstValue::Float(value) => value.to_string(),
+        CftConstValue::Int(value) | CftConstValue::Long(value) => value.to_string(),
+        CftConstValue::Float(value) | CftConstValue::Double(value) => value.to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
         CftConstValue::FormattedString(source) => source.clone(),

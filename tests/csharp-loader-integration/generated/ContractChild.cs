@@ -6,6 +6,6 @@ namespace Game.Config
 public sealed partial class ContractChild : ContractBase
 {
     internal ContractChild() { }
-    public long score { get; internal set; } = default!;
+    public int score { get; internal set; } = default!;
 }
 }

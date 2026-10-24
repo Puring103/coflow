@@ -82,13 +82,15 @@ pub(crate) fn completion_items(
             if let Some(field) = field.filter(|field| field.dimension.is_some()) {
                 // 维度字段直接读取基础值，同时保留变体查询入口及原业务类型的方法。
                 let mut items = function_completion_items_for_type(&field.value_type);
-                items.extend([
-                    CftCheckBuiltin::HasVariant,
-                    CftCheckBuiltin::For,
-                    CftCheckBuiltin::Variants,
-                ]
-                .into_iter()
-                .map(builtin_completion_item));
+                items.extend(
+                    [
+                        CftCheckBuiltin::HasVariant,
+                        CftCheckBuiltin::For,
+                        CftCheckBuiltin::Variants,
+                    ]
+                    .into_iter()
+                    .map(builtin_completion_item),
+                );
                 return items;
             }
         }
@@ -184,7 +186,9 @@ fn type_member_completion_items() -> Vec<Value> {
         "CFT field",
         "Define a typed field.",
     )];
-    if let Some(check) = keyword_snippet_completion_item("check", "check ${1:Name} {\n\t${2:condition};\n}") {
+    if let Some(check) =
+        keyword_snippet_completion_item("check", "check ${1:Name} {\n\t${2:condition};\n}")
+    {
         items.push(check);
     }
     items
@@ -358,8 +362,11 @@ enum TypeRefLike {
 impl<'a> From<&'a coflow_language::cft::CftValueType> for TypeRefLike {
     fn from(value: &'a coflow_language::cft::CftValueType) -> Self {
         match value {
-            coflow_language::cft::CftValueType::Int => Self::Int,
-            coflow_language::cft::CftValueType::Float => Self::Float,
+            coflow_language::cft::CftValueType::Int | coflow_language::cft::CftValueType::Long => {
+                Self::Int
+            }
+            coflow_language::cft::CftValueType::Float
+            | coflow_language::cft::CftValueType::Double => Self::Float,
             coflow_language::cft::CftValueType::String => Self::String,
             coflow_language::cft::CftValueType::Array(_) => Self::Array,
             coflow_language::cft::CftValueType::Dict(_, _) => Self::Dict,
@@ -442,6 +449,8 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
     match &ty.kind {
         TypeRefKind::Bool => items.extend(literal_completion_items()),
         TypeRefKind::Int
+        | TypeRefKind::Long
+        | TypeRefKind::Double
         | TypeRefKind::Float
         | TypeRefKind::String => {}
         TypeRefKind::Named(name) => {
@@ -834,7 +843,18 @@ fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
     match (&ty.kind, value) {
         (TypeRefKind::Option(_), CftConstValue::OptionNone)
         | (TypeRefKind::Int, CftConstValue::Int(_))
-        | (TypeRefKind::Float, CftConstValue::Float(_))
+        | (TypeRefKind::Long, CftConstValue::Int(_) | CftConstValue::Long(_))
+        | (
+            TypeRefKind::Float,
+            CftConstValue::Int(_) | CftConstValue::Long(_) | CftConstValue::Float(_),
+        )
+        | (
+            TypeRefKind::Double,
+            CftConstValue::Int(_)
+            | CftConstValue::Long(_)
+            | CftConstValue::Float(_)
+            | CftConstValue::Double(_),
+        )
         | (TypeRefKind::Bool, CftConstValue::Bool(_))
         | (TypeRefKind::String, CftConstValue::String(_)) => true,
         (TypeRefKind::Option(inner), CftConstValue::OptionSome(value)) => {
@@ -937,7 +957,11 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
                     return CompletionScope::EnumBody;
                 }
                 Item::Type(ty) if ty.span.start <= offset && offset <= ty.span.end => {
-                    if ty.checks.iter().any(|check| check_block_contains(Some(check), offset)) {
+                    if ty
+                        .checks
+                        .iter()
+                        .any(|check| check_block_contains(Some(check), offset))
+                    {
                         return CompletionScope::CheckBlock;
                     }
                     return CompletionScope::TypeBody;

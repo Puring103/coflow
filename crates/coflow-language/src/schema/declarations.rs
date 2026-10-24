@@ -112,7 +112,9 @@ pub struct CftTopLevelCheck {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CftConstValue {
     Int(i64),
+    Long(i64),
     Float(f64),
+    Double(f64),
     Bool(bool),
     String(String),
     FormattedString(String),
@@ -371,6 +373,7 @@ pub struct CftEnum {
     pub(crate) variant_by_name: BTreeMap<EnumVariantName, usize>,
     pub(crate) variant_by_value: BTreeMap<i64, usize>,
     pub is_flag: bool,
+    pub is_int64: bool,
     pub annotations: Vec<CftAnnotation>,
     pub display: Option<CftDisplayMetadata>,
     pub span: Span,

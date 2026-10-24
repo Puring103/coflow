@@ -356,15 +356,15 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
         return crate::eval::format_scalar(scalar, crate::eval::ScalarFormat::Diagnostic);
     }
     match value {
-        EvalValue::Model(coflow_model::CfdValue::OptionNone)
+        EvalValue::Model(coflow_model::CfdValue::OptionNone, _)
         | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => {
             "None".to_string()
         }
-        EvalValue::Model(coflow_model::CfdValue::OptionSome(_))
+        EvalValue::Model(coflow_model::CfdValue::OptionSome(_), _)
         | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(_)) => {
             "Some(...)".to_string()
         }
-        EvalValue::Model(_) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
+        EvalValue::Model(_, _) | EvalValue::DictKey(_) | EvalValue::Temporary(_) => {
             "<scalar>".to_string()
         }
         EvalValue::Constant(coflow_language::cft::CftConstValue::Array(items)) => {
@@ -386,5 +386,5 @@ pub(crate) fn format_value_for_message(value: &EvalValue<'_>) -> String {
 }
 
 pub(crate) fn value_type_is_float(ty: Option<&CftValueType>) -> bool {
-    matches!(ty, Some(CftValueType::Float))
+    matches!(ty, Some(CftValueType::Float | CftValueType::Double))
 }

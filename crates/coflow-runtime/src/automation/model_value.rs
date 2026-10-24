@@ -69,8 +69,28 @@ impl ModelValue {
         // 类型身份与 Option 层级在转换前检查，不能靠源码打印隐式抹掉错误的身份。
         Ok(match (self, expected) {
             (Self::Bool { value }, T::Bool) => CfdValue::Bool(*value),
-            (Self::Int { value }, T::Int) => CfdValue::Int(parse_integer(value)?),
-            (Self::Float { value }, T::Float) if value.is_finite() => CfdValue::Float(*value),
+            (Self::Int { value }, T::Int | T::Long) => {
+                let value = parse_integer(value)?;
+                if *expected == T::Int && i32::try_from(value).is_err() {
+                    return Err(Failure::request(
+                        "integer value is outside the 32-bit int range",
+                    ));
+                }
+                CfdValue::Int(value)
+            }
+            (Self::Float { value }, T::Float | T::Double) if value.is_finite() => {
+                let value = if *expected == T::Float {
+                    f64::from(*value as f32)
+                } else {
+                    *value
+                };
+                if !value.is_finite() {
+                    return Err(Failure::request(
+                        "floating point value is outside the declared range",
+                    ));
+                }
+                CfdValue::Float(value)
+            }
             (Self::String { value }, T::String) => CfdValue::String(value.clone()),
             (Self::None {}, T::Option(_)) => CfdValue::OptionNone,
             (Self::Some { value }, T::Option(inner)) => {

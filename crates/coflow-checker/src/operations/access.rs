@@ -84,7 +84,7 @@ pub(crate) fn index_value<'model>(
             };
             let key_label = format_value_for_message(&index.value);
             for entry_index in 0..entries.len() {
-                let Some(entry_key) = entries.key_at(model, entry_index) else {
+                let Some(entry_key) = entries.key_at(model, entry_index, None) else {
                     continue;
                 };
                 if !values_equal(&entry_key, &index.value) {

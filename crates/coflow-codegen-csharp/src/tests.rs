@@ -29,7 +29,7 @@ fn emits_typed_business_objects_and_shared_loader_descriptors() {
     let text = all(&generate_csharp(&schema).expect("generate"));
     assert!(text.contains("public partial struct Stats"));
     assert!(text.contains("public partial class Item"));
-    assert!(text.contains("public long hp { get; internal set; }"));
+    assert!(text.contains("public int hp { get; internal set; }"));
     assert!(text.contains("public Option<Item> next { get; internal set; }"));
     assert!(text.contains("new CfdType<Stats>"));
     assert!(text.contains("reader => new Stats"));
@@ -183,7 +183,7 @@ fn id_enum_keeps_active_keys_and_stable_numbers() {
         .iter()
         .find(|file| file.relative_path == PathBuf::from("ItemId.cs"))
         .expect("enum source");
-    assert!(en.contents.contains("live = 7L"));
+    assert!(en.contents.contains("live = 7"));
     assert!(!en.contents.contains("deleted"));
 }
 
@@ -196,8 +196,30 @@ fn language_names_are_escaped_only_in_generated_csharp_identifiers() {
     assert!(text.contains("public partial class @class : ICfdRecord"));
     assert!(text.contains("public string @namespace"));
     assert!(text.contains("public enum @event"));
-    assert!(text.contains("@public = 0L"));
+    assert!(text.contains("@public = 0"));
     assert!(text.contains("value.@namespace = reader.Get<string>(\"namespace\")"));
     assert!(text.contains("CfdType<@class>(\"class\""));
     assert!(text.contains("[\"public\"] = @event.@public"));
+}
+
+#[test]
+fn numeric_widths_and_builtin_flags_are_generated_consistently() {
+    let text = all(&generate_csharp(&schema("@flag enum Bits { A = 1, B = 8 } @int64 enum Wide { Big = 4294967296 } table T { i: int; l: long; f: float; d: double; }")).expect("generate"));
+    for expected in [
+        "enum Bits : int",
+        "None = 0,",
+        "Everything = 9,",
+        "enum Wide : long",
+        "Big = 4294967296L",
+        "public int i",
+        "public long l",
+        "public float f",
+        "public double d",
+        "CfdValues.Int",
+        "CfdValues.Long",
+        "CfdValues.Float",
+        "CfdValues.Double",
+    ] {
+        assert!(text.contains(expected), "{expected}");
+    }
 }

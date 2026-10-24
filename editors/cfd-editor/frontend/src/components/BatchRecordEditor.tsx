@@ -201,8 +201,8 @@ function mixedValueKind(
   if (shown.kind !== 'option_none') return shown.kind
   const normalized = declaredType?.replace(/^Option<(.*)>$/, '$1').replace(/\?$/, '').toLowerCase()
   if (normalized === 'bool') return 'bool'
-  if (normalized?.startsWith('int') || normalized?.startsWith('uint')) return 'int'
-  if (normalized === 'float' || normalized === 'double' || normalized === 'number') return 'float'
+  if (normalized === 'int' || normalized === 'long') return 'int'
+  if (normalized === 'float' || normalized === 'double') return 'float'
   if (normalized === 'string') return 'string'
   return 'option_none'
 }
