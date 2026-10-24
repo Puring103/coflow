@@ -2534,7 +2534,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       >
         <div className="topbar-left">
           <span className="app-title">
-            <img className="app-logo" src={coflowLogo} alt="" aria-hidden />
+            {/* SVG 可能被内联为含引号的 data URL，CSS URL 必须显式包裹。 */}
+            <span className="app-logo" style={{ maskImage: `url("${coflowLogo}")` }} aria-hidden />
             coflow
           </span>
           <span className="topbar-divider" />
