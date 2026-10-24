@@ -446,8 +446,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   const columnSizeHints = useMemo(
     () => cachedColumnPrep(data, columnPrepKey('sizeHints', activeType, allFieldNames.join(',')), () => {
       const snapshot = dataForCellsRef.current
-      const measure = (text: string) => estimateTextWidth(text, false)
-      const measureMono = (text: string) => estimateTextWidth(text, true)
+      const measure = (text: string) => estimateTextWidth(text, false, 600)
+      const measureMono = (text: string) => estimateTextWidth(text, true, 500)
       // Chrome around the content per cell type.
       const PILL_CHROME = 46
       const REF_PREFIX = 14
@@ -481,8 +481,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           if (!cell) continue
           if (isComplexValue(cell.value)) hasComplexValue = true
           const summary = record.field_summaries[column.name] ?? ''
-          const w = measure(summary)
-          if (w > maxContent) maxContent = w
+          if (maxContent + chrome < VALUE_MAX) {
+            maxContent = Math.max(maxContent, measure(summary))
+          }
+          // 最大列宽和复杂值最小宽度都已确定，无需继续扫描剩余行。
+          if (hasComplexValue && maxContent + chrome >= VALUE_MAX) break
         }
         const summaryWidth = maxContent + chrome
         const declaredForHeader = columnDeclaredTypes[column.name]

@@ -84,12 +84,12 @@ pub struct DimensionValue {
 #[derive(Debug, serde::Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum DimensionView {
-    Variant(DimensionValue),
+    Variant(Box<DimensionValue>),
     Base(DimensionState),
 }
 
 impl DimensionView {
-    fn state(&self) -> &DimensionState {
+    const fn state(&self) -> &DimensionState {
         match self {
             Self::Variant(value) => &value.state,
             Self::Base(state) => state,
@@ -197,6 +197,10 @@ fn field_value(
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub fn query(command: &str, session: &ReadOnlyProjectSession, args: &Arguments) -> Result<Value> {
     let name = args.require("dimension")?;
     let dimension = session
@@ -441,7 +445,7 @@ fn view_value(
             .get(variant)
             .ok_or_else(|| Failure::missing("dimension projection is unavailable"))?;
         return field_value(session, record, field, dimension, variant, projected)
-            .map(DimensionView::Variant);
+            .map(|value| DimensionView::Variant(Box::new(value)));
     }
     let base = record.field(field);
     let expected = &session

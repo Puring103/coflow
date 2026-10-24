@@ -124,8 +124,8 @@ fn block_messages_preserve_rule_identity_and_failing_element_location() {
 #[test]
 fn data_rules_read_their_own_id_field_and_validate_inline_option_objects() {
     let schema = compile_schema(
-        r#"data Reward { id: int; check Positive { id > 0; } }
-        table Item { reward: Option<Reward>; }"#,
+        r"data Reward { id: int; check Positive { id > 0; } }
+        table Item { reward: Option<Reward>; }",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -269,7 +269,12 @@ fn anonymous_rules_execute_in_inheritance_order_and_keep_distinct_identities() {
         "project first",
         "project block",
     ] {
-        assert!(messages.iter().any(|actual| actual.lines().next() == Some(message)), "{messages:?}");
+        assert!(
+            messages
+                .iter()
+                .any(|actual| actual.lines().next() == Some(message)),
+            "{messages:?}"
+        );
     }
     let ids: Vec<_> = output
         .results

@@ -4,6 +4,7 @@ use coflow_runtime::{
     Project,
 };
 use serde_json::{json, Value};
+use std::fmt::Write as _;
 use std::{fs, path::Path};
 
 fn fixture() -> tempfile::TempDir {
@@ -46,7 +47,7 @@ fn run(
         &project,
         &snapshot,
         &args,
-        input.as_ref().map(Value::to_string).as_deref(),
+        input.map(|value| value.to_string()).as_deref(),
         root,
     )
 }
@@ -236,9 +237,10 @@ fn revisions_are_stable_for_identical_relative_projects_and_include_new_inputs()
 #[test]
 fn failed_batches_and_schema_previews_report_patches_without_whole_files() {
     let root = fixture();
-    let original = (0..500)
-        .map(|index| format!("item{index}: Item {{ value: 1 }}\n"))
-        .collect::<String>();
+    let original = (0..500).fold(String::new(), |mut text, index| {
+        let _ = writeln!(text, "item{index}: Item {{ value: 1 }}");
+        text
+    });
     fs::write(root.path().join("data/items.cfd"), &original).unwrap();
     let failed = run(root.path(), "apply", &[], Some(json!({"protocol_version":1,"kind":"operations","ops":[
         {"op":"set_field","record":{"type":"Item","id":"item0"},"path":[{"kind":"field","name":"value"}],"value":{"kind":"expression","source":"2"}},
@@ -303,7 +305,10 @@ fn codegen_preserves_the_callers_revision_until_publication_and_keeps_conflict_d
     assert_eq!(result["written"], false);
     assert_eq!(result["artifacts"]["written"], false);
     assert_eq!(result["artifacts"]["written_files"], json!([]));
-    assert!(!result["artifacts"]["files"].as_array().unwrap().is_empty());
+    assert_ne!(
+        result["artifacts"]["files"].as_array().unwrap().as_slice(),
+        [] as [Value; 0]
+    );
     assert!(!root.path().join("generated").exists());
     let typed: coflow_runtime::automation::CodegenResult = serde_json::from_value(result).unwrap();
     assert_eq!(typed.revision.as_deref(), Some(actual.as_str()));

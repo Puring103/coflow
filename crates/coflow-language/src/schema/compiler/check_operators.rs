@@ -82,47 +82,47 @@ impl CheckTypeAnalyzer<'_, '_> {
                 }
                 InferredType::bool()
             }
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => {
-                if let Some(promoted) = promoted {
-                    InferredType::Value(promoted)
-                } else {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => promoted.map_or_else(
+                || {
                     self.operator_mismatch(lhs, rhs, span);
                     InferredType::Unknown
-                }
-            }
-            BinOp::IntDiv | BinOp::Mod => {
-                if let Some(promoted) = promoted.filter(CftValueType::is_integer) {
-                    InferredType::Value(promoted)
-                } else {
+                },
+                InferredType::Value,
+            ),
+            BinOp::IntDiv | BinOp::Mod => promoted.filter(CftValueType::is_integer).map_or_else(
+                || {
                     self.operator_mismatch(lhs, rhs, span);
                     InferredType::Unknown
-                }
-            }
-            BinOp::Shl | BinOp::Shr => {
-                if let Some(promoted) = promoted.filter(CftValueType::is_integer) {
-                    InferredType::Value(promoted)
-                } else {
+                },
+                InferredType::Value,
+            ),
+            BinOp::Shl | BinOp::Shr => promoted.filter(CftValueType::is_integer).map_or_else(
+                || {
                     self.diag(
                         CftErrorCode::ShiftRequiresInt,
                         span,
                         "shift operators require int or long operands",
                     );
                     InferredType::Unknown
-                }
-            }
+                },
+                InferredType::Value,
+            ),
             BinOp::BitOr | BinOp::BitXor | BinOp::BitAnd => {
-                if let Some(promoted) = promoted.filter(CftValueType::is_integer) {
-                    InferredType::Value(promoted)
-                } else if types_comparable(lhs, rhs) && self.is_flag_enum(lhs) {
-                    lhs.clone()
-                } else {
-                    self.diag(
-                        CftErrorCode::BitwiseRequiresIntOrFlagEnum,
-                        span,
-                        "bitwise operators require int, long or the same flag enum",
-                    );
-                    InferredType::Unknown
-                }
+                promoted.filter(CftValueType::is_integer).map_or_else(
+                    || {
+                        if types_comparable(lhs, rhs) && self.is_flag_enum(lhs) {
+                            lhs.clone()
+                        } else {
+                            self.diag(
+                                CftErrorCode::BitwiseRequiresIntOrFlagEnum,
+                                span,
+                                "bitwise operators require int, long or the same flag enum",
+                            );
+                            InferredType::Unknown
+                        }
+                    },
+                    InferredType::Value,
+                )
             }
         }
     }

@@ -32,6 +32,10 @@ pub struct InspectedField {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "各布尔项对应可组合的语言修饰符，分别暴露声明语义。"
+)]
 pub struct InspectedType {
     pub kind: String,
     pub module: String,
@@ -89,5 +93,5 @@ pub struct SchemaInspection {
 #[serde(untagged)]
 pub enum SchemaInspectionResult {
     Project(SchemaInspection),
-    Field(InspectedField),
+    Field(Box<InspectedField>),
 }

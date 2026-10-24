@@ -5,8 +5,8 @@ use super::manifest::{
     FrontendPluginBundle, FrontendPlugins, PluginScope, ProjectFrontendPlugins,
     ProjectPluginDefaults,
 };
-use cfd_editor_core::editor::EditorError;
 use crate::plugin_manifest::PluginManifest;
+use cfd_editor_core::editor::EditorError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
@@ -403,7 +403,7 @@ mod frontend_plugin_tests {
             read_project_plugins(&root).expect("read project plugins"),
         );
         assert_eq!(state.plugins.len(), 1);
-        assert!(state.errors.is_empty());
+        assert_eq!(state.errors, [] as [String; 0]);
         fs::remove_dir_all(root).expect("remove project root");
         fs::remove_dir_all(plugin_dir).expect("remove plugin directory");
     }

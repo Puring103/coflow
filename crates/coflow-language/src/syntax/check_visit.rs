@@ -21,9 +21,9 @@ pub trait CheckVisitor {
     fn walk_stmt(&mut self, stmt: &CheckStmt) -> Result<(), Self::Error> {
         match stmt {
             CheckStmt::When { message, .. } | CheckStmt::Quantifier { message, .. } => {
-                self.visit_message(message.as_ref())?
+                self.visit_message(message.as_ref())?;
             }
-            _ => {}
+            CheckStmt::Expr { .. } => {}
         }
         match stmt {
             CheckStmt::Expr {

@@ -144,24 +144,56 @@ fn rejects_configured_inputs_that_contain_one_another() {
 fn external_config_paths_are_saved_relative_for_every_directory_kind() {
     let project = project_with_config("schema: schema.cft\ndata: data/\n");
     let parent = project.path().parent().expect("parent");
-    let external = tempfile::Builder::new().prefix("coflow-shared-").tempdir_in(parent).expect("external");
+    let external = tempfile::Builder::new()
+        .prefix("coflow-shared-")
+        .tempdir_in(parent)
+        .expect("external");
     let schema = external.path().join("extra.cft");
     fs::write(&schema, "table Extra {}\n").expect("schema");
     let config_path = project.path().join("coflow.yaml");
-    fs::write(&config_path, serde_yaml::to_string(&serde_json::json!({
-        "schema": project.path().join("schema.cft"),
-        "data": project.path().join("data"),
-        "dimensions": {"language": {"dir": external.path().join("translations")}},
-        "codegen": [{"language": "csharp", "dir": external.path().join("generated")}]
-    })).expect("yaml")).expect("config");
+    fs::write(
+        &config_path,
+        serde_yaml::to_string(&serde_json::json!({
+            "schema": project.path().join("schema.cft"),
+            "data": project.path().join("data"),
+            "dimensions": {"language": {"dir": external.path().join("translations")}},
+            "codegen": [{"language": "csharp", "dir": external.path().join("generated")}]
+        }))
+        .expect("yaml"),
+    )
+    .expect("config");
     add_project_input(&config_path, ProjectInputKind::Schema, &schema).expect("add external");
     let opened = Project::open_schema_only(Some(&config_path)).expect("open");
-    assert!(opened.config().schema.paths().iter().all(|p| p.is_relative()));
+    assert!(opened
+        .config()
+        .schema
+        .paths()
+        .iter()
+        .all(|p| p.is_relative()));
     assert!(opened.config().data.iter().all(|p| p.path().is_relative()));
     assert!(opened.config().codegen[0].dir.is_relative());
-    assert!(opened.config().dimensions["language"].dir.as_ref().expect("dir").is_relative());
-    assert_eq!(coflow_runtime::normalize_path(&opened.resolve_path(&opened.config().codegen[0].dir)), coflow_runtime::normalize_path(&external.path().join("generated")));
-    assert_eq!(coflow_runtime::normalize_path(&opened.resolve_path(opened.config().schema.paths().last().expect("external schema"))), coflow_runtime::normalize_path(&schema));
+    assert!(opened.config().dimensions["language"]
+        .dir
+        .as_ref()
+        .expect("dir")
+        .is_relative());
+    assert_eq!(
+        coflow_runtime::normalize_path(&opened.resolve_path(&opened.config().codegen[0].dir)),
+        coflow_runtime::normalize_path(&external.path().join("generated"))
+    );
+    assert_eq!(
+        coflow_runtime::normalize_path(
+            &opened.resolve_path(
+                opened
+                    .config()
+                    .schema
+                    .paths()
+                    .last()
+                    .expect("external schema")
+            )
+        ),
+        coflow_runtime::normalize_path(&schema)
+    );
 }
 
 #[test]

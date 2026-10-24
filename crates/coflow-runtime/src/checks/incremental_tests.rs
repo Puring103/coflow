@@ -180,7 +180,10 @@ fn replacing_a_polymorphic_object_removes_previous_rule_diagnostics() {
         &impact("Item", "a", "part", ChangedProjection::Base),
     );
     assert_eq!(output.statistics.executed_tasks, 1);
-    assert!(output.state.diagnostics(&after).is_empty());
+    assert_eq!(
+        output.state.diagnostics(&after),
+        [] as [coflow_checker::CheckDiagnostic; 0]
+    );
     assert_equivalent(&schema, &after, &output);
 }
 

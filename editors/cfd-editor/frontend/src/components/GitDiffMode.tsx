@@ -134,7 +134,7 @@ function recordDimension(record: ProjectRecordDiff): string | undefined {
   return record.after?.dimension ?? record.before?.dimension
 }
 
-export function GitDiffMode({ diff, loading, error, selection, onSelectionChange, onRefresh, sessionId, fileTypes }: Props & { sessionId: number, fileTypes: Record<string, FileTypeOption[] | undefined> }) {
+export function GitDiffMode({ diff, loading, error, selection, onSelectionChange, onRefresh, sessionId, fileTypes }: Props & { sessionId: number | null, fileTypes: Record<string, FileTypeOption[] | undefined> }) {
   const index = useMemo(() => buildDiffIndex(diff), [diff])
   const fallbackFile = firstChangedRecordPath(diff) ?? diff?.files[0]?.path ?? null
   const activeFilePath = selection.filePath ?? fallbackFile
@@ -167,6 +167,8 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
   // 记录/表格视图共用的字段过滤开关，默认仅显示修改字段。
   const [changedOnly, setChangedOnly] = useState(true)
 
+  // 项目加载失败时仍允许切换标签，但不能读取会话或显示旧项目的差异。
+  if (sessionId === null) return <ModeMessage text="请先成功打开项目后查看 Git 变更" onRefresh={onRefresh} />
   if (error) return <ModeMessage tone="error" text={error} onRefresh={onRefresh} />
   if (!diff) return <ModeMessage text={loading ? '正在比较 HEAD...' : '尚未获得比较结果'} onRefresh={onRefresh} />
   if (!hasProjectDiffChanges(diff)) return <ModeMessage text="工作区与 HEAD 一致" onRefresh={onRefresh} />

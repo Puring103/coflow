@@ -48,6 +48,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         InferredType::Unknown
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     pub(super) fn check_method_call(
         &mut self,
         receiver: &CheckExpr,

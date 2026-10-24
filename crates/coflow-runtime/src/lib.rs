@@ -17,15 +17,15 @@
 
 mod api;
 mod artifacts;
+pub mod automation;
 mod catalog;
 mod cfd_loader;
-mod value_drafts;
 #[cfg(feature = "internal-check-bench")]
 #[doc(hidden)]
 pub mod check_benchmark_support;
 mod checks;
 pub mod commands;
-pub mod automation;
+mod value_drafts;
 pub use coflow_codegen as codegen;
 mod diff;
 mod dimensions;

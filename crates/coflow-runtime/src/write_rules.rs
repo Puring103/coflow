@@ -1,7 +1,7 @@
 use crate::api::{Diagnostic, DiagnosticSet, Severity};
 use crate::data_model::{
-    CfdPathSegment, CfdRecord, CfdRecordHandle, CfdValue, CfdValueSemanticContext, ValueValidationMode,
-    ValueValidationRequest,
+    CfdPathSegment, CfdRecord, CfdRecordHandle, CfdValue, CfdValueSemanticContext,
+    ValueValidationMode, ValueValidationRequest,
 };
 use coflow_language::cft::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
@@ -147,18 +147,13 @@ pub(crate) fn expected_type_for_record_path(
     let mut current_type = CftValueType::Object(record.actual_type_name().clone());
     let mut current_value: Option<&CfdValue> = None;
     for (index, segment) in path.iter().enumerate() {
-        loop {
-            match (&current_type, current_value) {
-                (CftValueType::Option(inner), value) => {
-                    // 空态影响路径可达性，不改变后续字段的声明类型。
-                    current_type = (**inner).clone();
-                    current_value = match value {
-                        Some(CfdValue::OptionSome(value)) => Some(value),
-                        _ => None,
-                    };
-                }
-                _ => break,
-            }
+        while let CftValueType::Option(inner) = &current_type {
+            // 空态影响路径可达性，不改变后续字段的声明类型。
+            current_type = (**inner).clone();
+            current_value = match current_value {
+                Some(CfdValue::OptionSome(value)) => Some(value),
+                _ => None,
+            };
         }
         if let Some(CfdValue::Object(object)) = current_value {
             current_type = CftValueType::Object(object.actual_type_name().clone());
@@ -301,7 +296,11 @@ struct ProjectValueSemanticContext<'a> {
 }
 
 impl CfdValueSemanticContext for ProjectValueSemanticContext<'_> {
-    fn record_by_domain_id(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordHandle> {
+    fn record_by_domain_id(
+        &self,
+        inheritance_root: &TypeName,
+        key: &str,
+    ) -> Option<CfdRecordHandle> {
         self.session
             .model
             .record_by_domain_id(inheritance_root, key)

@@ -227,8 +227,11 @@ fn semantic_tokens_and_protocol_helpers_cover_malformed_boundaries() {
         test_lsp_build("lsp-semantic-helper-invalid", "table Broken { $");
     let invalid_document = first_document(&invalid_build);
 
-    assert!(document_symbols(invalid_document).is_empty());
-    assert!(semantic_token_data(&invalid_build, invalid_document).is_empty());
+    assert_eq!(document_symbols(invalid_document), [] as [Value; 0]);
+    assert_eq!(
+        semantic_token_data(&invalid_build, invalid_document),
+        [] as [u32; 0]
+    );
     assert_eq!(comment_start_in_line("\"#\" # real"), Some(4));
     assert_eq!(comment_start_in_line("\"unterminated # still string"), None);
     assert!(is_inside_string(
@@ -299,16 +302,28 @@ table Item { @ref(Target) target: string; }\n";
 
 #[test]
 fn named_data_checks_appear_in_outline_and_semantic_tokens() {
-    let source = "data Reward { count: int; check Positive { count > 0; } check Limited { count < 100; } }";
+    let source =
+        "data Reward { count: int; check Positive { count > 0; } check Limited { count < 100; } }";
     let (_cleanup, build) = test_lsp_build("lsp-data-checks", source);
     let document = first_document(&build);
     let raw_tokens = semantic_raw_tokens(&build, document);
     for name in ["Positive", "Limited"] {
-        assert!(has_semantic_token(source, &raw_tokens, &format!("check {name}"), name,
-            SEM_FUNCTION, MOD_DECLARATION | MOD_SCHEMA));
+        assert!(has_semantic_token(
+            source,
+            &raw_tokens,
+            &format!("check {name}"),
+            name,
+            SEM_FUNCTION,
+            MOD_DECLARATION | MOD_SCHEMA
+        ));
     }
     let symbols = document_symbols(document);
     let children = symbols[0]["children"].as_array().expect("type children");
-    assert_eq!(children.iter().map(|child| child["name"].as_str().expect("name")).collect::<Vec<_>>(),
-        ["count", "Positive", "Limited"]);
+    assert_eq!(
+        children
+            .iter()
+            .map(|child| child["name"].as_str().expect("name"))
+            .collect::<Vec<_>>(),
+        ["count", "Positive", "Limited"]
+    );
 }

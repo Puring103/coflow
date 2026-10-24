@@ -1,6 +1,4 @@
-use coflow_runtime::{
-    Diagnostic, DiagnosticSet, Label, SourceLocation,
-};
+use coflow_runtime::{Diagnostic, DiagnosticSet, Label, SourceLocation};
 use std::path::Path;
 
 #[must_use]
@@ -21,4 +19,3 @@ pub fn cli_file_error(
         message: None,
     }))
 }
-

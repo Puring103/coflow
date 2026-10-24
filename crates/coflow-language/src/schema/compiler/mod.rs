@@ -206,6 +206,10 @@ impl ValueResolver<'_, '_> {
 }
 
 impl<'a> ValidatedSchema<'a> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     fn validate(values: ResolvedValues<'a>) -> (Self, Vec<CftDiagnostic>) {
         let mut quantifier_bindings = BTreeMap::new();
         let mut check_dimensions = BTreeMap::new();
@@ -226,7 +230,7 @@ impl<'a> ValidatedSchema<'a> {
                         if let Some(name) = &check.name {
                             names
                                 .entry(name.clone())
-                                .or_insert((owner.module.clone(), check.name_span));
+                                .or_insert_with(|| (owner.module.clone(), check.name_span));
                         }
                     }
                 }

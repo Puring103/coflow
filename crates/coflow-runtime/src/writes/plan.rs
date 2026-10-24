@@ -190,9 +190,9 @@ pub(crate) fn prepare_mutation_execution(
             path,
         )
         .map(MutationExecutionPlan::UnsetField),
-        PreparedMutationOp::RenameRecord {
-            record, new_id, ..
-        } => prepare_rename(session, catalog, record, new_id).map(MutationExecutionPlan::Rename),
+        PreparedMutationOp::RenameRecord { record, new_id, .. } => {
+            prepare_rename(session, catalog, record, new_id).map(MutationExecutionPlan::Rename)
+        }
         PreparedMutationOp::DeleteRecord { record, .. } => {
             prepare_delete(session, catalog, record).map(MutationExecutionPlan::Delete)
         }

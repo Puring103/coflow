@@ -79,7 +79,7 @@ impl ResolvedTypes<'_> {
                                 format!("table type `{resolved_name}` must be written as `&{resolved_name}`"),
                             );
                         }
-                        self.named_value_type(&resolved_name)
+                        Self::named_value_type(&resolved_name)
                     }
                     Some(SymbolKind::Enum) => {
                         InferredType::enum_value(crate::EnumName::from_validated(resolved_name))
@@ -390,7 +390,9 @@ impl ResolvedTypes<'_> {
             TypeRefKind::Named(name) => {
                 let name = name.clone();
                 match self.symbols.get(&name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Type => self.named_value_type(&name),
+                    Some(symbol) if symbol.kind == SymbolKind::Type => {
+                        Self::named_value_type(&name)
+                    }
                     Some(symbol) if symbol.kind == SymbolKind::Enum => {
                         InferredType::enum_value(crate::EnumName::from_validated(name))
                     }
@@ -452,7 +454,7 @@ impl ResolvedTypes<'_> {
                                 format!("table type `{resolved_name}` must be written as `&{resolved_name}`"),
                             ));
                         }
-                        self.named_value_type(&resolved_name)
+                        Self::named_value_type(&resolved_name)
                     }
                     Some(symbol) if symbol.kind == SymbolKind::Enum => {
                         InferredType::enum_value(crate::EnumName::from_validated(resolved_name))
@@ -535,7 +537,7 @@ impl ResolvedTypes<'_> {
         InferredType::Unknown
     }
 
-    fn named_value_type(&self, name: &str) -> InferredType {
+    fn named_value_type(name: &str) -> InferredType {
         InferredType::object(crate::TypeName::from_validated(name.to_string()))
     }
 

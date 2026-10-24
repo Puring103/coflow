@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import type { FileRecords } from './bindings/FileRecords'
-import { fetchFileRecords, removeSessionQueries, validateQueryRevision } from './editorQueries'
+import { fetchFileRecords, fetchSourceText, removeSessionQueries, validateQueryRevision } from './editorQueries'
 import { editorQueryKeys } from './queryKeys'
 
 const records = (revision: number): FileRecords => ({
@@ -24,6 +24,20 @@ describe('editor queries', () => {
     const second = fetchFileRecords(client, 7, 3, 'data.cfd', load)
     await expect(Promise.all([first, second])).resolves.toEqual([records(3), records(3)])
     expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares source prefetch with first mount and reloads after a project revision', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const load = vi.fn(async () => 'table Item {}')
+    const prefetch = fetchSourceText(client, 7, 3, 'a.cft', load)
+    const mounted = fetchSourceText(client, 7, 3, 'a.cft', load)
+    await expect(Promise.all([prefetch, mounted])).resolves.toEqual(['table Item {}', 'table Item {}'])
+    await fetchSourceText(client, 7, 3, 'a.cft', load)
+    expect(load).toHaveBeenCalledTimes(1)
+    await fetchSourceText(client, 7, 3, 'b.cft', load)
+    await fetchSourceText(client, 7, 4, 'a.cft', load)
+    await fetchSourceText(client, 8, 3, 'a.cft', load)
+    expect(load).toHaveBeenCalledTimes(4)
   })
 
   it('removes only queries owned by the selected session', () => {

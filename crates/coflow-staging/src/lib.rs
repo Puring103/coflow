@@ -234,6 +234,10 @@ impl StagedDirectory {
     }
 
     /// Uses the read-only snapshot captured while preparing the output.
+    ///
+    /// # Errors
+    ///
+    /// 快照不匹配或无法创建暂存目录时返回错误。
     pub fn create_with_snapshot(
         path: &Path,
         original: DirectorySnapshot,
@@ -447,6 +451,11 @@ pub struct DirectorySnapshot {
     contents: Option<DirectoryContents>,
 }
 impl DirectorySnapshot {
+    /// 捕获目录内容身份。
+    ///
+    /// # Errors
+    ///
+    /// 无法读取目录、文件或链接时返回错误。
     pub fn capture(path: &Path) -> Result<Self, StagingError> {
         let contents = match fs::symlink_metadata(path) {
             Ok(_) => Some(directory_contents(path)?),
@@ -455,6 +464,11 @@ impl DirectorySnapshot {
         };
         Ok(Self { contents })
     }
+    /// 验证目录内容仍与快照一致。
+    ///
+    /// # Errors
+    ///
+    /// 目录内容变化或无法读取时返回错误。
     pub fn verify(&self, path: &Path) -> Result<(), StagingError> {
         // 比较文件、目录与链接的内容身份，新增、删除和外部改写均使发布前置条件失效。
         if *self != Self::capture(path)? {

@@ -215,7 +215,7 @@ impl<'a> ModelCompiler<'a> {
         let (dimension_values, effective_values) = self.resolve_dimension_values(
             &drafts,
             &indexes.record_by_domain_id,
-            validated_dimension_values,
+            &validated_dimension_values,
         );
         self.move_editable_diagnostics(|_| true);
         attach_dimension_values(&mut records, dimension_values);
@@ -471,7 +471,7 @@ impl<'a> ModelCompiler<'a> {
         &mut self,
         drafts: &[RecordDraft],
         record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
-        validated: Vec<ValidatedDimensionValue>,
+        validated: &[ValidatedDimensionValue],
     ) -> (Vec<ResolvedDimensionValue>, Vec<EffectiveDimensionValue>) {
         let mut explicit_values = Vec::new();
         let mut effective_values = Vec::new();
@@ -498,7 +498,7 @@ impl<'a> ModelCompiler<'a> {
                 &mut self.diagnostics,
                 self.structural_limits,
             );
-            resolver.set_dimension_values(&validated);
+            resolver.set_dimension_values(validated);
             // 对全部已发现单维上下文完整求值，未标注维度的模板也可能经引用受覆盖影响。
             // 每条记录共享一次结构预算，不预计算维度组合的笛卡尔积。
             for (dimension, variants) in &self.dimension_variants {
@@ -511,10 +511,10 @@ impl<'a> ModelCompiler<'a> {
                             Some((dimension.clone(), variant.clone())),
                         ) {
                             for field in self.schema.full_fields(owner.actual_type.as_str()) {
-                                if !field
+                                if field
                                     .dimension
                                     .as_ref()
-                                    .is_some_and(|binding| &binding.dimension == dimension)
+                                    .is_none_or(|binding| &binding.dimension != dimension)
                                 {
                                     continue;
                                 }

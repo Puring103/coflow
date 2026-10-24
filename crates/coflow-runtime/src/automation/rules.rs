@@ -4,6 +4,7 @@ use coflow_language::cft::{
     CftSchema, CftSchemaCheckStmt, CheckDependency, CheckOwner, CheckStatementInfo,
 };
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -137,31 +138,7 @@ pub fn describe(
         })
         .collect();
     // 量词和条件块内的消息同样属于该规则，保留源码表达式以表达插值消息。
-    fn message_text(
-        message: Option<&coflow_language::cft::CftSchemaCheckMessage>,
-        source: &str,
-        output: &mut Vec<String>,
-    ) {
-        if let Some(text) =
-            message.and_then(|message| source.get(message.span.start..message.span.end))
-        {
-            output.push(text.to_string());
-        }
-    }
-    fn messages(statement: &CftSchemaCheckStmt, source: &str, output: &mut Vec<String>) {
-        match statement {
-            CftSchemaCheckStmt::Expr { message, .. } => {
-                message_text(message.as_ref(), source, output)
-            }
-            CftSchemaCheckStmt::Quantifier { body, message, .. }
-            | CftSchemaCheckStmt::When { body, message, .. } => {
-                message_text(message.as_ref(), source, output);
-                for statement in body {
-                    messages(statement, source, output);
-                }
-            }
-        }
-    }
+
     let mut rule_messages = Vec::new();
     if let Some((block, source)) = block.zip(source) {
         message_text(block.message.as_ref(), &source.source, &mut rule_messages);
@@ -219,8 +196,8 @@ pub fn query(
 pub(crate) struct Validation {
     pub report: Value,
     pub diagnostics: crate::DiagnosticSet,
-    pub logical_locations: std::collections::BTreeMap<usize, crate::DiagnosticLogicalLocation>,
-    pub explanations: std::collections::BTreeMap<usize, Value>,
+    pub logical_locations: BTreeMap<usize, crate::DiagnosticLogicalLocation>,
+    pub explanations: BTreeMap<usize, Value>,
 }
 
 impl Validation {
@@ -258,17 +235,21 @@ pub(crate) fn check_schema(session: &crate::ProjectSchemaSession, args: &Argumen
             })
             .collect()
     } else {
-        Default::default()
+        BTreeMap::default()
     };
     Validation {
         report: json!({"schema": if passed { "passed" } else { "failed" }, "structure":"not_executed", "rules":"not_executed",
             "complete":passed,"diagnostic_count":diagnostics.diagnostics.len()}),
         diagnostics,
-        logical_locations: Default::default(),
+        logical_locations: BTreeMap::default(),
         explanations,
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub(crate) fn check_with_limits(
     session: &ReadOnlyProjectSession,
     args: &Arguments,
@@ -283,7 +264,7 @@ pub(crate) fn check_with_limits(
                 .cloned()
                 .map(|location| (index, location))
         })
-        .collect::<std::collections::BTreeMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     let requested = args.all("rule");
     if args.flag("rules") && !requested.is_empty() {
         return Err(Failure::request(
@@ -307,35 +288,32 @@ pub(crate) fn check_with_limits(
                 "diagnostic_count": structural.diagnostics.len()}),
             diagnostics: structural,
             logical_locations: locations,
-            explanations: Default::default(),
+            explanations: BTreeMap::default(),
         };
         if args.flag("explain") {
             explain_diagnostics(session, &mut validation);
         }
         return Ok(validation);
     }
-    let tasks = match crate::checks::planning::plan_selected_checks_with_limit(
+    let Ok(tasks) = crate::checks::planning::plan_selected_checks_with_limit(
         session.schema(),
         session.model(),
         limits.max_tasks,
         (!requested.is_empty()).then_some(&selected),
-    ) {
-        Ok(tasks) => tasks,
-        Err(_) => {
-            let mut diagnostics = structural;
-            diagnostics.push(crate::Diagnostic::error(
-                "CHECK-BUDGET",
-                "CHECK",
-                "rule planning budget exhausted",
-            ));
-            return Ok(Validation {
-                report: json!({"structure": "passed", "rules": "budget_exhausted", "complete": false,
-                "scope": requested, "diagnostic_count": diagnostics.diagnostics.len(), "executed_tasks": 0}),
-                diagnostics,
-                logical_locations: locations,
-                explanations: Default::default(),
-            });
-        }
+    ) else {
+        let mut diagnostics = structural;
+        diagnostics.push(crate::Diagnostic::error(
+            "CHECK-BUDGET",
+            "CHECK",
+            "rule planning budget exhausted",
+        ));
+        return Ok(Validation {
+            report: json!({"structure": "passed", "rules": "budget_exhausted", "complete": false,
+            "scope": requested, "diagnostic_count": diagnostics.diagnostics.len(), "executed_tasks": 0}),
+            diagnostics,
+            logical_locations: locations,
+            explanations: BTreeMap::default(),
+        });
     };
     let output = crate::execute_checks(session.schema(), session.model(), tasks, limits);
     let raw: Vec<_> = output.diagnostics().cloned().collect();
@@ -389,7 +367,7 @@ pub(crate) fn check_with_limits(
         coflow_checker::CheckTaskStatus,
         usize,
     )>::new();
-    let mut indices = std::collections::BTreeMap::new();
+    let mut indices = BTreeMap::new();
     for result in &output.results {
         let Some(statement) = session.schema().check_statement(result.task.statement) else {
             continue;
@@ -406,7 +384,7 @@ pub(crate) fn check_with_limits(
             grouped.push((result, result.status, result.diagnostics.len()));
         }
     }
-    let mut counts = std::collections::BTreeMap::from([("total", grouped.len())]);
+    let mut counts = BTreeMap::from([("total", grouped.len())]);
     for (_, status, _) in &grouped {
         *counts.entry(state_name(*status)).or_default() += 1;
     }
@@ -431,7 +409,7 @@ pub(crate) fn check_with_limits(
         report,
         diagnostics,
         logical_locations: locations,
-        explanations: Default::default(),
+        explanations: BTreeMap::default(),
     };
     if args.flag("performance") {
         validation.report["performance"] = json!({"rule_work":output.statistics.work_used,"project":session.queries().execution_stats()});
@@ -474,7 +452,7 @@ pub(crate) fn check_with_limits(
     Ok(validation)
 }
 
-fn state_name(status: coflow_checker::CheckTaskStatus) -> &'static str {
+const fn state_name(status: coflow_checker::CheckTaskStatus) -> &'static str {
     use coflow_checker::CheckTaskStatus as S;
     match status {
         S::Passed => "passed",
@@ -486,7 +464,7 @@ fn state_name(status: coflow_checker::CheckTaskStatus) -> &'static str {
     }
 }
 
-fn state_rank(status: coflow_checker::CheckTaskStatus) -> u8 {
+const fn state_rank(status: coflow_checker::CheckTaskStatus) -> u8 {
     use coflow_checker::CheckTaskStatus as S;
     match status {
         S::BudgetExceeded => 6,
@@ -573,5 +551,31 @@ pub(super) fn explain_diagnostics(session: &ReadOnlyProjectSession, validation: 
             }
         }
         validation.explanations.insert(index, explanation);
+    }
+}
+
+fn message_text(
+    message: Option<&coflow_language::cft::CftSchemaCheckMessage>,
+    source: &str,
+    output: &mut Vec<String>,
+) {
+    if let Some(text) = message.and_then(|message| source.get(message.span.start..message.span.end))
+    {
+        output.push(text.to_string());
+    }
+}
+
+fn messages(statement: &CftSchemaCheckStmt, source: &str, output: &mut Vec<String>) {
+    match statement {
+        CftSchemaCheckStmt::Expr { message, .. } => {
+            message_text(message.as_ref(), source, output);
+        }
+        CftSchemaCheckStmt::Quantifier { body, message, .. }
+        | CftSchemaCheckStmt::When { body, message, .. } => {
+            message_text(message.as_ref(), source, output);
+            for statement in body {
+                messages(statement, source, output);
+            }
+        }
     }
 }

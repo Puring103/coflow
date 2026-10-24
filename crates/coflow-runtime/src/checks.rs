@@ -1,9 +1,9 @@
 pub(crate) mod impact;
+#[cfg(test)]
+mod incremental_tests;
 pub(crate) mod planning;
 pub(crate) mod render;
 mod store;
-#[cfg(test)]
-mod incremental_tests;
 
 use std::collections::BTreeMap;
 
@@ -78,12 +78,7 @@ pub(crate) fn run_incremental_project_checks(
     let impact = previous.effective_impact(schema, model, impact);
     let plan = plan_incremental_checks_with_limit(schema, model, &impact, limits.max_tasks);
     let planned = plan.is_ok();
-    let output = execute_plan(
-        plan,
-        schema,
-        model,
-        limits,
-    );
+    let output = execute_plan(plan, schema, model, limits);
     let statistics = output.statistics;
     let mut state = previous.clone();
     state.remove_missing_records(model);
@@ -634,7 +629,7 @@ mod tests {
     #[test]
     fn adding_a_variant_invalidates_other_records_variant_collections() {
         let schema = schema(
-            r#"table Item { @localized name: string; check Valid { name.variants().len() <= 1; } }"#,
+            r"table Item { @localized name: string; check Valid { name.variants().len() <= 1; } }",
         );
         let build = |extra: bool| {
             let mut builder = CfdDataModel::builder(&schema);
@@ -654,7 +649,10 @@ mod tests {
         };
         let before = build(false);
         let previous = run_full_project_checks(&schema, &before, &[]);
-        assert!(previous.state.diagnostics(&before).is_empty());
+        assert_eq!(
+            previous.state.diagnostics(&before),
+            [] as [coflow_checker::CheckDiagnostic; 0]
+        );
         let after = build(true);
         let impact = CheckImpact {
             records: BTreeMap::from([(
@@ -731,7 +729,10 @@ mod tests {
             record_sets: BTreeSet::new(),
         };
         let updated = incremental_store(&schema, &after, &previous, &impact);
-        assert!(updated.diagnostics(&after).is_empty());
+        assert_eq!(
+            updated.diagnostics(&after),
+            [] as [coflow_checker::CheckDiagnostic; 0]
+        );
         assert_eq!(
             updated.diagnostics(&after),
             full_store(&schema, &after).diagnostics(&after)

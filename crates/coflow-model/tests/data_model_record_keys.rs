@@ -44,10 +44,7 @@ fn record_ids_build_indexes_and_record_refs_resolve_by_expected_type() {
         model.lookup_assignable(&schema, "ItemReward", "reward_1"),
         Some(reward_id)
     );
-    assert_eq!(
-        model.record(reward_id).map(CfdRecord::id),
-        Some("reward_1")
-    );
+    assert_eq!(model.record(reward_id).map(CfdRecord::id), Some("reward_1"));
     assert_eq!(
         model
             .record(drop_id)
@@ -323,10 +320,7 @@ fn domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type() {
         Some(currency_id)
     );
     assert_eq!(model.record_by_type_id("Reward", "item"), None);
-    assert_eq!(
-        model.record_by_type_id("ItemReward", "item"),
-        Some(item_id)
-    );
+    assert_eq!(model.record_by_type_id("ItemReward", "item"), Some(item_id));
     assert_eq!(model.record_by_type_id("CurrencyReward", "item"), None);
 }
 

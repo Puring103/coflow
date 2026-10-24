@@ -44,5 +44,9 @@ fn optional_names_preserve_duplicate_name_and_empty_block_validation() {
 #[test]
 fn anonymous_blocks_accept_formatted_messages() {
     let source = r#"table T { value: int = 1; check { value > 0; } check: f"value {value}" { value > 0; } }"#;
-    build_schema(&parse_modules([CftFile::from_source(ModuleId::from("main"), source)])).unwrap();
+    build_schema(&parse_modules([CftFile::from_source(
+        ModuleId::from("main"),
+        source,
+    )]))
+    .unwrap();
 }

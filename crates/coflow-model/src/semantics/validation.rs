@@ -195,6 +195,14 @@ fn validate_object_type_assignable_at(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "精度校验需要精确比较舍入前后的值，近似比较会接受无法表示的输入。"
+)]
 fn validate_value_inner<C: CfdValueSemanticContext>(
     schema: &CftSchema,
     context: &C,

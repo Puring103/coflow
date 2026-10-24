@@ -403,8 +403,8 @@ export function InspectorPanel({
           <button
             className="btn btn-icon"
             onClick={onClose}
-            title="关闭"
-            aria-label="关闭记录面板"
+            title="清除选择"
+            aria-label="清除详情选择"
           >
             <Icon name="close" size={13} />
           </button>

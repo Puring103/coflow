@@ -661,7 +661,7 @@ mod tests {
     fn diagnostic_contexts_are_backward_compatible_and_preserve_unknown_kinds() {
         let legacy = r#"{"code":"X","stage":"TEST","severity":"error","message":"failed","primary":null,"related":[]}"#;
         let diagnostic: Diagnostic = serde_json::from_str(legacy).expect("legacy diagnostic");
-        assert!(diagnostic.contexts.is_empty());
+        assert_eq!(diagnostic.contexts, [] as [DiagnosticContext; 0]);
         assert_eq!(
             serde_json::to_value(&diagnostic).expect("serialize")["contexts"],
             serde_json::Value::Null

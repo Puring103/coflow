@@ -15,7 +15,20 @@ mod plugins;
 use cfd_editor_core::EditorHost;
 use tauri::Manager;
 
-use commands::*;
+use commands::{
+    add_project_input, build_project, build_project_status, check_project, close_language_document,
+    close_session, complete_language_document, create_project_file, create_record_draft,
+    delete_project_entry, delete_record, edit_collection, format_language_document,
+    get_dimension_file_records, get_dimension_value, get_enum_variants, get_file_records,
+    get_graph, get_plugin_records_by_type, get_plugin_schema, get_project_diff,
+    get_project_settings, get_ref_targets, highlight_source_snapshot, init_project, insert_record,
+    load_project, make_default_object, move_record, open_source_file, parse_cell_text,
+    read_source_text, reload_session, rename_record_id, render_cell_text, search_records,
+    set_default_table_column_widths, set_graph_compact_mode, set_graph_positions,
+    set_record_groups, set_short_name_field, set_view_column_widths, set_view_order, set_views,
+    set_workspace, swap_records, sync_language_document, transfer_record, validate_source_text,
+    write_dimension_value, write_field, write_fields, write_source_text,
+};
 use events::TauriEditorEventSink;
 use plugins::{
     install_frontend_plugin, install_project_frontend_plugin, list_frontend_plugins,

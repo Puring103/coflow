@@ -96,7 +96,7 @@ impl<'a> TypeParser<'a> {
             if !self
                 .schema
                 .resolve_type(&name)
-                .is_some_and(|ty| ty.is_table())
+                .is_some_and(coflow_language::cft::CftType::is_table)
             {
                 return Err(invalid_declared_type(format!(
                     "reference target `{name}` must be table"
@@ -154,7 +154,7 @@ impl<'a> TypeParser<'a> {
                 if self
                     .schema
                     .resolve_type(other)
-                    .is_some_and(|ty| ty.is_table()) =>
+                    .is_some_and(coflow_language::cft::CftType::is_table) =>
             {
                 return Err(invalid_declared_type(format!(
                     "table value type must be `&{other}`"
@@ -164,7 +164,7 @@ impl<'a> TypeParser<'a> {
                 if self
                     .schema
                     .resolve_type(other)
-                    .is_some_and(|ty| ty.is_data()) =>
+                    .is_some_and(coflow_language::cft::CftType::is_data) =>
             {
                 CellType::Type(other.to_string())
             }
@@ -172,7 +172,7 @@ impl<'a> TypeParser<'a> {
                 if self
                     .schema
                     .resolve_type(other)
-                    .is_some_and(|ty| ty.is_singleton())
+                    .is_some_and(coflow_language::cft::CftType::is_singleton)
                     || other.starts_with('&') =>
             {
                 return Err(invalid_declared_type(format!(

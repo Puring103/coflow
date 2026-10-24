@@ -96,7 +96,7 @@ impl<'a> ProjectQueries<'a> {
         self.session
             .schema()
             .resolve_type(type_name)
-            .is_some_and(|meta| meta.is_singleton())
+            .is_some_and(coflow_language::cft::CftType::is_singleton)
     }
 
     #[must_use]
@@ -104,7 +104,7 @@ impl<'a> ProjectQueries<'a> {
         self.session
             .schema()
             .resolve_type(type_name)
-            .is_some_and(|ty| ty.is_data())
+            .is_some_and(coflow_language::cft::CftType::is_data)
     }
 
     #[must_use]
@@ -218,6 +218,9 @@ impl<'a> ProjectQueries<'a> {
     }
 
     /// 编辑器按项目相对路径镜像主体文件，维度目录由项目配置明确指定。
+    /// # Errors
+    ///
+    /// 主体记录不存在或项目未配置所需维度目录时返回诊断。
     pub fn dimension_destination(
         self,
         actual_type: &str,
@@ -555,6 +558,35 @@ fn field_shape(schema: &CftSchema, ty: &CftValueType) -> FieldShapeInfo {
     }
 }
 
+/// 所有宿主按项目相对路径镜像主体文件，维度目录由项目配置明确指定。
+pub(crate) fn dimension_destination_for_owner(
+    project: &crate::Project,
+    owner: &std::path::Path,
+    dimension: &str,
+) -> Result<std::path::PathBuf, crate::DiagnosticSet> {
+    let error = |message| {
+        crate::DiagnosticSet::one(crate::Diagnostic::error(
+            "MUTATION-DIMENSION-DESTINATION",
+            "WRITE",
+            message,
+        ))
+    };
+    let directory = project
+        .config()
+        .dimensions
+        .get(dimension)
+        .and_then(|configuration| configuration.dir.as_ref())
+        .ok_or_else(|| {
+            error(format!(
+                "configure dimensions.{dimension}.dir before creating overrides"
+            ))
+        })?;
+    let relative = owner.strip_prefix(project.root_dir()).map_err(|_| {
+        error("automatic dimension files require a project-relative owner file".to_string())
+    })?;
+    Ok(project.resolve_path(directory).join(relative))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
@@ -624,33 +656,4 @@ mod tests {
             Some("int")
         );
     }
-}
-
-/// 所有宿主按项目相对路径镜像主体文件，维度目录由项目配置明确指定。
-pub(crate) fn dimension_destination_for_owner(
-    project: &crate::Project,
-    owner: &std::path::Path,
-    dimension: &str,
-) -> Result<std::path::PathBuf, crate::DiagnosticSet> {
-    let error = |message| {
-        crate::DiagnosticSet::one(crate::Diagnostic::error(
-            "MUTATION-DIMENSION-DESTINATION",
-            "WRITE",
-            message,
-        ))
-    };
-    let directory = project
-        .config()
-        .dimensions
-        .get(dimension)
-        .and_then(|configuration| configuration.dir.as_ref())
-        .ok_or_else(|| {
-            error(format!(
-                "configure dimensions.{dimension}.dir before creating overrides"
-            ))
-        })?;
-    let relative = owner.strip_prefix(project.root_dir()).map_err(|_| {
-        error("automatic dimension files require a project-relative owner file".to_string())
-    })?;
-    Ok(project.resolve_path(directory).join(relative))
 }

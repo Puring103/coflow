@@ -1,6 +1,12 @@
+#![allow(
+    clippy::panic,
+    clippy::literal_string_with_formatting_args,
+    reason = "测试通过 panic 报告失败，输入花括号属于 CFT 语法。"
+)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use serde_json::{json, Value};
+use std::fmt::Write as _;
 use std::{
     fs,
     io::Write,
@@ -416,7 +422,7 @@ fn explain_uses_real_diagnostic_codes_and_describes_its_typed_result() {
         assert_eq!(exit, 0, "{response}");
         assert_eq!(response["result"]["code"], code);
         for field in ["meaning", "trigger", "repair"] {
-            assert!(!response["result"][field].as_str().unwrap().is_empty());
+            assert_ne!(response["result"][field].as_str().unwrap(), "");
         }
     }
     let (exit, _, _) = call(root.path(), &["explain", "CFT"], None);
@@ -557,13 +563,13 @@ fn evaluation_error_aborts_only_its_rule_without_claiming_budget_exhaustion() {
     let root = fixture();
     fs::write(
         root.path().join("schema.cft"),
-        r#"
+        r"
 table Item {
   value: int;
   check Division { 10 // value > 1; value >= 0; }
   check StillRuns { value == 0; }
 }
-"#,
+",
     )
     .unwrap();
     fs::write(root.path().join("data/items.cfd"), "a: Item { value: 0 }\n").unwrap();
@@ -648,7 +654,7 @@ fn json_is_one_line_and_pretty_is_an_explicit_json_mode() {
         let text = String::from_utf8(output.stdout).unwrap();
         let _: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(text.lines().count() > 1, pretty, "{text}");
-        assert!(output.stderr.is_empty());
+        assert_eq!(output.stderr, [] as [u8; 0]);
     }
 }
 
@@ -691,9 +697,10 @@ fn successful_rule_runs_default_to_counts_and_details_are_explicit() {
     let root = fixture();
     fs::write(
         root.path().join("data/items.cfd"),
-        (0..80)
-            .map(|index| format!("item{index}: Item {{ value: 1 }}\n"))
-            .collect::<String>(),
+        (0..80).fold(String::new(), |mut text, index| {
+            let _ = writeln!(text, "item{index}: Item {{ value: 1 }}");
+            text
+        }),
     )
     .unwrap();
     let (exit, summary, _) = call(root.path(), &["check", "--rules"], None);
@@ -759,9 +766,10 @@ fn data_set_exposes_revision_and_typed_value_preconditions() {
 #[test]
 fn failed_transactions_and_schema_previews_return_compact_source_patches() {
     let root = fixture();
-    let original = (0..500)
-        .map(|index| format!("item{index}: Item {{ value: 1 }}\n"))
-        .collect::<String>();
+    let original = (0..500).fold(String::new(), |mut text, index| {
+        let _ = writeln!(text, "item{index}: Item {{ value: 1 }}");
+        text
+    });
     fs::write(root.path().join("data/items.cfd"), &original).unwrap();
     let changes = json!({"protocol_version":1,"kind":"operations","ops":
         (["item0", "missing"].into_iter().map(|id| json!({"op":"set_field","record":{"type":"Item","id":id},

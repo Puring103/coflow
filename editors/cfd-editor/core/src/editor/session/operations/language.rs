@@ -2,7 +2,7 @@
 //!
 //! 语言服务只借用会话内的嵌入式 LSP，不触碰引擎写接口。
 
-use super::super::{EditorSession, SessionStore};
+use super::super::{LanguageSession, SessionStore};
 use crate::editor::types::{
     EditorError, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
     LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit, ProjectBootstrap,
@@ -20,13 +20,13 @@ fn has_extension(path: &str, expected: &str) -> bool {
 }
 
 fn synchronize_language_document(
-    session: &mut EditorSession,
+    session: &mut LanguageSession,
     uri: &str,
     file_path: &str,
     source: &str,
     version: i64,
 ) -> Result<Vec<Value>, EditorError> {
-    let (method, params) = if session.language_documents.insert(uri.to_string()) {
+    let (method, params) = if session.documents.insert(uri.to_string()) {
         (
             "textDocument/didOpen",
             json!({
@@ -48,7 +48,7 @@ fn synchronize_language_document(
         )
     };
     session
-        .language_server
+        .server
         .notify(method, &params)
         .map_err(|error| EditorError::other(format!("LSP sync failed for {file_path}: {error}")))
 }
@@ -219,12 +219,16 @@ impl SessionStore {
         source: &str,
     ) -> Result<LanguageDocumentState, EditorError> {
         let entry = self.session(id)?;
-        let mut session = entry.state.write();
-        let path = session.project_root.join(file_path);
+        let (path, language) = {
+            let session = entry.state.read();
+            (
+                session.project_root.join(file_path),
+                std::sync::Arc::clone(&session.language),
+            )
+        };
+        let mut session = language.lock();
         // 只分析快照，不同步语言文档，避免 HEAD 覆盖当前草稿。
-        let tokens = session
-            .language_server
-            .highlight_source_snapshot(&path, source);
+        let tokens = session.server.highlight_source_snapshot(&path, source);
         Ok(LanguageDocumentState {
             diagnostics: Vec::new(),
             semantic_token_data: tokens
@@ -253,11 +257,12 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry.state.write();
+        let language = std::sync::Arc::clone(&entry.state.read().language);
+        let mut session = language.lock();
         let mut notifications =
             synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (tokens, emitted) = session
-            .language_server
+            .server
             .request(
                 "textDocument/semanticTokens/full",
                 &json!({ "textDocument": { "uri": uri } }),
@@ -265,16 +270,10 @@ impl SessionStore {
             .map_err(EditorError::other)?;
         notifications.extend(emitted);
         if let Some(diagnostics) = diagnostics_for_uri(&notifications, &uri) {
-            session
-                .language_diagnostics
-                .insert(uri.clone(), diagnostics);
+            session.diagnostics.insert(uri.clone(), diagnostics);
         }
         Ok(LanguageDocumentState {
-            diagnostics: session
-                .language_diagnostics
-                .get(&uri)
-                .cloned()
-                .unwrap_or_default(),
+            diagnostics: session.diagnostics.get(&uri).cloned().unwrap_or_default(),
             semantic_token_data: tokens
                 .get("data")
                 .and_then(Value::as_array)
@@ -302,10 +301,11 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry.state.write();
+        let language = std::sync::Arc::clone(&entry.state.read().language);
+        let mut session = language.lock();
         synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (result, _) = session
-            .language_server
+            .server
             .request(
                 "textDocument/completion",
                 &json!({
@@ -329,10 +329,11 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry.state.write();
+        let language = std::sync::Arc::clone(&entry.state.read().language);
+        let mut session = language.lock();
         synchronize_language_document(&mut session, &uri, file_path, source, version)?;
         let (result, _) = session
-            .language_server
+            .server
             .request(
                 "textDocument/formatting",
                 &json!({
@@ -354,11 +355,12 @@ impl SessionStore {
         let path = self.source_file_path(id, file_path)?;
         let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let entry = self.session(id)?;
-        let mut session = entry.state.write();
-        if session.language_documents.remove(&uri) {
-            session.language_diagnostics.remove(&uri);
+        let language = std::sync::Arc::clone(&entry.state.read().language);
+        let mut session = language.lock();
+        if session.documents.remove(&uri) {
+            session.diagnostics.remove(&uri);
             session
-                .language_server
+                .server
                 .notify(
                     "textDocument/didClose",
                     &json!({ "textDocument": { "uri": uri } }),

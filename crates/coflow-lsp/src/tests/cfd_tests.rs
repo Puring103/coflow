@@ -610,7 +610,10 @@ fn cfd_formatted_string_completion_supports_record_reference_syntax() {
     let incomplete_source =
         r#"standard: DefaultSettings { visible: true, title: f"{&DefaultSettings::standard.}" }"#;
     let (incomplete_ast, incomplete_diagnostics) = parse_cfd(incomplete_source);
-    assert!(!incomplete_diagnostics.is_empty());
+    assert_ne!(
+        incomplete_diagnostics,
+        [] as [coflow_language::cfd::CfdSyntaxDiagnostic; 0]
+    );
     let incomplete_offset = incomplete_source
         .find("&DefaultSettings::standard.")
         .expect("incomplete reference")

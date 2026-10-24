@@ -136,8 +136,8 @@ fn excludes_ignored_untracked_project_sources() {
         .diff_against_head()
         .expect("diff against HEAD");
 
-    assert!(diff.files.is_empty());
-    assert!(diff.records.is_empty());
+    assert_eq!(diff.files, [] as [coflow_runtime::ProjectFileDiff; 0]);
+    assert_eq!(diff.records, [] as [coflow_runtime::ProjectRecordDiff; 0]);
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn keeps_source_diff_when_head_project_is_invalid() {
         .expect("diff against HEAD");
 
     assert!(!diff.semantic_available);
-    assert!(diff.records.is_empty());
+    assert_eq!(diff.records, [] as [coflow_runtime::ProjectRecordDiff; 0]);
     assert!(diff
         .files
         .iter()
@@ -264,8 +264,8 @@ fn ignores_checkout_line_ending_differences() {
         .diff_against_head()
         .expect("diff against HEAD");
 
-    assert!(diff.files.is_empty());
-    assert!(diff.records.is_empty());
+    assert_eq!(diff.files, [] as [coflow_runtime::ProjectFileDiff; 0]);
+    assert_eq!(diff.records, [] as [coflow_runtime::ProjectRecordDiff; 0]);
 }
 
 #[test]
@@ -413,7 +413,8 @@ fn reports_git_diagnostic_for_unborn_head() {
         .expect_err("HEAD is unborn");
     assert!(diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "GIT-DIFF"));
+        .any(|diagnostic| diagnostic.code == "GIT-DIFF"
+            && diagnostic.message.contains("创建首次提交")));
 }
 
 #[test]

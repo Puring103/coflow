@@ -93,7 +93,11 @@ impl ProjectSession {
     /// id. Returns `None` when no record matches — callers surface an
     /// `EditorError::NotFound` rather than panic.
     #[must_use]
-    pub(crate) fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordHandle> {
+    pub(crate) fn id_for_coordinate(
+        &self,
+        actual_type: &str,
+        key: &str,
+    ) -> Option<CfdRecordHandle> {
         self.records.id_for_coordinate(actual_type, key)
     }
 
@@ -186,8 +190,7 @@ impl ProjectSession {
         };
         for type_name in assignable_types {
             for (_, record) in self.model.records_of_type(&type_name) {
-                let Some(file_path) = self.file_for_record(record.actual_type(), &record.id)
-                else {
+                let Some(file_path) = self.file_for_record(record.actual_type(), &record.id) else {
                     continue;
                 };
                 targets.push(RefTargetInfo {
@@ -306,12 +309,7 @@ impl ProjectSession {
         }
         files::sort_file_tree(&mut tree);
         let dimension_files = self.source_data.dimension_only_files(&self.project);
-        fn annotate_dimensions(nodes: &mut [FileTreeNode], files: &BTreeSet<&str>) {
-            for node in nodes {
-                node.dimension_only = !node.is_dir && files.contains(node.path.as_str());
-                annotate_dimensions(&mut node.children, files);
-            }
-        }
+
         annotate_dimensions(&mut tree, &dimension_files);
 
         tree
@@ -359,5 +357,12 @@ fn display_source_path(source: &str) -> String {
         source.to_string()
     } else {
         path_to_slash(Path::new(source))
+    }
+}
+
+fn annotate_dimensions(nodes: &mut [FileTreeNode], files: &BTreeSet<&str>) {
+    for node in nodes {
+        node.dimension_only = !node.is_dir && files.contains(node.path.as_str());
+        annotate_dimensions(&mut node.children, files);
     }
 }

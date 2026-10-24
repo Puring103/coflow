@@ -75,10 +75,27 @@ fn identifier_issue(name: &str) -> Option<IdentifierIssue> {
 #[must_use]
 pub fn is_cft_reserved_identifier(name: &str) -> bool {
     // 只保留当前语法的结构词与字面量；方法名和目标语言关键字不占用业务名称。
-    matches!(name,
-        "_" | "const" | "enum" | "type" | "table" | "data" | "singleton"
-        | "abstract" | "sealed" | "check" | "when" | "all" | "any" | "none"
-        | "in" | "is" | "true" | "false" | "None" | "Some"
+    matches!(
+        name,
+        "_" | "const"
+            | "enum"
+            | "type"
+            | "table"
+            | "data"
+            | "singleton"
+            | "abstract"
+            | "sealed"
+            | "check"
+            | "when"
+            | "all"
+            | "any"
+            | "none"
+            | "in"
+            | "is"
+            | "true"
+            | "false"
+            | "None"
+            | "Some"
     )
 }
 
@@ -98,11 +115,32 @@ mod tests {
 
     #[test]
     fn reserves_only_current_syntax_and_literals() {
-        for name in ["check", "when", "all", "any", "none", "None", "Some", "table", "in"] {
+        for name in [
+            "check", "when", "all", "any", "none", "None", "Some", "table", "in",
+        ] {
             assert!(!is_cft_identifier(name), "`{name}` must be reserved");
         }
-        for name in ["min", "max", "keys", "values", "records", "for", "return", "fn", "var", "id", "Id", "ID", "namespace", "null", "fstring"] {
-            assert!(is_cft_identifier(name), "`{name}` is an ordinary identifier");
+        for name in [
+            "min",
+            "max",
+            "keys",
+            "values",
+            "records",
+            "for",
+            "return",
+            "fn",
+            "var",
+            "id",
+            "Id",
+            "ID",
+            "namespace",
+            "null",
+            "fstring",
+        ] {
+            assert!(
+                is_cft_identifier(name),
+                "`{name}` is an ordinary identifier"
+            );
         }
     }
 }

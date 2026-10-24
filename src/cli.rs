@@ -127,6 +127,10 @@ const RECORD: &str = "type id";
 const VALUE: &str = "value-cfd value-file";
 const DIMENSION: &str = "dimension variant type id field";
 
+#[expect(
+    clippy::unreachable,
+    reason = "固定命令参数表与帮助分支必须穷举对应，遗漏属于开发错误。"
+)]
 fn option(name: &'static str) -> Arg {
     let argument = Arg::new(name).long(name).help(match name {
         "type" => "Actual type name",
@@ -274,6 +278,10 @@ fn group(name: &'static str, children: Vec<Command>) -> Command {
         .subcommands(children)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "完整命令或设置分支集中列出，便于核对输入与行为。"
+)]
 pub(crate) fn command() -> Command {
     let root = Command::new("coflow")
         .version(env!("CARGO_PKG_VERSION"))
@@ -630,6 +638,10 @@ pub(crate) fn command() -> Command {
     configure(root, "")
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "完整命令或设置分支集中列出，便于核对输入与行为。"
+)]
 fn configure(mut command: Command, path: &str) -> Command {
     command = command.mut_subcommands(|child| {
         let name = if path.is_empty() {
@@ -669,8 +681,8 @@ fn configure(mut command: Command, path: &str) -> Command {
         "stats.dimension" => vec![("group-by", "all"), ("limit", "50")],
         "stats.field" => vec![("quantiles", "0.5,0.9,0.95,0.99")],
         "schema.inspect" => vec![("depth", "4"), ("limit", "100")],
-        "schema.symbols" | "schema.refs" => vec![("limit", "50")],
-        "dimension.variants" | "dimension.missing" | "dimension.diff" => vec![("limit", "50")],
+        "schema.symbols" | "schema.refs" | "dimension.variants" | "dimension.missing"
+        | "dimension.diff" => vec![("limit", "50")],
         "context" => vec![("depth", "4")],
         _ => Vec::new(),
     };
@@ -1040,12 +1052,13 @@ fn description(command: &Command, name: &str, schema: Option<&str>) -> CommandDe
             .filter_map(|argument| {
                 let parameter = argument.get_id().as_str();
                 let format = match (name, parameter) {
-                    ("source.write" | "source.create", "input") => "source_text",
                     ("apply" | "check" | "schema.check" | "diff" | "data.create", "input") => {
                         "json"
                     }
                     (_, "value-cfd" | "value-file" | "expected-cfd") => "cfd_expression",
-                    ("format", "stdin") => "source_text",
+                    ("source.write" | "source.create", "input") | ("format", "stdin") => {
+                        "source_text"
+                    }
                     _ => return None,
                 };
                 Some(InputFormat {
@@ -1125,12 +1138,13 @@ fn example(command: &Command, name: &str) -> String {
         .filter(|argument| parameters.contains(argument.get_id().as_str()))
     {
         if let Some(long) = argument.get_long() {
-            result.push_str(&format!(" --{long}"));
+            result.push_str(" --");
+            result.push_str(long);
         }
         if argument.get_action().takes_values() {
             let value = match argument.get_id().as_str() {
                 "type" | "symbol" => "Item",
-                "id" => "sword",
+                "id" | "text" => "sword",
                 "new-id" => "sword2",
                 "path" if name.starts_with("project.") => "data/",
                 "path" | "field" => "value",
@@ -1140,12 +1154,10 @@ fn example(command: &Command, name: &str) -> String {
                 "input" => "request.json",
                 "value-cfd" => "1",
                 "dimension" => "language",
-                "variant" => "en",
+                "variant" | "from" => "en",
                 "kind" => "data",
                 "rule" => "Item::Valid",
                 "code" => "DATA-006",
-                "text" => "sword",
-                "from" => "en",
                 "to" => "zh",
                 _ => "example",
             };
@@ -1161,6 +1173,11 @@ fn example(command: &Command, name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "测试前置条件或结构断言失败应直接报告失败。"
+    )]
     #[test]
     fn every_described_leaf_has_documented_parameters_and_an_accepted_example() {
         let report = super::describe(None, None).unwrap();

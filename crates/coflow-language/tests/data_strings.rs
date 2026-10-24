@@ -1,3 +1,8 @@
+#![allow(clippy::panic, reason = "测试通过 panic 报告不符合预期的语法树形状。")]
+#![allow(
+    clippy::literal_string_with_formatting_args,
+    reason = "测试输入包含 CFT 插值花括号，不是 Rust 格式化参数。"
+)]
 use coflow_language::cfd::{parse_cfd, CfdFormatSegment, CfdValue};
 
 #[test]
@@ -30,7 +35,7 @@ fn interpolation_is_explicit_and_only_accepts_paths() {
 #[test]
 fn function_values_are_not_data_syntax() {
     let (_, errors) = parse_cfd("a: Item { value: fn(x: int) -> int { x } }");
-    assert!(!errors.is_empty());
+    assert_ne!(errors, [] as [coflow_language::cfd::CfdSyntaxDiagnostic; 0]);
 }
 
 #[test]
@@ -51,7 +56,7 @@ fn template_reference_spans_use_source_bytes_after_escapes_and_unicode() {
             CfdFormatSegment::Reference(reference) => {
                 Some(&source[reference.span.start..reference.span.end])
             }
-            _ => None,
+            CfdFormatSegment::Text(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(references, vec!["{self.name}", "{&Item::other.name}"]);

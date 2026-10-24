@@ -126,8 +126,8 @@ pub(crate) fn compare_order(
     {
         return lhs
             .numeric_float(&ty)
-            .unwrap()
-            .partial_cmp(&rhs.numeric_float(&ty).unwrap())
+            .zip(rhs.numeric_float(&ty))
+            .and_then(|(left, right)| left.partial_cmp(&right))
             .ok_or_else(|| OpsError::eval_type(location, "numeric comparison failed"));
     }
 
@@ -365,10 +365,10 @@ fn eager_bin_op_raw<'model>(
 }
 
 // 先按共同类型转换操作数，再按结果类型检查范围并舍入，禁止运行时悄悄升级位宽。
-pub(crate) fn normalize_numeric<'a>(
-    mut result: LocatedEvalValue<'a>,
+pub(crate) fn normalize_numeric(
+    mut result: LocatedEvalValue<'_>,
     ty: Option<CftValueType>,
-) -> OpsResult<LocatedEvalValue<'a>> {
+) -> OpsResult<LocatedEvalValue<'_>> {
     result.value = match (ty, result.value.scalar()) {
         (Some(CftValueType::Int), Some(ScalarValue::Int(v))) => {
             if i32::try_from(v).is_err() {
@@ -396,6 +396,10 @@ pub(crate) fn unary_op<'a>(
     normalize_numeric(unary_op_raw(schema, op, value)?, ty)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 pub(crate) fn eager_bin_op<'a>(
     schema: &CftSchema,
     op: CftSchemaBinOp,
@@ -408,8 +412,14 @@ pub(crate) fn eager_bin_op<'a>(
         .zip(rhs.numeric_type())
         .and_then(|(a, b)| a.promote_numeric(&b));
     if ty == Some(CftValueType::Float) {
-        let left = lhs.numeric_float(&CftValueType::Float).unwrap() as f32;
-        let right = rhs.numeric_float(&CftValueType::Float).unwrap() as f32;
+        let left = lhs
+            .numeric_float(&CftValueType::Float)
+            .ok_or_else(|| OpsError::eval_type(location.clone(), "numeric operand required"))?
+            as f32;
+        let right = rhs
+            .numeric_float(&CftValueType::Float)
+            .ok_or_else(|| OpsError::eval_type(location.clone(), "numeric operand required"))?
+            as f32;
         let result = match op {
             CftSchemaBinOp::Add => left + right,
             CftSchemaBinOp::Sub => left - right,
@@ -429,8 +439,14 @@ pub(crate) fn eager_bin_op<'a>(
         ));
     }
     if let Some(ty @ CftValueType::Double) = &ty {
-        let left = EvalValue::double(lhs.numeric_float(ty).unwrap());
-        let right = EvalValue::double(rhs.numeric_float(ty).unwrap());
+        let left =
+            EvalValue::double(lhs.numeric_float(ty).ok_or_else(|| {
+                OpsError::eval_type(location.clone(), "numeric operand required")
+            })?);
+        let right =
+            EvalValue::double(rhs.numeric_float(ty).ok_or_else(|| {
+                OpsError::eval_type(location.clone(), "numeric operand required")
+            })?);
         return normalize_numeric(
             eager_bin_op_raw(schema, op, &left, &right, location)?,
             Some(ty.clone()),

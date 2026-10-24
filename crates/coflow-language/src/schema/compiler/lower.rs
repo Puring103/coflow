@@ -341,11 +341,10 @@ impl ValidatedSchema<'_> {
                 .message
                 .as_ref()
                 .map(|message| self.convert_check_message(module, message)),
-            name: check
-                .name
-                .clone()
-                .map(CheckName::from_validated)
-                .unwrap_or_else(|| CheckName::anonymous(module, check.span)),
+            name: check.name.clone().map_or_else(
+                || CheckName::anonymous(module, check.span),
+                CheckName::from_validated,
+            ),
             name_span: check.name_span,
             stmts: check
                 .stmts

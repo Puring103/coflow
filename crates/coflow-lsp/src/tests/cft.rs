@@ -33,8 +33,14 @@ table Item {\n\
 
     assert_eq!(hover_at(&build, document, &string_position), None);
     assert_eq!(hover_at(&build, document, &comment_position), None);
-    assert!(definitions_at(&build, document, &string_position).is_empty());
-    assert!(definitions_at(&build, document, &comment_position).is_empty());
+    assert_eq!(
+        definitions_at(&build, document, &string_position),
+        [] as [Value; 0]
+    );
+    assert_eq!(
+        definitions_at(&build, document, &comment_position),
+        [] as [Value; 0]
+    );
 }
 
 #[test]
@@ -103,12 +109,14 @@ table Item {\n\
             "definition should resolve at offset {offset}"
         );
     }
-    assert!(definitions_at(
-        &build,
-        document,
-        &position_from_byte(source, position_inside(source, "true;", "true", 1))
-    )
-    .is_empty());
+    assert_eq!(
+        definitions_at(
+            &build,
+            document,
+            &position_from_byte(source, position_inside(source, "true;", "true", 1))
+        ),
+        [] as [Value; 0]
+    );
 }
 
 #[test]
@@ -273,7 +281,10 @@ check GlobalRules { all item in records(Item) { item.value > 0; } }\n";
         .as_str()
         .is_some_and(|text| text.contains("all top-level records")));
     let item_position = position_from_byte(source, records_offset + "records(".len() + 1);
-    assert!(!definitions_at(&build, document, &item_position).is_empty());
+    assert_ne!(
+        definitions_at(&build, document, &item_position),
+        [] as [Value; 0]
+    );
 }
 
 #[test]
@@ -296,8 +307,14 @@ table Item {\n\
         source.find("target is Target").expect("predicate") + "target is ".len(),
     );
 
-    assert!(completion_items(&build, document, &string_position).is_empty());
-    assert!(completion_items(&build, document, &comment_position).is_empty());
+    assert_eq!(
+        completion_items(&build, document, &string_position),
+        [] as [Value; 0]
+    );
+    assert_eq!(
+        completion_items(&build, document, &comment_position),
+        [] as [Value; 0]
+    );
 
     let labels = completion_labels(completion_items(&build, document, &predicate_position));
     assert!(labels.contains(&"Target".to_string()));
@@ -534,7 +551,10 @@ table Item {\n\
     ));
     assert!(ref_field_labels.contains(&"key".to_string()));
     assert!(ref_field_labels.contains(&"value".to_string()));
-    assert!(dot_completion_items(&build, document, check_offset, &[s("missing")]).is_empty());
+    assert_eq!(
+        dot_completion_items(&build, document, check_offset, &[s("missing")]),
+        [] as [Value; 0]
+    );
 }
 
 #[test]

@@ -38,7 +38,7 @@ pub(crate) fn plan_selected_checks_with_limit(
                 if selected.is_some_and(|selected| !selected.contains(&info.id)) {
                     continue;
                 }
-                insert_statement_task(schema, info, CheckTarget::Record(record), &mut tasks);
+                insert_statement_task(schema, info, &CheckTarget::Record(record), &mut tasks);
             }
         }
     }
@@ -52,7 +52,7 @@ pub(crate) fn plan_selected_checks_with_limit(
         if tasks.overflowed() {
             break;
         }
-        insert_statement_task(schema, info, CheckTarget::Project, &mut tasks);
+        insert_statement_task(schema, info, &CheckTarget::Project, &mut tasks);
     }
     tasks.finish(schema)
 }
@@ -90,7 +90,7 @@ pub(super) fn plan_incremental_checks_with_limit(
                         insert_statement_task(
                             schema,
                             info,
-                            CheckTarget::Record(record),
+                            &CheckTarget::Record(record),
                             &mut tasks,
                         );
                     }
@@ -240,7 +240,7 @@ fn plan_field_change(
                 insert_changed_statement_task(
                     schema,
                     info,
-                    CheckTarget::Record(record),
+                    &CheckTarget::Record(record),
                     &changed.projection,
                     tasks,
                 );
@@ -262,7 +262,7 @@ fn insert_owner_tasks(
             insert_changed_statement_task(
                 schema,
                 info,
-                CheckTarget::Project,
+                &CheckTarget::Project,
                 changed_projection,
                 tasks,
             );
@@ -289,7 +289,7 @@ fn insert_owner_tasks(
                 insert_changed_statement_task(
                     schema,
                     info,
-                    CheckTarget::Record(record),
+                    &CheckTarget::Record(record),
                     changed_projection,
                     tasks,
                 );
@@ -302,7 +302,7 @@ fn insert_owner_tasks(
 fn insert_changed_statement_task(
     schema: &CftSchema,
     info: &CheckStatementInfo,
-    target: CheckTarget,
+    target: &CheckTarget,
     changed: &ChangedProjection,
     tasks: &mut CheckTaskBuilder,
 ) {
@@ -316,7 +316,7 @@ fn insert_changed_statement_task(
 fn insert_statement_task(
     schema: &CftSchema,
     info: &CheckStatementInfo,
-    target: CheckTarget,
+    target: &CheckTarget,
     tasks: &mut CheckTaskBuilder,
 ) {
     // 命名规则是执行与失效的最小单位，避免局部重跑越过同规则先前的求值错误。

@@ -445,9 +445,11 @@ impl CfdWriter {
         validate_values(request.fields.values())?;
 
         let (source, ast) = self.read_or_parse(path)?;
-        if ast.records.iter().any(|record| {
-            record.id == request.record_id && record.type_name == request.actual_type
-        }) {
+        if ast
+            .records
+            .iter()
+            .any(|record| record.id == request.record_id && record.type_name == request.actual_type)
+        {
             return Err(DiagnosticSet::one(diag(
                 "CFD-WRITE",
                 format!(

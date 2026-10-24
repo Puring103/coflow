@@ -17,11 +17,16 @@ fn workspace_tab_id(
     type_name: &str,
     target: Option<&crate::editor::types::EditorDimensionTarget>,
 ) -> String {
-    match target {
-        Some(target) => serde_json::to_string(&[&target.dimension, &target.file_path])
-            .expect("JSON 字符串数组必可序列化"),
-        None => format!("{file_path}\u{1f}{type_name}"),
-    }
+    target.map_or_else(
+        || format!("{file_path}\u{1f}{type_name}"),
+        |target| {
+            serde_json::Value::Array(vec![
+                serde_json::Value::String(target.dimension.clone()),
+                serde_json::Value::String(target.file_path.clone()),
+            ])
+            .to_string()
+        },
+    )
 }
 
 pub(crate) fn sanitized_workspace(workspace: EditorWorkspaceState) -> EditorWorkspaceState {

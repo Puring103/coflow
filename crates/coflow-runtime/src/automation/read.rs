@@ -77,7 +77,7 @@ impl SchemaSymbol {
             | Self::Rule { name, .. } => name,
         }
     }
-    fn kind(&self) -> &str {
+    const fn kind(&self) -> &str {
         match self {
             Self::Type { .. } => "type",
             Self::Field { .. } => "field",
@@ -88,6 +88,13 @@ impl SchemaSymbol {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
+/// # Errors
+///
+/// 命令参数无效、目标不存在或项目输入无法读取时返回错误。
 pub fn read_command(
     command: &str,
     project: &Project,

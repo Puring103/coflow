@@ -3,6 +3,7 @@ use super::{Failure, Result};
 use crate::{Project, ProjectSchemaSession};
 use coflow_language::cft::CftValueType;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -70,6 +71,10 @@ pub fn mentions(ty: &CftValueType, symbol: &str) -> bool {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub fn references(
     project: &Project,
     session: &ProjectSchemaSession,
@@ -124,9 +129,11 @@ pub fn references(
                         if let Some(default) = &field.default {
                             default_static_paths(default, &mut uses);
                         }
-                        for (_, span) in uses.drain(..).filter(|(name, _)| {
-                            name == symbol && schema.resolve_const(name).is_some()
-                        }) {
+                        for (_, span) in
+                            std::mem::take(&mut uses).into_iter().filter(|(name, _)| {
+                                name == symbol && schema.resolve_const(name).is_some()
+                            })
+                        {
                             items.push(json!({"kind":"default_value","symbol":format!("{}.{}",ty.name,field.name),
                                 "location":location(project.root_dir(),module.path(),module.source(),span)}));
                         }
@@ -149,8 +156,8 @@ pub fn references(
                 }
                 Item::Const(constant) => {
                     default_static_paths(&constant.value, &mut uses);
-                    for (_, span) in uses
-                        .drain(..)
+                    for (_, span) in std::mem::take(&mut uses)
+                        .into_iter()
                         .filter(|(name, _)| static_symbol_matches(schema, name, symbol))
                     {
                         items.push(json!({"kind":"default_value","symbol":constant.name,
@@ -158,7 +165,7 @@ pub fn references(
                     }
                 }
                 Item::Check(check) => {
-                    check_block_paths(&check.block, &mut uses, &Default::default())
+                    check_block_paths(&check.block, &mut uses, &BTreeSet::default());
                 }
                 _ => {}
             }
@@ -300,6 +307,10 @@ pub fn references(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 fn source_value_uses(
     schema: &coflow_language::cft::CftSchema,
     value: &coflow_language::cfd::CfdValue,
@@ -319,7 +330,7 @@ fn source_value_uses(
         items.push(
             json!({"kind":"data","record":record,"field":field_path,"dimension":dimension,
         "location":location(root,file,source,span)}),
-        )
+        );
     };
     match (expected, value) {
         (CftValueType::Option(_), V::OptionNone(_)) => {}
@@ -439,7 +450,7 @@ fn source_value_uses(
                 .map_or(name.as_str(), |(name, _)| name.as_str())
                 == symbol =>
         {
-            push(reference.span)
+            push(reference.span);
         }
         (_, V::FormattedString(formatted)) => {
             for segment in &formatted.segments {
@@ -543,7 +554,7 @@ fn static_symbol_matches(
 fn check_block_paths(
     block: &coflow_language::cft::syntax::ast::CheckBlock,
     uses: &mut Vec<(String, coflow_language::source::Span)>,
-    shadowed: &std::collections::BTreeSet<String>,
+    shadowed: &BTreeSet<String>,
 ) {
     check_message_paths(block.message.as_ref(), uses, shadowed);
     check_static_paths(&block.stmts, uses, shadowed);
@@ -552,7 +563,7 @@ fn check_block_paths(
 fn check_message_paths(
     message: Option<&coflow_language::cft::syntax::ast::CheckMessage>,
     uses: &mut Vec<(String, coflow_language::source::Span)>,
-    shadowed: &std::collections::BTreeSet<String>,
+    shadowed: &BTreeSet<String>,
 ) {
     use coflow_language::cft::syntax::ast::{CheckFormatSegment, CheckMessageKind};
     if let Some(coflow_language::cft::syntax::ast::CheckMessage {
@@ -571,7 +582,7 @@ fn check_message_paths(
 fn check_static_paths(
     statements: &[coflow_language::cft::syntax::ast::CheckStmt],
     uses: &mut Vec<(String, coflow_language::source::Span)>,
-    shadowed: &std::collections::BTreeSet<String>,
+    shadowed: &BTreeSet<String>,
 ) {
     use coflow_language::cft::syntax::ast::CheckStmt as S;
     for statement in statements {
@@ -613,7 +624,7 @@ fn check_static_paths(
 fn check_expression_paths(
     expression: &coflow_language::cft::syntax::ast::CheckExpr,
     uses: &mut Vec<(String, coflow_language::source::Span)>,
-    shadowed: &std::collections::BTreeSet<String>,
+    shadowed: &BTreeSet<String>,
 ) {
     use coflow_language::cft::syntax::ast::{CheckExprKind as E, CheckFormatSegment};
     match &expression.kind {
@@ -627,7 +638,7 @@ fn check_expression_paths(
             }
         }
         E::Field { expr, .. } | E::Is { expr, .. } | E::Unary { expr, .. } => {
-            check_expression_paths(expr, uses, shadowed)
+            check_expression_paths(expr, uses, shadowed);
         }
         E::Index { expr, index } => {
             check_expression_paths(expr, uses, shadowed);
@@ -671,7 +682,7 @@ fn check_expression_paths(
 /// 与编译器一致，仅肯定成立的 Some 模式与 && 链把绑定带入后续表达式。
 fn condition_bindings(
     expression: &coflow_language::cft::syntax::ast::CheckExpr,
-    scope: &mut std::collections::BTreeSet<String>,
+    scope: &mut BTreeSet<String>,
 ) {
     use coflow_language::cft::syntax::ast::{BinOp, CheckExprKind as E, TypePredicate};
     match &expression.kind {

@@ -17,6 +17,8 @@ import {
 } from './CfdCodeEditor'
 import { SourceAutosave, registerSourceSave } from '../state/sourceAutosave'
 import { Icon } from './Icon'
+import { fetchSourceText } from '../editorQueries'
+import { queryClient } from '../queryClient'
 
 interface Props {
   sessionId: number
@@ -62,7 +64,9 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   useEffect(() => {
     let alive = true
     const baseline = controller.state.base
-    const operation = api.isTauri ? api.readSourceText(sessionId, filePath) : Promise.resolve('')
+    const operation = api.isTauri
+      ? fetchSourceText(queryClient, sessionId, revision, filePath, () => api.readSourceText(sessionId, filePath))
+      : Promise.resolve('')
     operation.then(text => {
       if (!alive || controller.state.base !== baseline) return
       controller.receiveDisk(text)

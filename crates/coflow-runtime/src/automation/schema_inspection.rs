@@ -3,6 +3,10 @@ use coflow_language::cft::CftValueType;
 use serde_json::{json, Value};
 use std::collections::{BTreeSet, VecDeque};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub fn inspect(session: &crate::ProjectSchemaSession, args: &Arguments) -> Result<Value> {
     let report = crate::inspect_schema(session, None, false);
     let mut result = super::json(report)?;
@@ -193,7 +197,7 @@ pub fn inspect(session: &crate::ProjectSchemaSession, args: &Arguments) -> Resul
 fn dependencies(ty: &CftValueType, queue: &mut VecDeque<(String, usize)>, level: usize) {
     match ty {
         CftValueType::Object(n) | CftValueType::RecordRef(n) => {
-            queue.push_back((n.to_string(), level))
+            queue.push_back((n.to_string(), level));
         }
         CftValueType::Enum(n) => queue.push_back((n.to_string(), level)),
         CftValueType::Array(t) | CftValueType::Option(t) => dependencies(t, queue, level),

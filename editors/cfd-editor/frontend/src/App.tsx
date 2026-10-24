@@ -132,7 +132,7 @@ import { reachableGraph } from './state/graphFilter'
 import { queryClient } from './queryClient'
 import { dimensionTargetId, dimensionViewPath, type DimensionTarget } from './state/dimensionNavigation'
 import { editorQueryKeys } from './queryKeys'
-import { fetchFileRecords, removeSessionQueries } from './editorQueries'
+import { fetchFileRecords, fetchSourceText, removeSessionQueries } from './editorQueries'
 import {
   DEFAULT_RECORD_VIEW_ID,
   DEFAULT_SOURCE_VIEW_ID,
@@ -480,7 +480,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const lookupDiagnostics = useSyncExternalStore(lookups.subscribe, lookups.getFailures, lookups.getFailures)
   const [navigationCollapsed, setNavigationCollapsed] = useState(false)
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(true)
+  // 面板常驻并保留用户的折叠状态；选择内容不改变主视图区宽度。
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
   const [tableFocusRequest, setTableFocusRequest] = useState(0)
   const [firstRecordFocusRequest, setFirstRecordFocusRequest] = useState(0)
@@ -515,7 +516,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   // Right-side inspector panel: table cells select one value, while the Key
   // column and graph nodes select the whole record.
   const [inspectorSelection, setInspectorSelection] = useState<EditorSelection | null>(null)
-  const inspectorOpen = inspectorSelection !== null
   const inspectorCoord = useMemo(() => inspectorSelection
     ? { file: inspectorSelection.filePath, coordinate: inspectorSelection.coordinate }
     : null,
@@ -551,6 +551,13 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
     if (tab.filePath.endsWith('.cft')) {
+      // 模块加载与磁盘读取并行，首次打开不必等 CodeMirror 下载完成才发起读取。
+      const identity = generation.currentIdentity()
+      if (api.isTauri && identity) {
+        void fetchSourceText(queryClient, identity.sessionId, identity.revision, tab.filePath, () => (
+          api.readSourceText(identity.sessionId, tab.filePath)
+        )).catch(() => { /* 源码视图接管读取失败的展示与重试。 */ })
+      }
       router.push({
         view: 'source',
         file: tab.filePath,
@@ -568,7 +575,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       row => recordActualType(row) === tab.typeName,
     )?.coordinate
     router.push(routeForWorkspaceTab(tab, fallbackCoordinate))
-  }, [router])
+  }, [generation, router])
 
   const installWorkspace = useCallback((
     bootstrap: ProjectBootstrap,
@@ -905,14 +912,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           : null
     if (failure) reportSessionError(project.session_id, failure[0], failure[1])
   }, [dataQueries.dimensionQuery.error, dataQueries.fileQuery.error, dataQueries.graphQuery.error, project, reportSessionError])
-
-  // 记录视图使用内置详情，切换时收起独立详情面板。
-  useEffect(() => {
-    const view = router.current?.view
-    if (view === 'record') {
-      setInspectorCollapsed(true)
-    }
-  }, [router.current?.view])
 
   const openFile = useCallback(
     (filePath: string, requestedType = ''): void => {
@@ -1571,7 +1570,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       return next
     })
   }, [currentRoute, pluginRegistry.views, pluginsReady, workspaceTabs])
-  const activeFileData = activeFile ? fileDataCache[activeFile] : null
+  // 优先保留乐观编辑投影；首次读取直接显示查询结果，不等待 effect 再渲染一轮。
+  const activeFileData = activeFile
+    ? fileDataCache[activeFile] ?? dataQueries.fileQuery.data ?? null
+    : null
   const activeDimensionTarget = workspaceTabs.find(tab => tab.id === (currentRoute?.view === 'table' ? currentRoute.dimensionTargetId : undefined))?.dimensionTarget
   const activeDimensionData = activeFile
     ? dataQueries.dimensionQuery.data ?? dataQueries.mockDimension ?? null
@@ -1726,7 +1728,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     mode: RecordSelectionMode,
   ) => {
     finishActiveDataEdit()
-    setInspectorCollapsed(false)
     setInspectorSelection(current => updateRecordSelection(
       current,
       file,
@@ -2041,7 +2042,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
       if (currentRoute?.view !== 'table') return
       // 表格在 pointerdown 阶段提交旧目标；选择同步不能再次 blur 刚获得焦点的输入。
-      setInspectorCollapsed(false)
       setInspectorSelection(current => updateValueSelection(
         current,
         currentRoute.file,
@@ -2811,7 +2811,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           {gitDiffActive ? (
             <div className="view-container">
               <GitDiffMode
-                sessionId={project!.session_id}
+                sessionId={project?.session_id ?? null}
                 fileTypes={project?.file_types ?? {}}
                 diff={projectDiff}
                 loading={projectDiffLoading}
@@ -3118,8 +3118,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           )}
         </div>
         <InspectorPanel
-          open={!gitDiffActive && !activePluginPage && activeViewKind !== 'record'
-            && inspectorOpen}
+          open={!!activeFile && !gitDiffActive && !activePluginPage
+            && (activeViewKind === 'table' || activeViewKind === 'graph')
+            && !activeDimensionTarget}
           collapsed={inspectorCollapsed}
           onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}

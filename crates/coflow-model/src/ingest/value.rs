@@ -22,7 +22,7 @@ pub enum LoadedValueDraft {
         fields: BTreeMap<String, LoadedValueDraft>,
     },
     RecordRef(String),
-    /// 显式 &Type::id 保留目标类型限定，不能在降低阶段只剩 id。
+    /// 显式 &`Type::id` 保留目标类型限定，不能在降低阶段只剩 id。
     TypedRecordRef {
         type_name: String,
         id: String,

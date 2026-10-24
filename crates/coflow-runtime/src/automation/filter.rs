@@ -13,9 +13,9 @@ use coflow_language::lexical::{tokenize_lossless, LosslessToken};
 enum Expression {
     Constant(bool),
     Boolean(String),
-    Not(Box<Expression>),
-    All(Vec<Expression>),
-    Any(Vec<Expression>),
+    Not(Box<Self>),
+    All(Vec<Self>),
+    Any(Vec<Self>),
     Compare(String, usize, Comparison, String),
     Contains(String, String),
     State(String, State),
@@ -117,6 +117,10 @@ impl Expression {
             _ => true,
         }
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     fn bind(
         &self,
         session: &ReadOnlyProjectSession,
@@ -128,28 +132,33 @@ impl Expression {
                 Some(record) => super::query::resolved_record_path(session, record, name)?,
                 None => resolved_path(session, ty, name)?,
             };
-            let expected = match record {
-                Some(record) => crate::write_rules::expected_type_for_record_path(
-                    session.schema(),
-                    record,
-                    &segments,
-                    "CLI-FILTER",
-                    "CLI",
-                ),
-                None => crate::write_rules::expected_type_for_cfd_path(
-                    session.schema(),
-                    ty,
-                    &segments,
-                    "CLI-FILTER",
-                    "CLI",
-                ),
-            }
-            .map_err(|diagnostics| Failure {
-                status: super::Status::Error,
-                error_category: Some(super::ErrorCategory::Request),
-                diagnostics,
-                result: None,
-            })?;
+            let expected = record
+                .map_or_else(
+                    || {
+                        crate::write_rules::expected_type_for_cfd_path(
+                            session.schema(),
+                            ty,
+                            &segments,
+                            "CLI-FILTER",
+                            "CLI",
+                        )
+                    },
+                    |record| {
+                        crate::write_rules::expected_type_for_record_path(
+                            session.schema(),
+                            record,
+                            &segments,
+                            "CLI-FILTER",
+                            "CLI",
+                        )
+                    },
+                )
+                .map_err(|diagnostics| Failure {
+                    status: super::Status::Error,
+                    error_category: Some(super::ErrorCategory::Request),
+                    diagnostics,
+                    result: None,
+                })?;
             Ok((CfdPath { segments }, expected))
         };
         Ok(Filter {
@@ -484,10 +493,8 @@ impl Parser<'_> {
                 "(" => stack.push(")"),
                 "[" => stack.push("]"),
                 "{" => stack.push("}"),
-                ")" | "]" | "}" => {
-                    if stack.pop() != Some(token) {
-                        return Err(Failure::request("mismatched CFD literal delimiter"));
-                    }
+                ")" | "]" | "}" if stack.pop() != Some(token) => {
+                    return Err(Failure::request("mismatched CFD literal delimiter"));
                 }
                 _ => {}
             }

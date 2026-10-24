@@ -25,13 +25,15 @@ import type { AxisRange } from '../state/scrollVisibility'
  *  measurement — deterministic across webview builds and cheap enough to
  *  run over every cell. Not pixel-perfect, but the caller adds chrome
  *  padding and clamps to a max, so approximate is enough. */
-export function estimateTextWidth(text: string, monospace = false): number {
+export function estimateTextWidth(text: string, monospace = false, maxWidth = Number.POSITIVE_INFINITY): number {
   const narrow = monospace ? 8.6 : 7.7
   const wide = monospace ? 15.9 : 15.4
   let w = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!
     w += isEastAsianWide(cp) ? wide : narrow
+    // 列宽达到上限后，剩余字符不再影响布局，避免扫描超长文本。
+    if (w >= maxWidth) return maxWidth
   }
   return w
 }

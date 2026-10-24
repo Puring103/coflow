@@ -6,6 +6,10 @@ use coflow_language::cfd::parse_cfd;
 use super::CfdWriter;
 
 impl CfdWriter {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     pub(crate) fn write_dimension_value(
         &self,
         request: &WriteDimensionValueRequest<'_>,

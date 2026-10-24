@@ -80,8 +80,14 @@ fn valid_sources_parse_before_and_after_formatting() {
     let cfd = "item: Item { name: \"Widget\", values: [1, 2], }";
     let (before, before_diagnostics) = parse_cfd(cfd);
     let (after, after_diagnostics) = parse_cfd(&format_cfd(cfd));
-    assert!(before_diagnostics.is_empty());
-    assert!(after_diagnostics.is_empty());
+    assert_eq!(
+        before_diagnostics,
+        [] as [coflow_language::cfd::CfdSyntaxDiagnostic; 0]
+    );
+    assert_eq!(
+        after_diagnostics,
+        [] as [coflow_language::cfd::CfdSyntaxDiagnostic; 0]
+    );
     let record_shape = |ast: &coflow_language::cfd::CfdAst| {
         ast.records
             .iter()

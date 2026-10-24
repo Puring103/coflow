@@ -59,7 +59,7 @@ fn eval_stmt(
     let message = match stmt {
         CftSchemaCheckStmt::When { message, .. }
         | CftSchemaCheckStmt::Quantifier { message, .. } => message.as_ref(),
-        _ => None,
+        CftSchemaCheckStmt::Expr { .. } => None,
     };
     if flow == EvalFlow::Continue {
         apply_block_message(evaluator, diagnostic_start, message)

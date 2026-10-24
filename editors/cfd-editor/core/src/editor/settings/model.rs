@@ -83,6 +83,9 @@ impl From<SharedViewConfig> for ViewConfig {
 }
 
 /// 本机文件按项目分别存储，不写回项目目录。
+// 文件 → 类型 → 视图 → 字段的个人列宽映射。
+type ViewColumnWidths = BTreeMap<String, BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>>;
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct LocalSettingsFile {
     pub(crate) version: u8,
@@ -94,8 +97,7 @@ pub(crate) struct LocalSettingsFile {
     pub(crate) default_table_column_widths:
         BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     #[serde(default)]
-    pub(crate) view_column_widths:
-        BTreeMap<String, BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>>,
+    pub(crate) view_column_widths: ViewColumnWidths,
     #[serde(default)]
     pub(crate) workspace: EditorWorkspaceState,
 }

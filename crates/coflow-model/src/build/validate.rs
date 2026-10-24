@@ -221,6 +221,10 @@ impl<'s, 'schema> Validator<'s, 'schema> {
     }
 
     #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+    )]
     fn validate_value_inner(
         &mut self,
         ty: &CftValueType,

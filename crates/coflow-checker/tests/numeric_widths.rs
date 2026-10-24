@@ -6,7 +6,7 @@ use common::*;
 #[test]
 fn numeric_promotion_and_precision_survive_options_collections_and_constants() {
     let schema = compile_schema(
-        r#"
+        r"
         const ONE: long = 1;
         const PRECISE: double = 0.1;
         const RATE = 0.1;
@@ -35,7 +35,7 @@ fn numeric_promotion_and_precision_survive_options_collections_and_constants() {
                 all key, value in keys { key + value == 2147483649; }
             }
         }
-    "#,
+    ",
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("one", "T", std::iter::empty::<(&str, LoadedValueDraft)>());

@@ -26,7 +26,11 @@ impl CfdValueSemanticContext for EmptyContext {
 struct ModelContext<'a>(&'a CfdDataModel);
 
 impl CfdValueSemanticContext for ModelContext<'_> {
-    fn record_by_domain_id(&self, inheritance_root: &TypeName, key: &str) -> Option<CfdRecordHandle> {
+    fn record_by_domain_id(
+        &self,
+        inheritance_root: &TypeName,
+        key: &str,
+    ) -> Option<CfdRecordHandle> {
         self.0.record_by_domain_id(inheritance_root, key)
     }
 

@@ -6,6 +6,7 @@ use serde::Serialize;
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, reason = "测试的前置步骤失败应直接报告失败。")]
     #[test]
     fn every_language_and_model_code_has_an_exact_explanation_and_public_index_entry() {
         let reference =
@@ -106,7 +107,11 @@ pub(crate) fn for_diagnostic(diagnostic: &crate::Diagnostic) -> Option<serde_jso
     Some(explanation)
 }
 
-fn cft_info(code: CftErrorCode) -> (&'static str, &'static str, &'static str) {
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
+const fn cft_info(code: CftErrorCode) -> (&'static str, &'static str, &'static str) {
     use CftErrorCode as C;
     match code {
         C::UnexpectedCharacter => (
@@ -499,7 +504,11 @@ fn cft_info(code: CftErrorCode) -> (&'static str, &'static str, &'static str) {
     }
 }
 
-fn cfd_info(code: CfdErrorCode) -> (&'static str, &'static str, &'static str) {
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
+const fn cfd_info(code: CfdErrorCode) -> (&'static str, &'static str, &'static str) {
     use CfdErrorCode as C;
     match code {
         C::UnknownType => (
@@ -695,7 +704,7 @@ fn cfd_info(code: CfdErrorCode) -> (&'static str, &'static str, &'static str) {
     }
 }
 
-fn cfd_text_info(
+const fn cfd_text_info(
     code: crate::cfd_loader::CfdTextErrorCode,
 ) -> (&'static str, &'static str, &'static str) {
     use crate::cfd_loader::CfdTextErrorCode as C;

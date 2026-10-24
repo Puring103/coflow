@@ -1,14 +1,17 @@
 //! 项目查询输出保持配置的声明形状，公共 DTO 不暴露内部配置类型。
-use std::collections::BTreeMap;
-use serde::Serialize;
-use schemars::JsonSchema;
-use serde_json::Value;
-use crate::Project;
 use super::Result;
+use crate::Project;
+use schemars::JsonSchema;
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
-pub enum SchemaInputs { Path(String), Paths(Vec<String>) }
+pub enum SchemaInputs {
+    Path(String),
+    Paths(Vec<String>),
+}
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CodegenTarget {
@@ -43,23 +46,56 @@ pub struct ProjectInspection {
 
 pub(super) fn inspect(project: &Project) -> Result<ProjectInspection> {
     let config = project.config();
-    let paths = config.schema.paths().iter().map(|path| crate::path_to_slash(path)).collect::<Vec<_>>();
+    let paths = config
+        .schema
+        .paths()
+        .iter()
+        .map(|path| crate::path_to_slash(path))
+        .collect::<Vec<_>>();
     let schema = if config.schema.is_list_shape() || paths.len() != 1 {
         SchemaInputs::Paths(paths)
-    } else { SchemaInputs::Path(paths[0].clone()) };
-    let codegen = config.codegen.iter().map(|target| Ok(CodegenTarget {
-        language: target.language.clone(), dir: crate::path_to_slash(&target.dir),
-        options: serde_json::from_value(target.options().clone())?,
-    })).collect::<Result<Vec<_>>>()?;
+    } else {
+        SchemaInputs::Path(paths[0].clone())
+    };
+    let codegen = config
+        .codegen
+        .iter()
+        .map(|target| {
+            Ok(CodegenTarget {
+                language: target.language.clone(),
+                dir: crate::path_to_slash(&target.dir),
+                options: serde_json::from_value(target.options().clone())?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     Ok(ProjectInspection {
-        config: ProjectConfiguration { schema,
-            data: config.data.iter().map(|source| crate::path_to_slash(source.path())).collect(),
+        config: ProjectConfiguration {
+            schema,
+            data: config
+                .data
+                .iter()
+                .map(|source| crate::path_to_slash(source.path()))
+                .collect(),
             codegen,
-            dimensions: config.dimensions.iter().map(|(name, dimension)| (name.clone(), ProjectDimension {
-                dir: dimension.dir.as_deref().map(crate::path_to_slash), display_name: dimension.display_name.clone(),
-            })).collect(),
+            dimensions: config
+                .dimensions
+                .iter()
+                .map(|(name, dimension)| {
+                    (
+                        name.clone(),
+                        ProjectDimension {
+                            dir: dimension.dir.as_deref().map(crate::path_to_slash),
+                            display_name: dimension.display_name.clone(),
+                        },
+                    )
+                })
+                .collect(),
         },
         config_path: crate::project_path(project.root_dir(), project.config_path()),
-        input_roots: project.source_roots().iter().map(|path| crate::path_to_slash(path)).collect(),
+        input_roots: project
+            .source_roots()
+            .iter()
+            .map(|path| crate::path_to_slash(path))
+            .collect(),
     })
 }
