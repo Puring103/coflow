@@ -167,7 +167,8 @@ mod tests {
         fs::create_dir_all(&root).expect("create project root");
 
         let mut settings = EditorProjectSettings::default();
-        let external_runtime = coflow_runtime::path_to_slash(&external);
+        // 临时目录在 Windows 上可能使用短路径别名；期望值应使用运行时规范路径。
+        let external_runtime = coflow_runtime::project_path(&root, &external);
         settings
             .view_order
             .insert(external_runtime.clone(), BTreeMap::new());
