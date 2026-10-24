@@ -132,7 +132,8 @@ impl OperationCache {
 /// 正式目录只在最终校验通过且快照一致时，由 staging 一次性发布。
 #[derive(Debug)]
 pub(crate) struct Candidate {
-    temp: tempfile::TempDir,
+    _temp: tempfile::TempDir,
+    temp_root: PathBuf,
     cache: RefCell<OperationCache>,
     pub original: Project,
     pub snapshot: InputSnapshot,
@@ -151,8 +152,12 @@ pub(crate) struct Candidate {
 
 impl Candidate {
     pub fn new(project: &Project, snapshot: &InputSnapshot) -> Result<Self> {
+        let temp = tempfile::tempdir()?;
+        // 临时目录可能使用 Windows 短路径或系统别名，候选映射统一使用规范路径。
+        let temp_root = crate::canonicalize_path(temp.path())?;
         let mut candidate = Self {
-            temp: tempfile::tempdir()?,
+            _temp: temp,
+            temp_root,
             cache: RefCell::new(OperationCache::default()),
             original: project.clone(),
             snapshot: snapshot.clone(),
@@ -352,8 +357,7 @@ impl Candidate {
             }
         }
         // 卷根保持独立身份，UNC 与不同盘符不会落入同一临时路径。
-        self.temp
-            .path()
+        self.temp_root
             .join("inputs")
             .join(super::snapshot::fingerprint(
                 anchor.as_os_str().as_encoded_bytes(),
@@ -724,7 +728,7 @@ impl Candidate {
         Ok(())
     }
     pub fn changes(&mut self) -> Result<Vec<coflow_staging::transaction::FileChange>> {
-        for entry in walkdir::WalkDir::new(self.temp.path().join("inputs")) {
+        for entry in walkdir::WalkDir::new(self.temp_root.join("inputs")) {
             let entry = entry.map_err(|e| Failure::from(std::io::Error::other(e)))?;
             if entry.file_type().is_file() {
                 let path = self.unshadow(entry.path())?;
@@ -756,7 +760,7 @@ impl Candidate {
                     | crate::SourceLocation::ProjectConfig { path, .. }
                     | crate::SourceLocation::Artifact { path } => path,
                 };
-                if path.starts_with(self.temp.path()) {
+                if path.starts_with(&self.temp_root) {
                     let original = self.unshadow(path)?;
                     diagnostic.message = diagnostic.message.replace(
                         &path.to_string_lossy().to_string(),
@@ -1129,6 +1133,18 @@ mod cache_tests {
         let project = Project::open_schema_only(Some(root.path())).unwrap();
         let snapshot = InputSnapshot::capture(&project).unwrap();
         (root, project, snapshot)
+    }
+
+    #[test]
+    fn candidate_maps_canonical_paths_back_to_original_inputs() {
+        let (_root, project, snapshot) = fixture(1);
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        // 读取器返回规范路径，不能依赖临时目录环境变量中的别名表示。
+        for file in &snapshot.files {
+            let shadow = crate::canonicalize_path(candidate.shadow(&file.absolute)).unwrap();
+            assert_eq!(candidate.unshadow(&shadow).unwrap(), file.absolute);
+        }
+        assert!(candidate.changes().unwrap().is_empty());
     }
 
     #[test]
