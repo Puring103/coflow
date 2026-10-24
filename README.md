@@ -68,7 +68,7 @@ if (result.Success) {
 }
 ```
 
-加载结果包含成功状态和诊断。`int`、`float` 对应 C# `long`、`double`，可选值使用可嵌套的 `Option<T>`。
+加载结果包含成功状态和诊断。`int`、`long`、`float`、`double` 对应同名 C# 类型，可选值使用可嵌套的 `Option<T>`。
 table 和 singleton 生成 partial class；data 默认生成 partial class，`@struct sealed data` 生成 partial struct。
 通过 `Table<T>()`、`Singleton<T>()` 获取业务数据；枚举主键提供对应表的 `Get(enum)`、`TryGet(enum, out record)` 扩展。记录引用直接连接生成对象。
 直接读取字段得到基础值；`record.For("language", "ja")` 返回独立的变体视图。缺少覆盖时，基础表达式在所选维度上下文中求值；`record.HasVariant("name", "ja")` 可以判断字段是否显式填写。

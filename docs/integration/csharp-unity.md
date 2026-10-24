@@ -44,7 +44,7 @@ var japaneseName = japanese.name;
 
 ## 类型与扩展
 
-记录、单例和默认 data 使用 partial class；`@struct sealed data` 使用 partial struct。int/float 对应 long/double，维度字段保持原业务类型。`Option<T>` 通过 IsSome、IsNone、Value 访问并保留嵌套层；字段能否省略只取决于 CFT 是否写有默认值。
+记录、单例和默认 data 使用 partial class；`@struct sealed data` 使用 partial struct。int、long、float、double 对应同名 C# 类型，维度字段保持原业务类型。`Option<T>` 通过 IsSome、IsNone、Value 访问并保留嵌套层；字段能否省略只取决于 CFT 是否写有默认值。
 
 普通字符串保留原文，`f"..."` 在所选上下文中求值为 string。业务 partial 文件只扩展方法和计算属性，重新生成源码不会覆盖扩展文件。
 

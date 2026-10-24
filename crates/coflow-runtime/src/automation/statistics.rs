@@ -223,7 +223,9 @@ pub fn query(
                 matches!(
                     expected,
                     coflow_language::cft::CftValueType::Int
+                        | coflow_language::cft::CftValueType::Long
                         | coflow_language::cft::CftValueType::Float
+                        | coflow_language::cft::CftValueType::Double
                 )
             });
             let length = base_types.iter().all(|expected| {
@@ -388,12 +390,10 @@ pub fn query(
                     result.none = None;
                 }
             }
-            result.length_unit = if base_types.iter().all(|expected| {
-                matches!(
-                    expected,
-                    coflow_language::cft::CftValueType::String
-                )
-            }) {
+            result.length_unit = if base_types
+                .iter()
+                .all(|expected| matches!(expected, coflow_language::cft::CftValueType::String))
+            {
                 "unicode_scalar_values"
             } else {
                 "elements"

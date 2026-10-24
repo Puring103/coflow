@@ -1,0 +1,1 @@
+numeric: NumericValues { small: 2147483647, wide: 9223372036854775807, rounded: 0.1, precise: NUMERIC_DOUBLE, bits: NumericBits::Everything }

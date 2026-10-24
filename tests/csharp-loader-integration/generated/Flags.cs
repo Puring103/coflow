@@ -4,9 +4,11 @@
 namespace Game.Config
 {
 [global::System.Flags]
-public enum Flags : long
+public enum Flags : int
 {
-    Read = 1L,
-    Write = 2L,
+    Read = 1,
+    Write = 2,
+    None = 0,
+    Everything = 3,
 }
 }

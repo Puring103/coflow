@@ -34,12 +34,13 @@ singleton 恰好提供一条以声明名称为 id 的记录，不能用于字段
 
 ```cft
 enum Quality { Common, Rare = 10, Epic }
-@flag enum Permission { Zero = 0, Read = 1, Write = 2, Execute = 4 }
+@flag enum Permission { Read = 1, Write = 2, Execute = 4 }
+@int64 enum LargeCode { Special = 4294967296 }
 ```
 
-成员值为有符号 64 位整数，未指定值时从前一个成员递增。成员名称、数值不能重复，自动递增越界报错。不同 enum 类型相互独立。
+成员默认使用有符号 32 位 int，添加无参数注解 `@int64` 后使用有符号 64 位 long。未指定值时从前一个成员递增，第一个成员默认值为 0。用户声明的成员名称、数值不能重复；显式值或自动递增超出声明范围时报错，不自动扩大位宽。不同 enum 类型相互独立。
 
-`@flag` 成员允许零或正的二次幂。数据值可以通过同类型成员的 `&`、`^`、`|` 和括号组合，优先级依次为 `&`、`^`、`|`。
+`@flag` 的用户定义成员允许零或正的二次幂。编译器自动添加 `None = 0` 和 `Everything`；Everything 为全部用户标志位的按位或，空枚举时为 0，随成员集合重新计算。用户不能声明同名成员，合成成员允许与已有成员同值。int / long 分别支持 31 / 63 个独立正标志位。数据值可以通过同类型成员的 `&`、`^`、`|` 和括号组合，优先级依次为 `&`、`^`、`|`。
 
 ## 默认值、常量与别名
 
@@ -64,11 +65,14 @@ None、空数组和空字典需要所在位置的明确类型。别名与常量�
 | @label("文本") | 类型、枚举、成员、字段的显示名称 |
 | @description("文本") | 类型、枚举、成员、字段的说明 |
 | @struct | 无基类 sealed data 的结构体表示 |
-| @flag | enum 的位掩码成员约束 |
+| @flag | enum 的位掩码成员约束与内建 None、Everything |
+| @int64 | enum 使用 64 位 long；默认使用 32 位 int |
 | @idAsEnum(Name) | 为 table 的记录 id 生成目标语言 enum；Name 为已声明的空 enum |
 | @localized | 字段绑定 language 维度 |
 | @dimension("名称") | 字段绑定指定维度 |
 | @expand | 具体内联对象字段的展示展开信息 |
+
+`@idAsEnum` 的稳定值分配遵守目标 enum 的位宽，越界时报错；与 `@flag` 组合时，None 和 Everything 在生成代码中根据当前记录 ID 集合计算，记录 ID 不能与内建成员重名。
 
 同一字段只能绑定一个维度。注解名称、参数个数、参数类型和目标位置均参与声明检查。@idAsEnum 只用于 table，维度字段只属于 table 和 singleton。
 

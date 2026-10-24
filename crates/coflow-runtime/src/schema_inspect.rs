@@ -54,6 +54,7 @@ pub struct SchemaEnumInfo {
     pub module: String,
     pub name: String,
     pub is_flag: bool,
+    pub is_int64: bool,
     pub variants: Vec<SchemaEnumVariantInfo>,
 }
 
@@ -81,7 +82,9 @@ pub struct SchemaDimensionFieldInfo {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SchemaTypeRefInfo {
     Int,
+    Long,
     Float,
+    Double,
     Bool,
     String,
     Named { name: String, target_kind: String },
@@ -141,7 +144,13 @@ pub enum SchemaConstValueInfo {
         #[schemars(with = "String")]
         i64,
     ),
+    Long(
+        #[serde(with = "crate::data_model::serde_i64")]
+        #[schemars(with = "String")]
+        i64,
+    ),
     Float(f64),
+    Double(f64),
     Bool(bool),
     String(String),
     FormattedString(String),
@@ -245,6 +254,7 @@ pub fn inspect_schema(
             module: schema_enum.module.to_string(),
             name: schema_enum.name.to_string(),
             is_flag: schema_enum.is_flag,
+            is_int64: schema_enum.is_int64,
             variants: schema_enum
                 .variants
                 .iter()
@@ -311,6 +321,8 @@ fn consts(schema: &CftSchema) -> Vec<SchemaConstInfo> {
 fn value_type_info(ty: &CftValueType) -> SchemaTypeRefInfo {
     match ty {
         CftValueType::Int => SchemaTypeRefInfo::Int,
+        CftValueType::Long => SchemaTypeRefInfo::Long,
+        CftValueType::Double => SchemaTypeRefInfo::Double,
         CftValueType::Float => SchemaTypeRefInfo::Float,
         CftValueType::Bool => SchemaTypeRefInfo::Bool,
         CftValueType::String => SchemaTypeRefInfo::String,
@@ -391,7 +403,9 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
 fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
     match value {
         CftConstValue::Int(value) => SchemaConstValueInfo::Int(*value),
+        CftConstValue::Long(value) => SchemaConstValueInfo::Long(*value),
         CftConstValue::Float(value) => SchemaConstValueInfo::Float(*value),
+        CftConstValue::Double(value) => SchemaConstValueInfo::Double(*value),
         CftConstValue::Bool(value) => SchemaConstValueInfo::Bool(*value),
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
         CftConstValue::FormattedString(source) => {

@@ -116,8 +116,10 @@ internal sealed class CfdSomeValue : CfdValueNode
 
 internal sealed class CfdScalarValue : CfdValueNode
 {
-    public CfdScalarValue(string value, CfdSpan span) : base(span) => Value = value;
+    public CfdScalarValue(string value, CfdSpan span, int? numericRank = null) : base(span) { Value = value; NumericRank = numericRank; }
     public string Value { get; }
+    // 具名常量携带声明精度，源码数字字面量由消费位置决定精度。
+    internal int? NumericRank { get; }
 }
 
 

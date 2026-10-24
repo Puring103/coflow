@@ -1,3 +1,4 @@
+use super::annotations::has_annotation;
 use super::SymbolTable;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
@@ -11,13 +12,22 @@ impl SymbolTable<'_> {
             let Some(info) = self.enums.get(&name).cloned() else {
                 continue;
             };
-            let mut next = 0_i64;
+            let is_int64 = has_annotation(&info.def.annotations, "int64");
+            let mut next = Some(0_i64);
             let mut variant_names: BTreeMap<String, (ModuleId, Span)> = BTreeMap::new();
             let mut values: BTreeMap<i64, (String, ModuleId, Span)> = BTreeMap::new();
             let mut variants = BTreeSet::new();
             let mut values_by_name = BTreeMap::new();
-            for (index, variant) in info.def.variants.iter().enumerate() {
+            for variant in &info.def.variants {
                 self.validate_identifier(&variant.name, &info.module, variant.name_span);
+                if info.is_flag && matches!(variant.name.as_str(), "None" | "Everything") {
+                    self.push_diag(
+                        CftErrorCode::DuplicateEnumVariant,
+                        &info.module,
+                        variant.name_span,
+                        "None and Everything are built-in @flag members",
+                    );
+                }
                 if let Some(first) = variant_names.get(&variant.name) {
                     self.diagnostics.push(
                         CftDiagnostic::error(
@@ -38,23 +48,23 @@ impl SymbolTable<'_> {
                         (info.module.clone(), variant.name_span),
                     );
                 }
-                let value = variant.value.as_ref().map_or(next, |value| value.value);
-                if value == i64::MAX
-                    && info
-                        .def
-                        .variants
-                        .iter()
-                        .skip(index + 1)
-                        .any(|next_variant| next_variant.value.is_none())
-                {
+                let Some(value) = variant.value.as_ref().map(|value| value.value).or(next) else {
+                    self.push_diag(CftErrorCode::InvalidEnumValueSequence, &info.module, variant.span,
+                        "enum auto numbering exceeds declared width; use an explicit value or @int64");
+                    continue;
+                };
+                if !is_int64 && i32::try_from(value).is_err() {
                     self.push_diag(
                         CftErrorCode::InvalidEnumValueSequence,
                         &info.module,
                         variant.span,
-                        "enum auto numbering overflowed",
+                        "enum value exceeds int range; add @int64 to use long",
                     );
                 }
-                next = value.saturating_add(1);
+                // 显式值重新开始编号；只对真正依赖前值的下一个隐式成员报告溢出。
+                next = value
+                    .checked_add(1)
+                    .filter(|value| is_int64 || i32::try_from(*value).is_ok());
                 if let Some(first) = values.get(&value) {
                     self.diagnostics.push(
                         CftDiagnostic::error(
@@ -87,6 +97,19 @@ impl SymbolTable<'_> {
                 // First definition wins on name collisions; later duplicates
                 // already raised `DuplicateEnumVariant` above.
                 values_by_name.entry(variant.name.clone()).or_insert(value);
+            }
+            // 内建成员参与同一份符号表，默认值、检查表达式和代码生成保持一致。
+            if info.is_flag {
+                let everything = values_by_name.values().fold(0, |mask, value| mask | value);
+                for (member, value) in [("None", 0), ("Everything", everything)] {
+                    variants.insert(member.to_string());
+                    values_by_name.insert(member.to_string(), value);
+                    values.entry(value).or_insert((
+                        member.to_string(),
+                        info.module.clone(),
+                        info.def.span,
+                    ));
+                }
             }
             if let Some(stored) = self.enums.get_mut(&name) {
                 stored.variants = variants;

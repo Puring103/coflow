@@ -6,7 +6,7 @@ namespace Game.Config
 public partial class ContractDetails
 {
     internal ContractDetails() { }
-    public long score { get; internal set; } = default!;
+    public int score { get; internal set; } = default!;
     public string label { get; internal set; } = default!;
 }
 }

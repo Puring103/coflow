@@ -198,7 +198,9 @@ impl Expression {
                         && !matches!(
                             expected,
                             CftValueType::Int
+                                | CftValueType::Long
                                 | CftValueType::Float
+                                | CftValueType::Double
                                 | CftValueType::String
                                 | CftValueType::Enum(_)
                         )
@@ -212,9 +214,7 @@ impl Expression {
                 Self::Contains(name, literal) => {
                     let (path, expected) = field(name)?;
                     let element = match &expected {
-                        CftValueType::String => {
-                            &CftValueType::String
-                        }
+                        CftValueType::String => &CftValueType::String,
                         CftValueType::Array(inner) | CftValueType::Dict(inner, _) => inner.as_ref(),
                         _ => {
                             return Err(Failure::request(

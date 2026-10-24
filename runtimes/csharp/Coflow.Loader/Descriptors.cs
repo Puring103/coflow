@@ -93,8 +93,10 @@ public sealed class CfdType<T> : CfdType
 public static class CfdDefaults
 {
     private static readonly CfdSpan Span = new CfdSpan(0, 0, 0, 0);
-    public static CfdValueNode Int(long value) => new CfdScalarValue(value.ToString(CultureInfo.InvariantCulture), Span);
-    public static CfdValueNode Float(double value) => new CfdScalarValue(value.ToString("R", CultureInfo.InvariantCulture), Span);
+    public static CfdValueNode Int(long value) => new CfdScalarValue(value.ToString(CultureInfo.InvariantCulture), Span, 0);
+    public static CfdValueNode Long(long value) => new CfdScalarValue(value.ToString(CultureInfo.InvariantCulture), Span, 1);
+    public static CfdValueNode Double(double value) => new CfdScalarValue(value.ToString("R", CultureInfo.InvariantCulture), Span, 3);
+    public static CfdValueNode Float(double value) => new CfdScalarValue(value.ToString("R", CultureInfo.InvariantCulture), Span, 2);
     public static CfdValueNode Bool(bool value) => new CfdScalarValue(value ? "true" : "false", Span);
     public static CfdValueNode String(string value) => new CfdStringValue(value, Span);
     public static CfdValueNode None() => new CfdNoneValue(Span);
@@ -122,12 +124,27 @@ public sealed class CfdDefaultEntry
 
 public static class CfdValues
 {
-    public static CfdValueType<long> Int { get; } = new CfdValueType<long>((context, node, owner) =>
+    public static CfdValueType<int> Int { get; } = new CfdValueType<int>((context, node, owner) =>
     {
-        if (node is CfdScalarValue scalar && long.TryParse(scalar.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value)) return value;
+        if (node is CfdScalarValue scalar && (scalar.NumericRank == null || scalar.NumericRank <= 0) && int.TryParse(scalar.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value)) return value;
+        throw owner.Error(node, "CFD-TYPE", "expected a 32-bit integer");
+    }, formatScalar: value => value.ToString(CultureInfo.InvariantCulture));
+    public static CfdValueType<float> Float { get; } = new CfdValueType<float>((context, node, owner) =>
+    {
+        // 先按 binary64 读取再舍入，与 Rust 的字面量及模型边界保持一致。
+        if (node is CfdScalarValue scalar && (scalar.NumericRank == null || scalar.NumericRank <= 2) && double.TryParse(scalar.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        {
+            var value = (float)parsed;
+            if (!float.IsInfinity(value) && !float.IsNaN(value)) return value;
+        }
+        throw owner.Error(node, "CFD-TYPE", "expected a finite binary32 number");
+    }, formatScalar: value => FormatFloat(value));
+    public static CfdValueType<long> Long { get; } = new CfdValueType<long>((context, node, owner) =>
+    {
+        if (node is CfdScalarValue scalar && (scalar.NumericRank == null || scalar.NumericRank <= 1) && long.TryParse(scalar.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value)) return value;
         throw owner.Error(node, "CFD-TYPE", "expected a 64-bit integer");
     }, formatScalar: value => value.ToString(CultureInfo.InvariantCulture));
-    public static CfdValueType<double> Float { get; } = new CfdValueType<double>((context, node, owner) =>
+    public static CfdValueType<double> Double { get; } = new CfdValueType<double>((context, node, owner) =>
     {
         if (node is CfdScalarValue scalar && double.TryParse(scalar.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && !double.IsInfinity(value) && !double.IsNaN(value)) return value;
         throw owner.Error(node, "CFD-TYPE", "expected a finite binary64 number");

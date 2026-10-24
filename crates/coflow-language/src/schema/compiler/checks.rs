@@ -51,7 +51,9 @@ fn is_formattable(ty: &InferredType) -> bool {
         InferredType::Unknown
         | InferredType::Value(
             CftValueType::Int
+            | CftValueType::Long
             | CftValueType::Float
+            | CftValueType::Double
             | CftValueType::Bool
             | CftValueType::String
             | CftValueType::Enum(_),
@@ -297,8 +299,15 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
 
     fn check_expr(&mut self, expr: &CheckExpr) -> InferredType {
         let ty = match &expr.kind {
-            CheckExprKind::Int(_) => InferredType::int(),
-            CheckExprKind::Float(_) => InferredType::float(),
+            CheckExprKind::Int(value) => {
+                if i32::try_from(*value).is_ok() {
+                    InferredType::int()
+                } else {
+                    InferredType::long()
+                }
+            }
+            // 无目标类型的浮点字面量保留双精度，避免比较前发生单精度舍入。
+            CheckExprKind::Float(_) => InferredType::double(),
             CheckExprKind::Bool(_) => InferredType::bool(),
             CheckExprKind::String(_) => InferredType::string(),
             CheckExprKind::FormattedString(segments) => {
@@ -669,7 +678,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     ) -> InferredType {
         let index_ty = self.check_expr_value(index);
         if let Some(elem) = inner_ty.array_element() {
-            if !types_comparable(&index_ty, &InferredType::int()) && !index_ty.is_unknown() {
+            if !index_ty.value_type().is_some_and(CftValueType::is_integer)
+                && !index_ty.is_unknown()
+            {
                 self.diag(
                     CftErrorCode::IndexTypeMismatch,
                     index.span,

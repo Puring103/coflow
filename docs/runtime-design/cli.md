@@ -133,8 +133,8 @@ coflow describe apply --schema input --json
 | `kind` | 内容 |
 | --- | --- |
 | `bool` | `value` 为布尔值 |
-| `int` | `value` 为有符号 64 位整数的十进制字符串 |
-| `float` | `value` 为有限的 binary64 JSON 数字 |
+| `int` | 整数 wire 表示；`value` 为十进制字符串，按目标 int / long 声明校验 32 / 64 位范围 |
+| `float` | 浮点 wire 表示；`value` 为有限 JSON 数字，目标 float 按 binary32 舍入，double 保留 binary64 精度 |
 | `string` | `value` 为字符串 |
 | `none` | Option 当前层为空态 |
 | `some` | `value` 为内层类型化值，可以继续嵌套 Option |

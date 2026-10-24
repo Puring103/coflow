@@ -29,6 +29,8 @@ pub(super) fn coerce_mutation_value(
         (CftValueType::Option(_), value) => CfdValue::OptionSome(Box::new(value)),
         (_, value) => value,
     };
+    let mut value = value;
+    normalize_numeric_value(session, expected, &mut value);
     validate_value_for_write(session, expected, &value, pending_records)?;
     Ok(value)
 }
@@ -43,9 +45,12 @@ pub(super) fn coerce_json_field_value(
 
 pub(super) fn coerce_cfd_field_value(
     session: &ProjectSession,
+    expected: &CftValueType,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
-    normalize_cfd_value(session, value)
+    let mut value = normalize_cfd_value(session, value)?;
+    normalize_numeric_value(session, expected, &mut value);
+    Ok(value)
 }
 
 fn coerce_json_value(
@@ -54,13 +59,19 @@ fn coerce_json_value(
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     match expected {
-        CftValueType::Int => value
+        CftValueType::Int | CftValueType::Long => value
             .as_i64()
             .map(CfdValue::Int)
             .ok_or_else(|| one_value_error("expected int")),
-        CftValueType::Float => value
+        CftValueType::Float | CftValueType::Double => value
             .as_f64()
-            .map(CfdValue::Float)
+            .map(|number| {
+                CfdValue::Float(if *expected == CftValueType::Float {
+                    f64::from(number as f32)
+                } else {
+                    number
+                })
+            })
             .ok_or_else(|| one_value_error("expected float")),
         CftValueType::Bool => value
             .as_bool()
@@ -196,6 +207,41 @@ fn normalize_cfd_value(
     }
 }
 
+// wire 使用共用的整数/浮点表示；写入时递归按 schema 恢复目标精度。
+fn normalize_numeric_value(
+    session: &ProjectSession,
+    expected: &CftValueType,
+    value: &mut CfdValue,
+) {
+    match (expected, value) {
+        (CftValueType::Float, CfdValue::Float(value)) => *value = f64::from(*value as f32),
+        (CftValueType::Option(inner), CfdValue::OptionSome(value)) => {
+            normalize_numeric_value(session, inner, value)
+        }
+        (CftValueType::Array(inner), CfdValue::Array(values)) => {
+            for value in values {
+                normalize_numeric_value(session, inner, value);
+            }
+        }
+        (CftValueType::Dict(_, inner), CfdValue::Dict(values)) => {
+            for (_, value) in values {
+                normalize_numeric_value(session, inner, value);
+            }
+        }
+        (CftValueType::Object(_), CfdValue::Object(object)) => {
+            for (name, value) in &mut object.fields {
+                if let Some(field) = session
+                    .schema()
+                    .field(object.actual_type.as_str(), name.as_str())
+                {
+                    normalize_numeric_value(session, &field.value_type, value);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 fn validate_value_for_write(
     session: &ProjectSession,
     expected: &CftValueType,
@@ -325,7 +371,7 @@ fn coerce_dict_key(
             .as_str()
             .map(|text| CfdDictKey::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string dict key")),
-        CftValueType::Int => coerce_int_dict_key(value),
+        CftValueType::Int | CftValueType::Long => coerce_int_dict_key(value),
         CftValueType::Enum(enum_name) => {
             let variant = value.as_str().ok_or_else(|| {
                 one_value_error(format!("expected enum dict key for `{enum_name}`"))

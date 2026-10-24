@@ -172,7 +172,14 @@ pub(crate) fn selected_records(
             use coflow_language::cft::CftValueType as T;
             if !matches!(
                 expected,
-                T::Int | T::Float | T::Bool | T::String | T::Enum(_) | T::RecordRef(_)
+                T::Int
+                    | T::Long
+                    | T::Float
+                    | T::Double
+                    | T::Bool
+                    | T::String
+                    | T::Enum(_)
+                    | T::RecordRef(_)
             ) {
                 return Err(Failure::request(format!(
                     "field `{field}` cannot be sorted"

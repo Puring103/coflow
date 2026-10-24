@@ -92,7 +92,9 @@ pub(super) fn generate(
     }
     for ty in schema.all_types() {
         if !ty.is_data() && ty.name.as_str() == "id" {
-            return Err(CsharpCodegenError::new("record type `id` conflicts with its generated identity member"));
+            return Err(CsharpCodegenError::new(
+                "record type `id` conflicts with its generated identity member",
+            ));
         }
         for field in ty.all_fields() {
             validate_ident(field.name.as_str())?;
@@ -129,13 +131,24 @@ fn enum_variants(
                 en.name
             ))
         })?;
-        entries
-            .iter()
-            .map(|(name, value)| {
-                validate_ident(name)?;
-                Ok((name.clone(), *value))
-            })
-            .collect()
+        let mut variants = Vec::new();
+        for (name, value) in entries {
+            validate_ident(name)?;
+            if en.is_flag && matches!(name.as_str(), "None" | "Everything") {
+                return Err(CsharpCodegenError::new(
+                    "record ID conflicts with built-in flag member",
+                ));
+            }
+            variants.push((name.clone(), *value));
+        }
+        if en.is_flag {
+            let everything = entries.values().fold(0, |mask, value| mask | value);
+            variants.extend([
+                ("None".to_string(), 0),
+                ("Everything".to_string(), everything),
+            ]);
+        }
+        Ok(variants)
     } else {
         Ok(en
             .variants
@@ -155,7 +168,12 @@ fn enum_source(
     if en.is_flag {
         source.push_str("[global::System.Flags]\n");
     }
-    source.push_str(&format!("public enum {} : long\n{{\n", csharp_identifier(en.name.as_str())));
+    let underlying = if en.is_int64 { "long" } else { "int" };
+    let suffix = if en.is_int64 { "L" } else { "" };
+    source.push_str(&format!(
+        "public enum {} : {underlying}\n{{\n",
+        csharp_identifier(en.name.as_str())
+    ));
     for (name, value) in enum_variants(en, schema, values)? {
         validate_ident(&name)?;
         if name == en.name.as_str() || name == "value__" {
@@ -164,7 +182,16 @@ fn enum_source(
                 en.name
             )));
         }
-        source.push_str(&format!("    {} = {value}L,\n", csharp_identifier(&name)));
+        if !en.is_int64 && i32::try_from(value).is_err() {
+            return Err(CsharpCodegenError::new(format!(
+                "enum `{}` exceeds int range; add @int64",
+                en.name
+            )));
+        }
+        source.push_str(&format!(
+            "    {} = {value}{suffix},\n",
+            csharp_identifier(&name)
+        ));
     }
     source.push_str("}\n");
     Ok(finish(source, namespace))
@@ -236,8 +263,10 @@ fn type_source(ty: &CftType, namespace: &str) -> Result<String> {
 
 fn value_type(ty: &CftValueType) -> Result<String> {
     Ok(match ty {
-        CftValueType::Int => "long".into(),
-        CftValueType::Float => "double".into(),
+        CftValueType::Int => "int".into(),
+        CftValueType::Long => "long".into(),
+        CftValueType::Float => "float".into(),
+        CftValueType::Double => "double".into(),
         CftValueType::Bool => "bool".into(),
         CftValueType::String => "string".into(),
         CftValueType::Object(name) => csharp_identifier(name.as_str()),
@@ -263,6 +292,8 @@ fn field_type(field: &CftField) -> Result<String> {
 fn value_descriptor(ty: &CftValueType) -> Result<String> {
     Ok(match ty {
         CftValueType::Int => "global::Coflow.Loader.CfdValues.Int".into(),
+        CftValueType::Long => "global::Coflow.Loader.CfdValues.Long".into(),
+        CftValueType::Double => "global::Coflow.Loader.CfdValues.Double".into(),
         CftValueType::Float => "global::Coflow.Loader.CfdValues.Float".into(),
         CftValueType::Bool => "global::Coflow.Loader.CfdValues.Bool".into(),
         CftValueType::String => "global::Coflow.Loader.CfdValues.String".into(),
@@ -351,7 +382,11 @@ fn table_id_extensions(schema: &CftSchema, values: &IdAsEnumValues) -> Result<St
         source.push_str(&format!("\npublic static partial class {extension_name}\n{{\n    private static readonly global::Coflow.Loader.TableIdMap<{enum_name}> Ids = new global::Coflow.Loader.TableIdMap<{enum_name}>(new global::System.Collections.Generic.Dictionary<{enum_name}, string>\n    {{\n"));
         for key in entries.keys() {
             validate_ident(key)?;
-            source.push_str(&format!("        [{enum_name}.{}] = {},\n", csharp_identifier(key), quote(key)));
+            source.push_str(&format!(
+                "        [{enum_name}.{}] = {},\n",
+                csharp_identifier(key),
+                quote(key)
+            ));
         }
         source.push_str(&format!("    }});\n    public static {} Get(this global::Coflow.Loader.Table<{}> table, {enum_name} id) => table[Ids.GetId(id)];\n    public static bool TryGet(this global::Coflow.Loader.Table<{}> table, {enum_name} id, out {} value)\n    {{\n        if (Ids.TryGetId(id, out var text)) return table.TryGetValue(text, out value);\n        value = null!;\n        return false;\n    }}\n}}\n", type_name, type_name, type_name, type_name));
     }
@@ -544,7 +579,9 @@ fn const_node(value: &CftConstValue) -> Result<String> {
     use CftConstValue as V;
     Ok(match value {
         V::Int(value) => integer_node(*value)?,
+        V::Long(value) => format!("global::Coflow.Loader.CfdDefaults.Long({value}L)"),
         V::Float(value) => float_node(*value)?,
+        V::Double(value) => format!("global::Coflow.Loader.CfdDefaults.Double({value:?}d)"),
         V::Bool(value) => format!("global::Coflow.Loader.CfdDefaults.Bool({value})"),
         V::String(value) => format!("global::Coflow.Loader.CfdDefaults.String({})", quote(value)),
         V::FormattedString(source) => format!(

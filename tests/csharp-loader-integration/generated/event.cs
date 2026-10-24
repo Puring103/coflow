@@ -3,8 +3,8 @@
 
 namespace Game.Config
 {
-public enum @event : long
+public enum @event : int
 {
-    @public = 0L,
+    @public = 0,
 }
 }

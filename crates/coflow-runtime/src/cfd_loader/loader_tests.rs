@@ -315,11 +315,7 @@ fn formatted_strings_resolve_cross_record_fields_and_preserve_source() -> TestRe
 
     let model = load_cfd_model(&schema, source)?;
     let holder = model
-        .record(
-            model
-                .record_by_type_id("Holder", "holder")
-                .expect("holder"),
-        )
+        .record(model.record_by_type_id("Holder", "holder").expect("holder"))
         .expect("holder record");
     let CfdValue::FormattedString(message) = holder.field("message").expect("message") else {
         panic!("expected formatted string");
@@ -342,11 +338,7 @@ fn formatted_strings_follow_record_reference_fields() -> TestResult {
         "#,
     )?;
     let holder = model
-        .record(
-            model
-                .record_by_type_id("Holder", "holder")
-                .expect("holder"),
-        )
+        .record(model.record_by_type_id("Holder", "holder").expect("holder"))
         .expect("holder record");
     assert!(matches!(
         holder.field("message"),
@@ -1236,10 +1228,7 @@ fn explicit_reference_type_errors_remain_repairable_in_partial_models() {
     let output = builder
         .build_partial()
         .expect("partial model retains invalid reference");
-    assert!(output
-        .model
-        .record_by_type_id("Holder", "holder")
-        .is_some());
+    assert!(output.model.record_by_type_id("Holder", "holder").is_some());
     assert!(output
         .diagnostics
         .diagnostics
@@ -1250,4 +1239,36 @@ fn explicit_reference_type_errors_remain_repairable_in_partial_models() {
         "base: Parent {} holder: Holder { target: &Child::base }"
     )
     .is_err());
+}
+
+#[test]
+fn numeric_widths_are_enforced_for_source_constants_and_nested_values() {
+    let schema = compile_schema("const WIDE: long = 1; const PRECISE: double = 0.1; @flag enum Bits { A = 1, B = 8 } table T { i: int; l: long; f: float; d: double; nested: [Option<int>] = []; keys: {int: string} = {}; bits: Bits = Bits::Everything; }");
+    let model = load_cfd_model(
+        &schema,
+        "a: T { i: 2147483647, l: 9223372036854775807, f: 0.1, d: 0.1 }",
+    )
+    .unwrap();
+    let record = model
+        .record(model.record_by_type_id("T", "a").unwrap())
+        .unwrap();
+    assert_eq!(
+        record.field("f"),
+        Some(&CfdValue::Float(f64::from(0.1_f32)))
+    );
+    assert_eq!(record.field("d"), Some(&CfdValue::Float(0.1)));
+    assert!(matches!(record.field("bits"), Some(CfdValue::Enum(v)) if v.value == 9));
+    for fields in [
+        "i: 2147483648, l: 0, f: 0.0, d: 0.0",
+        "i: WIDE, l: 0, f: 0.0, d: 0.0",
+        "i: 0, l: 0, f: PRECISE, d: 0.0",
+        "i: 0, l: 0, f: 1e100, d: 0.0",
+        "i: 0, l: 0, f: 0.0, d: 0.0, nested: [Some(2147483648)]",
+        "i: 0, l: 0, f: 0.0, d: 0.0, keys: {2147483648: \"bad\"}",
+    ] {
+        assert!(
+            load_cfd_model(&schema, &format!("a: T {{ {fields} }}")).is_err(),
+            "{fields}"
+        );
+    }
 }

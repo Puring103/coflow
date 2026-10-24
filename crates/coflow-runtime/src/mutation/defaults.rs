@@ -455,8 +455,8 @@ impl<'a> DefaultValueMaterializer<'a> {
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
         match ty {
-            CftValueType::Int => Ok(CfdValue::Int(0)),
-            CftValueType::Float => Ok(CfdValue::Float(0.0)),
+            CftValueType::Int | CftValueType::Long => Ok(CfdValue::Int(0)),
+            CftValueType::Float | CftValueType::Double => Ok(CfdValue::Float(0.0)),
             CftValueType::Bool => Ok(CfdValue::Bool(false)),
             CftValueType::String => Ok(CfdValue::String(String::new())),
             CftValueType::Option(_) => Ok(CfdValue::OptionNone),

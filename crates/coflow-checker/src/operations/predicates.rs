@@ -12,7 +12,7 @@ pub(crate) fn value_matches_predicate(
     match predicate {
         CftSchemaTypePredicate::Some { .. } => matches!(
             value,
-            EvalValue::Model(coflow_model::CfdValue::OptionSome(_))
+            EvalValue::Model(coflow_model::CfdValue::OptionSome(_), _)
                 | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(_))
         ),
         CftSchemaTypePredicate::Type(type_name) => value

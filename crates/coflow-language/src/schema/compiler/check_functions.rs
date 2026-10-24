@@ -27,7 +27,7 @@ impl CheckTypeAnalyzer<'_, '_> {
                 return InferredType::Unknown;
             }
             let arg_ty = self.check_expr_value(&args[0]);
-            if !types_comparable(&arg_ty, &InferredType::int()) && !arg_ty.is_unknown() {
+            if !arg_ty.value_type().is_some_and(CftValueType::is_integer) && !arg_ty.is_unknown() {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
                     args[0].span,
@@ -150,7 +150,10 @@ impl CheckTypeAnalyzer<'_, '_> {
             Some(CftCheckBuiltin::Abs) => self.check_abs_method(receiver, args, span, &receiver_ty),
             Some(CftCheckBuiltin::IsFinite) => {
                 self.check_receiver_method(receiver, args, span, &receiver_ty, "float", |ty| {
-                    matches!(ty.value_type(), Some(CftValueType::Float))
+                    matches!(
+                        ty.value_type(),
+                        Some(CftValueType::Float | CftValueType::Double)
+                    )
                 })
             }
             Some(CftCheckBuiltin::ApproxEqual) => {
@@ -346,7 +349,10 @@ impl CheckTypeAnalyzer<'_, '_> {
         }
         let receiver_ty = receiver_ty.clone();
         if let Some(elem) = receiver_ty.array_element() {
-            if let Some(CftValueType::Int | CftValueType::Float) = elem.value_type() {
+            if let Some(
+                CftValueType::Int | CftValueType::Long | CftValueType::Float | CftValueType::Double,
+            ) = elem.value_type()
+            {
                 elem
             } else {
                 self.diag(
@@ -541,7 +547,9 @@ impl CheckTypeAnalyzer<'_, '_> {
         let receiver_ty = receiver_ty.clone();
         if matches!(
             receiver_ty.value_type(),
-            Some(CftValueType::Int | CftValueType::Float)
+            Some(
+                CftValueType::Int | CftValueType::Long | CftValueType::Float | CftValueType::Double
+            )
         ) {
             receiver_ty
         } else {
@@ -567,7 +575,11 @@ impl CheckTypeAnalyzer<'_, '_> {
             return InferredType::bool();
         }
         let receiver_ty = receiver_ty.clone();
-        if !types_comparable(&receiver_ty, &InferredType::float()) && !receiver_ty.is_unknown() {
+        if !matches!(
+            receiver_ty.value_type(),
+            Some(CftValueType::Float | CftValueType::Double)
+        ) && !receiver_ty.is_unknown()
+        {
             self.diag(
                 CftErrorCode::FunctionArgTypeMismatch,
                 receiver.span,
@@ -576,7 +588,11 @@ impl CheckTypeAnalyzer<'_, '_> {
         }
         for arg in args {
             let ty = self.check_expr_value(arg);
-            if !types_comparable(&ty, &InferredType::float()) && !ty.is_unknown() {
+            if !matches!(
+                ty.value_type(),
+                Some(CftValueType::Float | CftValueType::Double)
+            ) && !ty.is_unknown()
+            {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
                     arg.span,

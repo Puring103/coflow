@@ -5,7 +5,7 @@ namespace Game.Config
 {
 public partial struct Stats
 {
-    public long hp { get; internal set; }
+    public int hp { get; internal set; }
     public CfdField extra { get; internal set; }
 }
 }

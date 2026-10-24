@@ -16,6 +16,13 @@ impl InferredType {
         Self::Value(CftValueType::Int)
     }
 
+    pub(super) const fn long() -> Self {
+        Self::Value(CftValueType::Long)
+    }
+    pub(super) const fn double() -> Self {
+        Self::Value(CftValueType::Double)
+    }
+
     pub(super) const fn float() -> Self {
         Self::Value(CftValueType::Float)
     }
@@ -151,7 +158,7 @@ pub(super) fn unwrap_reference(ty: &InferredType) -> InferredType {
 pub(super) fn is_valid_dict_key(ty: &InferredType) -> bool {
     matches!(
         ty.value_type(),
-        Some(CftValueType::Int | CftValueType::String | CftValueType::Enum(_))
+        Some(CftValueType::Int | CftValueType::Long | CftValueType::String | CftValueType::Enum(_))
     ) || ty.is_unknown()
 }
 
@@ -168,6 +175,9 @@ pub(super) fn types_comparable(left: &InferredType, right: &InferredType) -> boo
 }
 
 fn comparable_value_types(left: &CftValueType, right: &CftValueType) -> bool {
+    if left.promote_numeric(right).is_some() {
+        return true;
+    }
     match (left, right) {
         (CftValueType::Int, CftValueType::Int)
         | (CftValueType::Float, CftValueType::Float)
@@ -181,6 +191,10 @@ fn comparable_value_types(left: &CftValueType, right: &CftValueType) -> bool {
 }
 
 pub(super) fn ordered_comparable(left: &InferredType, right: &InferredType) -> bool {
+    if matches!((left.value_type(), right.value_type()), (Some(a), Some(b)) if a.promote_numeric(b).is_some())
+    {
+        return true;
+    }
     match (left, right) {
         (InferredType::Unknown, _) | (_, InferredType::Unknown) => true,
         (InferredType::Value(left), InferredType::Value(right)) => match (left, right) {
@@ -197,27 +211,51 @@ pub(super) fn ordered_comparable(left: &InferredType, right: &InferredType) -> b
 pub(super) fn unique_supported(ty: &InferredType) -> bool {
     matches!(
         ty.value_type(),
-        Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
+        Some(
+            CftValueType::Int
+                | CftValueType::Long
+                | CftValueType::Bool
+                | CftValueType::String
+                | CftValueType::Enum(_)
+        )
     )
 }
 
 pub(super) fn min_max_supported(ty: &InferredType) -> bool {
     matches!(
         ty.value_type(),
-        Some(CftValueType::Int | CftValueType::Float | CftValueType::Enum(_))
+        Some(
+            CftValueType::Int
+                | CftValueType::Long
+                | CftValueType::Float
+                | CftValueType::Double
+                | CftValueType::Enum(_)
+        )
     )
 }
 
 pub(super) fn set_element_supported(ty: &InferredType) -> bool {
     matches!(
         ty.value_type(),
-        Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
+        Some(
+            CftValueType::Int
+                | CftValueType::Long
+                | CftValueType::Bool
+                | CftValueType::String
+                | CftValueType::Enum(_)
+        )
     )
 }
 
 pub(super) fn sorted_element_supported(ty: &InferredType) -> bool {
     matches!(
         ty.value_type(),
-        Some(CftValueType::Int | CftValueType::Bool | CftValueType::String | CftValueType::Enum(_))
+        Some(
+            CftValueType::Int
+                | CftValueType::Long
+                | CftValueType::Bool
+                | CftValueType::String
+                | CftValueType::Enum(_)
+        )
     )
 }

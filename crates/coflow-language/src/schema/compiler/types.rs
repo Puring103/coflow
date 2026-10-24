@@ -54,6 +54,8 @@ impl ResolvedTypes<'_> {
     ) -> InferredType {
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),
+            TypeRefKind::Long => InferredType::long(),
+            TypeRefKind::Double => InferredType::double(),
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
@@ -226,7 +228,9 @@ impl ResolvedTypes<'_> {
         for info in self.types.values() {
             let mut fields: BTreeMap<String, Span> = BTreeMap::new();
             for field in &info.def.fields {
-                if crate::is_cft_reserved_identifier(&field.name) || (info.def.kind != TypeKind::Data && field.name == "id") {
+                if crate::is_cft_reserved_identifier(&field.name)
+                    || (info.def.kind != TypeKind::Data && field.name == "id")
+                {
                     diagnostics.push(CftDiagnostic::error(
                         CftErrorCode::ReservedIdentifier,
                         info.module.clone(),
@@ -378,6 +382,8 @@ impl ResolvedTypes<'_> {
     pub(super) fn resolve_field_type(&self, ty: &TypeRef) -> InferredType {
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),
+            TypeRefKind::Long => InferredType::long(),
+            TypeRefKind::Double => InferredType::double(),
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),
@@ -423,6 +429,8 @@ impl ResolvedTypes<'_> {
             |code, span, message: String| CftDiagnostic::error(code, module.clone(), span, message);
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),
+            TypeRefKind::Long => InferredType::long(),
+            TypeRefKind::Double => InferredType::double(),
             TypeRefKind::Float => InferredType::float(),
             TypeRefKind::Bool => InferredType::bool(),
             TypeRefKind::String => InferredType::string(),

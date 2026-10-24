@@ -24,7 +24,7 @@ public partial class ContractEntry : global::Coflow.Loader.ICfdRecord
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> constant_nested { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyList<long> samples { get; internal set; } = default!;
     public ContractFlags flags { get; internal set; } = default!;
-    public global::System.Collections.Generic.IReadOnlyDictionary<ContractFlags, long> indexed { get; internal set; } = default!;
+    public global::System.Collections.Generic.IReadOnlyDictionary<ContractFlags, int> indexed { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> some_nested { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>> localized { get; internal set; } = default!;
 }

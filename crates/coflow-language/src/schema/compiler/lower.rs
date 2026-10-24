@@ -81,7 +81,7 @@ impl ValidatedSchema<'_> {
             // `validate_enums` already resolved every variant's integer value
             // (auto-numbered or explicit) into `values_by_name`. We just look
             // them up here instead of re-walking the sequence.
-            let variants = info
+            let mut variants = info
                 .def
                 .variants
                 .iter()
@@ -93,16 +93,27 @@ impl ValidatedSchema<'_> {
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();
+            if info.is_flag {
+                for member in ["None", "Everything"] {
+                    variants.push(CftEnumVariant {
+                        name: EnumVariantName::from_validated(member),
+                        value: info.values_by_name[member],
+                        annotations: Vec::new(),
+                        display: None,
+                        span: info.def.span,
+                    });
+                }
+            }
             let variant_by_name = variants
                 .iter()
                 .enumerate()
                 .map(|(index, variant)| (variant.name.clone(), index))
                 .collect();
-            let variant_by_value = variants
-                .iter()
-                .enumerate()
-                .map(|(index, variant)| (variant.value, index))
-                .collect();
+            // 合成组合成员可以与单个标志同值，数值反查优先保留原始成员。
+            let mut variant_by_value = BTreeMap::new();
+            for (index, variant) in variants.iter().enumerate() {
+                variant_by_value.entry(variant.value).or_insert(index);
+            }
             let name = EnumName::from_validated(name.clone());
             let schema = CftEnum {
                 module: info.module.clone(),
@@ -111,6 +122,7 @@ impl ValidatedSchema<'_> {
                 variant_by_name,
                 variant_by_value,
                 is_flag: has_annotation(&info.def.annotations, "flag"),
+                is_int64: has_annotation(&info.def.annotations, "int64"),
                 annotations: Self::schema_annotations(&info.def.annotations),
                 display: display_metadata(&info.def.annotations),
                 span: info.def.span,
@@ -265,8 +277,12 @@ impl ValidatedSchema<'_> {
 
 fn const_value_as_default(value: &CftConstValue) -> CftSchemaDefaultValue {
     match value {
-        CftConstValue::Int(value) => CftSchemaDefaultValue::Int(*value),
-        CftConstValue::Float(value) => CftSchemaDefaultValue::Float(*value),
+        CftConstValue::Int(value) | CftConstValue::Long(value) => {
+            CftSchemaDefaultValue::Int(*value)
+        }
+        CftConstValue::Float(value) | CftConstValue::Double(value) => {
+            CftSchemaDefaultValue::Float(*value)
+        }
         CftConstValue::Bool(value) => CftSchemaDefaultValue::Bool(*value),
         CftConstValue::String(value) => CftSchemaDefaultValue::String(value.clone()),
         CftConstValue::FormattedString(source) => {

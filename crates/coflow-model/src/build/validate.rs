@@ -239,11 +239,18 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             (CftValueType::Option(inner), value) => self
                 .validate_value_inner(inner, value, record, path, cursor)
                 .map(|value| ValueDraft::OptionSome(Box::new(value))),
-            (CftValueType::Int, LoadedValueDraft::Int(value)) => {
-                Some(ValueDraft::Value(CfdValue::Int(*value)))
+            (CftValueType::Int | CftValueType::Long, LoadedValueDraft::Int(value)) => {
+                let value = CfdValue::Int(*value);
+                self.validate_materialized_value(ty, &value, record, path)?;
+                Some(ValueDraft::Value(value))
             }
-            (CftValueType::Float, LoadedValueDraft::Float(value)) => {
-                let value = CfdValue::Float(*value);
+            (CftValueType::Float | CftValueType::Double, LoadedValueDraft::Float(value)) => {
+                // 模型只保存目标精度下的值，读取、编辑和插值共享相同结果。
+                let value = CfdValue::Float(if *ty == CftValueType::Float {
+                    f64::from(*value as f32)
+                } else {
+                    *value
+                });
                 self.validate_materialized_value(ty, &value, record, path)?;
                 Some(ValueDraft::Value(value))
             }
@@ -517,7 +524,12 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         }
     }
 
-    fn push_budget_error(&mut self, message: String, record: Option<CfdRecordHandle>, path: CfdPath) {
+    fn push_budget_error(
+        &mut self,
+        message: String,
+        record: Option<CfdRecordHandle>,
+        path: CfdPath,
+    ) {
         self.budget_exhausted = true;
         self.push(
             CfdDiagnostic::error(CfdErrorCode::DataStructureLimitExceeded, message)

@@ -3,9 +3,9 @@
 
 namespace Game.Config
 {
-public enum EntityId : long
+public enum EntityId : int
 {
-    alpha = 0L,
-    beta = 1L,
+    alpha = 0,
+    beta = 1,
 }
 }

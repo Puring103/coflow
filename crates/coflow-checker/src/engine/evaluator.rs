@@ -745,7 +745,7 @@ impl<'model> CheckEvaluator<'model> {
         binding: &str,
     ) -> EvalResult<bool> {
         let inner = match value.value {
-            EvalValue::Model(coflow_model::CfdValue::OptionSome(inner)) => {
+            EvalValue::Model(coflow_model::CfdValue::OptionSome(inner), ty) => {
                 let Some(location) = value.location.clone() else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
@@ -755,7 +755,12 @@ impl<'model> CheckEvaluator<'model> {
                 };
                 let result = EvalValue::from_cfd_value(
                     inner,
-                    None,
+                    match &ty {
+                        Some(coflow_language::cft::CftValueType::Option(inner)) => {
+                            Some(inner.as_ref())
+                        }
+                        _ => None,
+                    },
                     location,
                     self.model,
                     &mut self.budget,
@@ -776,7 +781,7 @@ impl<'model> CheckEvaluator<'model> {
             EvalValue::Constant(coflow_language::cft::CftConstValue::OptionSome(inner)) => {
                 EvalValue::from_const(&inner)
             }
-            EvalValue::Model(coflow_model::CfdValue::OptionNone)
+            EvalValue::Model(coflow_model::CfdValue::OptionNone, _)
             | EvalValue::Constant(coflow_language::cft::CftConstValue::OptionNone) => {
                 return Ok(false)
             }

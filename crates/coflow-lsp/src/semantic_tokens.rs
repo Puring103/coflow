@@ -489,6 +489,8 @@ fn add_value_type_semantic(
 ) {
     match &ty.kind {
         TypeRefKind::Int
+        | TypeRefKind::Long
+        | TypeRefKind::Double
         | TypeRefKind::Float
         | TypeRefKind::Bool
         | TypeRefKind::String => {

@@ -19,8 +19,10 @@ pub(crate) const KEYWORDS: &[(&str, &str)] = &[
 ];
 
 pub(crate) const PRIMITIVE_TYPES: &[(&str, &str)] = &[
-    ("int", "64-bit integer."),
-    ("float", "64-bit floating point number."),
+    ("int", "32-bit signed integer."),
+    ("long", "64-bit signed integer."),
+    ("float", "32-bit floating point number."),
+    ("double", "64-bit floating point number."),
     ("bool", "Boolean value."),
     ("string", "String value."),
     ("string", "Explicit field-path interpolation template."),
@@ -50,6 +52,12 @@ pub(crate) fn builtin_functions() -> impl Iterator<Item = (&'static str, &'stati
 }
 
 pub(crate) const ANNOTATIONS: &[AnnotationCompletion] = &[
+    AnnotationCompletion {
+        label: "@int64",
+        insert_text: "@int64",
+        detail: "enum annotation",
+        documentation: "Use a signed 64-bit integer for this enum; the default is 32-bit.",
+    },
     AnnotationCompletion {
         label: "@struct",
         insert_text: "@struct",

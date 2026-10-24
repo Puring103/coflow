@@ -43,7 +43,7 @@ const BASE_HIGHLIGHT_KEYWORDS = new Set([
   'in', 'is', 'true', 'false', 'fn', 'var', 'return', 'if', 'else', 'match', 'for',
   'while', 'break', 'continue',
 ])
-const BASE_HIGHLIGHT_TYPES = new Set(['int', 'float', 'bool', 'string', 'Option', 'Some'])
+const BASE_HIGHLIGHT_TYPES = new Set(['int', 'long', 'float', 'double', 'bool', 'string', 'Option', 'Some'])
 const BASE_HIGHLIGHT_PATTERN =
   /@[A-Za-z_][A-Za-z0-9_]*|"(?:\\.|[^"\\])*"|#[^\n]*|\b\d[\w.]*\b|[A-Za-z_][A-Za-z0-9_]*|[+\-*/%=<>!&|^~?:.]+/g
 

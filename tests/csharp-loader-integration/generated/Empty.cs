@@ -5,6 +5,6 @@ namespace Game.Config
 {
 public partial struct Empty
 {
-    public long hp { get; internal set; }
+    public int hp { get; internal set; }
 }
 }

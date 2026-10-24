@@ -1521,7 +1521,7 @@ export function EnumDirectSelect({
   if (isFlag) {
     const mask = draftMask
     const everyMask = everyFlagMask(variants)
-    const selectableVariants = variants.filter(variant => variant.value !== 0n)
+    const selectableVariants = variants.filter(variant => variant.value !== 0n && variant.name !== 'Everything')
     const zeroVariant = variants.find(variant => variant.value === 0n)
     const selectedVariants = selectedFlagVariantNames(selectableVariants, mask)
     const selected = draftNull ? [NULL_SENTINEL] : [
@@ -1549,7 +1549,7 @@ export function EnumDirectSelect({
           ...(nullable ? [{ value: NULL_SENTINEL }] : []),
           ...(everyMask !== 0n ? [{
             value: FLAG_EVERY_SENTINEL,
-            label: 'Every',
+            label: 'Everything',
             description: '选择所有标记',
           }] : []),
           {

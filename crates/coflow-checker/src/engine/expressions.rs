@@ -14,7 +14,7 @@ pub(super) fn eval_expr<'model>(
     match &expr.kind {
         CftSchemaCheckExprKind::Int(value) => Ok(LocatedEvalValue::value(EvalValue::int(*value))),
         CftSchemaCheckExprKind::Float(value) => {
-            Ok(LocatedEvalValue::value(EvalValue::float(*value)))
+            Ok(LocatedEvalValue::value(EvalValue::double(*value)))
         }
         CftSchemaCheckExprKind::Bool(value) => Ok(LocatedEvalValue::value(EvalValue::bool(*value))),
         CftSchemaCheckExprKind::String(value) => {

@@ -189,7 +189,7 @@ pub(crate) fn contains_value(
             };
             Ok((0..entries.len()).any(|index| {
                 entries
-                    .key_at(model, index)
+                    .key_at(model, index, None)
                     .is_some_and(|entry_key| values_equal(&entry_key, value))
             }))
         }
@@ -259,7 +259,7 @@ pub(crate) fn abs_value(receiver: LocatedEvalValue<'_>) -> OpsResult<LocatedEval
                 .checked_abs()
                 .ok_or_else(|| OpsError::eval_type(location.clone(), "abs integer overflow"))?,
         ),
-        Some(ScalarValue::Float(value)) => EvalValue::float(value.abs()),
+        Some(ScalarValue::Float(value)) => EvalValue::double(value.abs()),
         _ => {
             return Err(OpsError::eval_type(
                 location,
@@ -267,7 +267,10 @@ pub(crate) fn abs_value(receiver: LocatedEvalValue<'_>) -> OpsResult<LocatedEval
             ))
         }
     };
-    Ok(LocatedEvalValue::new(value, receiver.location))
+    ops::normalize_numeric(
+        LocatedEvalValue::new(value, receiver.location),
+        receiver.value.numeric_type(),
+    )
 }
 
 pub(crate) fn is_finite_value(receiver: LocatedEvalValue<'_>) -> OpsResult<LocatedEvalValue<'_>> {
@@ -806,6 +809,11 @@ pub(crate) fn sum_value<'model>(
                         format!("整数求和溢出: {int_sum} + {value}"),
                     ));
                 };
+                if element_type.as_ref() == Some(&coflow_language::cft::CftValueType::Int)
+                    && i32::try_from(next).is_err()
+                {
+                    return Err(OpsError::eval_type(location, "32-bit integer sum overflow"));
+                }
                 int_sum = next;
             }
             Some(ScalarValue::Int(value)) => {
@@ -819,6 +827,9 @@ pub(crate) fn sum_value<'model>(
                     float_sum = int_sum as f64;
                 }
                 float_sum += value;
+                if element_type.as_ref() == Some(&coflow_language::cft::CftValueType::Float) {
+                    float_sum = f64::from(float_sum as f32);
+                }
             }
             Some(ScalarValue::Null) => {}
             _ => {
@@ -833,9 +844,15 @@ pub(crate) fn sum_value<'model>(
         }
     }
     if saw_float || (!saw_numeric && value_type_is_float(element_type.as_ref())) {
-        Ok(LocatedEvalValue::new(EvalValue::float(float_sum), location))
+        ops::normalize_numeric(
+            LocatedEvalValue::new(EvalValue::double(float_sum), location),
+            element_type.clone(),
+        )
     } else {
-        Ok(LocatedEvalValue::new(EvalValue::int(int_sum), location))
+        ops::normalize_numeric(
+            LocatedEvalValue::new(EvalValue::int(int_sum), location),
+            element_type.clone(),
+        )
     }
 }
 

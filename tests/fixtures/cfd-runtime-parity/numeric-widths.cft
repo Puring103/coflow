@@ -1,0 +1,12 @@
+@flag enum NumericBits { Read = 1, Execute = 8 }
+@int64 enum NumericCode { Large = 4294967296 }
+const NUMERIC_LONG: long = 1;
+const NUMERIC_DOUBLE: double = 0.1;
+table NumericValues {
+  small: int = 0;
+  wide: long = 0;
+  rounded: float = 0.0;
+  precise: double = 0.0;
+  bits: NumericBits = NumericBits::Everything;
+  code: NumericCode = NumericCode::Large;
+}

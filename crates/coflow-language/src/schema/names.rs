@@ -37,7 +37,11 @@ fn standard_name(value: &str) -> bool {
 }
 
 fn type_name(value: &str) -> bool {
-    standard_name(value) && !matches!(value, "int" | "float" | "bool" | "string" | "Option")
+    standard_name(value)
+        && !matches!(
+            value,
+            "int" | "long" | "float" | "double" | "bool" | "string" | "Option"
+        )
 }
 
 fn variant_name(value: &str) -> bool {
@@ -153,7 +157,15 @@ macro_rules! cft_name {
 cft_name!(TypeName, "type name", type_name, trusted);
 cft_name!(FieldName, "field name", standard_name, trusted);
 cft_name!(EnumName, "enum name", type_name, trusted);
-cft_name!(EnumVariantName, "enum variant name", standard_name, trusted);
+fn enum_variant_name(value: &str) -> bool {
+    value == "None" || standard_name(value)
+}
+cft_name!(
+    EnumVariantName,
+    "enum variant name",
+    enum_variant_name,
+    trusted
+);
 cft_name!(ConstName, "const name", standard_name, trusted);
 cft_name!(CheckName, "check name", standard_name, trusted);
 cft_name!(DimensionName, "dimension name", standard_name, trusted);

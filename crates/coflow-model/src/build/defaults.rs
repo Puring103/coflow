@@ -72,11 +72,15 @@ impl Validator<'_, '_> {
                     .default_value(inner, value, record, path, cursor)
                     .map(|value| ValueDraft::OptionSome(Box::new(value)));
             }
-            CftSchemaDefaultValue::Int(value) if type_accepts_default(ty, &CftValueType::Int) => {
+            CftSchemaDefaultValue::Int(value)
+                if type_accepts_default(ty, &CftValueType::Int)
+                    || type_accepts_default(ty, &CftValueType::Long) =>
+            {
                 CfdValue::Int(*value)
             }
             CftSchemaDefaultValue::Float(value)
-                if type_accepts_default(ty, &CftValueType::Float) =>
+                if type_accepts_default(ty, &CftValueType::Float)
+                    || type_accepts_default(ty, &CftValueType::Double) =>
             {
                 CfdValue::Float(*value)
             }

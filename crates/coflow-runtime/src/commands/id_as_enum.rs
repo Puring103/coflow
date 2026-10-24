@@ -15,15 +15,26 @@ pub(super) fn prepare_values(
 
     for (enum_name, enum_ids) in current {
         let entries = values.entry(enum_name).or_default();
+        let max_value = if enum_ids.is_int64 {
+            i64::MAX
+        } else {
+            i64::from(i32::MAX)
+        };
         let current_ids = enum_ids.ids.iter().cloned().collect::<BTreeSet<_>>();
         entries.retain(|key, _| current_ids.contains(key));
-        validate_values(project, entries, enum_ids.is_flags)?;
+        validate_values(project, entries, enum_ids.is_flags, max_value)?;
         for key in enum_ids.ids {
+            if enum_ids.is_flags && matches!(key.as_str(), "None" | "Everything") {
+                return Err(artifact_error(
+                    project.config_path(),
+                    "record ID conflicts with built-in flag member",
+                ));
+            }
             if entries.contains_key(&key) {
                 continue;
             }
             let used = entries.values().copied().collect::<BTreeSet<_>>();
-            let value = allocate_value(project, &used, enum_ids.is_flags)?;
+            let value = allocate_value(project, &used, enum_ids.is_flags, max_value)?;
             entries.insert(key, value);
         }
     }
@@ -82,6 +93,7 @@ pub(super) fn prepare_rename_update(
 struct EnumIds {
     ids: Vec<String>,
     is_flags: bool,
+    is_int64: bool,
 }
 
 fn collect_ids(info: Vec<IdAsEnumInfo>) -> BTreeMap<String, EnumIds> {
@@ -90,6 +102,7 @@ fn collect_ids(info: Vec<IdAsEnumInfo>) -> BTreeMap<String, EnumIds> {
         let entry = result.entry(item.enum_name).or_insert_with(|| EnumIds {
             ids: Vec::new(),
             is_flags: item.is_flags,
+            is_int64: item.is_int64,
         });
         let mut seen = entry.ids.iter().cloned().collect::<BTreeSet<_>>();
         entry
@@ -103,10 +116,17 @@ fn allocate_value(
     project: &Project,
     used: &BTreeSet<i64>,
     is_flags: bool,
+    max_value: i64,
 ) -> Result<i64, DiagnosticSet> {
     if is_flags {
         let mut candidate = 1_i64;
         loop {
+            if candidate > max_value {
+                return Err(artifact_error(
+                    project.config_path(),
+                    "@idAsEnum exceeds enum width; add @int64 for 64-bit values",
+                ));
+            }
             if !used.contains(&candidate) {
                 return Ok(candidate);
             }
@@ -127,6 +147,12 @@ fn allocate_value(
             )
         })?;
     }
+    if candidate > max_value {
+        return Err(artifact_error(
+            project.config_path(),
+            "@idAsEnum exceeds enum width; add @int64 for 64-bit values",
+        ));
+    }
     Ok(candidate)
 }
 
@@ -134,7 +160,17 @@ fn validate_values(
     project: &Project,
     values: &BTreeMap<String, i64>,
     is_flags: bool,
+    max_value: i64,
 ) -> Result<(), DiagnosticSet> {
+    if values
+        .values()
+        .any(|value| *value < 0 || *value > max_value)
+    {
+        return Err(artifact_error(
+            project.config_path(),
+            "stable enum value is outside the declared width",
+        ));
+    }
     if !is_flags {
         return Ok(());
     }

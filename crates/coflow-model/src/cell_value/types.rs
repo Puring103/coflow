@@ -7,7 +7,9 @@ use super::diagnostics::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CellType {
     Int,
+    Long,
     Float,
+    Double,
     Bool,
     String,
     Type(String),
@@ -22,6 +24,8 @@ impl CellType {
     pub(super) fn from_schema_type(ty: &CftValueType) -> Self {
         match ty {
             CftValueType::Int => Self::Int,
+            CftValueType::Long => Self::Long,
+            CftValueType::Double => Self::Double,
             CftValueType::Float => Self::Float,
             CftValueType::Bool => Self::Bool,
             CftValueType::String => Self::String,
@@ -51,6 +55,8 @@ impl CellType {
     pub(super) fn display(&self) -> String {
         match self {
             Self::Int => "int".to_string(),
+            Self::Long => "long".to_string(),
+            Self::Double => "double".to_string(),
             Self::Float => "float".to_string(),
             Self::Bool => "bool".to_string(),
             Self::String => "string".to_string(),
@@ -138,6 +144,8 @@ impl<'a> TypeParser<'a> {
         }
         Ok(match name.as_str() {
             "int" => CellType::Int,
+            "long" => CellType::Long,
+            "double" => CellType::Double,
             "float" => CellType::Float,
             "bool" => CellType::Bool,
             "string" => CellType::String,

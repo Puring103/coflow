@@ -81,7 +81,10 @@ fn parse_dict_key(
     let text = text.trim();
     match key {
         CellType::String => parse_string(text).map(LoadedDictKeyDraft::String),
-        CellType::Int => Ok(LoadedDictKeyDraft::Int(
+        CellType::Int => Ok(LoadedDictKeyDraft::Int(i64::from(
+            text.parse::<i32>().map_err(|_| type_mismatch("int key"))?,
+        ))),
+        CellType::Long => Ok(LoadedDictKeyDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int key"))?,
         )),
         CellType::Enum(enum_name) => {
