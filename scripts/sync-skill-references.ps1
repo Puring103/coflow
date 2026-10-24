@@ -15,24 +15,49 @@ $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 $Mappings = @(
     @{
+        Source = "website/docs/docs/reference/03-language/01-cft.md"
+        Target = "skills/coflow-workflow/references/cft.md"
+        Url = "$PublicDocsBase/docs/reference/03-language/01-cft"
+    }
+    @{
+        Source = "website/docs/docs/reference/10-localization.md"
+        Target = "skills/coflow-workflow/references/localization.md"
+        Url = "$PublicDocsBase/docs/reference/10-localization"
+    }
+    @{
+        Source = "website/docs/docs/reference/13-plugins.md"
+        Target = "skills/coflow-workflow/references/plugins.md"
+        Url = "$PublicDocsBase/docs/reference/13-plugins"
+    }
+    @{
+        Source = "website/docs/docs/reference/01-project-config.md"
+        Target = "skills/coflow-schema/references/project-config.md"
+        Url = "$PublicDocsBase/docs/reference/01-project-config"
+    }
+    @{
+        Source = "website/docs/docs/reference/03-language/02-cfd.md"
+        Target = "skills/coflow-schema/references/cfd.md"
+        Url = "$PublicDocsBase/docs/reference/03-language/02-cfd"
+    }
+    @{
+        Source = "website/docs/docs/reference/08-cli.md"
+        Target = "skills/coflow-schema/references/cli.md"
+        Url = "$PublicDocsBase/docs/reference/08-cli"
+    }
+    @{
+        Source = "website/docs/docs/reference/09-diagnostics/01-diagnostics.md"
+        Target = "skills/coflow-schema/references/diagnostics.md"
+        Url = "$PublicDocsBase/docs/reference/09-diagnostics/01-diagnostics"
+    }
+    @{
         Source = "website/docs/docs/reference/01-project-config.md"
         Target = "skills/coflow-workflow/references/project-config.md"
         Url = "$PublicDocsBase/docs/reference/01-project-config"
     }
     @{
-        Source = "website/docs/docs/reference/02-project-pipeline.md"
-        Target = "skills/coflow-workflow/references/project-pipeline.md"
-        Url = "$PublicDocsBase/docs/reference/02-project-pipeline"
-    }
-    @{
         Source = "website/docs/docs/reference/03-language/02-cfd.md"
         Target = "skills/coflow-workflow/references/cfd.md"
         Url = "$PublicDocsBase/docs/reference/03-language/02-cfd"
-    }
-    @{
-        Source = "website/docs/docs/reference/05-data-model.md"
-        Target = "skills/coflow-workflow/references/data-model.md"
-        Url = "$PublicDocsBase/docs/reference/05-data-model"
     }
     @{
         Source = "website/docs/docs/reference/07-codegen/01-csharp.md"
@@ -55,24 +80,9 @@ $Mappings = @(
         Url = "$PublicDocsBase/docs/reference/03-language/01-cft"
     }
     @{
-        Source = "website/docs/docs/reference/03-language/04-check.md"
-        Target = "skills/coflow-schema/references/check.md"
-        Url = "$PublicDocsBase/docs/reference/03-language/04-check"
-    }
-    @{
-        Source = "website/docs/docs/reference/05-data-model.md"
-        Target = "skills/coflow-schema/references/data-model.md"
-        Url = "$PublicDocsBase/docs/reference/05-data-model"
-    }
-    @{
         Source = "website/docs/docs/reference/10-localization.md"
         Target = "skills/coflow-schema/references/localization.md"
         Url = "$PublicDocsBase/docs/reference/10-localization"
-    }
-    @{
-        Source = "website/docs/docs/reference/11-schema-api.md"
-        Target = "skills/coflow-schema/references/schema-api.md"
-        Url = "$PublicDocsBase/docs/reference/11-schema-api"
     }
 )
 
@@ -120,6 +130,10 @@ function Rewrite-ReferenceLinks([string]$Text, $Mapping) {
         param($match)
 
         $destination = $match.Groups["destination"].Value
+        # 网站根路径在独立安装的 Skill 中需要转成公开链接。
+        if ($destination.StartsWith("/") -and -not $destination.StartsWith("//")) {
+            return $match.Groups["prefix"].Value + $PublicDocsBase + $destination + $match.Groups["suffix"].Value
+        }
         if ($destination.StartsWith("#") -or
             $destination.StartsWith("/") -or
             $destination -match '^[a-zA-Z][a-zA-Z0-9+.-]*:') {

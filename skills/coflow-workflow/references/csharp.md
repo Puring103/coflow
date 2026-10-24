@@ -115,3 +115,41 @@ foreach (var variant in sword.Variants("language")) {
 `string` 同时支持普通字面量和显式 `f"..."` 插值。普通字符串的花括号保持原样，插值读取当前视图的字段值。
 
 初次加载会验证基础数据和已声明的各维度变体。首次组合多个维度若出现循环依赖等错误，`For` 会抛出 `CfdLoadException`，可通过其 `Diagnostics` 定位问题。CFT 业务规则通过 CLI 校验、构建或编辑器执行。
+
+## 应用资源与重新加载
+
+生成源码和 `Coflow.Loader` 使用相同的发布版本。业务 partial 扩展与生成类型放在相同命名空间和程序集，生成目录交给 codegen/build 管理，业务扩展文件放在目录外。
+
+应用资源系统负责读取 CFD 文本：桌面程序可使用文件，Unity 可使用 TextAsset 或资源包。将所有相互引用的基础文件和需要的覆盖文件一起传给 Load；逻辑路径用于诊断，文件传入顺序不决定优先级。应用运行时使用 CFD、加载库和生成类型，CFT 在构建期用于检查和生成。
+
+Unity 中可直接把资源文本传入，例如：
+
+```csharp
+var loaded = CoflowData.Load(new[] {
+    new CfdSource("data/items.cfd", itemsAsset.text),
+    new CfdSource("language/ja.cfd", japaneseAsset.text),
+});
+```
+
+这里 itemsAsset 与 japaneseAsset 是应用已取得的 TextAsset。资源下载、异步读取和更新时机由应用决定。
+
+重新加载时构造新的结果，成功后再替换业务使用的数据根：
+
+```csharp
+// result 是上面已成功加载的结果。
+var current = result.Data;
+var candidate = CoflowData.Load(new[] {
+    new CfdSource("items.cfd", updatedItemsText),
+    new CfdSource("ja.cfd", updatedJapaneseText),
+});
+if (candidate.Success) {
+    current = candidate.Data;
+} else {
+    foreach (var diagnostic in candidate.Diagnostics)
+        System.Console.WriteLine(diagnostic);
+}
+```
+
+失败时继续使用旧数据。新旧加载结果的记录与视图属于各自的数据上下文；交换数据根后，应用按 ID 从新根重新获取记录和维度视图。多线程应用通过自己的同步方式一次性交换数据根。
+
+加载会检查结构、字段类型、引用和模板依赖。CFT 业务规则通过 CLI 的 check --rules、build 或编辑器执行；数据更新交付前仍应完成规则校验。改变 CFT 结构后，重新生成并编译应用源码。

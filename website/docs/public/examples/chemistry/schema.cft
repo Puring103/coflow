@@ -1,0 +1,2 @@
+data Formula { expression: string; }
+table Reaction { formula: Formula; }
