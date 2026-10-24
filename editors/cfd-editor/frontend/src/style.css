@@ -1,59 +1,48 @@
+@import "../../../../assets/brand-theme.css";
+
 /* ─── Reset & base ─── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root, [data-theme="dark"] {
-  /* Tell the UA to render native form controls (select popup, scrollbars,
-   * autofill) in dark-mode colors instead of the OS default white. */
-  color-scheme: dark;
-
-  /* Coflow surfaces — restrained green-neutral levels for long editing sessions. */
-  --bg-0: #0a1413;            /* chrome / topbar / diag-panel */
-  --bg-1: #0f1c1a;            /* app background / content */
-  --bg-2: #142523;            /* panels (sidebar / detail / view-tabs) */
-  --bg-3: #1b2e2b;            /* raised / hover */
-  --bg-4: #24403b;            /* selected / strong hover */
-
-  --border:        #203632;
-  --border-strong: #31504a;
-
-  /* Text */
-  --text:      #e9f2ee;
-  --text-dim:  #a2b5af;
-  --text-mute: #70857f;
-  --text-key:  #69bdca;
-
-  /* Confluence spectrum: provenance colors stay separate from status colors. */
-  --engineer:  #4fb4c5;
-  --planner:   #ef8d82;
-  --accent:    #3fb3a8;
-  --accent-2:  #5ecabf;
-  --on-accent: #04100e;
-  --red:       #ee7190;
-  --yellow:    #d9a85c;
-  --green:     #62bd92;
-  --purple:    #aa9bc8;
-
-  /* Code editor syntax colors. */
-  --code-comment:  #93aaa3;
-  --code-keyword:  #65d2c6;
-  --code-type:     #72d6a1;
-  --code-property: #82cad6;
-  --code-string:   #e3b768;
-  --code-number:   #c5ade3;
-  --code-constant: #f09a91;
-  --code-operator: #b8cbc5;
-  --code-special:  #80c9d5;
-  --code-caret: #ffd166;
-  --code-selection: #365f72;
-
-  /* Graph view */
-  --graph-bg-grid: #1c3531;
-  --graph-edge: #5f9b8e;
-  --graph-edge-label: #9dbdb3;
-  --graph-edge-label-bg: #0f1c1a;
-  --graph-back-edge: var(--red);
-  --graph-edge-highlight: #63c5bb;
-  --minimap-mask: rgba(7, 16, 14, 0.76);
+:root {
+  /* 编辑器只映射语义变量，明暗色阶由共享品牌样式统一维护。 */
+  --bg-0: var(--coflow-canvas);
+  --bg-1: var(--coflow-surface);
+  --bg-2: var(--coflow-panel);
+  --bg-3: var(--coflow-raised);
+  --bg-4: var(--coflow-selected);
+  --border: var(--coflow-border);
+  --border-strong: var(--coflow-border-strong);
+  --text: var(--coflow-text);
+  --text-dim: var(--coflow-muted);
+  --text-mute: var(--coflow-muted);
+  --text-key: var(--coflow-brand);
+  --engineer: var(--coflow-brand);
+  --planner: var(--coflow-brand);
+  --accent: var(--coflow-brand);
+  --accent-2: var(--coflow-brand-hover);
+  --on-accent: var(--coflow-on-action);
+  --red: var(--coflow-danger);
+  --yellow: var(--coflow-warning);
+  --green: var(--coflow-success);
+  --purple: var(--coflow-purple);
+  --graph-bg-grid: var(--coflow-border);
+  --graph-edge: var(--coflow-brand);
+  --graph-edge-label: var(--coflow-muted);
+  --graph-edge-label-bg: var(--coflow-surface);
+  --graph-back-edge: var(--coflow-danger);
+  --graph-edge-highlight: var(--coflow-brand-hover);
+  --code-comment: var(--coflow-code-comment);
+  --code-keyword: var(--coflow-code-keyword);
+  --code-type: var(--coflow-code-type);
+  --code-property: var(--coflow-code-property);
+  --code-string: var(--coflow-code-string);
+  --code-number: var(--coflow-code-number);
+  --code-constant: var(--coflow-code-constant);
+  --code-operator: var(--coflow-text);
+  --code-special: var(--coflow-brand);
+  --code-caret: var(--coflow-brand);
+  --code-selection: var(--coflow-selected);
+  --minimap-mask: color-mix(in srgb, var(--coflow-canvas) 76%, transparent);
 }
 
 :root {
@@ -303,7 +292,9 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .app-logo {
   display: block;
   width: 24px;
-  height: 18px;
+  height: 24px;
+  background: var(--accent);
+  mask: no-repeat center / contain;
   flex-shrink: 0;
 }
 
@@ -339,11 +330,11 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--coflow-action);
   color: var(--on-accent);
   border-color: var(--accent);
 }
-.btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); color: var(--on-accent); }
+.btn-primary:hover { background: var(--coflow-action-hover); border-color: var(--coflow-action-hover); color: var(--on-accent); }
 
 .btn-outlined {
   border-color: var(--border-strong);
@@ -4872,44 +4863,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .navigation-header .navigation-toggle { flex-direction: row-reverse; flex: 0 0 26px; width: 26px; padding: 0; justify-content: center; }
 .app.navigation-collapsed .navigation-header .project-menu { display: none; }
 .app.navigation-collapsed .navigation-header { justify-content: center; padding: 0; }
-[data-theme="light"] {
-  color-scheme: light;
-  --red:       #d24f6f;
-  --yellow:    #a96f16;
-  --green:     #277e59;
-
-  --code-comment:  #60756f;
-  --code-keyword:  #176f69;
-  --code-type:     #20784f;
-  --code-property: #196f7d;
-  --code-string:   #8b5b0f;
-  --code-number:   #684f91;
-  --code-constant: #b43f58;
-  --code-operator: #48625c;
-  --code-special:  #176f7d;
-  --code-caret: #075f58;
-  --code-selection: #b8d9e8;
-
-  --graph-bg-grid: #dce8e1;
-  --graph-edge: #5f857b;
-  --graph-edge-label: #4c6b62;
-  --graph-edge-label-bg: #ffffff;
-  --graph-back-edge: var(--red);
-  --graph-edge-highlight: #24837c;
-  --minimap-mask: rgba(255, 255, 255, 0.75); --purple: #886aaf;
-  --bg-0: #f3f4f6; --bg-1: #ffffff; --bg-2: #f8f9fb; --bg-3: #edf1f7; --bg-4: #e5edfa;
-  --border: #e3e6eb; --border-strong: #cbd2dd;
-  --text: #28313e; --text-dim: #627084; --text-mute: #8490a0; --text-key: #536d94;
-  --accent: #486fb0; --accent-2: #365d9f; --on-accent: #ffffff;
-  --planner: #677d9c; --engineer: #7c8295;
-}
-[data-theme="dark"] {
-  --bg-0: #191c22; --bg-1: #20242c; --bg-2: #242932; --bg-3: #2b3240; --bg-4: #303f59;
-  --border: #303641; --border-strong: #454f60;
-  --text: #dce1ea; --text-dim: #a3afc1; --text-mute: #7e8a9d; --text-key: #a0b8df;
-  --accent: #8aaee8; --accent-2: #a6c4f2; --on-accent: #17243a;
-  --planner: #9eacc2; --engineer: #a3a3bd;
-}
 .app .topbar { grid-template-columns: minmax(0, 1fr) minmax(180px, 350px) minmax(0, 1fr); gap: 12px; padding: 0 14px; background: var(--bg-1); }
 .app .activity-btn.active { color: var(--accent); font-weight: 600; background: var(--bg-4); }
 .app .project-search-dialog[open] { display: flex; flex-direction: column; }
