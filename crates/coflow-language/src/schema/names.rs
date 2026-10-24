@@ -167,7 +167,22 @@ cft_name!(
     trusted
 );
 cft_name!(ConstName, "const name", standard_name, trusted);
-cft_name!(CheckName, "check name", standard_name, trusted);
+fn check_name(value: &str) -> bool {
+    standard_name(value)
+        || value
+            .strip_prefix('@')
+            .and_then(|value| value.rsplit_once(':'))
+            .is_some_and(|(module, offset)| !module.is_empty() && offset.parse::<usize>().is_ok())
+}
+
+cft_name!(CheckName, "check name", check_name, trusted);
+
+impl CheckName {
+    // @ 不属于源码标识符，自动位置身份不会与用户命名的规则冲突。
+    pub(in crate::schema) fn anonymous(module: &crate::ModuleId, span: crate::Span) -> Self {
+        Self(format!("@{module}:{}", span.start))
+    }
+}
 cft_name!(DimensionName, "dimension name", standard_name, trusted);
 cft_name!(RecordId, "record ID", standard_name);
 cft_name!(VariantName, "dimension variant", variant_name);

@@ -15,6 +15,6 @@ CLI 的 `coflow check --rules` 执行全部规则，`--rule` 选择具体规则�
 编辑器会话在加载与变更后执行对应规则。`coflow codegen` 负责代码生成。
 C# 加载直接构造生成类型，相关协议见 [生成类型与加载器](02-api-runtime-design.zh-CN.md)。
 
-字段省略只依据显式默认值，Option 表达值的空态。data、table 和 singleton 均声明命名规则；
+字段省略只依据显式默认值，Option 表达值的空态。data、table 和 singleton 均可声明命名或匿名规则；
 规则按拥有路径定位内联对象，类型继承与规则声明顺序决定执行次序。记录业务身份统一为 id，模型代次索引使用 handle。
 完整的模块协作与验证边界见 [语言核心实现契约](05-language-evolution.zh-CN.md)。

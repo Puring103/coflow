@@ -196,3 +196,25 @@ fn data_checks_do_not_shadow_a_constant_named_id_without_an_id_field() {
         1
     );
 }
+
+#[test]
+fn anonymous_rules_can_be_listed_inspected_and_selected_individually() {
+    let root = fixture(r#"
+        table Item { value: int; check { value > 0; } check { value < 10; } }
+        check { records(Item).len() == 1; }
+        check: "project message" { records(Item).len() > 0; }
+    "#, "one: Item { value: 3 }\n");
+    let list = run(root.path(), "rule.list", &[]);
+    assert_eq!(list.status, Status::Success, "{list:?}");
+    let rules = list.result["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 4);
+    let ids: std::collections::BTreeSet<_> = rules.iter().map(|rule| rule["id"].as_str().unwrap()).collect();
+    assert_eq!(ids.len(), 4);
+    for id in ids {
+        let inspect = run(root.path(), "rule.inspect", &[("rule", id)]);
+        assert_eq!(inspect.status, Status::Success, "{inspect:?}");
+        let checked = run(root.path(), "check", &[("rule", id), ("details", "true")]);
+        assert_eq!(checked.status, Status::Success, "{checked:?}");
+        assert_eq!(checked.result["tasks"].as_array().unwrap().len(), 1);
+    }
+}

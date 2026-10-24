@@ -15,7 +15,7 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
         {
-            let name = self.expect_ident()?;
+            let name = self.parse_optional_check_name()?;
             self.parse_check_block_after_keyword(start, name)
         }
     }
@@ -27,21 +27,31 @@ impl Parser<'_> {
         let start = self
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
-        let name = self.expect_ident()?;
+        let name = self.parse_optional_check_name()?;
         let block = self.parse_check_block_after_keyword(start, name.clone())?;
         Ok(crate::syntax::ast::TopLevelCheckDef {
-            name: name.name,
-            name_span: name.span,
+            name: block.name.clone(),
+            name_span: block.name_span,
             span: block.span,
             block,
             annotations,
         })
     }
 
+    fn parse_optional_check_name(
+        &mut self,
+    ) -> Result<Option<crate::syntax::ast::NameRef>, CftDiagnostics> {
+        if self.at(&TokenKind::LBrace) || self.at(&TokenKind::Colon) {
+            Ok(None)
+        } else {
+            self.expect_ident().map(Some)
+        }
+    }
+
     fn parse_check_block_after_keyword(
         &mut self,
         start: usize,
-        name: crate::syntax::ast::NameRef,
+        name: Option<crate::syntax::ast::NameRef>,
     ) -> Result<CheckBlock, CftDiagnostics> {
         let message = self.parse_check_message()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
@@ -59,8 +69,11 @@ impl Parser<'_> {
             ],
             || CheckBlock {
                 message: message.map(|message| message.value),
-                name: name.name,
-                name_span: name.span,
+                // 匿名块以 check 关键字作为导航位置，不伪造源码名称。
+                name_span: name
+                    .as_ref()
+                    .map_or(Span::new(start, start + 5), |name| name.span),
+                name: name.map(|name| name.name),
                 stmts: stmts.value,
                 span,
             },

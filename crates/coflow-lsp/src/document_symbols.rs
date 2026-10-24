@@ -77,7 +77,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
                     document_symbol_item(
                         &index,
                         &document.source,
-                        &check.name,
+                        check.name.as_deref().unwrap_or("check"),
                         SYMBOL_KIND_FUNCTION,
                         check.span,
                         check.name_span,
@@ -106,7 +106,7 @@ pub(crate) fn document_symbols(document: &LspDocument) -> Vec<Value> {
             Item::Check(check) => symbols.push(document_symbol_item(
                 &index,
                 &document.source,
-                &check.name,
+                check.name.as_deref().unwrap_or("check"),
                 SYMBOL_KIND_FUNCTION,
                 check.span,
                 check.name_span,

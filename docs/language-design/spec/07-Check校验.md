@@ -2,10 +2,10 @@
 
 ## 声明、身份与顺序
 
-check 是对已编译 schema 和不可变 CFD 模型执行的业务约束。`data`、`table`、`singleton` 均可在字段之后声明多个命名规则；项目级规则在顶层声明。每条规则至少包含一条语句。
+check 是对已编译 schema 和不可变 CFD 模型执行的业务约束。`data`、`table`、`singleton` 均可在字段之后声明多个命名或匿名规则；项目级规则在顶层声明。每条规则至少包含一条语句。
 
 ```text
-check-decl := "check" identifier [ ":" message ] "{" check-statement { check-statement } "}"
+check-decl := "check" [ identifier ] [ ":" message ] "{" check-statement { check-statement } "}"
 check-body := "{" { check-statement } "}"
 check-statement := expression [ ":" message ] ";"
                  | "when" expression [ ":" message ] check-body
@@ -75,9 +75,9 @@ table Item {
 
 ## 规划与执行边界
 
-`coflow-language` 编译命名块、根语句、静态字段/记录集合依赖及维度依赖。`CheckStatementInfo` 保存声明类型、块索引、规则短名、公开 rule_id 与根语句索引，`check_statements_for_rule` 返回完整规则的根语句序列。
+`coflow-language` 编译规则块、根语句、静态字段/记录集合依赖及维度依赖。`CheckStatementInfo` 保存声明类型、块索引、规则短名、公开 rule_id 与根语句索引，`check_statements_for_rule` 返回完整规则的根语句序列。
 
-`coflow-runtime` 枚举记录和内联 data 实例，按照依赖选择受影响规则。命名规则是增量执行的最小单位：任意根语句依赖受影响时，完整重跑同一实例的该规则。具有 data 规则的项目使用完整计划，以覆盖拥有树变化及跨记录读取；重新发布诊断前清除旧任务。维度变体目录变化会重新检查全部规则。
+`coflow-runtime` 枚举记录和内联 data 实例，按照依赖选择受影响规则。规则块是增量执行的最小单位：任意根语句依赖受影响时，完整重跑同一实例的该规则。具有 data 规则的项目使用完整计划，以覆盖拥有树变化及跨记录读取；重新发布诊断前清除旧任务。维度变体目录变化会重新检查全部规则。
 
 `coflow-checker` 在不可变模型上执行根语句任务，按实例和规则顺序排序。业务失败继续执行；表达式或消息求值错误停止该实例的当前规则，剩余根语句标记为未执行，其他规则继续。单任务及请求级预算约束求值、集合遍历和文本生成。
 
@@ -104,7 +104,11 @@ table Item {
 | `coflow check` | 声明与 CFD 数据校验 |
 | `coflow check --rules` | 声明、数据与全部业务规则 |
 | `coflow check --rule Reward::PositiveCount --explain` | 选定规则及执行解释 |
-| `coflow rule list` | 可选择的命名规则 |
+| `coflow rule list` | 可选择的命名或匿名规则 |
 | `coflow build` | 全部校验通过后生成代码 |
 
 CLI 的 data、stats、ref、dimension 查询与检查共享 schema 和模型的只读语义；规则不执行 CLI 子进程。C# 加载器负责数据加载，业务规则由 Rust 检查引擎执行。入口协议见 [CLI 设计](../../runtime-design/cli.md)，表达式类型与内建操作见 [校验表达式](06-校验表达式.md)。
+
+## 匿名规则
+
+类型内部和文件顶层均支持 `check { ... }` 与 `check: "消息" { ... }`。匿名规则不参与名称冲突检查，按源码顺序执行。AST 保留缺省名称；schema 使用 `@模块:字节偏移` 标识匿名块，类型规则的完整标识加上 `Type::` 前缀。位置变化后标识可以变化，稳定标识由显式命名提供。CLI 查询、选择执行和诊断使用同一规则身份。

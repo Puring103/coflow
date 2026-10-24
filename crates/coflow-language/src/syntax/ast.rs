@@ -52,7 +52,7 @@ impl Item {
 
 #[derive(Debug, Clone)]
 pub struct TopLevelCheckDef {
-    pub name: String,
+    pub name: Option<String>,
     pub name_span: Span,
     pub block: CheckBlock,
     pub annotations: Vec<Annotation>,
@@ -237,7 +237,7 @@ pub enum DefaultBitOp {
 #[derive(Debug, Clone)]
 pub struct CheckBlock {
     pub message: Option<CheckMessage>,
-    pub name: String,
+    pub name: Option<String>,
     pub name_span: Span,
     pub stmts: Vec<CheckStmt>,
     pub span: Span,

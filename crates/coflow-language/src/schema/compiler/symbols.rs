@@ -150,8 +150,12 @@ impl SymbolTable<'_> {
                         }
                     }
                     Item::Check(def) => {
-                        self.validate_identifier(&def.name, module_id, def.name_span);
-                        let name = def.name.clone();
+                        if let Some(name) = &def.name {
+                            self.validate_identifier(name, module_id, def.name_span);
+                        }
+                        let name = def.name.clone().unwrap_or_else(|| {
+                            crate::CheckName::anonymous(module_id, def.span).to_string()
+                        });
                         if let Some(first) = self.checks.get(&name) {
                             self.diagnostics.push(
                                 CftDiagnostic::error(
