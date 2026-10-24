@@ -48,7 +48,7 @@ coflow context --type Item --project <project> --json
 coflow apply --input changes.json --project <project> --rules --if-revision <revision> --json
 ```
 
-读取结果的 `revision` 可用于保护后续修改。`apply --rules` 在发布前完成结构、数据与业务校验；需要审阅时加 `--dry-run`。默认 JSON 保留计数与失败信息，完整请求结构用 `describe apply --schema input` 查询，执行明细按需加 `--details`。用 `coflow skill install -g` 安装配套 skills，详见 [AI 使用指南](https://puring103.github.io/coflow/docs/guide/ai-agent)。
+读取结果的 `revision` 可用于保护后续修改。`apply --rules` 在发布前完成结构、数据与业务校验；需要审阅时加 `--dry-run`。默认 JSON 保留计数与失败信息，完整请求结构用 `describe apply --schema input` 查询，执行明细按需加 `--details`。用 `coflow skill install -g` 安装配套 skills，详见 [CLI 命令](https://puring103.github.io/coflow/docs/reference/08-cli)。
 
 ## C# 数据加载
 

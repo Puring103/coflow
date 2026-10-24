@@ -6,4 +6,4 @@ Schema、CFD 与生成代码分别存放；生成目录由 `codegen` 或 `build`
 
 读取后保存 `revision`，写入携带 `--if-revision`，或在变更集顶层填写 `if_revision`。冲突后重读受影响目标，根据当前状态重新形成修改；新修订不能直接替换旧修订后盲目重试。分页游标与读取修订绑定，数据变化后从第一页重新查询。
 
-使用字段选择、分页、定向 `context` 和默认简明响应控制上下文；完整 Schema、成功任务明细、规则解释分别由 `describe --schema`、`--details`、`--explain` 按需取得。不要把输出被裁剪解释为没有剩余问题，先查看 `diagnostics_summary` 和 `complete`。
+使用字段选择、分页、定向 `context` 和默认简明响应控制上下文；完整 Schema、成功任务明细、规则解释分别由 `describe --schema`、`--details`、`--explain` 按需取得。不要把输出被裁剪解释为没有剩余问题，先查看 `diagnostics_summary` 和适用的 `complete`；数据是否完整加载另看 `data_scope.complete`。
