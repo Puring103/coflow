@@ -57,7 +57,9 @@ pub(crate) fn completion_items(
 
     if is_annotation_completion_context(line_prefix) {
         let mut items = annotation_completion_items(scope);
-        if current_type_at(build, document, offset).is_some_and(|ty| ty.is_data()) {
+        if current_type_at(build, document, offset)
+            .is_some_and(coflow_language::cft::CftType::is_data)
+        {
             items.retain(|item| {
                 !matches!(item["label"].as_str(), Some("@dimension" | "@localized"))
             });
@@ -452,7 +454,8 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
         | TypeRefKind::Long
         | TypeRefKind::Double
         | TypeRefKind::Float
-        | TypeRefKind::String => {}
+        | TypeRefKind::String
+        | TypeRefKind::Ref(_) => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .schema()
@@ -469,7 +472,6 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
                 }));
             }
         }
-        TypeRefKind::Ref(_) => {}
         TypeRefKind::Array(_) => {
             items.push(completion_item(
                 "[]",
@@ -638,14 +640,13 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
                                 None,
                             ));
                         }
-                        Item::Type(_) => {}
+                        Item::Type(_) | Item::Const(_) | Item::TypeAlias(_) | Item::Check(_) => {}
                         Item::Enum(enum_def) => items.push(completion_item(
                             &enum_def.name,
                             COMPLETION_KIND_ENUM,
                             "CFT enum",
                             None,
                         )),
-                        Item::Const(_) | Item::TypeAlias(_) | Item::Check(_) => {}
                     }
                 }
             }

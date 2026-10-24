@@ -139,9 +139,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
             CheckStmt::When { message, .. } | CheckStmt::Quantifier { message, .. } => {
-                self.check_message(message.as_ref())
+                self.check_message(message.as_ref());
             }
-            _ => {}
+            CheckStmt::Expr { .. } => {}
         }
         match stmt {
             CheckStmt::Expr {

@@ -226,7 +226,7 @@ fn rename_schema_references(
                     &mut patches,
                 ),
                 Item::Check(check) => {
-                    rename_rule_members(schema, &check.block, record, new_id, &mut patches)
+                    rename_rule_members(schema, &check.block, record, new_id, &mut patches);
                 }
                 _ => {}
             }
@@ -367,7 +367,7 @@ fn visit_default(
             }
         }
         E::OptionSome(value) => {
-            visit_default(schema, value, source, host_type, record, new_id, patches)
+            visit_default(schema, value, source, host_type, record, new_id, patches);
         }
         E::Array(values) => {
             for value in values {

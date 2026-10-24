@@ -22,9 +22,17 @@ pub fn csharp_ident_error(value: &str) -> Option<String> {
 
 // CFT 的合法业务名可以是 C# 关键字；逐段转义，不扩大全语言保留字集合。
 pub fn csharp_identifier(value: &str) -> String {
-    value.split('.').map(|part| {
-        if is_csharp_keyword(part) { format!("@{part}") } else { part.to_string() }
-    }).collect::<Vec<_>>().join(".")
+    value
+        .split('.')
+        .map(|part| {
+            if is_csharp_keyword(part) {
+                format!("@{part}")
+            } else {
+                part.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 pub fn metadata_identifier(name: &str) -> String {

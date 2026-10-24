@@ -6,6 +6,10 @@ use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl SymbolTable<'_> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     pub(super) fn validate_enums(&mut self) {
         let names = self.enums.keys().cloned().collect::<Vec<_>>();
         for name in names {
@@ -104,11 +108,9 @@ impl SymbolTable<'_> {
                 for (member, value) in [("None", 0), ("Everything", everything)] {
                     variants.insert(member.to_string());
                     values_by_name.insert(member.to_string(), value);
-                    values.entry(value).or_insert((
-                        member.to_string(),
-                        info.module.clone(),
-                        info.def.span,
-                    ));
+                    values.entry(value).or_insert_with(|| {
+                        (member.to_string(), info.module.clone(), info.def.span)
+                    });
                 }
             }
             if let Some(stored) = self.enums.get_mut(&name) {

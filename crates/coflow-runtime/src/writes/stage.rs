@@ -89,9 +89,7 @@ pub(crate) fn stage_mutation_op(
             Ok(field_write_outcome(plan, write_record, writer_outcome))
         }
         (
-            PreparedMutationOp::RenameRecord {
-                record, new_id, ..
-            },
+            PreparedMutationOp::RenameRecord { record, new_id, .. },
             MutationExecutionPlan::Rename(plan),
         ) => stage_rename_record_id(session, plan, record, new_id),
         (PreparedMutationOp::DeleteRecord { record, .. }, MutationExecutionPlan::Delete(plan)) => {

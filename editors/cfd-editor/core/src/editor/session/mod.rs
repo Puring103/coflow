@@ -31,7 +31,7 @@ use std::path::Path as StdPath;
 use std::path::PathBuf as StdPathBuf;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 use coflow_runtime::ProjectQueries;
 
@@ -53,9 +53,8 @@ pub struct EditorSession {
     pub yaml_path: std::path::PathBuf,
     pub engine: coflow_runtime::WriteProjectSession,
     pub diagnostics: Diagnostics,
-    pub language_server: coflow_lsp::EmbeddedLsp,
-    pub language_documents: HashSet<String>,
-    pub language_diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
+    // 语言分析独立串行化，耗时的 schema 分析不能阻塞源码读取与数据查询。
+    pub(crate) language: Arc<Mutex<LanguageSession>>,
     pub(crate) schema_files: HashSet<String>,
     pub(crate) file_type_names: BTreeMap<String, Vec<String>>,
     pub(crate) file_type_counts: BTreeMap<String, BTreeMap<String, usize>>,
@@ -63,6 +62,13 @@ pub struct EditorSession {
     pub(crate) ref_target_cache: HashMap<String, Vec<crate::editor::types::RefTarget>>,
     pub(crate) shape_cache: crate::editor::convert::ShapeCache,
     revisions: RevisionCoordinator,
+}
+
+#[derive(Debug)]
+pub(crate) struct LanguageSession {
+    pub(crate) server: coflow_lsp::EmbeddedLsp,
+    pub(crate) documents: HashSet<String>,
+    pub(crate) diagnostics: HashMap<String, Vec<crate::editor::types::LanguageDiagnostic>>,
 }
 
 impl std::fmt::Debug for EditorSession {
@@ -193,7 +199,7 @@ impl SessionStore {
     pub fn reload_session(&self, id: u32) -> Result<ProjectBootstrap, EditorError> {
         loop {
             let (entry, candidate) = self.build_reload_candidate(id)?;
-            if let Some(snapshot) = Self::commit_reload_candidate(id, &entry, candidate)? {
+            if let Some(snapshot) = Self::commit_reload_candidate(id, &entry, candidate) {
                 return Ok(snapshot);
             }
         }
@@ -223,16 +229,14 @@ impl SessionStore {
         id: u32,
         entry: &SessionEntry,
         mut candidate: ReloadCandidate,
-    ) -> Result<Option<ProjectBootstrap>, EditorError> {
+    ) -> Option<ProjectBootstrap> {
         let mut state = entry.state.write();
-        let Some(revisions) = state.revisions.commit_reload(candidate.base_revision) else {
-            return Ok(None);
-        };
+        let revisions = state.revisions.commit_reload(candidate.base_revision)?;
         candidate.session.revisions = revisions;
         let bootstrap = project_bootstrap(id, &candidate.session, candidate.snapshot);
         *state = candidate.session;
         drop(state);
-        Ok(Some(bootstrap))
+        Some(bootstrap)
     }
 
     pub(crate) fn has_external_file_changes(
@@ -259,5 +263,59 @@ impl SessionStore {
             .get(&id)
             .cloned()
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
+    }
+}
+
+#[cfg(test)]
+mod language_concurrency_tests {
+    #![allow(clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn source_reads_do_not_wait_for_language_analysis() {
+        let root = tempfile::tempdir().expect("create project directory");
+        let store = Arc::new(SessionStore::new().expect("create session store"));
+        std::fs::write(root.path().join("coflow.yaml"),
+            "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n"
+        ).expect("write project config");
+        std::fs::create_dir(root.path().join("data")).expect("create data directory");
+        std::fs::write(
+            root.path().join("schema.cft"),
+            "table Item { value: int; }\n",
+        )
+        .expect("write schema");
+        let snapshot = store
+            .load_project(&root.path().join("coflow.yaml"))
+            .expect("load project");
+        let id = snapshot.session_id;
+        let entry = store.session(id).expect("get session");
+        let language = Arc::clone(&entry.state.read().language);
+        let file = entry
+            .state
+            .read()
+            .schema_files
+            .iter()
+            .next()
+            .expect("schema file")
+            .clone();
+        let source = store.read_source_text(id, &file).expect("read schema");
+        // 确定性地占住语言分析锁，模拟尚未完成的上一份 CFT 分析。
+        let analysis = language.lock();
+        let (send, receive) = std::sync::mpsc::channel();
+        let reader_store = Arc::clone(&store);
+        let reader = std::thread::spawn(move || {
+            let result = reader_store.read_source_text(id, &file);
+            send.send(result).expect("send source result");
+        });
+        let result = receive.recv_timeout(std::time::Duration::from_secs(5));
+        drop(analysis);
+        reader.join().expect("join source reader");
+        assert_eq!(
+            result
+                .expect("source read must bypass language lock")
+                .expect("read source"),
+            source
+        );
     }
 }

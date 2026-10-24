@@ -353,22 +353,19 @@ impl<'a> Lexer<'a> {
             let Some(ch) = self.source[offset..].chars().next() else {
                 break;
             };
-            match ch {
-                '\\' => {
-                    offset += 1;
-                    let Some(escaped) = self.source[offset..].chars().next() else {
-                        break;
-                    };
-                    let Some(decoded) = decode_simple_escape(escaped) else {
-                        break;
-                    };
-                    out.push(decoded);
-                    offset += escaped.len_utf8();
-                }
-                _ => {
-                    out.push(ch);
-                    offset += ch.len_utf8();
-                }
+            if ch == '\\' {
+                offset += 1;
+                let Some(escaped) = self.source[offset..].chars().next() else {
+                    break;
+                };
+                let Some(decoded) = decode_simple_escape(escaped) else {
+                    break;
+                };
+                out.push(decoded);
+                offset += escaped.len_utf8();
+            } else {
+                out.push(ch);
+                offset += ch.len_utf8();
             }
         }
         Ok(TokenKind::String(out))

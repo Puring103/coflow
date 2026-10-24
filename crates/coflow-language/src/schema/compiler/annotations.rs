@@ -411,11 +411,7 @@ impl AnnotationSpec {
                 ],
                 args: AnnotationArgs::OneString,
             },
-            "expand" => Self {
-                targets: &[AnnotationTarget::Field],
-                args: AnnotationArgs::None,
-            },
-            "localized" => Self {
+            "expand" | "localized" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
             },

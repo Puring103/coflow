@@ -240,7 +240,12 @@ pub fn delete_project_entry(config_path: &Path, entry_path: &Path) -> Result<(),
     if removed_config {
         if let Err(mut error) = publish_config(config_path, &project) {
             if let Err(restoration) = removal.restore() {
-                error.extend(file_error(&target, "PROJECT-FILE-RESTORE", "PROJECT", restoration.to_string()));
+                error.extend(file_error(
+                    &target,
+                    "PROJECT-FILE-RESTORE",
+                    "PROJECT",
+                    restoration.to_string(),
+                ));
             }
             return Err(error);
         }
@@ -333,11 +338,18 @@ fn portable_config_path(project_root: &Path, selected: &Path) -> Result<PathBuf,
     let selected = super::resolve_project_relative(&root, selected);
     let root_parts = root.components().collect::<Vec<_>>();
     let selected_parts = selected.components().collect::<Vec<_>>();
-    let common = root_parts.iter().zip(&selected_parts)
-        .take_while(|(left, right)| left == right).count();
+    let common = root_parts
+        .iter()
+        .zip(&selected_parts)
+        .take_while(|(left, right)| left == right)
+        .count();
     if common == 0 {
-        return Err(file_error(&selected, "PROJECT-CONFIG-WRITE", "PROJECT",
-            "configured path must share a filesystem root with the project to be stored relatively"));
+        return Err(file_error(
+            &selected,
+            "PROJECT-CONFIG-WRITE",
+            "PROJECT",
+            "configured path must share a filesystem root with the project to be stored relatively",
+        ));
     }
     let mut relative = PathBuf::new();
     for _ in &root_parts[common..] {
@@ -346,6 +358,8 @@ fn portable_config_path(project_root: &Path, selected: &Path) -> Result<PathBuf,
     for part in &selected_parts[common..] {
         relative.push(part.as_os_str());
     }
-    if relative.as_os_str().is_empty() { relative.push("."); }
+    if relative.as_os_str().is_empty() {
+        relative.push(".");
+    }
     Ok(PathBuf::from(crate::path_to_slash(&relative)))
 }

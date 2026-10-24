@@ -27,8 +27,8 @@ internal static class Program
         Require(ReferenceEquals(data.Table<Item>(), data.Table<Item>()), "table access reuses registered table");
         Require(ReferenceEquals(data.Table<Item>().Get(EntityId.alpha), alpha), "enum id resolves to original identity");
         Require(data.Table<Item>().TryGet(EntityId.beta, out var enumBeta) && ReferenceEquals(enumBeta, beta), "typed enum lookup");
-        Require(!data.Table<Item>().TryGet((EntityId)long.MaxValue, out _), "unknown enum value returns false");
-        try { data.Table<Item>().Get((EntityId)long.MaxValue); throw new Exception("invalid enum must fail"); }
+        Require(!data.Table<Item>().TryGet((EntityId)int.MaxValue, out _), "unknown enum value returns false");
+        try { data.Table<Item>().Get((EntityId)int.MaxValue); throw new Exception("invalid enum must fail"); }
         catch (System.Collections.Generic.KeyNotFoundException) { }
         try { data.Table<Payload>(); throw new Exception("data must not register as table"); }
         catch (InvalidOperationException) { }
@@ -42,7 +42,7 @@ internal static class Program
         Require(alpha.HasVariant(nameof(alpha.name), "ja") && !beta.HasVariant(nameof(beta.name), "ja"), "explicit variant presence survives loading");
         Require(alpha.For("language", "ja").label == "{item} アルファ: 12" && alpha.name == "Alpha", "template fallback is evaluated in an independent selected view");
         Require(ReferenceEquals(alpha.For("language", "ja").next.Value.next.Value, alpha.For("language", "ja")), "view references preserve cyclic identity");
-        Require(alpha.enum_label == "3", "generated enum interpolation");
+        Require(alpha.enum_label == "Everything", "generated enum interpolation");
         Require(alpha.label == "{item} Alpha: 12", "basic nested interpolation");
         Require(alpha.stats.extra.settings.hp == 9, "nested typed defaults and loader-name collisions");
         Require(alpha.price == 3 && alpha.permissions == (Flags.Read | Flags.Write), "generated defaults and flags");

@@ -124,7 +124,10 @@ fn lower_schema(
     validated: &StageOutput<ValidatedSchema<'_>>,
     analysis_budget: &mut AnalysisBudget,
 ) -> Result<CftSchema, CftDiagnostics> {
-    debug_assert!(validated.diagnostics.is_empty());
+    debug_assert_eq!(
+        validated.diagnostics,
+        [] as [crate::diagnostics::CftDiagnostic; 0]
+    );
     let declarations: SchemaDeclarations = validated.product.lower_declarations();
     CftSchema::from_declarations(declarations, analysis_budget)
 }
@@ -199,7 +202,10 @@ mod tests {
         let symbols = collect_symbols(&modules, &mut budget).expect("symbol stage");
         assert_eq!(symbols.product.enums.len(), 1);
         assert_eq!(symbols.product.types.len(), 1);
-        assert!(symbols.product.diagnostics.is_empty());
+        assert_eq!(
+            symbols.product.diagnostics,
+            [] as [crate::diagnostics::CftDiagnostic; 0]
+        );
     }
 
     #[test]
@@ -209,12 +215,18 @@ mod tests {
         let mut structural = StructuralBudget::new(limits);
         let symbols = collect_symbols(&modules, &mut structural).expect("symbol stage");
         assert_eq!(symbols.diagnostics.len(), 1);
-        assert!(symbols.product.diagnostics.is_empty());
+        assert_eq!(
+            symbols.product.diagnostics,
+            [] as [crate::diagnostics::CftDiagnostic; 0]
+        );
 
         let mut analysis = AnalysisBudget::new(limits);
         let types = resolve_types(symbols, &mut analysis).expect("type stage");
         assert_eq!(types.diagnostics.len(), 2);
-        assert!(types.product.diagnostics.is_empty());
+        assert_eq!(
+            types.product.diagnostics,
+            [] as [crate::diagnostics::CftDiagnostic; 0]
+        );
         assert_eq!(
             types
                 .diagnostics
@@ -296,7 +308,10 @@ mod tests {
         let Err(diagnostics) = validate_checks(resolve_values(types)) else {
             panic!("check stage must reject invalid operands");
         };
-        assert!(!diagnostics.diagnostics.is_empty());
+        assert_ne!(
+            diagnostics.diagnostics,
+            [] as [crate::diagnostics::CftDiagnostic; 0]
+        );
     }
 
     #[test]

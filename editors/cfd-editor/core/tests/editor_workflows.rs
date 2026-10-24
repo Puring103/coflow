@@ -490,7 +490,10 @@ fn editor_field_write_preserves_a_self_referencing_record() {
             )),
         )
         .expect("write self reference");
-    assert!(outcome.diagnostics.is_empty());
+    assert_eq!(
+        outcome.diagnostics,
+        [] as [coflow_runtime::FlatDiagnostic; 0]
+    );
     assert_eq!(outcome.row.coordinate, coordinate);
 
     let records = store
@@ -512,18 +515,7 @@ fn repository_projects_open_in_editor() {
     let fixtures = tempfile::tempdir().expect("isolated repository fixtures");
     let repository_root = fixtures.path();
     // 本机设置按项目路径隔离；复制夹具避免读取或改写开发者已有的项目设置。
-    fn copy_directory(source: &Path, target: &Path) {
-        fs::create_dir_all(target).expect("create fixture directory");
-        for entry in fs::read_dir(source).expect("read fixture directory") {
-            let entry = entry.expect("fixture entry");
-            let output = target.join(entry.file_name());
-            if entry.file_type().expect("fixture type").is_dir() {
-                copy_directory(&entry.path(), &output);
-            } else {
-                fs::copy(entry.path(), output).expect("copy fixture file");
-            }
-        }
-    }
+
     for relative in ["examples/showcase", "tests/editor-project", "examples/new"] {
         let source = source_root.join(relative);
         let target = repository_root.join(relative);
@@ -1000,7 +992,7 @@ fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sourc
             "old: Old { value: 1 }\n",
         )
         .expect("highlight deleted CFD snapshot");
-    assert!(!tokens.semantic_token_data.is_empty());
+    assert_ne!(tokens.semantic_token_data, [] as [u32; 0]);
     let current = store
         .sync_language_document(project.session_id, "schema.cft", &source, 2)
         .expect("read live language state");
@@ -1033,7 +1025,7 @@ fn editor_language_features_are_served_by_embedded_lsp() {
         document.diagnostics
     );
     assert!(document.syntax_valid);
-    assert!(!document.semantic_token_data.is_empty());
+    assert_ne!(document.semantic_token_data, [] as [u32; 0]);
     assert!(document
         .semantic_token_types
         .iter()
@@ -1246,7 +1238,7 @@ fn cft_string_defaults_are_supported_through_the_editor_backend() {
         document.diagnostics
     );
     assert!(document.syntax_valid);
-    assert!(!document.semantic_token_data.is_empty());
+    assert_ne!(document.semantic_token_data, [] as [u32; 0]);
     let value = record_default(&store, snapshot.session_id, "Rule");
     let CfdValue::Object(rule) = value else {
         panic!("expected Rule object")
@@ -1421,4 +1413,17 @@ fn cell_templates_and_explicit_reference_constraints_survive_reload() {
         matches!(payload.field("optional"), Some(CfdValue::OptionSome(value)) if matches!(&**value, CfdValue::FormattedString(text) if text.rendered == "maybe 7"))
     );
     fs::remove_dir_all(root).expect("remove fixture");
+}
+
+fn copy_directory(source: &Path, target: &Path) {
+    fs::create_dir_all(target).expect("create fixture directory");
+    for entry in fs::read_dir(source).expect("read fixture directory") {
+        let entry = entry.expect("fixture entry");
+        let output = target.join(entry.file_name());
+        if entry.file_type().expect("fixture type").is_dir() {
+            copy_directory(&entry.path(), &output);
+        } else {
+            fs::copy(entry.path(), output).expect("copy fixture file");
+        }
+    }
 }

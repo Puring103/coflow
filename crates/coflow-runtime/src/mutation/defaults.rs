@@ -21,7 +21,7 @@ pub(super) fn default_object_for_type(
     ensure_type_can_materialize(schema, type_name)?;
     if !schema
         .resolve_type(type_name)
-        .is_some_and(|ty| ty.is_data())
+        .is_some_and(coflow_language::cft::CftType::is_data)
     {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
@@ -51,16 +51,15 @@ pub(crate) fn declared_field_default(
 ) -> Result<Option<CfdValue>, DiagnosticSet> {
     let mut materializer = DefaultValueMaterializer::new(schema);
     materializer.schema_only = true;
-    match &field.default {
-        Some(default) => materializer
+    field.default.as_ref().map_or(Ok(None), |default| {
+        materializer
             .materialize_schema_default(
                 &field.value_type,
                 default,
                 DefaultMaterialization::EditableShape,
             )
-            .map(Some),
-        None => Ok(None),
-    }
+            .map(Some)
+    })
 }
 
 pub(crate) fn complete_declared_defaults(

@@ -26,6 +26,10 @@ fn value(text: &str) -> DimensionValueState {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "同一端到端场景校验创建、更新、导航与来源保留。"
+)]
 fn editor_groups_new_overrides_by_owner_and_dimension_and_keeps_scattered_sources() {
     for explicit in [false, true] {
         let fixture = Fixture(std::env::temp_dir().join(format!(
@@ -112,12 +116,7 @@ fn editor_groups_new_overrides_by_owner_and_dimension_and_keeps_scattered_source
                 .iter()
                 .any(|dimension| dimension.name == target.dimension.as_str()
                     && dimension.variants.contains(&target.variant.to_string())));
-            fn has_dimension_file(nodes: &[coflow_runtime::FileTreeNode], file: &str) -> bool {
-                nodes.iter().any(|node| {
-                    node.path == file && node.dimension_only
-                        || has_dimension_file(&node.children, file)
-                })
-            }
+
             assert!(has_dimension_file(&outcome.file_tree, file));
             assert_eq!(
                 store
@@ -191,7 +190,11 @@ fn editor_groups_new_overrides_by_owner_and_dimension_and_keeps_scattered_source
         let mut nodes = snapshot.file_tree.iter().collect::<Vec<_>>();
         while let Some(node) = nodes.pop() {
             nodes.extend(&node.children);
-            if !node.is_dir && node.path.ends_with(".cfd") {
+            if !node.is_dir
+                && std::path::Path::new(&node.path)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("cfd"))
+            {
                 assert_eq!(
                     node.dimension_only,
                     node.path != "data/items.cfd" && node.path != "data/other.cfd",
@@ -201,4 +204,10 @@ fn editor_groups_new_overrides_by_owner_and_dimension_and_keeps_scattered_source
             }
         }
     }
+}
+
+fn has_dimension_file(nodes: &[coflow_runtime::FileTreeNode], file: &str) -> bool {
+    nodes.iter().any(|node| {
+        node.path == file && node.dimension_only || has_dimension_file(&node.children, file)
+    })
 }

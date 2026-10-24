@@ -2,6 +2,10 @@ use crate::{CfdDictKey, CfdEnumValue, CfdValue, LoadedDictKeyDraft as K, LoadedV
 use coflow_language::cft::{CftSchema, CftValueType};
 
 // 这里只转换语法值；引用连接由最终候选模型执行，因此同批前向引用和环不受旧模型限制。
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 pub(crate) fn convert(
     schema: &CftSchema,
     expected: &CftValueType,

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::diagnostics::diagnostics_from_store;
 use super::revision::RevisionCoordinator;
-use super::EditorSession;
+use super::{EditorSession, LanguageSession};
 use crate::editor::types::EditorError;
 
 pub(crate) struct SessionSnapshotParts {
@@ -42,7 +42,7 @@ pub(crate) fn build_session(
         .map(|source| source.module_id)
         .collect();
     let runtime = Runtime::new();
-    let language_server = coflow_lsp::EmbeddedLsp::new(project.clone());
+    let server = coflow_lsp::EmbeddedLsp::new(project.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
     let _ = schema_runtime.refresh();
     let schema_session = schema_runtime
@@ -63,9 +63,11 @@ pub(crate) fn build_session(
             yaml_path,
             engine,
             diagnostics,
-            language_server,
-            language_documents: HashSet::new(),
-            language_diagnostics: HashMap::new(),
+            language: std::sync::Arc::new(parking_lot::Mutex::new(LanguageSession {
+                server,
+                documents: HashSet::new(),
+                diagnostics: HashMap::new(),
+            })),
             schema_files,
             file_type_names,
             file_type_counts,

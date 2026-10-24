@@ -93,6 +93,10 @@ impl Parser<'_> {
         })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     pub(super) fn parse_type(
         &mut self,
         annotations: Vec<Annotation>,
@@ -173,7 +177,10 @@ impl Parser<'_> {
             }
             // check: 类型 是普通字段，check: 字符串 则是带消息的匿名规则。
             let check_message = self.tokens.get(self.pos + 2).is_some_and(|token| {
-                matches!(token.kind, TokenKind::String(_) | TokenKind::FormattedStringStart)
+                matches!(
+                    token.kind,
+                    TokenKind::String(_) | TokenKind::FormattedStringStart
+                )
             });
             if self.at(&TokenKind::Check) && (!self.next_at(&TokenKind::Colon) || check_message) {
                 if !pending_annotations.is_empty() {

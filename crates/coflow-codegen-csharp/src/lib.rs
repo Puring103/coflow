@@ -44,7 +44,7 @@ pub const CSHARP_CFD_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
     language: "csharp",
     file_extensions: &["cs"],
     runtime_package: "Coflow.Loader",
-    runtime_version: "0.11.0",
+    runtime_version: "0.12.0",
     needs_model: true,
 };
 

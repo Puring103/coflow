@@ -34,7 +34,7 @@ pub(super) fn parse_ref(
     if let Some(type_name) = explicit_type {
         if !schema
             .resolve_type(type_name)
-            .is_some_and(|ty| ty.is_table())
+            .is_some_and(coflow_language::cft::CftType::is_table)
             || !schema.is_assignable(type_name, expected_type)
         {
             return Err(type_mismatch(&format!(
@@ -45,12 +45,11 @@ pub(super) fn parse_ref(
     if let Some(reason) = record_id_ident_error(id) {
         return Err(syntax(format!("invalid reference id `{id}`: {reason}")));
     }
-    Ok(if let Some(type_name) = explicit_type {
-        LoadedValueDraft::TypedRecordRef {
+    Ok(explicit_type.map_or_else(
+        || LoadedValueDraft::record_ref(id),
+        |type_name| LoadedValueDraft::TypedRecordRef {
             type_name: type_name.to_string(),
             id: id.to_string(),
-        }
-    } else {
-        LoadedValueDraft::record_ref(id)
-    })
+        },
+    ))
 }

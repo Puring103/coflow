@@ -156,18 +156,15 @@ fn dimension_field<'a>(
     let meta = record
         .actual_type(model)
         .and_then(|ty| schema.field(ty, name));
-    if let Some(field) = meta.filter(|field| field.dimension.is_some()) {
+    if let Some((field, dimension)) =
+        meta.and_then(|field| field.dimension.as_ref().map(|dimension| (field, dimension)))
+    {
         let location = value.location.clone();
         return LocatedEvalValue::new(
             EvalValue::Dimension {
                 base: Box::new(value),
                 field: field.name.clone(),
-                dimension: field
-                    .dimension
-                    .as_ref()
-                    .expect("dimensional field")
-                    .dimension
-                    .clone(),
+                dimension: dimension.dimension.clone(),
                 value_type: field.value_type.clone(),
             },
             location,

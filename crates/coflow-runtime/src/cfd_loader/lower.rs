@@ -284,6 +284,10 @@ fn lower_int(value: &CfdValue, ty: &CftValueType) -> Result<LoadedValueDraft, Cf
     Ok(LoadedValueDraft::Int(number))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 fn lower_float(
     value: &CfdValue,
     ty: &CftValueType,
@@ -503,7 +507,7 @@ fn lower_object(
             let (actual_type, declared) = if let Some((actual_type, span)) = &block.type_marker {
                 if !schema
                     .resolve_type(actual_type)
-                    .is_some_and(|ty| ty.is_data())
+                    .is_some_and(coflow_language::cft::CftType::is_data)
                     || !schema.is_assignable(actual_type, expected_type)
                 {
                     return Err(error(
@@ -715,7 +719,7 @@ fn validate_group_type(
 ) -> Result<(), CfdTextDiagnostics> {
     if schema
         .resolve_type(type_name)
-        .is_some_and(|ty| ty.is_table())
+        .is_some_and(coflow_language::cft::CftType::is_table)
     {
         Ok(())
     } else {

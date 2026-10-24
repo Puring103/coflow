@@ -271,7 +271,7 @@ fn failed_snapshot_invalidates_build_and_clears_old_uri() {
         .iter()
         .find(|publication| publication.uri == schema_uri)
         .expect("old schema URI clear publication");
-    assert!(cleared.diagnostics.is_empty());
+    assert_eq!(cleared.diagnostics, [] as [Value; 0]);
     assert!(
         publications
             .iter()

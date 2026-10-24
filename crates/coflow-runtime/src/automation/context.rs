@@ -70,6 +70,10 @@ pub struct ContextResult {
     pub queries: Vec<String>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub fn query(
     project: &Project,
     session: &ReadOnlyProjectSession,
@@ -167,10 +171,7 @@ pub fn query(
                     .as_deref()
                     .is_none_or(|name| name == ty)
                     && args.get("id").is_none_or(|key| {
-                        location
-                            .record_id
-                            .as_deref()
-                            .is_none_or(|name| name == key)
+                        location.record_id.as_deref().is_none_or(|name| name == key)
                     })
             })
         })
@@ -183,13 +184,14 @@ pub fn query(
             )
         })
         .collect();
-    let mut result = json!({"schema": declarations, "target": target,
+    let result = json!({"schema": declarations, "target": target,
         "rules": super::rules::query("rule.list",session.schema(),project.root_dir(),args)?, "examples": examples, "references": references,
         "dimensions": session.queries().dimensions().into_iter().filter(|dimension|dimension.fields.iter().any(|field|
             session.schema().is_assignable(ty,&field.source_type) || session.schema().is_assignable(&field.source_type,ty))).collect::<Vec<_>>(), "diagnostics": diagnostics,
         "omitted": [], "queries": [format!("data list --type {ty}"), format!("schema inspect --type {ty} --related")]});
+    let mut result: ContextResult = serde_json::from_value(result)?;
     trim(&mut result, ty, args.number("budget", 16000)?)?;
-    super::json(serde_json::from_value::<ContextResult>(result)?)
+    super::json(result)
 }
 
 fn reference_targets(
@@ -213,7 +215,7 @@ fn reference_targets(
             visited.remove(name.as_str());
         }
         CftValueType::Array(inner) | CftValueType::Option(inner) => {
-            reference_targets(schema, inner, depth, visited, targets)
+            reference_targets(schema, inner, depth, visited, targets);
         }
         CftValueType::Dict(key, value) => {
             reference_targets(schema, key, depth, visited, targets);
@@ -223,15 +225,30 @@ fn reference_targets(
     }
 }
 
-fn omit(result: &mut Value, section: &str, query: String) {
-    result["omitted"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({"section": section, "query": query}));
+// 在类型化结果上执行预算裁剪，省略操作不依赖 JSON 对象形状或运行时断言。
+fn omit(result: &mut ContextResult, section: &str, query: String) {
+    result.omitted.push(ContextOmission {
+        section: section.into(),
+        query,
+    });
 }
 
-fn trim(result: &mut Value, ty: &str, budget: usize) -> Result<()> {
-    // 预算按完整 JSON 字符数计量，省略提示本身也计入预算。
+fn exceeds_budget(result: &ContextResult, budget: usize) -> Result<bool> {
+    Ok(serde_json::to_string(result)?.chars().count() > budget)
+}
+
+fn pop_field(result: &mut ContextResult, ty: &str) -> bool {
+    result
+        .schema
+        .types
+        .iter_mut()
+        .find(|item| item.name == ty)
+        .and_then(|item| item.fields.pop())
+        .is_some()
+}
+
+fn trim(result: &mut ContextResult, ty: &str, budget: usize) -> Result<()> {
+    // 预算包含省略提示，目标与字段都保留可继续查询的入口。
     for (name, query) in [
         ("examples", format!("data list --type {ty}")),
         (
@@ -242,62 +259,59 @@ fn trim(result: &mut Value, ty: &str, budget: usize) -> Result<()> {
         ("dimensions", "dimension list".into()),
         ("diagnostics", format!("check --type {ty}")),
     ] {
-        if result.to_string().chars().count() <= budget {
+        if !exceeds_budget(result, budget)? {
             return Ok(());
         }
-        result.as_object_mut().unwrap().remove(name);
+        match name {
+            "examples" => {
+                result.examples = None;
+            }
+            "references" => {
+                result.references = None;
+            }
+            "rules" => {
+                result.rules = None;
+            }
+            "dimensions" => {
+                result.dimensions = None;
+            }
+            "diagnostics" => {
+                result.diagnostics = None;
+            }
+            _ => {}
+        }
         omit(result, name, query);
     }
-    if result.to_string().chars().count() > budget {
-        if let Some(types) = result["schema"]["types"].as_array_mut() {
-            types.retain(|item| item["name"] == ty);
-        }
-        for name in ["enums", "consts", "dimensions", "diagnostics", "omitted"] {
-            result["schema"].as_object_mut().unwrap().remove(name);
-        }
+    if exceeds_budget(result, budget)? {
+        result.schema.types.retain(|item| item.name == ty);
+        result.schema.enums = None;
+        result.schema.consts = None;
+        result.schema.dimensions = None;
+        result.schema.omitted = None;
         omit(
             result,
             "related_declarations",
             format!("schema inspect --type {ty} --related"),
         );
     }
-    if result.to_string().chars().count() > budget && !result["target"].is_null() {
-        let key = result["target"]["id"].as_str().unwrap().to_string();
-        result.as_object_mut().unwrap().remove("target");
-        omit(
-            result,
-            "target",
-            format!("data get --type {ty} --id {key} --view both"),
-        );
-    }
-    // 大声明逐字段裁剪，始终保留类型身份与剩余字段，而不是丢弃整个核心声明。
-    let mut omitted_fields = Vec::new();
-    while result.to_string().chars().count() > budget {
-        let field = result["schema"]["types"]
-            .as_array_mut()
-            .and_then(|types| types.iter_mut().find(|item| item["name"] == ty))
-            .and_then(|item| item["fields"].as_array_mut())
-            .and_then(Vec::pop);
-        let Some(field) = field else {
-            break;
-        };
-        omitted_fields.push(field["name"].clone());
-    }
-    if !omitted_fields.is_empty() {
-        omit(result, "fields", format!("schema inspect --type {ty}"));
-        // 字段列表可继续查询；提示采用单项以免预算被省略清单耗尽。
-        while result.to_string().chars().count() > budget {
-            let field = result["schema"]["types"]
-                .as_array_mut()
-                .and_then(|types| types.iter_mut().find(|item| item["name"] == ty))
-                .and_then(|item| item["fields"].as_array_mut())
-                .and_then(Vec::pop);
-            if field.is_none() {
-                break;
-            }
+    if exceeds_budget(result, budget)? {
+        if let Some(target) = result.target.take() {
+            omit(
+                result,
+                "target",
+                format!("data get --type {ty} --id {} --view both", target.id),
+            );
         }
     }
-    if result.to_string().chars().count() > budget {
+    let mut omitted_fields = false;
+    while exceeds_budget(result, budget)? && pop_field(result, ty) {
+        omitted_fields = true;
+    }
+    if omitted_fields {
+        omit(result, "fields", format!("schema inspect --type {ty}"));
+        while exceeds_budget(result, budget)? && pop_field(result, ty) {}
+    }
+    if exceeds_budget(result, budget)? {
         return Err(Failure::request(
             "context budget is too small for the core type declaration and omission queries",
         ));

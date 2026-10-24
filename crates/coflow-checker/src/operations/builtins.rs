@@ -764,6 +764,10 @@ pub(crate) fn min_max_value<'model>(
     Ok(LocatedEvalValue::new(out, location))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 pub(crate) fn sum_value<'model>(
     value: LocatedEvalValue<'model>,
     model: &'model CfdDataModel,

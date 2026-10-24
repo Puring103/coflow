@@ -9,28 +9,40 @@ impl Arguments {
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0.get(name).and_then(|v| v.first()).map(String::as_str)
     }
+    /// # Errors
+    ///
+    /// 缺少指定参数时返回请求错误。
     pub fn require(&self, name: &str) -> Result<&str> {
         self.get(name)
             .ok_or_else(|| Failure::request(format!("--{name} is required")))
     }
+    #[must_use]
     pub fn flag(&self, name: &str) -> bool {
         self.get(name) == Some("true")
     }
+    #[must_use]
     pub fn all(&self, name: &str) -> Vec<String> {
         self.0.get(name).cloned().unwrap_or_default()
     }
+    /// # Errors
+    ///
+    /// 参数不是非负整数或超出 usize 范围时返回请求错误。
     pub fn number(&self, name: &str, default: usize) -> Result<usize> {
         self.get(name).map_or(Ok(default), |v| {
             v.parse()
                 .map_err(|_| Failure::request(format!("--{name} requires a nonnegative integer")))
         })
     }
+    #[must_use]
     pub fn csv(&self, name: &str) -> Vec<String> {
         self.all(name)
             .iter()
             .flat_map(|s| s.split(',').map(str::to_string))
             .collect()
     }
+    /// # Errors
+    ///
+    /// 字段路径、分页数量或维度选择无效时返回请求错误。
     pub fn selector(&self) -> Result<Selector> {
         // 查询身份包含命令专属条件，但不包含分页位置或每页数量，修订独立绑定快照。
         let mut identity = self.0.clone();

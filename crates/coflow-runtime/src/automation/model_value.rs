@@ -25,7 +25,7 @@ pub enum ModelValue {
     },
     None {},
     Some {
-        value: Box<ModelValue>,
+        value: Box<Self>,
     },
     Enum {
         #[serde(rename = "type")]
@@ -43,10 +43,10 @@ pub enum ModelValue {
     Object {
         #[serde(rename = "type")]
         type_name: String,
-        fields: BTreeMap<String, ModelValue>,
+        fields: BTreeMap<String, Self>,
     },
     Array {
-        items: Vec<ModelValue>,
+        items: Vec<Self>,
     },
     Dict {
         entries: Vec<DictionaryEntry>,
@@ -64,6 +64,14 @@ pub struct DictionaryEntry {
 }
 
 impl ModelValue {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     pub(crate) fn resolve(&self, schema: &CftSchema, expected: &CftValueType) -> Result<CfdValue> {
         use CftValueType as T;
         // 类型身份与 Option 层级在转换前检查，不能靠源码打印隐式抹掉错误的身份。
@@ -272,7 +280,7 @@ impl ModelValue {
                         .iter()
                         .map(|(key, value)| {
                             Ok(DictionaryEntry {
-                                key: Self::from_key(key)?,
+                                key: Self::from_key(key),
                                 value: Self::from_model(schema, inner, value)?,
                             })
                         })
@@ -285,8 +293,8 @@ impl ModelValue {
         })
     }
 
-    pub(crate) fn from_key(key: &CfdDictKey) -> Result<Self> {
-        Ok(match key {
+    pub(crate) fn from_key(key: &CfdDictKey) -> Self {
+        match key {
             CfdDictKey::Int(value) => Self::Int {
                 value: value.to_string(),
             },
@@ -298,7 +306,7 @@ impl ModelValue {
                 value: Some(value.value.to_string()),
                 variant: value.variant.as_ref().map(ToString::to_string),
             },
-        })
+        }
     }
 }
 

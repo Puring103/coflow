@@ -21,10 +21,10 @@ fn all(files: &[GeneratedFile]) -> String {
 #[test]
 fn emits_typed_business_objects_and_shared_loader_descriptors() {
     let schema = schema(
-        r#"
+        r"
         @struct sealed data Stats { hp: int; }
         table Item { name: string; stats: Stats; next: Option<&Item> = None; }
-    "#,
+    ",
     );
     let text = all(&generate_csharp(&schema).expect("generate"));
     assert!(text.contains("public partial struct Stats"));
@@ -110,7 +110,7 @@ fn dimension_fields_load_all_variants() {
 #[test]
 fn enums_flags_constants_and_namespaces_use_loader_contracts() {
     let schema = schema(
-        r#"@flag enum Flags { A = 1, B = 2 } const SIZE: int = 3; table Item { flags: Flags = Flags::A | Flags::B; size: int = SIZE; }"#,
+        r"@flag enum Flags { A = 1, B = 2 } const SIZE: int = 3; table Item { flags: Flags = Flags::A | Flags::B; size: int = SIZE; }",
     );
     let text =
         all(&emit::generate(&schema, "Game.Config", &IdAsEnumValues::new()).expect("generate"));
@@ -152,7 +152,7 @@ fn generator_advertises_loader_package() {
     assert!(output
         .files()
         .iter()
-        .any(|file| file.relative_path == PathBuf::from("CoflowData.cs")));
+        .any(|file| file.relative_path == *"CoflowData.cs"));
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn id_enum_keeps_active_keys_and_stable_numbers() {
     let en = output
         .files()
         .iter()
-        .find(|file| file.relative_path == PathBuf::from("ItemId.cs"))
+        .find(|file| file.relative_path == *"ItemId.cs")
         .expect("enum source");
     assert!(en.contents.contains("live = 7"));
     assert!(!en.contents.contains("deleted"));
@@ -190,7 +190,7 @@ fn id_enum_keeps_active_keys_and_stable_numbers() {
 #[test]
 fn language_names_are_escaped_only_in_generated_csharp_identifiers() {
     let text = all(&emit::generate(&schema(
-        r#"enum event { public } table class { namespace: string; state: event = event::public; }"#,
+        r"enum event { public } table class { namespace: string; state: event = event::public; }",
     ), "namespace.class", &IdAsEnumValues::new()).expect("generate"));
     assert!(text.contains("namespace @namespace.@class"));
     assert!(text.contains("public partial class @class : ICfdRecord"));

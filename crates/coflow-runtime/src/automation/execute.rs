@@ -6,6 +6,13 @@ use crate::{Project, Runtime};
 use serde_json::{json, Value};
 use std::path::Path;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
+/// # Errors
+///
+/// 参数、项目输入、校验或文件发布失败时返回相应诊断。
 pub fn execute(
     command: &str,
     project: &Project,
@@ -77,18 +84,17 @@ pub fn execute(
             if !preview && !changes.is_empty() {
                 snapshot.verify(project).map_err(|mut failure| {
                     let mut report = response.result.clone();
-                    if let Some(Value::Object(details)) = failure.result.take() {
-                        report
-                            .as_object_mut()
-                            .expect("format report is an object")
-                            .extend(details);
+                    if let (Value::Object(report), Some(Value::Object(details))) =
+                        (&mut report, failure.result.take())
+                    {
+                        report.extend(details);
                     }
                     failure.with_result(report)
                 })?;
                 let written = coflow_staging::transaction::publish(&changes).map_err(|error| {
                     super::transaction::publication_failure(
                         project.root_dir(),
-                        error,
+                        *error,
                         response.result.clone(),
                     )
                 })?;
@@ -422,6 +428,9 @@ pub(crate) fn public_path(path: &str) -> Result<Vec<FieldPath>> {
         })
         .collect()
 }
+/// # Errors
+///
+/// language 不是 cft 或 cfd 时返回请求错误。
 pub fn format_source(source: &str, language: &str) -> Result<String> {
     match language {
         "cft" => Ok(coflow_format::format_cft(source)),
@@ -430,6 +439,9 @@ pub fn format_source(source: &str, language: &str) -> Result<String> {
     }
 }
 
+/// # Errors
+///
+/// 诊断码不存在或解释无法序列化时返回错误。
 pub fn explain(code: &str) -> Result<Value> {
     super::json(super::explanations::explain(code)?)
 }

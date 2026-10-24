@@ -343,7 +343,7 @@ fn message_exprs(message: &crate::syntax::ast::CheckMessage) -> Vec<&CheckExpr> 
             .iter()
             .filter_map(|segment| match segment {
                 CheckFormatSegment::Expr(expr) => Some(expr),
-                _ => None,
+                CheckFormatSegment::Text(..) => None,
             })
             .collect(),
     }

@@ -29,7 +29,7 @@ pub(crate) struct PreparedCodeRelease {
 #[derive(Debug)]
 pub(crate) struct ArtifactPublicationFailure {
     pub(crate) diagnostics: DiagnosticSet,
-    pub(crate) publication: Option<coflow_staging::transaction::PublishFailure>,
+    pub(crate) publication: Option<Box<coflow_staging::transaction::PublishFailure>>,
 }
 impl From<DiagnosticSet> for ArtifactPublicationFailure {
     fn from(diagnostics: DiagnosticSet) -> Self {
@@ -180,7 +180,7 @@ impl From<coflow_staging::StagingError> for ArtifactPublicationFailure {
     fn from(error: coflow_staging::StagingError) -> Self {
         Self {
             diagnostics: map_staging_error(&error),
-            publication: Some(coflow_staging::transaction::PublishFailure {
+            publication: Some(Box::new(coflow_staging::transaction::PublishFailure {
                 message: error.to_string(),
                 conflict: error.is_conflict(),
                 written: Vec::new(),
@@ -188,7 +188,7 @@ impl From<coflow_staging::StagingError> for ArtifactPublicationFailure {
                 restoration_failed: Vec::new(),
                 restoration_conflicts: Vec::new(),
                 restoration_errors: Vec::new(),
-            }),
+            })),
         }
     }
 }

@@ -56,8 +56,16 @@ fn project_checks_query_singleton_fields_and_table_records_together() {
     let schema = compile_schema("table Item {} singleton Settings { count: int; } check Coverage { records(Settings).len() == 1; all settings in records(Settings) { settings.id == \"Settings\"; settings.count == records(Item).len(): \"incomplete coverage\"; } }");
     for count in [1_i64, 2_i64] {
         let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record("item", "Item", std::iter::empty::<(&str, LoadedValueDraft)>());
-        builder.add_record("Settings", "Settings", [("count", LoadedValueDraft::from(count))]);
+        builder.add_record(
+            "item",
+            "Item",
+            std::iter::empty::<(&str, LoadedValueDraft)>(),
+        );
+        builder.add_record(
+            "Settings",
+            "Settings",
+            [("count", LoadedValueDraft::from(count))],
+        );
         let model = builder.build().expect("model");
         let result = run_model_checks(&model, &schema);
         if count == 1 {
@@ -294,7 +302,7 @@ fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
     );
     assert_eq!(task_limited.statistics.executed_tasks, 0);
     assert_eq!(task_limited.statistics.rejected_tasks, 2);
-    assert!(task_limited.results.is_empty());
+    assert_eq!(task_limited.results, [] as [CheckTaskResult; 0]);
     assert!(task_limited.request_diagnostics[0]
         .diagnostic
         .message
@@ -310,7 +318,10 @@ fn task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks() {
         },
     );
     assert_eq!(exactly_limited.statistics.executed_tasks, 2);
-    assert!(exactly_limited.request_diagnostics.is_empty());
+    assert_eq!(
+        exactly_limited.request_diagnostics,
+        [] as [CheckDiagnostic; 0]
+    );
 
     let work_limited = execute_checks(
         &schema,

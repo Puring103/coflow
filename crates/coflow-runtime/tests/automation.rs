@@ -1,9 +1,14 @@
+#![allow(
+    clippy::literal_string_with_formatting_args,
+    reason = "测试输入包含 CFT 插值花括号。"
+)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use coflow_runtime::{
     automation::{execute, Arguments, InputSnapshot, Status},
     Project,
 };
 use serde_json::{json, Value};
+use std::fmt::Write as _;
 use std::{fs, path::Path};
 
 fn fixture() -> tempfile::TempDir {
@@ -37,7 +42,7 @@ fn run(
         &project,
         &snapshot,
         &args,
-        input.as_ref().map(Value::to_string).as_deref(),
+        input.map(|value| value.to_string()).as_deref(),
         root,
     )
     .unwrap()
@@ -208,6 +213,10 @@ fn statistics_contracts_describe_project_counts_groups_and_nullable_coverage() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "端到端场景集中校验同一次查询的完整契约。"
+)]
 fn dimension_metadata_and_variant_pages_use_public_locations() {
     let root = value_fixture();
     for variant in ["en", "ja"] {
@@ -417,7 +426,7 @@ fn project_file_summaries_work_without_schema_compilation_and_mark_syntax_failur
     assert_eq!(find("empty")["data"]["role"], "empty");
     assert_eq!(find("broken")["metadata_complete"], false);
     assert!(find("broken")["data"].is_null());
-    assert!(!result.diagnostics.is_empty());
+    assert_ne!(result.diagnostics, [] as [coflow_runtime::Diagnostic; 0]);
     assert!(result
         .diagnostics
         .iter()
@@ -819,7 +828,10 @@ fn related_schema_collects_transitive_constants_and_shares_symbol_limits() {
         .map(|name| bounded.result[name].as_array().unwrap().len())
         .sum();
     assert_eq!(total, 2);
-    assert!(!bounded.result["omitted"].as_array().unwrap().is_empty());
+    assert_ne!(
+        bounded.result["omitted"].as_array().unwrap().as_slice(),
+        [] as [Value; 0]
+    );
 }
 
 #[test]
@@ -1074,9 +1086,10 @@ fn context_includes_related_declarations_target_sources_and_bounded_references()
 #[test]
 fn context_budget_preserves_core_identity_and_reports_declaration_omissions() {
     let root = fixture();
-    let fields = (0..80)
-        .map(|index| format!("field{index}: int = {index};"))
-        .collect::<String>();
+    let fields = (0..80).fold(String::new(), |mut text, index| {
+        let _ = write!(text, "field{index}: int = {index};");
+        text
+    });
     fs::write(
         root.path().join("schema.cft"),
         format!("table Item {{ {fields} }}\n"),
@@ -1273,7 +1286,7 @@ fn value_fixture() -> tempfile::TempDir {
     let root = fixture();
     fs::write(
         root.path().join("schema.cft"),
-        r#"
+        r"
 enum Quality { Common, Rare }
 data Details { count: int = 1; }
 table Item {
@@ -1290,7 +1303,7 @@ table Item {
     name: string;
     label: string;
 }
-"#,
+",
     )
     .unwrap();
     fs::write(
@@ -1440,7 +1453,7 @@ fn malformed_typed_values_fail_without_publishing() {
     for (field, value) in [
         (
             "value",
-            json!({"kind":"int","value":9223372036854775807_i64}),
+            json!({"kind":"int","value":9_223_372_036_854_775_807_i64}),
         ),
         ("value", json!({"kind":"int","value":"9223372036854775808"})),
         ("nested", json!({"kind":"none","value":null})),
@@ -2116,7 +2129,7 @@ fn numeric_mutations_round_float_and_reject_out_of_range_int_without_writing() {
         "apply",
         &project,
         &snapshot,
-        &Arguments(Default::default()),
+        &Arguments(std::collections::BTreeMap::default()),
         Some(
             &json!({
                 "protocol_version":1,"kind":"operations","ops":[{

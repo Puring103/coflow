@@ -53,6 +53,10 @@ pub(super) fn coerce_cfd_field_value(
     Ok(value)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 fn coerce_json_value(
     session: &ProjectSession,
     expected: &CftValueType,
@@ -208,6 +212,10 @@ fn normalize_cfd_value(
 }
 
 // wire 使用共用的整数/浮点表示；写入时递归按 schema 恢复目标精度。
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 fn normalize_numeric_value(
     session: &ProjectSession,
     expected: &CftValueType,
@@ -216,7 +224,7 @@ fn normalize_numeric_value(
     match (expected, value) {
         (CftValueType::Float, CfdValue::Float(value)) => *value = f64::from(*value as f32),
         (CftValueType::Option(inner), CfdValue::OptionSome(value)) => {
-            normalize_numeric_value(session, inner, value)
+            normalize_numeric_value(session, inner, value);
         }
         (CftValueType::Array(inner), CfdValue::Array(values)) => {
             for value in values {

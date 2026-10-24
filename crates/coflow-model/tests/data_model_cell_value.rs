@@ -328,7 +328,7 @@ fn parses_formatted_string_cell_references() -> TestResult {
                 reference.id.as_deref(),
                 reference.path.clone(),
             )),
-            _ => None,
+            coflow_model::LoadedFormatSegment::Text(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(

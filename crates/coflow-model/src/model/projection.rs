@@ -11,6 +11,9 @@ use super::DimensionProjection;
 impl CfdDataModel {
     /// 合并所选维度后重新解析整个模型，保证引用及嵌套模板使用同一视图。
     /// 连续调用保留其他维度选择，并从原始基础来源重新求值本次选择。
+    /// # Errors
+    ///
+    /// 维度不存在、投影后的值无效或引用无法解析时返回模型诊断。
     pub fn project_dimensions(
         &self,
         schema: &CftSchema,

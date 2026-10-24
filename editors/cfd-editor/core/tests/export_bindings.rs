@@ -1,5 +1,5 @@
 //! Export host-independent editor DTOs and their dependencies.
-//! Run: cargo test --features ts-export -p cfd-editor-core export_bindings
+//! Run: cargo test --features ts-export -p cfd-editor-core `export_bindings`
 
 #[cfg(feature = "ts-export")]
 #[path = "../../test-support/bindings.rs"]

@@ -117,7 +117,6 @@ cfd_error_entries! {
 }
 
 impl CfdErrorCode {
-
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         self.entry().1

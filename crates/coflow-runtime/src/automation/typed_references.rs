@@ -55,7 +55,7 @@ impl Candidate {
                             schema,
                             &value,
                             &owner,
-                            &dimension,
+                            dimension.as_ref(),
                             vec![P::Field(field.name.clone())],
                             &mut self.typed_references,
                         )?;
@@ -75,7 +75,7 @@ impl Candidate {
                                     Some(&value),
                                     &effective,
                                     &owner,
-                                    &dimension,
+                                    dimension.as_ref(),
                                     vec![P::Field(field.name.clone())],
                                     &mut self.typed_references,
                                 );
@@ -87,7 +87,7 @@ impl Candidate {
                     for meta in schema
                         .resolve_type(&record.type_name)
                         .into_iter()
-                        .flat_map(|ty| ty.all_fields())
+                        .flat_map(coflow_language::cft::CftType::all_fields)
                         .filter(|meta| {
                             !record
                                 .fields
@@ -103,7 +103,7 @@ impl Candidate {
                                 meta.default.as_ref(),
                                 &value,
                                 &owner,
-                                &dimension,
+                                dimension.as_ref(),
                                 vec![P::Field(meta.name.to_string())],
                                 &mut self.typed_references,
                             );
@@ -119,14 +119,14 @@ impl Candidate {
         &mut self,
         schema: &CftSchema,
         owner: &RecordTarget,
-        dimension: Option<(String, String)>,
+        dimension: Option<&(String, String)>,
         path: &[P],
         input: Option<&InputValue>,
         expected: &coflow_language::cft::CftValueType,
     ) -> Result<()> {
         self.typed_references.retain(|reference| {
             !(same_owner(schema, &reference.owner, owner)
-                && reference.dimension == dimension
+                && reference.dimension.as_ref() == dimension
                 && reference.path.starts_with(path))
         });
         if let Some(input) = input {
@@ -137,7 +137,7 @@ impl Candidate {
                         schema,
                         &draft,
                         owner,
-                        &dimension,
+                        dimension,
                         path.to_vec(),
                         &mut self.typed_references,
                     )?;
@@ -148,7 +148,7 @@ impl Candidate {
                         Some(&draft),
                         &value,
                         owner,
-                        &dimension,
+                        dimension,
                         path.to_vec(),
                         &mut self.typed_references,
                     );
@@ -159,7 +159,7 @@ impl Candidate {
                         value,
                         &resolved,
                         owner,
-                        &dimension,
+                        dimension,
                         path.to_vec(),
                         &mut self.typed_references,
                     );
@@ -170,7 +170,7 @@ impl Candidate {
                         Some(&supplied),
                         &resolved,
                         owner,
-                        &dimension,
+                        dimension,
                         path.to_vec(),
                         &mut self.typed_references,
                     );
@@ -276,8 +276,16 @@ impl Candidate {
                                         }
                                         path.push_str(name);
                                     }
-                                    P::Index(index) => path.push_str(&format!("[{index}]")),
-                                    P::DictKey(key) => path.push_str(&format!("[{key}]")),
+                                    P::Index(index) => {
+                                        path.push('[');
+                                        path.push_str(&index.to_string());
+                                        path.push(']');
+                                    }
+                                    P::DictKey(key) => {
+                                        path.push('[');
+                                        path.push_str(key);
+                                        path.push(']');
+                                    }
                                 }
                                 path
                             },
@@ -290,7 +298,7 @@ impl Candidate {
     }
 
     pub(crate) fn collection_typed_references(
-        &mut self,
+        &self,
         schema: &CftSchema,
         owner: &RecordTarget,
         path: &[P],
@@ -365,14 +373,14 @@ fn collect_draft(
     schema: &CftSchema,
     value: &D,
     owner: &RecordTarget,
-    dimension: &Option<(String, String)>,
+    dimension: Option<&(String, String)>,
     path: Vec<P>,
     output: &mut Vec<TypedReference>,
 ) -> Result<()> {
     match value {
         D::TypedRecordRef { type_name, id: key } => output.push(TypedReference {
             owner: owner.clone(),
-            dimension: dimension.clone(),
+            dimension: dimension.cloned(),
             path,
             target_type: type_name.clone(),
             target_id: key.clone(),
@@ -427,20 +435,20 @@ fn collect_model(
     input: &ModelValue,
     value: &CfdValue,
     owner: &RecordTarget,
-    dimension: &Option<(String, String)>,
+    dimension: Option<&(String, String)>,
     path: Vec<P>,
     output: &mut Vec<TypedReference>,
 ) {
     match (input, value) {
         (ModelValue::Ref { type_name, id: key }, CfdValue::Ref(_)) => output.push(TypedReference {
             owner: owner.clone(),
-            dimension: dimension.clone(),
+            dimension: dimension.cloned(),
             path,
             target_type: type_name.clone(),
             target_id: key.clone(),
         }),
         (ModelValue::Some { value: input }, CfdValue::OptionSome(value)) => {
-            collect_model(input, value, owner, dimension, path, output)
+            collect_model(input, value, owner, dimension, path, output);
         }
         (ModelValue::Object { fields, .. }, CfdValue::Object(value)) => {
             for (name, input) in fields {
@@ -493,7 +501,7 @@ fn collect_default(
     default: Option<&coflow_language::cft::CftSchemaDefaultValue>,
     value: &CfdValue,
     owner: &RecordTarget,
-    dimension: &Option<(String, String)>,
+    dimension: Option<&(String, String)>,
     path: Vec<P>,
     output: &mut Vec<TypedReference>,
 ) {
@@ -502,11 +510,11 @@ fn collect_default(
         (Some(S::RecordReference { type_name, id: key }), CfdValue::Ref(_)) => {
             output.push(TypedReference {
                 owner: owner.clone(),
-                dimension: dimension.clone(),
+                dimension: dimension.cloned(),
                 path,
                 target_type: type_name.to_string(),
                 target_id: key.clone(),
-            })
+            });
         }
         (default, CfdValue::OptionSome(value)) => collect_default(
             schema,
@@ -603,7 +611,7 @@ fn collect_nested_defaults(
     input: Option<&D>,
     value: &CfdValue,
     owner: &RecordTarget,
-    dimension: &Option<(String, String)>,
+    dimension: Option<&(String, String)>,
     path: Vec<P>,
     output: &mut Vec<TypedReference>,
 ) {

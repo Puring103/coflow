@@ -131,6 +131,10 @@ pub(crate) fn paginate<T>(items: Vec<T>, selector: &Selector) -> Result<Page<T>>
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub(crate) fn selected_records(
     session: &ReadOnlyProjectSession,
     selector: &Selector,
@@ -169,7 +173,7 @@ pub(crate) fn selected_records(
             while let coflow_language::cft::CftValueType::Option(inner) = expected {
                 expected = *inner;
             }
-            use coflow_language::cft::CftValueType as T;
+
             if !matches!(
                 expected,
                 T::Int
@@ -376,26 +380,30 @@ pub(crate) fn selected_types(
         .schema()
         .all_types()
         .filter(|ty| {
-            if let Some(name) = &selector.actual_type {
-                ty.name.as_str() == name
-                    || selector.include_derived
-                        && !ty.is_abstract
-                        && !ty.is_data()
-                        && session.schema().is_assignable(&ty.name, name)
-            } else {
-                !ty.is_abstract && !ty.is_data()
-            }
+            selector.actual_type.as_ref().map_or_else(
+                || !ty.is_abstract && !ty.is_data(),
+                |name| {
+                    ty.name.as_str() == name
+                        || selector.include_derived
+                            && !ty.is_abstract
+                            && !ty.is_data()
+                            && session.schema().is_assignable(&ty.name, name)
+                },
+            )
         })
         .map(|ty| ty.name.to_string())
         .collect())
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "精度校验需要精确比较舍入前后的值，近似比较会接受无法表示的输入。"
+)]
 pub(crate) fn compare_values(a: Option<&CfdValue>, b: Option<&CfdValue>) -> Ordering {
     match (a, b) {
-        (None, None) => Ordering::Equal,
+        (None, None) | (Some(CfdValue::OptionNone), Some(CfdValue::OptionNone)) => Ordering::Equal,
         (None, _) => Ordering::Less,
         (_, None) => Ordering::Greater,
-        (Some(CfdValue::OptionNone), Some(CfdValue::OptionNone)) => Ordering::Equal,
         (Some(CfdValue::OptionNone), _) => Ordering::Less,
         (_, Some(CfdValue::OptionNone)) => Ordering::Greater,
         (Some(CfdValue::OptionSome(a)), Some(CfdValue::OptionSome(b))) => {
@@ -510,6 +518,10 @@ impl RecordSources {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub(crate) fn record_json_with_sources(
     project: &Project,
     session: &ReadOnlyProjectSession,
@@ -575,18 +587,17 @@ pub(crate) fn record_json_with_sources(
         let assigned_value =
             assignment.and_then(|assignment| ast_value_at(&assignment.value, &path[1..]));
         let mut assigned = assigned_value.is_some();
-        let mut location =
-            assigned_value
-                .zip(text.as_deref())
-                .zip(file)
-                .map(|((value, text), file)| {
-                    super::schema_queries::location(
-                        project.root_dir(),
-                        &project.resolve_path(std::path::Path::new(file)),
-                        text,
-                        ast_value_span(value),
-                    )
-                });
+        let mut location = assigned_value
+            .zip(text)
+            .zip(file)
+            .map(|((value, text), file)| {
+                super::schema_queries::location(
+                    project.root_dir(),
+                    &project.resolve_path(std::path::Path::new(file)),
+                    text,
+                    ast_value_span(value),
+                )
+            });
         let override_value = top
             .and_then(|n| record.dimension_fields.get(n.as_str()))
             .and_then(|d| {
@@ -626,7 +637,7 @@ pub(crate) fn record_json_with_sources(
             }
         }
         let mut expression = assigned_value
-            .zip(text.as_deref())
+            .zip(text)
             .and_then(|(value, text)| {
                 let span = ast_value_span(value);
                 text.get(span.start..span.end)
@@ -922,3 +933,5 @@ pub fn parse_path(source: &str) -> Result<Vec<CfdPathSegment>> {
         }
     }
 }
+
+use coflow_language::cft::CftValueType as T;

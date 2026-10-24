@@ -1,6 +1,7 @@
 use super::{Failure, Result};
 use crate::{normalize_path, project_path, Project};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
@@ -26,16 +27,15 @@ pub struct InputSnapshot {
 
 // 固定算法与字节编码保证跨进程游标稳定；文件身份与内容均参与快照。
 pub fn fingerprint(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(bytes))
 }
 
 impl InputSnapshot {
     /// 修订绑定输入身份与原始字节，排序采用相对路径，使跨进程结果稳定。
+    #[must_use]
     pub fn revision(&self) -> String {
         let mut files = self.files.iter().collect::<Vec<_>>();
         files.sort_by(|a, b| (&a.path, &a.kind).cmp(&(&b.path, &b.kind)));
-        use sha2::{Digest, Sha256};
         let mut digest = Sha256::new();
         digest.update(b"coflow-project-revision-v1\0");
         for file in files {
@@ -50,7 +50,9 @@ impl InputSnapshot {
         }
         format!("{:x}", digest.finalize())
     }
-
+    /// # Errors
+    ///
+    /// 预期修订与当前快照不一致时返回冲突。
     pub fn require_revision(&self, expected: Option<&str>) -> Result<()> {
         if let Some(expected) = expected {
             let actual = self.revision();
@@ -62,7 +64,9 @@ impl InputSnapshot {
         }
         Ok(())
     }
-
+    /// # Errors
+    ///
+    /// 无法发现项目输入或读取文件时返回错误。
     pub fn capture(project: &Project) -> Result<Self> {
         let mut files: BTreeMap<PathBuf, InputFile> = BTreeMap::new();
         collect(
@@ -103,7 +107,9 @@ impl InputSnapshot {
         let files: Vec<_> = files.into_values().collect();
         Ok(Self { files })
     }
-
+    /// # Errors
+    ///
+    /// 无法读取项目或输入身份、内容发生变化时返回错误。
     pub fn verify(&self, project: &Project) -> Result<()> {
         // 重新发现目录，新增文件与配置修改也必须使前置条件失效。
         let current = Project::open_schema_only(Some(project.config_path()))?;
@@ -125,6 +131,9 @@ impl InputSnapshot {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 指定文件不属于项目输入范围时返回未找到错误。
     pub fn file(&self, project: &Project, path: &str) -> Result<&InputFile> {
         let absolute = normalize_path(&project.resolve_path(Path::new(path)));
         self.files

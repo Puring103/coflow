@@ -116,19 +116,14 @@ impl MutationImpact {
             PreparedMutationOp::InsertRecord {
                 actual_type, id, ..
             } => {
-                self.add_structural_record(&RecordCoordinate::new(
-                    actual_type.clone(),
-                    id.clone(),
-                ));
+                self.add_structural_record(&RecordCoordinate::new(actual_type.clone(), id.clone()));
             }
             PreparedMutationOp::CancelledInsert { record, .. }
             | PreparedMutationOp::DeleteRecord { record, .. }
             | PreparedMutationOp::FoldedDeleteRecord { record, .. } => {
                 self.add_structural_record(record);
             }
-            PreparedMutationOp::RenameRecord {
-                record, new_id, ..
-            } => {
+            PreparedMutationOp::RenameRecord { record, new_id, .. } => {
                 self.add_structural_record(record);
                 self.add_structural_record(&RecordCoordinate::new(
                     record.actual_type.clone(),

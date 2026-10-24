@@ -64,7 +64,10 @@ fn recovery_ignores_delimiters_inside_strings_and_comments() {
         "next: Sample { value: 3 }\n",
     );
     let (ast, diagnostics) = parse_cfd(source);
-    assert!(!diagnostics.is_empty());
+    assert_ne!(
+        diagnostics,
+        [] as [coflow_language::cfd::CfdSyntaxDiagnostic; 0]
+    );
     assert_eq!(ast.records.len(), 1);
     assert_eq!(ast.records[0].id, "next");
 }
@@ -104,8 +107,7 @@ fn unparenthesized_flag_expression_chains_use_the_ast_depth_limit() {
     };
     let source = format!(
         "item: Sample {{ value: {} }}",
-        std::iter::repeat("Read")
-            .take(16)
+        std::iter::repeat_n("Read", 16)
             .collect::<Vec<_>>()
             .join(" | ")
     );

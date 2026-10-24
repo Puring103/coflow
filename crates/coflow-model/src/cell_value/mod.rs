@@ -92,6 +92,10 @@ impl ValueContext {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
 fn parse_value(
     schema: &CftSchema,
     ty: &CellType,

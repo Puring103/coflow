@@ -38,7 +38,7 @@ pub enum ProjectDiffChange {
 pub struct ProjectDiffDisplay {
     pub label: Option<String>,
     pub description: Option<String>,
-    pub children: BTreeMap<String, ProjectDiffDisplay>,
+    pub children: BTreeMap<String, Self>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -310,8 +310,12 @@ fn filter_ignored_additions(
     });
 }
 
-/// CLI 差异独立于桌面 DTO，以公共 ModelValue 表达有效值与显式赋值。
+/// CLI 差异独立于桌面 DTO，以公共 `ModelValue` 表达有效值与显式赋值。
 /// 即使任一端模型无法构建，源码快照仍可比较。
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub(crate) fn automation_diff(
     project: &Project,
     current: &crate::automation::InputSnapshot,
@@ -349,26 +353,23 @@ pub(crate) fn automation_diff(
     let mut endpoint_errors = Vec::new();
     let mut missing_inputs = Vec::new();
     let comparison_root = git.repo_root.join(&git.project_relative);
-    let historical = Project::open_schema_only(Some(&head.config_path)).and_then(|mut project| {
+    let historical = Project::open_schema_only(Some(&head.config_path)).map(|mut project| {
         // 未还原输入映射为快照内的缺失路径，既保留其他输入，也不读取工作区补全历史。
         let mut rebase = |path: &Path| {
             let original = crate::normalize_path(&git.repo_root.join(&git.project_relative).join(path));
-            match original.strip_prefix(&git.repo_root) {
-                Ok(relative) => {
-                    let restored = head.temp.path().join(relative);
-                    if !restored.exists() { missing_inputs.push(json!({"path":crate::project_path(&comparison_root,&original),"reason":"input is not present in the selected revision"})); }
-                    restored
-                }
-                Err(_) => {
-                    missing_inputs.push(json!({"path":crate::project_path(&comparison_root,&original),"reason":"input is outside the selected repository"}));
-                    head.temp.path().join("unavailable-inputs").join(format!("input-{}",missing_inputs.len()))
-                }
+            if let Ok(relative) = original.strip_prefix(&git.repo_root) {
+                let restored = head.temp.path().join(relative);
+                if !restored.exists() { missing_inputs.push(json!({"path":crate::project_path(&comparison_root,&original),"reason":"input is not present in the selected revision"})); }
+                restored
+            } else {
+                missing_inputs.push(json!({"path":crate::project_path(&comparison_root,&original),"reason":"input is outside the selected repository"}));
+                head.temp.path().join("unavailable-inputs").join(format!("input-{}",missing_inputs.len()))
             }
         };
         for path in &mut project.config.schema.paths { *path = rebase(path); }
         for source in &mut project.config.data { *source = crate::SourceConfig::from_path(rebase(source.path())); }
         for dimension in project.config.dimensions.values_mut() { if let Some(dir) = &mut dimension.dir { *dir = rebase(dir); } }
-        Ok(project)
+        project
     });
     let before = match historical {
         Ok(historical) => {
@@ -600,49 +601,7 @@ fn diff_display(
         description: display.and_then(|display| display.description.clone()),
         children: BTreeMap::new(),
     };
-    fn children(schema: &CftSchema, value: &CfdValue) -> BTreeMap<String, ProjectDiffDisplay> {
-        match value {
-            CfdValue::OptionSome(inner) => children(schema, inner),
-            CfdValue::Object(object) => object
-                .fields()
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        name.to_string(),
-                        diff_display(schema, object.actual_type(), name, value),
-                    )
-                })
-                .collect(),
-            CfdValue::Array(items) => items
-                .iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    (
-                        index.to_string(),
-                        ProjectDiffDisplay {
-                            label: None,
-                            description: None,
-                            children: children(schema, value),
-                        },
-                    )
-                })
-                .collect(),
-            CfdValue::Dict(items) => items
-                .iter()
-                .map(|(key, value)| {
-                    (
-                        crate::dict_key_path_text(key),
-                        ProjectDiffDisplay {
-                            label: None,
-                            description: None,
-                            children: children(schema, value),
-                        },
-                    )
-                })
-                .collect(),
-            _ => BTreeMap::new(),
-        }
-    }
+
     display.children = children(schema, value);
     display
 }
@@ -762,7 +721,8 @@ fn field_diffs(
     after: &BTreeMap<String, CfdValue>,
 ) -> Vec<ProjectFieldDiff> {
     let mut changes = Vec::new();
-    for path in before.keys().chain(after.keys()).collect::<BTreeSet<_>>() {
+    // 两端共有键只比较一次，保持排序与去重语义。
+    for path in BTreeSet::from_iter(before.keys().chain(after.keys())) {
         value_diffs(path, before.get(path), after.get(path), &mut changes);
     }
     changes
@@ -786,12 +746,8 @@ fn value_diffs(
         (Some(CfdValue::Object(left)), Some(CfdValue::Object(right)))
             if left.actual_type() == right.actual_type() =>
         {
-            for name in left
-                .fields()
-                .keys()
-                .chain(right.fields().keys())
-                .collect::<BTreeSet<_>>()
-            {
+            // 两端共有键只比较一次，保持排序与去重语义。
+            for name in BTreeSet::from_iter(left.fields().keys().chain(right.fields().keys())) {
                 value_diffs(
                     &format!("{path}.{name}"),
                     left.fields().get(name),
@@ -821,7 +777,8 @@ fn value_diffs(
                 .iter()
                 .map(|(key, value)| (crate::dict_key_path_text(key), value))
                 .collect();
-            for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
+            // 两端共有键只比较一次，保持排序与去重语义。
+            for key in BTreeSet::from_iter(left.keys().chain(right.keys())) {
                 value_diffs(
                     &format!("{path}[{key}]"),
                     left.get(key).copied(),
@@ -966,8 +923,7 @@ struct HeadMaterialization {
 
 impl GitProject {
     fn open(project: &Project) -> Result<Self, DiagnosticSet> {
-        let repo = gix::discover(project.root_dir())
-            .map_err(|error| git_error(format!("无法打开 Git 仓库：{error}")))?;
+        let repo = gix::discover(project.root_dir()).map_err(git_discovery_error)?;
         let workdir = repo
             .workdir()
             .ok_or_else(|| git_error("Coflow 项目需要 Git 工作区"))?;
@@ -987,7 +943,14 @@ impl GitProject {
             .to_path_buf();
         let head_oid = repo
             .head_commit()
-            .map_err(|error| git_error(format!("无法读取 HEAD 提交：{error}")))?
+            .map_err(|error| match error {
+                gix::reference::head_commit::Error::PeelToCommit(
+                    gix::head::peel::to_commit::Error::PeelToObject(
+                        gix::head::peel::to_object::Error::Unborn { .. },
+                    ),
+                ) => git_error("Git 仓库尚无提交，无法比较 HEAD。可以继续编辑；创建首次提交后即可查看 Git 变更。"),
+                error => git_error(format!("无法读取 HEAD 提交：{error}")),
+            })?
             .id;
         Ok(Self {
             repo,
@@ -1210,15 +1173,94 @@ fn safe_git_path(path: &str) -> Result<PathBuf, DiagnosticSet> {
     Ok(path.to_path_buf())
 }
 
+fn git_discovery_error(error: gix::discover::Error) -> DiagnosticSet {
+    // 非 Git 项目仍可正常编辑；仅差异功能需要仓库和 HEAD 基线。
+    match error {
+        gix::discover::Error::Discover(
+            gix::discover::upwards::Error::NoGitRepository { .. }
+            | gix::discover::upwards::Error::NoGitRepositoryWithinCeiling { .. }
+            | gix::discover::upwards::Error::NoGitRepositoryWithinFs { .. },
+        ) => git_error("此项目不在 Git 仓库中，无法查看 Git 变更。可以继续编辑；如需对比，请先将项目纳入 Git 并创建首次提交。"),
+        error => git_error(format!("无法打开 Git 仓库：{error}")),
+    }
+}
+
 fn git_error(message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(Diagnostic::error("GIT-DIFF", "GIT", message))
+}
+
+fn children(schema: &CftSchema, value: &CfdValue) -> BTreeMap<String, ProjectDiffDisplay> {
+    match value {
+        CfdValue::OptionSome(inner) => children(schema, inner),
+        CfdValue::Object(object) => object
+            .fields()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.to_string(),
+                    diff_display(schema, object.actual_type(), name, value),
+                )
+            })
+            .collect(),
+        CfdValue::Array(items) => items
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                (
+                    index.to_string(),
+                    ProjectDiffDisplay {
+                        label: None,
+                        description: None,
+                        children: children(schema, value),
+                    },
+                )
+            })
+            .collect(),
+        CfdValue::Dict(items) => items
+            .iter()
+            .map(|(key, value)| {
+                (
+                    crate::dict_key_path_text(key),
+                    ProjectDiffDisplay {
+                        label: None,
+                        description: None,
+                        children: children(schema, value),
+                    },
+                )
+            })
+            .collect(),
+        _ => BTreeMap::new(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::unified_hunks;
+    use super::{git_discovery_error, unified_hunks};
+
+    #[test]
+    fn non_git_directory_reports_diff_unavailable() {
+        let root = tempfile::tempdir().unwrap();
+        // 限定发现范围，使测试不受用户主目录中已有仓库的影响。
+        let options = gix::discover::upwards::Options {
+            ceiling_dirs: vec![root.path().parent().unwrap().to_path_buf()],
+            ..Default::default()
+        };
+        let error = gix::ThreadSafeRepository::discover_opts(
+            root.path(),
+            options,
+            gix::sec::trust::Mapping::default(),
+        )
+        .unwrap_err();
+        let diagnostics = git_discovery_error(error);
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "GIT-DIFF" && diagnostic.message.contains("可以继续编辑")
+            }),
+            "{diagnostics:?}"
+        );
+    }
 
     #[test]
     fn unified_hunks_handles_empty_sides_and_missing_newlines() {

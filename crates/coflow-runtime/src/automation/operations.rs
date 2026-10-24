@@ -137,6 +137,10 @@ impl Candidate {
         }
         Ok(())
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     fn apply_operation(&mut self, operation: &Operation) -> Result<()> {
         let schema_session = self.schema_session()?;
         let schema = schema_session
@@ -434,14 +438,18 @@ impl Candidate {
         }
         Ok(())
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     fn collection(&mut self, schema: &CftSchema, operation: &Operation) -> Result<()> {
-        let (record, path) = match operation {
-            Operation::ArrayInsert { record, path, .. }
-            | Operation::ArrayRemove { record, path, .. }
-            | Operation::ArrayMove { record, path, .. }
-            | Operation::DictSet { record, path, .. }
-            | Operation::DictRemove { record, path, .. } => (record, path),
-            _ => return Err(Failure::request("operation is not a collection edit")),
+        let (Operation::ArrayInsert { record, path, .. }
+        | Operation::ArrayRemove { record, path, .. }
+        | Operation::ArrayMove { record, path, .. }
+        | Operation::DictSet { record, path, .. }
+        | Operation::DictRemove { record, path, .. }) = operation
+        else {
+            return Err(Failure::request("operation is not a collection edit"));
         };
         let (_, ast, text) = find_record(self, record)?;
         let current_record = path_record(schema, record, &ast, &text)?;
@@ -532,7 +540,7 @@ impl Candidate {
         self.typed_references.extend(retained);
         match (operation, &expected) {
             (Operation::ArrayInsert { index, value, .. }, CftValueType::Array(inner)) => {
-                let mut path = internal.clone();
+                let mut path = internal;
                 path.push(CfdPathSegment::Index(*index));
                 self.replace_typed_references(schema, record, None, &path, Some(value), inner)?;
             }
@@ -556,6 +564,14 @@ impl Candidate {
         }
         Ok(())
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "写入入口显式区分主体、字段、维度、来源及前置条件。"
+    )]
     fn dimension_write(
         &mut self,
         schema: &CftSchema,
@@ -574,10 +590,10 @@ impl Candidate {
         let source_field = schema
             .field(&record.actual_type, field)
             .ok_or_else(|| Failure::missing("unknown field"))?;
-        if !source_field
+        if source_field
             .dimension
             .as_ref()
-            .is_some_and(|d| d.dimension.as_str() == dimension)
+            .is_none_or(|d| d.dimension.as_str() != dimension)
         {
             return Err(Failure::request("field is not bound to this dimension"));
         }
@@ -642,7 +658,7 @@ impl Candidate {
         self.replace_typed_references(
             schema,
             record,
-            Some((dimension.into(), variant.into())),
+            Some(&(dimension.into(), variant.into())),
             &constraint_path,
             value,
             &constraint_type,

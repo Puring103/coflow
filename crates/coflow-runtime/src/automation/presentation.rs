@@ -13,6 +13,10 @@ pub struct DiagnosticsSummary {
 
 impl Response {
     /// 为终端或 agent 准备有界输出；详情模式保留全部已请求的执行信息。
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+    )]
     pub fn prepare_output(&mut self, details: bool) {
         let reported = self
             .result

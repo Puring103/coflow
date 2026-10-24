@@ -1,4 +1,5 @@
 //! 面向命令行和自动化宿主的公共协议；不依赖桌面编辑器 DTO。
+use std::collections::BTreeMap;
 
 mod files;
 mod filter;
@@ -90,6 +91,7 @@ pub enum Status {
 }
 
 impl Status {
+    #[must_use]
     pub const fn exit_code(self) -> u8 {
         match self {
             Self::Success => 0,
@@ -150,12 +152,11 @@ pub struct Response<T = Value> {
     #[schemars(with = "Vec<CommandDiagnostic>")]
     pub diagnostics: Vec<Diagnostic>,
     #[schemars(skip)]
-    pub(crate) diagnostic_locations:
-        std::collections::BTreeMap<usize, crate::DiagnosticLogicalLocation>,
+    pub(crate) diagnostic_locations: BTreeMap<usize, crate::DiagnosticLogicalLocation>,
     #[schemars(skip)]
-    pub(crate) explanations: std::collections::BTreeMap<usize, Value>,
+    pub(crate) explanations: BTreeMap<usize, Value>,
     #[schemars(skip)]
-    diagnostic_help: std::collections::BTreeMap<usize, String>,
+    diagnostic_help: BTreeMap<usize, String>,
 }
 
 impl<T: Serialize> Serialize for Response<T> {
@@ -214,9 +215,9 @@ impl Response {
             data_scope: None,
             diagnostics_summary: None,
             diagnostics: Vec::new(),
-            diagnostic_locations: Default::default(),
-            explanations: Default::default(),
-            diagnostic_help: Default::default(),
+            diagnostic_locations: BTreeMap::default(),
+            explanations: BTreeMap::default(),
+            diagnostic_help: BTreeMap::default(),
         }
     }
     pub fn set_diagnostic_help(&mut self, index: usize, help: String) {
@@ -233,7 +234,8 @@ impl Response {
         }
         self.diagnostics.extend(failure.diagnostics.diagnostics);
     }
-    pub fn exit_code(&self) -> u8 {
+    #[must_use]
+    pub const fn exit_code(&self) -> u8 {
         if matches!(self.error_category, Some(ErrorCategory::Request)) {
             2
         } else {
@@ -241,7 +243,7 @@ impl Response {
         }
     }
     pub(crate) fn set_session_diagnostics(&mut self, store: &crate::DiagnosticsStore) {
-        self.diagnostics = store.as_set().diagnostics.clone();
+        self.diagnostics.clone_from(&store.as_set().diagnostics);
         self.diagnostic_locations = (0..self.diagnostics.len())
             .filter_map(|index| {
                 store
@@ -257,7 +259,7 @@ impl Response {
         snapshot: &InputSnapshot,
     ) {
         let root = session.session.project.root_dir();
-        let mut incomplete = std::collections::BTreeMap::<String, Vec<String>>::new();
+        let mut incomplete = BTreeMap::<String, Vec<String>>::new();
         for diagnostic in session
             .queries()
             .diagnostics()
@@ -268,7 +270,10 @@ impl Response {
             if let Some(label) = &diagnostic.primary {
                 let location =
                     diagnostics::CommandLocation::from_source(&label.location, Some(root));
-                if location.path.ends_with(".cfd") {
+                if std::path::Path::new(&location.path)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("cfd"))
+                {
                     incomplete
                         .entry(location.path)
                         .or_default()
@@ -367,6 +372,7 @@ impl Failure {
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(Status::Conflict, "CLI-CONFLICT", message)
     }
+    #[must_use]
     pub fn with_result(mut self, result: Value) -> Self {
         self.result = Some(result);
         self
@@ -431,15 +437,19 @@ pub(crate) fn json(value: impl Serialize) -> Result<Value> {
     Ok(serde_json::to_value(value)?)
 }
 
+#[must_use]
 pub fn change_set_schema() -> schemars::schema::RootSchema {
     constrain_schema(schemars::schema_for!(ChangeSet))
 }
+#[must_use]
 pub fn record_fields_schema() -> schemars::schema::RootSchema {
     constrain_schema(schemars::schema_for!(RecordFields))
 }
+#[must_use]
 pub fn response_schema() -> schemars::schema::RootSchema {
     response_schema_of::<Value>()
 }
+#[must_use]
 pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchema {
     match command {
         Some("check" | "schema.check") => response_schema_of::<Option<CheckResult>>(),
@@ -495,9 +505,10 @@ pub fn response_schema_for(command: Option<&str>) -> schemars::schema::RootSchem
 #[allow(dead_code)]
 enum ResponsePayload<T> {
     Result(T),
-    Failure(execution_contract::FailureContext),
+    Failure(Box<execution_contract::FailureContext>),
 }
 
+#[must_use]
 pub fn response_schema_of<T: schemars::JsonSchema>() -> schemars::schema::RootSchema {
     // 请求或前置条件失败可能发生在候选事务创建前，Schema 同样描述这些实际输出。
     let mut schema = schemars::schema_for!(Response<ResponsePayload<T>>);
@@ -510,28 +521,40 @@ pub fn response_schema_of<T: schemars::JsonSchema>() -> schemars::schema::RootSc
 
 /// 补充 DTO 的跨字段语义约束；输入与输出 Schema 使用同一个定义遍历。
 fn constrain_schema(mut root: schemars::schema::RootSchema) -> schemars::schema::RootSchema {
-    use schemars::schema::{Schema, SchemaObject, SubschemaValidation};
-    fn constraint(value: Value) -> Schema {
-        serde_json::from_value(value).expect("static schema constraint")
+    use schemars::schema::{
+        InstanceType, ObjectValidation, Schema, SchemaObject, SubschemaValidation,
+    };
+    // 直接构造约束类型，避免静态 JSON 在运行时反序列化并触发断言。
+    fn constraint(required: &str, absent: Option<&str>) -> Schema {
+        let mut object = ObjectValidation::default();
+        object.required.insert(required.into());
+        for (name, instance_type) in std::iter::once((required, InstanceType::String))
+            .chain(absent.map(|name| (name, InstanceType::Null)))
+        {
+            object.properties.insert(
+                name.into(),
+                Schema::Object(SchemaObject {
+                    instance_type: Some(instance_type.into()),
+                    ..SchemaObject::default()
+                }),
+            );
+        }
+        Schema::Object(SchemaObject {
+            object: Some(Box::new(object)),
+            ..SchemaObject::default()
+        })
     }
     fn visit(schema: &mut SchemaObject) {
         if let Some(object) = schema.object.as_mut() {
             let tag = |name: &str| {
                 object.properties.get(name).and_then(|schema| match schema {
                     Schema::Object(schema) => schema.enum_values.as_ref()?.first()?.as_str(),
-                    _ => None,
+                    Schema::Bool(_) => None,
                 })
             };
             let restriction = if tag("kind") == Some("enum") {
                 Some(SubschemaValidation {
-                    any_of: Some(vec![
-                        constraint(
-                            serde_json::json!({"required":["value"],"properties":{"value":{"type":"string"}}}),
-                        ),
-                        constraint(
-                            serde_json::json!({"required":["variant"],"properties":{"variant":{"type":"string"}}}),
-                        ),
-                    ]),
+                    any_of: Some(vec![constraint("value", None), constraint("variant", None)]),
                     ..Default::default()
                 })
             } else if matches!(tag("op"), Some("write" | "create"))
@@ -539,12 +562,8 @@ fn constrain_schema(mut root: schemars::schema::RootSchema) -> schemars::schema:
             {
                 Some(SubschemaValidation {
                     one_of: Some(vec![
-                        constraint(
-                            serde_json::json!({"required":["content"],"properties":{"content":{"type":"string"},"content_file":{"type":"null"}}}),
-                        ),
-                        constraint(
-                            serde_json::json!({"required":["content_file"],"properties":{"content_file":{"type":"string"},"content":{"type":"null"}}}),
-                        ),
+                        constraint("content", Some("content_file")),
+                        constraint("content_file", Some("content")),
                     ]),
                     ..Default::default()
                 })

@@ -28,13 +28,18 @@ fn contents(path: &std::path::Path) -> io::Result<Option<Vec<u8>>> {
     }
 }
 
-pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, PublishFailure> {
+/// 原子发布文件变更，失败时恢复已发布的目标。
+///
+/// # Errors
+///
+/// 输入已被外部修改、文件读写失败或恢复失败时返回完整失败报告。
+pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailure>> {
     let mut staged: Vec<Box<dyn StagedChange>> = Vec::new();
     for change in changes {
         match contents(&change.path) {
             Ok(bytes) if bytes == change.before => {}
             Ok(_) => {
-                return Err(PublishFailure {
+                return Err(Box::new(PublishFailure {
                     message: format!("file changed: {}", change.path.display()),
                     conflict: true,
                     written: Vec::new(),
@@ -42,10 +47,10 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, PublishFailure> {
                     restoration_failed: Vec::new(),
                     restoration_conflicts: Vec::new(),
                     restoration_errors: Vec::new(),
-                })
+                }))
             }
             Err(e) => {
-                return Err(PublishFailure {
+                return Err(Box::new(PublishFailure {
                     message: e.to_string(),
                     conflict: false,
                     written: Vec::new(),
@@ -53,7 +58,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, PublishFailure> {
                     restoration_failed: Vec::new(),
                     restoration_conflicts: Vec::new(),
                     restoration_errors: Vec::new(),
-                })
+                }))
             }
         }
         let stage: Box<dyn StagedChange> = if let Some(after) = &change.after {
@@ -81,7 +86,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, PublishFailure> {
 fn publish_prepared(
     changes: &[FileChange],
     staged: Vec<Box<dyn StagedChange>>,
-) -> Result<Vec<PathBuf>, PublishFailure> {
+) -> Result<Vec<PathBuf>, Box<PublishFailure>> {
     let paths = changes
         .iter()
         .map(|change| change.path.clone())
@@ -99,9 +104,13 @@ fn publish_prepared(
 }
 
 /// 文件与生成目录共用发布和恢复编排，失败报告保留每个实际处理的目标。
+///
+/// # Errors
+///
+/// 目标验证、发布或恢复失败时返回各目标的实际处理结果。
 pub fn publish_staged(
     changes: Vec<(PathBuf, Box<dyn StagedChange>)>,
-) -> Result<Vec<PathBuf>, PublishFailure> {
+) -> Result<Vec<PathBuf>, Box<PublishFailure>> {
     let (paths, staged): (Vec<_>, Vec<_>) = changes.into_iter().unzip();
     publish_with(&paths, staged, |_| Ok(()))
 }
@@ -110,7 +119,7 @@ fn publish_with(
     paths: &[PathBuf],
     mut staged: Vec<Box<dyn StagedChange>>,
     mut verify: impl FnMut(usize) -> Result<(), (bool, String)>,
-) -> Result<Vec<PathBuf>, PublishFailure> {
+) -> Result<Vec<PathBuf>, Box<PublishFailure>> {
     let mut written = Vec::new();
     // 全部准备完成后先验证所有目标，再执行逐目标验证与发布。
     for (index, stage) in staged.iter().enumerate() {
@@ -120,7 +129,7 @@ fn publish_with(
                 .map_err(|error| (error.is_conflict(), error.to_string()))
         });
         if let Err((conflict, message)) = checked {
-            return Err(PublishFailure {
+            return Err(Box::new(PublishFailure {
                 message,
                 conflict,
                 written,
@@ -128,7 +137,7 @@ fn publish_with(
                 restoration_failed: Vec::new(),
                 restoration_conflicts: Vec::new(),
                 restoration_errors: Vec::new(),
-            });
+            }));
         }
     }
     for index in 0..staged.len() {
@@ -158,7 +167,7 @@ fn publish_with(
                     }
                 }
             }
-            return Err(PublishFailure {
+            return Err(Box::new(PublishFailure {
                 message,
                 conflict: conflict || !restoration_conflicts.is_empty(),
                 written,
@@ -166,7 +175,7 @@ fn publish_with(
                 restoration_failed,
                 restoration_conflicts,
                 restoration_errors,
-            });
+            }));
         }
         written.push(paths[index].clone());
     }
@@ -206,7 +215,7 @@ mod tests {
         fn finish(&mut self) {}
     }
 
-    fn fail_second_publication(external_change: bool) -> (tempfile::TempDir, PublishFailure) {
+    fn fail_second_publication(external_change: bool) -> (tempfile::TempDir, Box<PublishFailure>) {
         let root = tempfile::tempdir().unwrap();
         let first = root.path().join("first.cfd");
         let second = root.path().join("second.cfd");
@@ -238,7 +247,7 @@ mod tests {
         assert!(!failure.conflict);
         assert_eq!(failure.written, vec![first.clone()]);
         assert_eq!(failure.restored, vec![first.clone()]);
-        assert!(failure.restoration_failed.is_empty());
+        assert_eq!(failure.restoration_failed, [] as [PathBuf; 0]);
         assert_eq!(fs::read(first).unwrap(), b"old");
         assert_eq!(fs::read(root.path().join("second.cfd")).unwrap(), b"old");
     }
@@ -249,7 +258,7 @@ mod tests {
         let first = root.path().join("first.cfd");
         assert!(failure.conflict);
         assert_eq!(failure.written, vec![first.clone()]);
-        assert!(failure.restored.is_empty());
+        assert_eq!(failure.restored, [] as [PathBuf; 0]);
         assert_eq!(failure.restoration_failed, vec![first.clone()]);
         assert_eq!(failure.restoration_conflicts, vec![first.clone()]);
         assert_eq!(fs::read(first).unwrap(), b"external");

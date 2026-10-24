@@ -28,7 +28,7 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
             .start;
         let name = self.parse_optional_check_name()?;
-        let block = self.parse_check_block_after_keyword(start, name.clone())?;
+        let block = self.parse_check_block_after_keyword(start, name)?;
         Ok(crate::syntax::ast::TopLevelCheckDef {
             name: block.name.clone(),
             name_span: block.name_span,
@@ -72,7 +72,7 @@ impl Parser<'_> {
                 // 匿名块以 check 关键字作为导航位置，不伪造源码名称。
                 name_span: name
                     .as_ref()
-                    .map_or(Span::new(start, start + 5), |name| name.span),
+                    .map_or_else(|| Span::new(start, start + 5), |name| name.span),
                 name: name.map(|name| name.name),
                 stmts: stmts.value,
                 span,

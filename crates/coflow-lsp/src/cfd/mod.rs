@@ -194,8 +194,6 @@ fn collect_scalar_token(text: &str, span: Span, c: &mut TokenCollector<'_>) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
-
 fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
     for token in tokenize_cfd(source) {
         if token.kind == LosslessTokenKind::Comment {

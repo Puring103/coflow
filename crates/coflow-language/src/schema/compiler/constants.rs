@@ -241,7 +241,8 @@ impl ValueResolver<'_, '_> {
         if let Some(expected) = expected {
             // 常量引用提升后保留目标类型，后续引用不能再按原始数值隐式缩窄。
             if resolved.0.numeric_rank().is_some() && expected.numeric_rank().is_some() {
-                resolved = self.convert_numeric_constant(module, expression, resolved, expected)?;
+                resolved =
+                    self.convert_numeric_constant(module, expression, &resolved, expected)?;
             }
         }
         Some(resolved)
@@ -265,7 +266,7 @@ impl ValueResolver<'_, '_> {
         self.convert_numeric_constant(
             module,
             expression,
-            (inferred.clone(), CftConstValue::Long(value)),
+            &(inferred.clone(), CftConstValue::Long(value)),
             target,
         )
     }
@@ -284,16 +285,24 @@ impl ValueResolver<'_, '_> {
         self.convert_numeric_constant(
             module,
             expression,
-            (CftValueType::Double, CftConstValue::Double(value)),
+            &(CftValueType::Double, CftConstValue::Double(value)),
             &target,
         )
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "语言数值提升允许整数转换为浮点数并按目标精度舍入。"
+    )]
     fn convert_numeric_constant(
         &mut self,
         module: &ModuleId,
         expression: &DefaultExpr,
-        actual: (CftValueType, CftConstValue),
+        actual: &(CftValueType, CftConstValue),
         target: &CftValueType,
     ) -> Option<(CftValueType, CftConstValue)> {
         let value = match (target, &actual.1) {
@@ -326,17 +335,18 @@ impl ValueResolver<'_, '_> {
             }
             _ => None,
         };
-        if let Some(value) = value {
-            Some((target.clone(), value))
-        } else {
-            self.push_diag(
-                CftErrorCode::InvalidConstValue,
-                module,
-                expression.span,
-                format!("numeric value is outside the range of {target}"),
-            );
-            None
-        }
+        value.map_or_else(
+            || {
+                self.push_diag(
+                    CftErrorCode::InvalidConstValue,
+                    module,
+                    expression.span,
+                    format!("numeric value is outside the range of {target}"),
+                );
+                None
+            },
+            |value| Some((target.clone(), value)),
+        )
     }
 
     fn default_type_assignable(&self, actual: &CftValueType, expected: &CftValueType) -> bool {
@@ -591,6 +601,10 @@ impl ValueResolver<'_, '_> {
         ))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     fn resolve_object(
         &mut self,
         module: &ModuleId,

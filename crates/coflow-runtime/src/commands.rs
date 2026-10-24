@@ -218,6 +218,9 @@ fn prepare_project_code<T>(
 }
 
 /// 为自动化宿主提供只读产物差异和统一发布。
+/// # Errors
+///
+/// 生成、输入修订验证或产物发布失败时返回诊断和实际恢复结果。
 pub fn codegen_automation(
     project: &Project,
     preview: bool,
@@ -266,7 +269,7 @@ pub(crate) fn codegen_automation_with_snapshot(
                                 artifact_report_files(project, &report, &publication.restored);
                             let mut failure = crate::automation::publication_failure(
                                 project.root_dir(),
-                                publication,
+                                *publication,
                                 report.clone(),
                             );
                             if let Some(report) = failure.result.as_mut() {

@@ -43,6 +43,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "完整命令或设置分支集中列出，便于核对输入与行为。"
+    )]
     fn settings_round_trip_under_editor_setting_directory() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -206,17 +210,19 @@ mod tests {
             file_path: owner.clone(),
         };
         let id = serde_json::to_string(&["language", &owner]).expect("id");
-        let mut settings = EditorProjectSettings::default();
-        settings.workspace = EditorWorkspaceState {
-            tabs: vec![EditorWorkspaceTab {
-                file_path: format!("@dimension/language/{owner}"),
-                type_name: String::new(),
-                view_id: "__default_table".to_string(),
-                view_kind: crate::editor::WorkspaceViewKind::Table,
-                coordinate: None,
-                dimension_target: Some(target),
-            }],
-            active_tab_id: Some(id),
+        let settings = EditorProjectSettings {
+            workspace: EditorWorkspaceState {
+                tabs: vec![EditorWorkspaceTab {
+                    file_path: format!("@dimension/language/{owner}"),
+                    type_name: String::new(),
+                    view_id: "__default_table".to_string(),
+                    view_kind: crate::editor::WorkspaceViewKind::Table,
+                    coordinate: None,
+                    dimension_target: Some(target),
+                }],
+                active_tab_id: Some(id),
+            },
+            ..EditorProjectSettings::default()
         };
         write_project_settings(&root, &settings).expect("write settings");
         let raw = fs::read_to_string(super::io::local_settings_path(&root).expect("local path"))
@@ -355,23 +361,33 @@ mod tests {
         assert_eq!(views[0].name, "未命名视图");
         assert_eq!(views[0].columns, vec!["name".to_string()]);
         // Table view drops graph-only fields.
-        assert!(views[0].relations.is_empty());
-        assert!(views[0].fields.is_empty());
+        assert_eq!(views[0].relations, [] as [String; 0]);
+        assert_eq!(views[0].fields, [] as [String; 0]);
     }
     #[test]
     fn default_table_view_settings_are_preserved() {
         let view = ViewConfig {
-            id: "__default_table".to_string(), name: "表格".to_string(), kind: ViewKind::Table,
-            group_filter: None, columns: vec!["name".to_string()], column_widths: BTreeMap::new(),
-            relations: vec![], fields: vec![],
+            id: "__default_table".to_string(),
+            name: "表格".to_string(),
+            kind: ViewKind::Table,
+            group_filter: None,
+            columns: vec!["name".to_string()],
+            column_widths: BTreeMap::new(),
+            relations: vec![],
+            fields: vec![],
         };
         let saved = sanitized_views(vec![view.clone()], &BTreeSet::new());
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0].columns, vec!["name"]);
-        let invalid = ViewConfig { kind: ViewKind::Graph, ..view };
-        assert!(sanitized_views(vec![invalid], &BTreeSet::new()).is_empty());
+        let invalid = ViewConfig {
+            kind: ViewKind::Graph,
+            ..view
+        };
+        assert_eq!(
+            sanitized_views(vec![invalid], &BTreeSet::new()),
+            [] as [ViewConfig; 0]
+        );
     }
-
 
     #[test]
     fn views_clear_dangling_group_filter_and_graph_fields() {
@@ -407,7 +423,7 @@ mod tests {
         assert_eq!(views[0].relations, vec!["owner".to_string()]);
         assert_eq!(views[0].fields, vec!["name".to_string()]);
         // Graph view drops table-only fields.
-        assert!(views[0].columns.is_empty());
+        assert_eq!(views[0].columns, [] as [String; 0]);
         assert!(views[0].column_widths.is_empty());
         assert_eq!(views[1].group_filter, None);
     }

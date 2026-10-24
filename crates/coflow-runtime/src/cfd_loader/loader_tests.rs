@@ -67,7 +67,7 @@ fn shared_runtime_corpus_preserves_acceptance_and_value_states() {
             assert_eq!(record.field("wide"), Some(&CfdValue::Int(i64::MIN)));
             assert_eq!(
                 record.field("precise"),
-                Some(&CfdValue::Float(1.0000000000000002))
+                Some(&CfdValue::Float(1.000_000_000_000_000_2))
             );
             assert_eq!(
                 record.field("nested"),

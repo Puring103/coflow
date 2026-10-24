@@ -5,6 +5,7 @@ use coflow_runtime::{
     Project,
 };
 use serde_json::{json, Value};
+use std::fmt::Write as _;
 use std::{fs, path::Path};
 
 fn fixture(records: usize) -> tempfile::TempDir {
@@ -17,9 +18,10 @@ fn fixture(records: usize) -> tempfile::TempDir {
     fs::write(root.path().join("schema.cft"), "table Item { value: int; note: Option<string> = None; tags: [string] = []; check Positive { value > 0: \"must be positive\"; } }\n").unwrap();
     fs::write(
         root.path().join("data.cfd"),
-        (0..records)
-            .map(|index| format!("item_{index}: Item {{ value: -1 }}\n"))
-            .collect::<String>(),
+        (0..records).fold(String::new(), |mut text, index| {
+            let _ = writeln!(text, "item_{index}: Item {{ value: -1 }}");
+            text
+        }),
     )
     .unwrap();
     root
@@ -134,9 +136,10 @@ fn incomplete_data_scope_reports_counts_without_repeating_every_diagnostic() {
     let root = fixture(120);
     fs::write(
         root.path().join("data.cfd"),
-        (0..120)
-            .map(|index| format!("item_{index}: Item {{ value: \"invalid\" }}\n"))
-            .collect::<String>(),
+        (0..120).fold(String::new(), |mut text, index| {
+            let _ = writeln!(text, "item_{index}: Item {{ value: \"invalid\" }}");
+            text
+        }),
     )
     .unwrap();
     let mut response = run(root.path(), "data.list", &[], None);

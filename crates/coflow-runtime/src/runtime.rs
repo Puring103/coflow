@@ -341,7 +341,7 @@ fn schema_input_fingerprint(
 
 impl Runtime {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 

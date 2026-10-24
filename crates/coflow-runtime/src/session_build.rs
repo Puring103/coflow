@@ -86,7 +86,7 @@ pub(crate) fn rebuild_project_session_from_generation(
         source_data,
         check_state,
         execution_stats,
-    } = rebuild_data_pipeline(&mut ctx, session, impact, &mut diagnostics)?;
+    } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics)?;
     Ok(SessionBuildOutput {
         session: assemble_session(
             ctx,
@@ -117,7 +117,7 @@ fn finish_project_session(
         return Err(diagnostics.into_set());
     };
 
-    let mut ctx = SessionBuildContext {
+    let ctx = SessionBuildContext {
         project,
         modules,
         schema,
@@ -131,7 +131,7 @@ fn finish_project_session(
         check_state,
         execution_stats,
     } = if diagnostics.is_empty() {
-        build_data_pipeline(&mut ctx, &mut diagnostics, run_checks)?
+        build_data_pipeline(&ctx, &mut diagnostics, run_checks)?
     } else {
         LoadedSessionData::empty(&ctx.schema)?
     };
@@ -184,7 +184,7 @@ impl LoadedSessionData {
 }
 
 fn build_data_pipeline(
-    ctx: &mut SessionBuildContext,
+    ctx: &SessionBuildContext,
     diagnostics: &mut DiagnosticsStore,
     run_checks: bool,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
@@ -219,7 +219,7 @@ fn build_data_pipeline(
 
 #[allow(clippy::too_many_lines)]
 fn rebuild_data_pipeline(
-    ctx: &mut SessionBuildContext,
+    ctx: &SessionBuildContext,
     previous: &ProjectSession,
     impact: &MutationImpact,
     diagnostics: &mut DiagnosticsStore,

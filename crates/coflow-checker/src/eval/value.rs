@@ -238,6 +238,10 @@ impl<'a> EvalValue<'a> {
     pub(crate) const fn double(value: f64) -> Self {
         Self::Temporary(TemporaryValue::Double(value))
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+    )]
     pub(crate) fn float(value: f64) -> Self {
         Self::Temporary(TemporaryValue::Float(f64::from(value as f32)))
     }
@@ -261,6 +265,10 @@ impl<'a> EvalValue<'a> {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+    )]
     pub(crate) fn numeric_float(&self, ty: &CftValueType) -> Option<f64> {
         let value = match self.scalar()? {
             ScalarValue::Int(v) => v as f64,

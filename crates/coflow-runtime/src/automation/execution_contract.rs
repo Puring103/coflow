@@ -39,7 +39,7 @@ pub struct ValidationReport {
 #[serde(untagged)]
 pub enum OperationDescription {
     File(super::FileOperation),
-    Data(super::Operation),
+    Data(Box<super::Operation>),
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct OperationOutcome {
@@ -196,14 +196,14 @@ pub struct GitDiffReport {
 #[derive(Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum DiffResult {
-    Git(GitDiffReport),
-    Candidate(TransactionReport),
+    Git(Box<GitDiffReport>),
+    Candidate(Box<TransactionReport>),
 }
 #[derive(Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum CheckResult {
-    Current(ValidationReport),
-    Candidate(TransactionReport),
+    Current(Box<ValidationReport>),
+    Candidate(Box<TransactionReport>),
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct FormatReport {

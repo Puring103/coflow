@@ -7,7 +7,7 @@ fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("fixture");
     fs::write(
         dir.path().join("schema.cft"),
-        r#"
+        r"
         data Label { text: string; }
         table Item {
             name: string;
@@ -15,7 +15,7 @@ fn fixture() -> tempfile::TempDir {
             required: Option<int>;
             optional: Option<int> = None;
         }
-    "#,
+    ",
     )
     .expect("schema");
     fs::write(

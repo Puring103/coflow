@@ -144,6 +144,14 @@ impl FieldStatistics {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "语言数值提升允许整数转换为浮点数并按目标精度舍入。"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub fn query(
     command: &str,
     session: &ReadOnlyProjectSession,
@@ -507,6 +515,22 @@ pub fn query(
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "语言数值提升允许整数转换为浮点数并按目标精度舍入。"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "分位参数已限制在 0..=1，乘以样本数后不可能为负。"
+)]
 fn aggregate(
     values: &[&CfdValue],
     option_layer: usize,

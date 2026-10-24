@@ -31,6 +31,10 @@ pub(crate) fn diagnostics_to_error(
     EditorError::new(kind, message).with_diagnostics(flat_views(diagnostics))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "作为 map_err 的函数适配器接收错误所有权。"
+)]
 pub(crate) fn api_diagnostics_to_editor_error(
     diagnostics: coflow_runtime::DiagnosticSet,
 ) -> EditorError {

@@ -86,14 +86,19 @@ impl SemanticSnapshot {
     }
 
     /// 候选事务共享声明与最终校验的数据会话，差异计算不重复编译或加载同一后态。
+    #[expect(
+        clippy::too_many_lines,
+        reason = "快照统一采集声明、主体和维度，确保同一会话的差异基线。"
+    )]
     pub(crate) fn capture_from_schema(
         schema_session: &crate::ProjectSchemaSession,
         loaded: Option<&ReadOnlyProjectSession>,
         path: impl Fn(&Path) -> Result<String>,
     ) -> Result<Self> {
-        let project = &schema_session.project;
-        let mut snapshot = Self::default();
-        snapshot.diagnostics = schema_session.diagnostics().as_set().clone();
+        let mut snapshot = Self {
+            diagnostics: schema_session.diagnostics().as_set().clone(),
+            ..Self::default()
+        };
         if schema_session.schema().is_some() {
             snapshot.schema_available = true;
             let report = super::json(crate::inspect_schema(schema_session, None, false))?;
@@ -108,8 +113,11 @@ impl SemanticSnapshot {
             }
             if let Some(schema) = schema_session.schema() {
                 for info in super::rules::named_rules(schema) {
-                    let mut rule =
-                        super::json(super::rules::describe(schema, info, project.root_dir()))?;
+                    let mut rule = super::json(super::rules::describe(
+                        schema,
+                        info,
+                        schema_session.project.root_dir(),
+                    ))?;
                     rule.as_object_mut().map(|rule| rule.remove("location"));
                     snapshot
                         .schema
@@ -145,13 +153,13 @@ impl SemanticSnapshot {
             let file = session
                 .queries()
                 .file_for_record(record.actual_type(), record.id())
-                .map(|file| path(&project.resolve_path(Path::new(file))))
+                .map(|file| path(&schema_session.project.resolve_path(Path::new(file))))
                 .transpose()?;
             snapshot
                 .records
                 .insert((record.actual_type().into(), record.id().into()), file);
             snapshot.capture_record(
-                project,
+                &schema_session.project,
                 session,
                 record,
                 &selector,
@@ -165,7 +173,7 @@ impl SemanticSnapshot {
             for variant in dimension.variants {
                 let selector = Selector {
                     view: "both".into(),
-                    dimensions: BTreeMap::from([(dimension.name.clone(), variant.to_string())]),
+                    dimensions: BTreeMap::from([(dimension.name.clone(), variant.clone())]),
                     ..Default::default()
                 };
                 let projected =
@@ -179,7 +187,7 @@ impl SemanticSnapshot {
                     };
                 for (_, record) in projected.records() {
                     snapshot.capture_record(
-                        project,
+                        &schema_session.project,
                         session,
                         record,
                         &selector,
@@ -193,6 +201,10 @@ impl SemanticSnapshot {
         Ok(snapshot)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "快照采集显式传入记录身份、维度、来源及会话，共享调用方缓存。"
+    )]
     fn capture_record(
         &mut self,
         project: &Project,
@@ -256,12 +268,8 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
     let mut fields = Vec::new();
     let mut dimensions = Vec::new();
     if available {
-        for key in before
-            .fields
-            .keys()
-            .chain(after.fields.keys())
-            .collect::<BTreeSet<_>>()
-        {
+        // 两端共有键只比较一次，保持排序与去重语义。
+        for key in BTreeSet::from_iter(before.fields.keys().chain(after.fields.keys())) {
             let previous = before.fields.get(key);
             let current = after.fields.get(key);
             let assignment_changed = previous.map(assignment) != current.map(assignment);
@@ -290,12 +298,8 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
                 fields.push(change);
             }
         }
-        for key in before
-            .records
-            .keys()
-            .chain(after.records.keys())
-            .collect::<BTreeSet<_>>()
-        {
+        // 两端共有键只比较一次，保持排序与去重语义。
+        for key in BTreeSet::from_iter(before.records.keys().chain(after.records.keys())) {
             let previous = before.records.get(key);
             let current = after.records.get(key);
             if previous != current

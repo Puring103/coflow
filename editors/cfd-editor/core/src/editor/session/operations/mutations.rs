@@ -1,6 +1,6 @@
 //! Mutation 命令：字段写回、集合编辑、记录增删改与排序。
 //!
-//! 引擎拥有校验与落盘，本层只做 MutationReport 到 wire DTO 的包装。
+//! 引擎拥有校验与落盘，本层只做 `MutationReport` 到 wire DTO 的包装。
 
 use super::super::errors::api_diagnostics_to_editor_error;
 use super::super::{

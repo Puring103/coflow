@@ -5,8 +5,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use cfd_editor_core::editor::EditorError;
 use crate::plugin_manifest::PluginManifest;
+use cfd_editor_core::editor::EditorError;
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]

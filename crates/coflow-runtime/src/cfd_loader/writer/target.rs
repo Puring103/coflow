@@ -103,11 +103,10 @@ fn locate_target_in_value(
             ty: current_type.clone(),
         });
     }
-    match (current_type, value) {
-        (CftValueType::Option(inner_type), AstValue::OptionSome(inner_value, _)) => {
-            return locate_target_in_value(schema, inner_type, inner_value, path, depth);
-        }
-        _ => {}
+    if let (CftValueType::Option(inner_type), AstValue::OptionSome(inner_value, _)) =
+        (current_type, value)
+    {
+        return locate_target_in_value(schema, inner_type, inner_value, path, depth);
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {

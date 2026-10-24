@@ -1,3 +1,4 @@
+use super::semantic_diff::SemanticSnapshot;
 use super::{Arguments, Failure, InputSnapshot, Result, Status};
 use crate::{Project, ProjectConfig, Runtime, SchemaConfig, SourceConfig};
 use serde::{Deserialize, Serialize};
@@ -67,7 +68,8 @@ pub enum FileOperation {
 #[derive(Debug, Default)]
 struct OperationCache {
     schema: Option<crate::ProjectSchemaSession>,
-    files: Option<BTreeMap<PathBuf, Arc<CandidateSource>>>,
+    files: BTreeMap<PathBuf, Arc<CandidateSource>>,
+    sources_loaded: bool,
     records: BTreeMap<(String, String), Vec<(PathBuf, usize)>>,
     malformed: BTreeSet<PathBuf>,
     #[cfg(test)]
@@ -97,7 +99,7 @@ impl OperationCache {
         if source.as_ref().is_some_and(|source| source.malformed) {
             self.malformed.insert(path.clone());
         }
-        if let Some(previous) = self.files.as_ref().and_then(|files| files.get(&path)) {
+        if let Some(previous) = self.files.get(&path) {
             for record in &previous.ast.records {
                 let identity = (record.type_name.clone(), record.id.clone());
                 if let Some(locations) = self.records.get_mut(&identity) {
@@ -115,15 +117,13 @@ impl OperationCache {
                     .or_default()
                     .push((path.clone(), index));
             }
-            if let Some(files) = &mut self.files {
-                files.insert(path, Arc::new(source));
-            }
+            self.files.insert(path, Arc::new(source));
             #[cfg(test)]
             {
                 self.stats.cfd_parses += 1;
             }
-        } else if let Some(files) = &mut self.files {
-            files.remove(&path);
+        } else {
+            self.files.remove(&path);
         }
     }
 }
@@ -142,7 +142,7 @@ pub(crate) struct Candidate {
     input_scopes: Vec<(Project, InputSnapshot)>,
     originals: BTreeMap<PathBuf, Option<Vec<u8>>>,
     pub operations: Vec<Value>,
-    baseline: super::semantic_diff::SemanticSnapshot,
+    baseline: SemanticSnapshot,
     pub materialized: Vec<Value>,
     pub automatic_updates: Vec<Value>,
     pub operation_details: Value,
@@ -161,7 +161,7 @@ impl Candidate {
             input_scopes: Vec::new(),
             originals: BTreeMap::new(),
             operations: Vec::new(),
-            baseline: Default::default(),
+            baseline: SemanticSnapshot::default(),
             materialized: Vec::new(),
             automatic_updates: Vec::new(),
             operation_details: json!({}),
@@ -184,29 +184,29 @@ impl Candidate {
                 )
             })?;
         candidate.set_config_source(config.contents.clone())?;
-        candidate.baseline = super::semantic_diff::SemanticSnapshot::capture_from_schema(
-            &candidate.schema_session()?,
-            None,
-            |path| {
+        candidate.baseline =
+            SemanticSnapshot::capture_from_schema(&candidate.schema_session()?, None, |path| {
                 Ok(crate::project_path(
                     candidate.original.root_dir(),
                     &candidate.unshadow(path)?,
                 ))
-            },
-        )?;
+            })?;
         Ok(candidate)
     }
     pub(crate) fn schema_session(&self) -> Result<crate::ProjectSchemaSession> {
         let project = self.project()?;
         let mut cache = self.cache.borrow_mut();
-        if cache.schema.is_none() {
-            cache.schema = Some(Runtime::open_schema_session(project.clone())?);
+        let mut session = if let Some(session) = &cache.schema {
+            session.clone()
+        } else {
+            let session = Runtime::open_schema_session(project.clone())?;
+            cache.schema = Some(session.clone());
             #[cfg(test)]
             {
                 cache.stats.schema_compilations += 1;
             }
-        }
-        let mut session = cache.schema.as_ref().expect("schema cached").clone();
+            session
+        };
         // 新增数据输入不改变声明，但读取会话必须采用当前候选的输入范围。
         session.project = project;
         Ok(session)
@@ -219,10 +219,10 @@ impl Candidate {
     }
 
     fn ensure_data_sources(&self) -> Result<()> {
-        if self.cache.borrow().files.is_none() {
+        if !self.cache.borrow().sources_loaded {
             let snapshot = InputSnapshot::capture(&self.project()?)?;
             let mut cache = self.cache.borrow_mut();
-            cache.files = Some(BTreeMap::new());
+            cache.files.clear();
             cache.records.clear();
             cache.malformed.clear();
             #[cfg(test)]
@@ -248,21 +248,14 @@ impl Candidate {
                     }),
                 );
             }
+            cache.sources_loaded = true;
         }
         Ok(())
     }
 
     pub(crate) fn data_sources(&self) -> Result<Vec<Arc<CandidateSource>>> {
         self.ensure_data_sources()?;
-        Ok(self
-            .cache
-            .borrow()
-            .files
-            .as_ref()
-            .expect("data sources cached")
-            .values()
-            .cloned()
-            .collect())
+        Ok(self.cache.borrow().files.values().cloned().collect())
     }
 
     pub(crate) fn cached_record(
@@ -271,7 +264,7 @@ impl Candidate {
     ) -> Result<(PathBuf, coflow_language::cfd::CfdRecord, String)> {
         self.ensure_data_sources()?;
         let cache = self.cache.borrow();
-        let files = cache.files.as_ref().expect("data sources cached");
+        let files = &cache.files;
         if let Some(source) = cache.malformed.first().and_then(|path| files.get(path)) {
             return Err(Failure::request(format!(
                 "cannot edit malformed CFD `{}`",
@@ -303,16 +296,15 @@ impl Candidate {
             self.cache.borrow_mut().schema = None;
             return Ok(());
         }
-        if self.cache.borrow().files.is_none()
-            || !path.extension().is_some_and(|extension| extension == "cfd")
+        if !self.cache.borrow().sources_loaded
+            || path.extension().is_none_or(|extension| extension != "cfd")
         {
             return Ok(());
         }
         let mut cache = self.cache.borrow_mut();
         if cache
             .files
-            .as_ref()
-            .and_then(|files| files.get(path))
+            .get(path)
             .is_some_and(|source| Some(&source.text) == text.as_ref())
         {
             return Ok(());
@@ -459,11 +451,12 @@ impl Candidate {
             || cache
                 .schema
                 .as_ref()
-                .is_some_and(|schema| schema.has_diagnostics())
+                .is_some_and(super::super::session::ProjectSchemaSession::has_diagnostics)
         {
             cache.schema = None;
         }
-        cache.files = None;
+        cache.files.clear();
+        cache.sources_loaded = false;
         cache.records.clear();
         cache.malformed.clear();
         drop(cache);
@@ -636,7 +629,8 @@ impl Candidate {
                         let path = self.resolve(file, false)?;
                         self.track(&path)?;
                         self.expect(&path, expected_fingerprint.as_deref())?;
-                        let contents = read_content(content, content_file, carrier_dir)?;
+                        let contents =
+                            read_content(content.as_ref(), content_file.as_ref(), carrier_dir)?;
                         if path == self.original.config_path() {
                             self.set_config_source(contents)?;
                         } else {
@@ -659,7 +653,10 @@ impl Candidate {
                         if self.shadow(&path).exists() || path.exists() {
                             return Err(Failure::conflict(format!("file `{file}` already exists")));
                         }
-                        self.write(&path, &read_content(content, content_file, carrier_dir)?)?;
+                        self.write(
+                            &path,
+                            &read_content(content.as_ref(), content_file.as_ref(), carrier_dir)?,
+                        )?;
                         self.include(&path)?;
                     }
                     FileOperation::Delete {
@@ -677,7 +674,7 @@ impl Candidate {
                         fs::remove_file(self.shadow(&path))?;
                         self.refresh_source(&self.shadow(&path), None)?;
                         let mut project = self.original_view()?;
-                        let target = path.clone();
+                        let target = path;
                         project.config.schema.paths = project
                             .config()
                             .schema
@@ -883,6 +880,10 @@ impl Candidate {
         Ok((report, validation))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+    )]
     pub fn finish(
         &mut self,
         args: &Arguments,
@@ -914,7 +915,7 @@ impl Candidate {
                         "complete":false,"diagnostic_count":diagnostics.diagnostics.len()}),
                         diagnostics,
                         logical_locations: locations,
-                        explanations: Default::default(),
+                        explanations: BTreeMap::default(),
                     };
                     if args.flag("explain") {
                         super::rules::explain_diagnostics(session, &mut validation);
@@ -932,8 +933,8 @@ impl Candidate {
                     report: json!({"structure":"failed","rules":if args.flag("rules") || !args.all("rule").is_empty() {"skipped_dependency_error"} else {"not_executed"},
                         "complete":false,"diagnostic_count":diagnostics.diagnostics.len()}),
                     diagnostics,
-                    logical_locations: Default::default(),
-                    explanations: Default::default(),
+                    logical_locations: BTreeMap::default(),
+                    explanations: BTreeMap::default(),
                 }
             }
         };
@@ -943,7 +944,7 @@ impl Candidate {
         let dry_run = force_preview || args.flag("dry-run");
         let mut report = json!({"revision_before":self.snapshot.revision(),"revision_after":self.snapshot.revision(),"changed":!changes.is_empty(),"written":false,"dry_run":dry_run,"validation":&validation.report,
             "operations":self.operations,"files":self.file_report(&changes, args)?,"written_files":[]});
-        let after = super::semantic_diff::SemanticSnapshot::capture_from_schema(
+        let after = SemanticSnapshot::capture_from_schema(
             &self.schema_session()?,
             session.as_ref().ok(),
             |path| {
@@ -993,16 +994,15 @@ impl Candidate {
             })();
             verify.map_err(|mut failure| {
                 let mut details = report.clone();
-                if let Some(Value::Object(extra)) = failure.result.take() {
-                    details
-                        .as_object_mut()
-                        .expect("transaction report is an object")
-                        .extend(extra);
+                if let (Value::Object(details), Some(Value::Object(extra))) =
+                    (&mut details, failure.result.take())
+                {
+                    details.extend(extra);
                 }
                 failure.with_result(details)
             })?;
             let written = coflow_staging::transaction::publish(&changes).map_err(|error| {
-                publication_failure(self.original.root_dir(), error, report.clone())
+                publication_failure(self.original.root_dir(), *error, report.clone())
             })?;
             report["written"] = json!(true);
             report["written_files"] = json!(written
@@ -1045,7 +1045,7 @@ pub(crate) fn capture_published_revision(project: &Project, report: &Value) -> R
     })
 }
 
-fn read_content(content: &Option<String>, file: &Option<String>, base: &Path) -> Result<Vec<u8>> {
+fn read_content(content: Option<&String>, file: Option<&String>, base: &Path) -> Result<Vec<u8>> {
     match (content, file) {
         (Some(content), None) => Ok(content.as_bytes().to_vec()),
         (None, Some(file)) => Ok(fs::read(base.join(file))?),
@@ -1106,6 +1106,7 @@ pub(crate) fn publication_failure(
 
 #[cfg(test)]
 mod cache_tests {
+    #![allow(clippy::unwrap_used, reason = "测试的前置步骤失败应直接报告失败。")]
     use super::*;
     use crate::automation::{FieldPath, InputValue, Operation, RecordTarget, Selector};
 

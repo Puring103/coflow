@@ -59,10 +59,7 @@ pub(super) fn local_settings_path(project_root: &Path) -> Result<PathBuf, Editor
         .map_err(|error| EditorError::other(format!("failed to resolve project root: {error}")))?;
     let identity = coflow_runtime::path_to_slash(&root);
     let digest = Sha256::digest(identity.as_bytes());
-    let key = digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let key = format!("{digest:x}");
     Ok(base
         .join("coflow")
         .join("cfd-editor")

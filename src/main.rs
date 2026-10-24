@@ -296,8 +296,7 @@ fn run(command: &str, args: &Arguments, response: &mut Response) -> Result<()> {
         std::env::current_dir()?
             .join(path)
             .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or(std::env::current_dir()?)
+            .map_or(std::env::current_dir()?, Path::to_path_buf)
     } else {
         std::env::current_dir()?
     };
