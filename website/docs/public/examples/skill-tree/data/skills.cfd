@@ -1,0 +1,24 @@
+initiation: Skill {
+  name: "奥术入门", element: Element::Arcane, tier: 1,
+  power: 0, cooldown: 0.0, prerequisites: [],
+}
+fireball: Skill {
+  name: "火球术", element: Element::Fire, tier: 2,
+  power: 35, cooldown: 3.0, prerequisites: [&Skill::initiation],
+}
+frost_nova: Skill {
+  name: "冰霜新星", element: Element::Ice, tier: 2,
+  power: 28, cooldown: 5.0, prerequisites: [&Skill::initiation],
+}
+meteor: Skill {
+  name: "陨石术", element: Element::Fire, tier: 3,
+  power: 90, cooldown: 8.0, prerequisites: [&Skill::fireball],
+}
+blizzard: Skill {
+  name: "暴风雪", element: Element::Ice, tier: 3,
+  power: 75, cooldown: 7.0, prerequisites: [&Skill::frost_nova],
+}
+arcane_mastery: Skill {
+  name: "元素精通", element: Element::Arcane, tier: 4,
+  power: 120, cooldown: 12.0, prerequisites: [&Skill::meteor, &Skill::blizzard],
+}

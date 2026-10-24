@@ -1,0 +1,12 @@
+schema: skills.cft
+data:
+  - data/skills.cfd
+codegen:
+  - language: csharp
+    dir: generated
+    namespace: Game.Config
+dimensions:
+  language:
+    dir: language
+  platform:
+    dir: platform

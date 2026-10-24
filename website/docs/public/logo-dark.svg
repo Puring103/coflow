@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">Coflow</title>
+  <desc id="desc">An angular F for Flow, retaining the open corner of C.</desc>
+  <path fill="#9eb1ff" d="M14 86V38L38 14H88L78 32H44L34 42V48H78L66 66H34V86Z"/>
+</svg>

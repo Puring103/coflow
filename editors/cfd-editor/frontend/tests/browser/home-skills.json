@@ -1,0 +1,1 @@
+[["initiation", "奥术入门", "Arcane", 1, 0, 0, []], ["fireball", "火球术", "Fire", 2, 35, 3, ["initiation"]], ["frost_nova", "冰霜新星", "Ice", 2, 28, 5, ["initiation"]], ["meteor", "陨石术", "Fire", 3, 90, 8, ["fireball"]], ["blizzard", "暴风雪", "Ice", 3, 75, 7, ["frost_nova"]], ["arcane_mastery", "元素精通", "Arcane", 4, 120, 12, ["meteor", "blizzard"]]]

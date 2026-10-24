@@ -1,0 +1,59 @@
+/* 官网、文档和编辑器共享 Radix Colors 3 的 Indigo / Slate 色阶。
+ * 明暗模式分别选择可读的强调色，实心主按钮始终使用白字靛蓝底。 */
+:root, :root[data-theme="light"] {
+  color-scheme: light;
+  --coflow-canvas: #fcfcfd;
+  --coflow-surface: #ffffff;
+  --coflow-panel: #f9f9fb;
+  --coflow-raised: #f0f0f3;
+  --coflow-hover: #e8e8ec;
+  --coflow-selected: #edf2fe;
+  --coflow-border: #d9d9e0;
+  --coflow-border-strong: #b9bbc6;
+  --coflow-text: #1c2024;
+  --coflow-muted: #60646c;
+  --coflow-brand: #3e63dd;
+  --coflow-brand-hover: #3358d4;
+  --coflow-action: #3e63dd;
+  --coflow-action-hover: #3358d4;
+  --coflow-on-action: #ffffff;
+  --coflow-danger: #ce2c31;
+  --coflow-warning: #ad5700;
+  --coflow-success: #218358;
+  --coflow-purple: #6550b9;
+  --coflow-code-comment: #60646c;
+  --coflow-code-keyword: #3a5bc7;
+  --coflow-code-type: #067a6f;
+  --coflow-code-property: #0d74ce;
+  --coflow-code-string: #ad5700;
+  --coflow-code-number: #6550b9;
+  --coflow-code-constant: #c2298a;
+}
+
+/* 首页显式主题优先于文档的 .dark，返回文档后继续使用 VitePress 主题。 */
+:root.dark:not([data-theme="light"]), :root[data-theme="dark"] {
+  color-scheme: dark;
+  --coflow-canvas: #111113;
+  --coflow-surface: #18191b;
+  --coflow-panel: #212225;
+  --coflow-raised: #272a2d;
+  --coflow-hover: #2e3135;
+  --coflow-selected: #182449;
+  --coflow-border: #363a3f;
+  --coflow-border-strong: #5a6169;
+  --coflow-text: #edeef0;
+  --coflow-muted: #b0b4ba;
+  --coflow-brand: #9eb1ff;
+  --coflow-brand-hover: #d6e1ff;
+  --coflow-danger: #ff9592;
+  --coflow-warning: #ffca16;
+  --coflow-success: #3dd68c;
+  --coflow-purple: #baa7ff;
+  --coflow-code-comment: #b0b4ba;
+  --coflow-code-keyword: #9eb1ff;
+  --coflow-code-type: #0bd8b6;
+  --coflow-code-property: #70b8ff;
+  --coflow-code-string: #ffca16;
+  --coflow-code-number: #baa7ff;
+  --coflow-code-constant: #f65cb6;
+}
