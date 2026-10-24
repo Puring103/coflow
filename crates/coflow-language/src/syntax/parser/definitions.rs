@@ -171,7 +171,11 @@ impl Parser<'_> {
                 dangling_annotations.append(&mut pending_annotations);
                 break;
             }
-            if self.at(&TokenKind::Check) && !self.next_at(&TokenKind::Colon) {
+            // check: 类型 是普通字段，check: 字符串 则是带消息的匿名规则。
+            let check_message = self.tokens.get(self.pos + 2).is_some_and(|token| {
+                matches!(token.kind, TokenKind::String(_) | TokenKind::FormattedStringStart)
+            });
+            if self.at(&TokenKind::Check) && (!self.next_at(&TokenKind::Colon) || check_message) {
                 if !pending_annotations.is_empty() {
                     dangling_annotations.append(&mut pending_annotations);
                 }

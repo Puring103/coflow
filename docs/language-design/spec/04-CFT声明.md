@@ -2,12 +2,12 @@
 
 ## 文件与声明
 
-项目中的 CFT 文件共同组成全局声明集合。声明包括 table、data、singleton、enum、const、类型别名和命名的顶层 check；名称在整个项目中唯一。类型来源文件用于诊断和源码导航。
+项目中的 CFT 文件共同组成全局声明集合。声明包括 table、data、singleton、enum、const、类型别名和顶层 check；显式声明的顶层名称在整个项目中唯一。类型来源文件用于诊断和源码导航。
 
 ```text
 cft-file := { declaration }
 type-decl := { annotation } [ "abstract" | "sealed" ] ("table" | "data" | "singleton") identifier
-             [ ":" identifier ] "{" { field } { "check" identifier check-body } "}"
+             [ ":" identifier ] "{" { field } { "check" [ identifier ] check-body } "}"
 field := { annotation } identifier ":" type [ "=" value ] ";"
 alias := "type" identifier "=" type ";"
 const-decl := "const" identifier [ ":" type ] "=" value ";"
@@ -17,7 +17,7 @@ const-decl := "const" identifier [ ":" type ] "=" value ";"
 
 table 是多记录类型，singleton 是唯一配置，data 是内联值类型。字段使用 `&TableName` 声明记录引用，使用 data 名称声明内联值。
 
-类型采用单继承：data 继承 data，table 与 singleton 继承 table。abstract 声明通过具体子类型实例化，sealed 与 singleton 不可继续派生。字段在继承链中不得重名。table、singleton 和 data 可以在字段后声明多个具名 check。规则在类型及继承链中不得重名，先执行基类规则，再按派生类型源码声明顺序执行。data 规则绑定实际内联实例，集合、Option 和嵌套对象中的实例分别定位，引用读取不重复创建实例任务。
+类型采用单继承：data 继承 data，table 与 singleton 继承 table。abstract 声明通过具体子类型实例化，sealed 与 singleton 不可继续派生。字段在继承链中不得重名。table、singleton 和 data 可以在字段后声明多个命名或匿名 check。命名规则在类型及继承链中不得重名，先执行基类规则，再按派生类型源码声明顺序执行。data 规则绑定实际内联实例，集合、Option 和嵌套对象中的实例分别定位，引用读取不重复创建实例任务。
 
 ```cft
 abstract table Entity { name: string; }

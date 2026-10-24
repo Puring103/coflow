@@ -119,4 +119,15 @@ enum Status { Pending = 0, Done = 1 }
 
 位枚举自动提供 `None = 0` 和 `Everything`。Everything 等于所有实际标志位的按位或，随成员变化重新计算；上例 `Permission::Everything` 为 11。两个内建名称不能自行声明。用户非零成员必须为正的二次幂；32 位支持 31 个独立标志位，64 位支持 63 个。支持同类型成员的 `&`、`^`、`|` 组合。普通枚举不自动添加这两个成员。
 
-data、table、singleton 的字段之后可以声明多个命名 `check`。规则按父类到子类、同类型声明顺序执行；同一继承链中的规则名不能重复。项目级规则独立命名，使用 `records(TypeName)` 检查集合与记录之间的关系。
+data、table、singleton 的字段之后可以声明多个命名或匿名 `check`。规则按父类到子类、同类型声明顺序执行；同一继承链中的规则名不能重复。项目级规则在顶层声明，名称可省略，使用 `records(TypeName)` 检查集合与记录之间的关系。
+
+```cft
+table Sample {
+  value: int;
+  check { value >= 0; }
+  check: "数值不能超过上限" { value <= 100; }
+}
+check { records(Sample).len() > 0; }
+```
+
+匿名规则使用根据源文件和位置自动生成的标识，可通过 CLI 列出、查询和单独执行。源码位置变化时标识可能变化，需要长期稳定标识时为规则命名。

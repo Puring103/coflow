@@ -167,9 +167,8 @@ fn data_rules_read_their_own_id_field_and_validate_inline_option_objects() {
 }
 
 #[test]
-fn rule_names_are_required_nonempty_and_unique_through_inheritance() {
+fn named_rules_are_unique_through_inheritance_and_blocks_are_nonempty() {
     for source in [
-        "table Item { check { true; } }",
         "table Item { check Empty {} }",
         "check Empty {}",
         "table Item { check Same { true; } check Same { true; } }",
@@ -229,4 +228,68 @@ fn empty_quantifiers_keep_boolean_meanings_and_quantifier_message_locations() {
     if let coflow_language::cft::CftSchemaCheckStmt::Quantifier { span, .. } = statement {
         assert_eq!(diagnostic.schema_location.as_ref().unwrap().span, *span);
     }
+}
+
+#[test]
+fn anonymous_rules_execute_in_inheritance_order_and_keep_distinct_identities() {
+    let schema = compile_schema(
+        r#"
+        table Parent { check { false: "parent"; } }
+        table Child: Parent {
+            check { false: "child first"; }
+            check: "child block" { false; }
+            check Named { false: "named"; }
+        }
+        check { false: "project first"; }
+        check: "project block" { false; }
+    "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "one",
+        "Child",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
+    let model = builder.build().unwrap();
+    let output = execute_checks(
+        &schema,
+        &model,
+        base_tasks(&schema, &model),
+        CheckLimits::default(),
+    );
+    let messages: Vec<_> = output
+        .diagnostics()
+        .map(|d| d.diagnostic.message.as_str())
+        .collect();
+    for message in [
+        "parent",
+        "child first",
+        "child block",
+        "named",
+        "project first",
+        "project block",
+    ] {
+        assert!(messages.iter().any(|actual| actual.lines().next() == Some(message)), "{messages:?}");
+    }
+    let ids: Vec<_> = output
+        .results
+        .iter()
+        .map(|result| {
+            &schema
+                .check_statement(result.task.statement)
+                .unwrap()
+                .info
+                .rule_id
+        })
+        .collect();
+    assert_eq!(
+        ids.iter().collect::<std::collections::BTreeSet<_>>().len(),
+        6
+    );
+    let parent = ids
+        .iter()
+        .position(|id| id.starts_with("Parent::"))
+        .unwrap();
+    let child = ids.iter().position(|id| id.starts_with("Child::")).unwrap();
+    assert!(parent < child);
 }

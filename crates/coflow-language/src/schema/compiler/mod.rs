@@ -223,40 +223,44 @@ impl<'a> ValidatedSchema<'a> {
             {
                 if let Some(owner) = values.types.get(ancestor) {
                     for check in &owner.def.checks {
-                        names
-                            .entry(check.name.clone())
-                            .or_insert((owner.module.clone(), check.name_span));
+                        if let Some(name) = &check.name {
+                            names
+                                .entry(name.clone())
+                                .or_insert((owner.module.clone(), check.name_span));
+                        }
                     }
                 }
             }
             for check in &info.def.checks {
-                if crate::is_cft_reserved_identifier(&check.name) {
-                    diagnostics.push(CftDiagnostic::error(
-                        CftErrorCode::ReservedIdentifier,
-                        info.module.clone(),
-                        check.name_span,
-                        format!("`{}` is a reserved identifier", check.name),
-                    ));
-                }
-                if let Some((module, span)) = names.get(&check.name) {
-                    diagnostics.push(
-                        CftDiagnostic::error(
-                            CftErrorCode::DuplicateCheckBlock,
+                if let Some(name) = &check.name {
+                    if crate::is_cft_reserved_identifier(name) {
+                        diagnostics.push(CftDiagnostic::error(
+                            CftErrorCode::ReservedIdentifier,
                             info.module.clone(),
                             check.name_span,
-                            format!(
-                                "duplicate check rule `{}` in inheritance chain of `{}`",
-                                check.name, info.name
+                            format!("`{name}` is a reserved identifier"),
+                        ));
+                    }
+                    if let Some((module, span)) = names.get(name) {
+                        diagnostics.push(
+                            CftDiagnostic::error(
+                                CftErrorCode::DuplicateCheckBlock,
+                                info.module.clone(),
+                                check.name_span,
+                                format!(
+                                    "duplicate check rule `{}` in inheritance chain of `{}`",
+                                    name, info.name
+                                ),
+                            )
+                            .with_related(
+                                module.clone(),
+                                *span,
+                                "first rule declaration is here",
                             ),
-                        )
-                        .with_related(
-                            module.clone(),
-                            *span,
-                            "first rule declaration is here",
-                        ),
-                    );
-                } else {
-                    names.insert(check.name.clone(), (info.module.clone(), check.name_span));
+                        );
+                    } else {
+                        names.insert(name.clone(), (info.module.clone(), check.name_span));
+                    }
                 }
                 if check.stmts.is_empty() {
                     diagnostics.push(CftDiagnostic::error(

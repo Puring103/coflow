@@ -52,7 +52,7 @@ pub struct RuleQuery {
     pub rules: Vec<RuleDescription>,
 }
 
-// 编译器禁止空规则，每个命名块恰好有一个索引为 0 的根语句。
+// 编译器禁止空规则，每个规则块恰好有一个索引为 0 的根语句。
 pub(super) fn named_rules(schema: &CftSchema) -> impl Iterator<Item = &CheckStatementInfo> {
     schema
         .all_check_statements()
@@ -106,7 +106,7 @@ pub fn describe(
             Some(root),
         )
     });
-    // 同一命名规则的依赖是所有根语句依赖的并集，公开身份不随语句增删改变。
+    // 同一规则的依赖是所有根语句依赖的并集，公开身份不随语句增删改变。
     let statements: Vec<_> = schema
         .check_statements_for_rule(&info.rule_id)
         .filter_map(|id| schema.check_statement(id).map(|statement| statement.info))
