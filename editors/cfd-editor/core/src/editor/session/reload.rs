@@ -240,7 +240,11 @@ mod tests {
         ));
         assert_eq!(state.file_type_counts["data/second.cfd"]["Item"], 1);
         drop(state);
-        let uri = coflow_lsp::EmbeddedLsp::file_uri(&root.path().join("data/first.cfd"));
+        // 与文档同步共用规范路径，临时目录的大小写或短路径别名不代表另一份文档。
+        let path = store
+            .source_file_path(id, "data/first.cfd")
+            .expect("source path");
+        let uri = coflow_lsp::EmbeddedLsp::file_uri(&path);
         let mut language = language.lock();
         assert!(language.documents.contains(&uri));
         let (tokens, _) = language
