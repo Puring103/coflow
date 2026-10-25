@@ -77,8 +77,9 @@ export function ScalarValueInput({ value, onCommit, label, autoFocus = false }: 
     root?.focus({ preventScroll: true })
     if (tab !== undefined) root?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: tab, bubbles: true, cancelable: true }))
   }
-  return <span ref={element} className="string-value-input" title={error ?? undefined}>
+  return <span ref={element} className={`string-value-input${value.kind === 'int' || value.kind === 'float' ? ' numeric-value-input' : ''}`} title={error ?? undefined}>
     <RichTextInput cell rows={1} className="cell-string-textarea" value={text}
+      placeholder={value.kind === 'string' || value.kind === 'formatted_string' ? '空字符串' : undefined}
       aria-label={label ?? (value.kind === 'int' || value.kind === 'float' ? '数值' : '字符串')} aria-invalid={!!error} autoFocus={autoFocus}
       onValueChange={next => {
         draft.current = next

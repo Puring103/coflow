@@ -3065,7 +3065,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   border: 0;
   background: transparent;
   border-radius: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 .dc-inspector-compact:empty::before {
   content: '—';
@@ -3074,20 +3074,21 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   font-style: italic;
 }
 .dc-inspector-compact .dc-row {
-  grid-template-columns: fit-content(45%) minmax(0, 1fr) 0;
-  min-height: 22px;
-  border-bottom-color: color-mix(in srgb, var(--border) 45%, transparent);
+  grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 0;
+  min-height: 27px;
+  border-bottom-color: color-mix(in srgb, var(--border) 25%, transparent);
 }
-/* 覆盖 inspector 对集合序号使用的固定窄列，让 key 按内容占宽并保留上限。 */
+/* 叶子字段与集合序号共享标签轨道，值在同一竖线上排列。 */
 .dc-inspector-compact .dc-row.dc-row-field.dc-row-item {
-  grid-template-columns: fit-content(45%) minmax(0, 1fr) 0;
+  grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 0;
 }
 .dc-inspector-compact .dc-row-label {
   gap: 3px;
   min-width: 0;
-  padding: 2px 4px 2px calc(6px + min(var(--dc-indent, 0px), 20px));
+  padding: 3px 8px 3px calc(8px + min(var(--dc-indent, 0px), 48px));
   border-right: 0;
-  font-size: 11px;
+  font-size: inherit;
+  font-weight: 400;
 }
 .dc-inspector-compact .dc-row-label-text {
   flex: 1;
@@ -3098,7 +3099,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 }
 .dc-inspector-compact .dc-row-value {
   gap: 4px;
-  padding: 2px 4px 2px 6px;
+  padding: 3px 8px;
 }
 .dc-inspector-compact .dc-row-value-inner {
   min-height: 16px;
@@ -3109,7 +3110,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 }
 .dc-inspector-compact .dc-row-structure {
   min-height: 23px;
-  background: color-mix(in srgb, var(--text) 1.5%, transparent);
+  background: transparent;
 }
 .dc-inspector-compact .dc-row-structure > .dc-row-label, .dc-inspector-compact .dc-row-structure > .dc-row-value {
   padding-top: 2px;
@@ -3119,7 +3120,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   width: 9px;
 }
 .dc-inspector-compact .vc, .dc-inspector-compact .vc-enum, .dc-inspector-compact .vc-ref {
-  font-size: 11px;
+  font-size: inherit;
 }
 
 /* Structure headers span the full row. Only leaf fields use the two-column
@@ -4968,8 +4969,8 @@ input.searchable-select.searchable-select-reference,
 
 /* 编辑器浮在当前格之上，行高和相邻单元格保持稳定。 */
 .data-table .cell-string-input { height: 20px; }
-.data-table td:has(.cell-string-input.focused) { overflow: visible; position: relative; z-index: 12; }
-.data-table .cell-string-input.focused .cell-string-textarea { position: absolute; top: 0; left: 0; z-index: 12; background: var(--bg-1); padding: 5px 10px; box-shadow: none; outline: none; max-height: 320px; overflow-y: auto; }
+.data-table td:not(.complex-cell):has(.cell-string-input.focused) { overflow: visible; position: relative; z-index: 12; }
+.data-table td:not(.complex-cell) .cell-string-input.focused .cell-string-textarea { position: absolute; top: 0; left: 0; z-index: 12; background: var(--bg-1); padding: 5px 10px; box-shadow: none; outline: none; max-height: 320px; overflow-y: auto; }
 .searchable-reference-wrap { position: relative; display: flex; align-items: center; min-width: 0; flex: 1; }
 /* 引用符号负责打开记录，正文负责选择目标；两者共用一个胶囊。 */
 .searchable-reference-wrap > input.searchable-select,
@@ -4986,11 +4987,11 @@ input.searchable-select.searchable-select-reference,
 .graph-view-wrap .react-flow__controls button svg { fill: none; width: 16px; height: 16px; max-width: none; max-height: none; }
 
 /* 编辑浮层沿用当前单元格的唯一边界，清除原选中框的内层轮廓。 */
-.data-table td:has(.cell-string-input.focused) { outline: none !important; box-shadow: none !important; }
-.data-table .cell-string-input.focused { outline: none; position: static; }
-.data-table .cell-string-input.focused .cell-string-textarea { border: 0; outline: 1px solid var(--accent); }
+.data-table td:not(.complex-cell):has(.cell-string-input.focused) { outline: none !important; box-shadow: none !important; }
+.data-table td:not(.complex-cell) .cell-string-input.focused { outline: none; position: static; }
+.data-table td:not(.complex-cell) .cell-string-input.focused .cell-string-textarea { border: 0; outline: 1px solid var(--accent); }
 
-.data-table td.selected-cell:has(.cell-string-input.focused)::after { display: none; }
+.data-table td:not(.complex-cell).selected-cell:has(.cell-string-input.focused)::after { display: none; }
 /* 原生控件与系统指针使用当前主题的配色方案，拖动结束由状态类恢复抓手。 */
 [data-theme="light"] .graph-view-wrap { color-scheme: light; }
 [data-theme="dark"] .graph-view-wrap { color-scheme: dark; }
@@ -5009,3 +5010,53 @@ input.searchable-select.searchable-select-reference,
 .cell-string-input.focused .cell-string-textarea { scrollbar-width: none; }
 .cell-string-input.focused .cell-string-textarea::-webkit-scrollbar { display: none; }
 .reference-panel-toolbar { border-left: 4px solid var(--node-color, var(--accent)); background: color-mix(in srgb, var(--node-color, var(--accent)) 9%, var(--bg-1)); }
+
+/* 紧凑树的箭头参与标签排版，始终为文字保留独立位置。 */
+.dc-inspector-compact .dc-row-foldout > .dc-row-label > .dc-fold-arrow {
+  position: static;
+  flex: 0 0 9px;
+}
+/* 单行在行尾提示，多行在底部以整行渐变提示还有正文。 */
+.cell-string-input.multiline-preview .cell-string-overflow {
+  top: calc(var(--cell-preview-height) - 20px);
+  width: 100%;
+  text-align: center;
+  background: transparent;
+}
+
+/* 渐隐作用于正文自身，露出当前单元格底色，避免固定底色形成黑色条带。 */
+.cell-string-input.multiline-preview:has(.cell-string-overflow) .cell-string-preview {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
+}
+/* 嵌套编辑框只在值区域内展开，字段标签与结构标题保留在原位。 */
+.data-table td.complex-cell .cell-string-input.focused {
+  position: relative;
+  height: auto;
+}
+.data-table td.complex-cell .cell-string-input.focused .cell-string-textarea {
+  position: relative;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* 结构标题、类型和集合摘要使用不同层级；只强调当前操作的值。 */
+.dc-inspector-compact .dc-row-structure .dc-row-label { color: var(--text); font-weight: 500; }
+.dc-inspector-compact .dc-structure-type { color: var(--text-mute); font-size: 11px; font-weight: 400; }
+.dc-collection-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.dc-inspector-compact .vc-count { margin-left: auto; flex: none; font-size: 11px; color: var(--text-mute); }
+.dc-inspector-compact .dc-row-structure:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.dc-inspector-compact .dc-row-value:focus-within { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 0 -1px var(--accent); }
+.numeric-value-input { font-variant-numeric: tabular-nums; }
+.data-table td:not(.complex-cell) .numeric-value-input { text-align: right; }
+.numeric-value-input textarea { text-align: inherit; }
+/* 选择控件保留可辨识的颜色，默认移除厚重底色，悬停与聚焦再强调操作区域。 */
+.dc-inspector-compact .dc-pill-wrap { background-color: transparent; border-color: transparent; }
+.dc-inspector-compact .dc-pill-wrap:hover,
+.dc-inspector-compact .dc-pill-wrap:focus-within { background-color: var(--bg-3); }
+
+.cell-string-preview.empty-preview, .dc-empty-collection { color: var(--text-mute); font-style: italic; }
+.dc-empty-collection { display: block; padding: 5px 8px; font-size: 12px; }
+[data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select { background-color: transparent; border-color: transparent; }
+[data-theme] .dc-inspector-compact .searchable-reference-wrap > input.searchable-select { background-color: transparent; }
+[data-theme] .dc-inspector-compact .searchable-reference-wrap:hover > input.searchable-select,
+[data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select:focus { background-color: var(--bg-3); }

@@ -674,6 +674,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   nullable={cellNullable(f)}
                   declaredType={cellDeclaredType(f)}
                   highlightQuery={highlightQueryRef.current}
+                  onEdit={cellEditable && writeFn ? (path, next) => writeFn(row.original.coordinate, path, next) : undefined}
                   onCommit={cellEditable && writeFn ? next => writeFn(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                   onEditingFinished={() => tableScrollRef.current?.focus({ preventScroll: true })}
                 />}
@@ -1589,6 +1590,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                             if (!pointerStringEditRef.current) return
                             const target = event.target as HTMLElement
                             if (target.closest('button, a, input, textarea, select, [contenteditable="true"]')) return
+                            // 复杂单元格的点击由字段树处理，不能把展开操作转成首个叶子的编辑。
+                            if (event.currentTarget.classList.contains('complex-cell')) return
                             // 已选中的字符串单元格再次点击留白进入编辑；拖选结束的 click 已被拦截。
                             event.currentTarget.querySelector<HTMLTextAreaElement>('.cell-string-textarea')?.focus({ preventScroll: true })
                           }}
@@ -1788,6 +1791,9 @@ function CellSyntaxEditor({
 }
 
 interface EditableCellProps {
+  expandedPaths?: ReadonlySet<string>
+  onRowToggle?: (path: string, expanded: boolean) => void
+  onEdit?: (path: FieldPathSegment[], next: FieldValue) => void
   filePath: string
   coordinate: RecordCoordinate
   fieldPath: FieldPathSegment[]
@@ -1810,7 +1816,7 @@ function TableCellContent({ cell }: { cell: Cell<RecordRow, unknown> }) {
   return typeof render === 'function' ? render(cell.getContext()) : render ?? null
 }
 
-function EditableCell(props: EditableCellProps) {
+export function EditableCell(props: EditableCellProps) {
   const { filePath, coordinate, fieldPath, value, declaredType } = props
   const identity = currentPluginIdentity()
   const presentation = usePluginPresentation('cell', declaredType ?? '')
@@ -1841,7 +1847,7 @@ function EditableCell(props: EditableCellProps) {
 }
 
 function EditableCellBuiltIn({
-  value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished,
+  value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished, fieldPath, onEdit, expandedPaths, onRowToggle,
 }: EditableCellProps) {
   const shownValue = presentationValue(value)
   const commitValue = onCommit
@@ -1917,6 +1923,11 @@ function EditableCellBuiltIn({
     >
       <DataCardCompact
         value={shownValue}
+        fieldPath={fieldPath}
+        pathPrefix={fieldPath.map(segment => String(segment.value)).join('.')}
+        expandedPaths={expandedPaths}
+        onRowToggle={onRowToggle}
+        onEdit={editable ? onEdit : undefined}
         annotation={annotation}
         refTargetType={refTargetType}
         highlightQuery={highlightQuery}

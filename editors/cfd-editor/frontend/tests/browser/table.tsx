@@ -15,9 +15,20 @@ import '../../src/style.css'
 
 // 使用真实表格和异步快照更新，覆盖保存期间的 DOM 身份与焦点行为。
 const original = MOCK_FILE_RECORDS['data/item.cfd']
-const seed = original.records[0]
+const seed = structuredClone(original.records[0])
+if (new URLSearchParams(location.search).has('complex')) {
+  seed.field_index.Config = seed.fields.length
+  seed.fields.push({ name: 'Config', missing: false, annotation: null, value: {
+    kind: 'object', value: { actual_type: 'Config', fields: {
+      Core: { kind: 'object', value: { actual_type: 'CoreConfig', fields: { Nested: { kind: 'int', value: 1n } } } },
+      Count: { kind: 'int', value: 64n },
+    } },
+  } })
+}
 const fixture = {
   ...original,
+  columns: new URLSearchParams(location.search).has('complex')
+    ? [...original.columns, { ...original.columns[0], name: 'Config' }] : original.columns,
   records: Array.from({ length: Math.min(10000, Math.max(100, Number(new URLSearchParams(location.search).get('rows')) || 100)) }, (_, index) => ({
     ...structuredClone(seed),
     coordinate: { ...seed.coordinate, id: `row_${index}` },
@@ -58,6 +69,7 @@ function Fixture() {
   return <>
     <div style={{ height: 480, width: 880 }}>
       <TableView data={data} activeType="Item" selection={selection}
+        visibleColumns={new URLSearchParams(location.search).has('complex') ? ['name', 'Config'] : undefined}
         onOpenRecord={() => {}}
         onSelectValue={(coordinate, path, mode = 'replace') => {
           control.selectionEvents.push(`${coordinate.id}:${path[0]?.value}`)

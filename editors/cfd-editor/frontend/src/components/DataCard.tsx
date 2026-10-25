@@ -197,7 +197,8 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, refTargetType, annotation, highlightQuery, pathPrefix, fieldPath = [], expandedPaths, onRowToggle, diffChangedPaths }: {
+export function DataCardCompact({ value, refTargetType, annotation, highlightQuery, pathPrefix, fieldPath = [], expandedPaths, onRowToggle, diffChangedPaths, onEdit }: {
+  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   value: FieldValue
   refTargetType?: string
   annotation?: FieldAnnotation | null
@@ -208,18 +209,20 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
   onRowToggle?: (path: string, expanded: boolean) => void
   diffChangedPaths?: ReadonlySet<string>
 }) {
-  // 表格和维度单元格共用同一棵紧凑字段树，对比模式只注入展开和高亮状态。
+  // 表格和维度单元格共用同一棵紧凑字段树；紧凑上下文只调整摘要，不改变编辑语义。
   return isComplexValue(value) ? (
+    <CompactCellCtx.Provider value={true}>
     <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
       <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
         <HighlightQueryCtx.Provider value={highlightQuery}>
           <div className="dc-inspector dc-inspector-compact">
             <ComplexValueChildren value={value} depth={0} fieldPath={fieldPath} pathKey={pathPrefix}
-              valueAnnotation={annotation} onRowToggle={onRowToggle} />
+              valueAnnotation={annotation} onRowToggle={onRowToggle} onEdit={onEdit} />
           </div>
         </HighlightQueryCtx.Provider>
       </ControlledExpansionCtx.Provider>
     </DiffPathCtx.Provider>
+    </CompactCellCtx.Provider>
   ) : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
 }
 
@@ -308,6 +311,7 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  the set changes. Used when a diagnostic jump lands on a nested field so
  *  the row is actually visible after scrollIntoView. Cleared by whoever set
  *  it once the highlight has been consumed. */
+const CompactCellCtx = createContext(false)
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
 const NodeRelationsCtx = createContext<{
@@ -1126,7 +1130,7 @@ function ScalarFieldRow({
     && editorEnabled && (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const diffClass = useDiffRowClass(pathKey)
-  const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, ...diag.messages]
+  const rowTitle = [description, declaredType ? `类型：${declaredType}` : null, !onCommit ? '只读字段' : null, ...diag.messages]
     .filter(Boolean).join('\n') || undefined
   const rowSelection = useContext(ValueRowSelectionCtx)
   const selected = sameFieldPath(rowSelection?.selectedFieldPath, fieldPath)
@@ -1630,7 +1634,7 @@ export function RefDirectSelect({
         autoFocus={autoFocus}
         ariaLabel="选择引用"
         title={targetType}
-        placeholder="选择引用..."
+        placeholder={value.kind === 'option_none' ? '未设置 · 选择引用…' : '选择引用…'}
         options={[
           ...(nullable ? [{ value: NULL_SENTINEL }] : []),
           ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
@@ -1803,6 +1807,7 @@ function ExpandableRow({
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
 }) {
+  const compactCell = useContext(CompactCellCtx)
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
   const nodeRelations = useContext(NodeRelationsCtx)
@@ -1875,7 +1880,12 @@ function ExpandableRow({
       className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}
       style={inspectorDepthStyle(depth)}
     >
-      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={event => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+      }} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label">
           {leading}
           <span className="dc-fold-arrow">
@@ -1900,7 +1910,10 @@ function ExpandableRow({
                   fallback={count !== null ? count : ''}
                 />
               </span>
-            ) : count !== null && <span className="vc-count">{count}</span>}
+            ) : count !== null && <>
+              {compactCell && !expanded && <span className="dc-collection-preview" title={compactCollectionPreview(value)}>{compactCollectionPreview(value)}</span>}
+              <span className="vc-count">{count}{compactCell ? ' 项' : ''}</span>
+            </>}
           </div>
         </div>
         <div className="dc-row-actions" onClick={event => event.stopPropagation()}>
@@ -1995,6 +2008,9 @@ function ComplexValueChildren({
   valueAnnotation?: FieldAnnotation | null
 }) {
   if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
+  if ((value.kind === 'array' || value.kind === 'dict') && value.value.length === 0) {
+    return <span className="dc-empty-collection">{value.kind === 'array' ? '空数组' : '空字典'}</span>
+  }
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
@@ -2009,7 +2025,7 @@ function ComplexValueChildren({
             value={fc.value}
             missing={fc.missing}
             depth={depth}
-            onEdit={onEdit}
+            onEdit={cellReadOnly(fc) ? undefined : onEdit}
             onCollectionEdit={onCollectionEdit}
             fieldPath={[...fieldPath, fieldPathField(fc.name)]}
             pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
@@ -2065,6 +2081,18 @@ function ComplexValueChildren({
       })}
     </>
   )
+}
+
+/** 折叠集合只读取前两项，长文本截短；不遍历整棵嵌套数据。 */
+export function compactCollectionPreview(value: FieldValue): string {
+  const text = (item: FieldValue): string => {
+    const shown = presentationValue(item)
+    if (shown.kind === 'array' || shown.kind === 'dict') return `${shown.value.length} 项`
+    return summaryOf(shown).replace(/\s+/g, ' ').slice(0, 32)
+  }
+  if (value.kind === 'array') return value.value.slice(0, 2).map(text).join(' · ') + (value.value.length > 2 ? ' …' : '')
+  if (value.kind === 'dict') return value.value.slice(0, 2).map(([key, item]) => `${dictKeyPathText(key)}: ${text(item)}`).join(' · ') + (value.value.length > 2 ? ' …' : '')
+  return ''
 }
 
 function childCount(v: FieldValue): number | null {

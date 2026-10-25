@@ -115,7 +115,9 @@ function schedulePreview(item: PreviewMeasurement) {
     const heights = items.map(({ preview, tableCell }) => {
       if (!tableCell || preview.closest('.dc-row')) return null
       const style = getComputedStyle(tableCell)
-      return `${Math.max(20, tableCell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))}px`
+      // 只展示完整行，避免末行被裁切后省略标记落在两行之间。
+      const available = tableCell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+      return `${Math.max(20, Math.floor(available / 20) * 20)}px`
     })
     items.forEach(({ preview }, index) => {
       const height = heights[index]
@@ -123,10 +125,12 @@ function schedulePreview(item: PreviewMeasurement) {
     })
     const results = items.map(({ preview }) => ({
       height: `${preview.clientHeight}px`,
+      multiline: preview.clientHeight >= 40,
       overflow: preview.scrollWidth > preview.clientWidth + 1 || preview.scrollHeight > preview.clientHeight + 1,
     }))
     items.forEach(({ preview, update }, index) => {
       preview.parentElement?.style.setProperty('--cell-preview-height', results[index].height)
+      preview.parentElement?.classList.toggle('multiline-preview', results[index].multiline)
       update(results[index].overflow)
     })
   })
@@ -260,7 +264,7 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
 
   return (
     <span className={`rich-text-input${cell ? ' cell-string-input' : ''}${focused ? ' focused' : ''}`}>
-      {cell && <span ref={previewRef} className="cell-string-preview" aria-hidden>{value || '\u00a0'}</span>}
+      {cell && <span ref={previewRef} className={`cell-string-preview${!value ? ' empty-preview' : ''}`} aria-hidden>{value || props.placeholder || '\u00a0'}</span>}
       {cell && !focused && overflow && <span className="cell-string-overflow" aria-hidden>…</span>}
       <textarea
         {...props}
