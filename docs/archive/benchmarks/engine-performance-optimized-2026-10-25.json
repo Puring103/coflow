@@ -1,0 +1,2446 @@
+{
+  "environment": {
+    "date": "2026-10-25",
+    "baseline": "7e9d4fdebabda2c440ed80d1b1f39651801f1387",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "cpu": {
+      "Name": "13th Gen Intel(R) Core(TM) i5-13600KF",
+      "NumberOfCores": 14,
+      "NumberOfLogicalProcessors": 20
+    },
+    "os": {
+      "Caption": "Microsoft Windows 11 家庭版",
+      "Version": "10.0.26200",
+      "TotalVisibleMemorySize": 33389444
+    },
+    "profile": "release",
+    "editor_started": false,
+    "benchmark_processes_serial": true
+  },
+  "captured_at": "2026-10-25T21:12:29.7348008+08:00",
+  "revision": "7e9d4fdebabda2c440ed80d1b1f39651801f1387",
+  "working_tree_changes": true,
+  "allocator": "mimalloc 0.1.52 (Windows host binaries; libraries remain allocator-neutral)",
+  "benchmark_sha256": "D11B36103C6B1061FDC989BE1B8EF671336AE289F6251667877CD43912B1537E",
+  "source_hashes": [
+    {
+      "path": "Cargo.lock",
+      "sha256": "E3E71407A5D7BDF3C879DC3047B873C8336E24F920939A7B782BD9DC07D769F6"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "B201766B6A8EB9AC3FED2E3E4FC892DE9067DA8DECC73FB089395AF333B38315"
+    },
+    {
+      "path": "crates/coflow-checker/src/diagnostics/explanations.rs",
+      "sha256": "E7F7DD08FC91D84BD52CCD4613663EC934B8CA73E81C2BEC8B0962E5EFAFF899"
+    },
+    {
+      "path": "crates/coflow-checker/src/diagnostics/trace.rs",
+      "sha256": "DCF94685D9094CC50D7A7DC781372D0FC9C8D970FD0314AED63B9223EB81BD96"
+    },
+    {
+      "path": "crates/coflow-checker/src/engine/context.rs",
+      "sha256": "1F0038C8E5FA47FFCB25E6648B9666F69B72427747A161B8EDCF58DC3F176CCC"
+    },
+    {
+      "path": "crates/coflow-checker/src/engine/evaluator.rs",
+      "sha256": "B36D99F0D026AAD7928A16CFC6E94A3A5BBF958466532A15DADE9F213E9ECB88"
+    },
+    {
+      "path": "crates/coflow-checker/src/engine/expressions.rs",
+      "sha256": "FB596569AF3FE2A2540ECF29231F4382D2F0DA55636019A1B224D8B2FF807F28"
+    },
+    {
+      "path": "crates/coflow-checker/src/engine/mod.rs",
+      "sha256": "A59E8A6C0CE032F1F385031E5CBB1B0C55E177867DF6AD3ADBABA2463227B1A4"
+    },
+    {
+      "path": "crates/coflow-checker/src/eval/mod.rs",
+      "sha256": "6BD70132D6017409324CBBA06B2BE08A77B5475B47D653DEF276737B33952348"
+    },
+    {
+      "path": "crates/coflow-checker/src/lib.rs",
+      "sha256": "CBDEDD3C1EC8EEA0AA4FD5F1CE54DE83E1BCCD872585229C46D73EFCA4784E3D"
+    },
+    {
+      "path": "crates/coflow-checker/src/output.rs",
+      "sha256": "EEDAE0385BF86FCFFEF2FDC35DA703654BDE19874A3AEEBEA2B55067BC304C49"
+    },
+    {
+      "path": "crates/coflow-checker/src/reads.rs",
+      "sha256": "BBFBEA491F3FD899D9D4EDFB8968C3FB01B3A81399A54AEFEB836600A9945ADB"
+    },
+    {
+      "path": "crates/coflow-checker/src/task.rs",
+      "sha256": "C5495C70113995CC6E427FE6672A5709F257DD003D2130FB072895C3FA1A5515"
+    },
+    {
+      "path": "crates/coflow-checker/tests/prepared_plan.rs",
+      "sha256": "35B57352EC0613370C266D199C959F95B428DC8DA4D233C5545A7F878D47A7D6"
+    },
+    {
+      "path": "crates/coflow-language/src/cfd/parser.rs",
+      "sha256": "1FF336B91321AFF0ACA3D8190F5AAA73C7DCD2AF2DFB271A90A97E783DCEE6B7"
+    },
+    {
+      "path": "crates/coflow-language/src/schema/mod.rs",
+      "sha256": "45770A7A9D701F1D72877A8B78A8637777A5DD9436E61D1F2B6AF7C8CB62CB80"
+    },
+    {
+      "path": "crates/coflow-language/src/schema/names.rs",
+      "sha256": "C97324A8BFBADBC1FA13B798589A062497E67AC16C4F99E050BD2F6C1121E9A0"
+    },
+    {
+      "path": "crates/coflow-language/tests/cfd_parser_parity.rs",
+      "sha256": "1BCEDAA1250C8E41CFE0D5551A954FF2BD7CA64C0C5BC97210145423A12315E1"
+    },
+    {
+      "path": "crates/coflow-lsp/src/definition.rs",
+      "sha256": "B7F7885126B8494CCCB9841EF8D6557E7121FF0B234CB07FE7989418379F6FB2"
+    },
+    {
+      "path": "crates/coflow-lsp/src/tests/cfd_tests.rs",
+      "sha256": "C117B305E58E4ABC27983A4F131077349229A7F438FFC9AD936B5107938AC094"
+    },
+    {
+      "path": "crates/coflow-lsp/src/tests/protocol.rs",
+      "sha256": "019C901306ACC68573D3B4B6F7965AADD5CC23B14490F97B5EB7AD789772944E"
+    },
+    {
+      "path": "crates/coflow-lsp/src/validation.rs",
+      "sha256": "35FED0881F544E40054CB023245B33AD62537FC387404C97E291CCB6245B9CBA"
+    },
+    {
+      "path": "crates/coflow-lsp/src/validation/snapshot.rs",
+      "sha256": "18C62B5C5A3F766EC15332E2C1296E3A07F0832937B515A68130BA390AD3ECFC"
+    },
+    {
+      "path": "crates/coflow-model/Cargo.toml",
+      "sha256": "1F09502A48219EB53F3B6D1DD21A494B8616C32AD67B18AD8F3084F1174945B1"
+    },
+    {
+      "path": "crates/coflow-model/src/build/context.rs",
+      "sha256": "F59986A998311A4743171C366E9587E04E5A30B70DF469911FA46C4264313D21"
+    },
+    {
+      "path": "crates/coflow-model/src/build/draft.rs",
+      "sha256": "1838FD8A9EED7D03381A678EADF9853E9474C1F9933B5584F0110B261C35446A"
+    },
+    {
+      "path": "crates/coflow-model/src/build/incremental.rs",
+      "sha256": "7A22666C8B3FF7B68FC6EAE2D4976F11372C082C8B7F34C6E41B4465D17EF9FF"
+    },
+    {
+      "path": "crates/coflow-model/src/build/mod.rs",
+      "sha256": "0CC247F46EAFF5A8115B370FB46753C84B4AAC23BB0E17821F748BDFA622A603"
+    },
+    {
+      "path": "crates/coflow-model/src/build/resolve.rs",
+      "sha256": "ED14056399C9CCBC9F4315787280E2B140C70CB985A00A08A038FF3DE90FB17C"
+    },
+    {
+      "path": "crates/coflow-model/src/build/validate.rs",
+      "sha256": "6EC794F62EAD33E7DD5BD0668C6B7E3F2BCF36C729372828530C934BCE6CC8FA"
+    },
+    {
+      "path": "crates/coflow-model/src/diagnostics/paths.rs",
+      "sha256": "0FA8E05433E81309DCB55049FE082AFC882DA6E9DC2CB548D4C82C221F2BBCC9"
+    },
+    {
+      "path": "crates/coflow-model/src/indexes/mod.rs",
+      "sha256": "5410F5A88950555835CD5CFCC116710C65425068189293C5D30BDE51BF764F0A"
+    },
+    {
+      "path": "crates/coflow-model/src/indexes/reference_plan.rs",
+      "sha256": "46235AFC1262073E65286AFE5D316D68C86E7791E52F450E2C82D44A02C0C1F2"
+    },
+    {
+      "path": "crates/coflow-model/src/indexes/relations.rs",
+      "sha256": "EB4748DCC795982F8A28B79DAA01C2A977BC6AD890B05F7A6BBA23DEB5B9FED7"
+    },
+    {
+      "path": "crates/coflow-model/src/ingest/record.rs",
+      "sha256": "1A0BDF368EC873055E8C6FDE4AD524A501B6D0C3CE3F29B27A2520F03892977E"
+    },
+    {
+      "path": "crates/coflow-model/src/ingest/value.rs",
+      "sha256": "91270C59E0FA03FA4E2B3DFFC956ECD096F310BFA0A497DF910754536A38E55F"
+    },
+    {
+      "path": "crates/coflow-model/src/lib.rs",
+      "sha256": "8987CEAC321DFEFAFF85884B636125918998EC9B3EC6DF516C93FB9B8DB68C00"
+    },
+    {
+      "path": "crates/coflow-model/src/model/dimensions.rs",
+      "sha256": "ADC56D76AC9DF1759D09C6BFE8BCB48B2ACCD8513F227315E2CD20B5F7CEA897"
+    },
+    {
+      "path": "crates/coflow-model/src/model/edges.rs",
+      "sha256": "808696A251BEB02551D679FB3A40E046BBE2B3EA017929AE85654E95D9D5CA5E"
+    },
+    {
+      "path": "crates/coflow-model/src/model/ids.rs",
+      "sha256": "6AC6CDBED83AB2585E8A02849B4B47E73065E2CA96F2836E5088263CAB292FC3"
+    },
+    {
+      "path": "crates/coflow-model/src/model/mod.rs",
+      "sha256": "433802F484851006586926873AE3C080B0A74D95DB5EE042ED0FC543161B46D8"
+    },
+    {
+      "path": "crates/coflow-model/src/model/projection.rs",
+      "sha256": "43CDCCE3D1C48055BF36C3E87C55BC21207E3EBCB458F0868A005A75B5C04998"
+    },
+    {
+      "path": "crates/coflow-model/src/model/value.rs",
+      "sha256": "862A989FA784E9C1408FD7961E8ED101A916622EF838A3704D61EBA1A7B9CEB6"
+    },
+    {
+      "path": "crates/coflow-model/tests/data_model_cfd_value_pure_serde.rs",
+      "sha256": "CFAF1919284557B69E064B202F7528539638C2CD403B45A0644EEBB43976AF26"
+    },
+    {
+      "path": "crates/coflow-model/tests/data_model_phase3_refs.rs",
+      "sha256": "AC1FECA1D7087B4C00A8FF551360C5C6007017CF66B3F03DB6955ADA2F7ECD07"
+    },
+    {
+      "path": "crates/coflow-model/tests/incremental_model.rs",
+      "sha256": "6C6F06BE60F5407C1389D2B4D586332D438150501E9D68B2E174BD49D42918EA"
+    },
+    {
+      "path": "crates/coflow-runtime/Cargo.toml",
+      "sha256": "CF13D524A134090013FDF98FD8CD56FDA724E122207047ECD8F7E06343B0DB29"
+    },
+    {
+      "path": "crates/coflow-runtime/examples/engine_perf.rs",
+      "sha256": "617670B13F51D5778340630A3D9F76CA8F000E47F5370D55B701387ACE8DCE93"
+    },
+    {
+      "path": "crates/coflow-runtime/src/api/diagnostics.rs",
+      "sha256": "BAE0336D3CFC07472635FD20CD3E88B5558B53EA1369A787AB03CEAECDE797EF"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/dimension.rs",
+      "sha256": "946D8A0C9D837B19653E828BC036A2FCCD7FE6416C1E9C7DE1915ED48B95DD9C"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/operations.rs",
+      "sha256": "606281EADFF581378D07B7203B615F50D011FB184F44C0AC1F3475A5500B54BD"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/rules.rs",
+      "sha256": "302EBBFD9175D08D4B4BC39E39D233AF4A2842B80D0591D6ECDD7C8F836DA4F9"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/statistics.rs",
+      "sha256": "5F530DDA462CCCAB5C7D55F04485F6ED0AE670ACB50869F7B7A0E5D9C59EF6C0"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/mod.rs",
+      "sha256": "930FDCA70B1CCB7CA70E5B90F745194FCAB857F09710D6FE2AC3C5CD7B93772F"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/writer.rs",
+      "sha256": "E13907A20FCAD6BBA955173B2E2D0FA75B27F091A5B0BD88F6710FA8031715BC"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/writer/batch_tests.rs",
+      "sha256": "5855C6EBF644FA717B66971C53135CB10075AE1EFF2D88B0625999845D655B91"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/writer/batch.rs",
+      "sha256": "98BAA2D622E55456FEA11914DCE820C50C4A09AB3170E82B955375371079C404"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/writer/patch.rs",
+      "sha256": "8C1ECB7CBBE84FA3750532A321A28650764442296C2F9169BD46AED111F64A91"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/writer/target.rs",
+      "sha256": "D28316F04C5348194AAF7DDFB06BEFA81575A1837E37908D63152C8B9124608D"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks.rs",
+      "sha256": "2770F2E13205737D4EF75BAA70BF608CFACC15BEFC4AAD7B4CB636CB16D2919C"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/impact.rs",
+      "sha256": "184C6DCCAF3E7E417D07F43D69D65B98A3BC51FB9BE22DC9BAB5F5873D599C9F"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/incremental_tests.rs",
+      "sha256": "9BCF897CA2570ECB0197E0452AB2E1DA94BE58F77F80C784AC2DC49C3C9DBE61"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/planning.rs",
+      "sha256": "20511B37E051666B2C2EEE372F5AE890C14EBA98F913B9E666A0BA17A926FE65"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/read_graph.rs",
+      "sha256": "B50F5DCA7F499C9E77A7CA9AF995C43B1ED3E82C4420A15D28C754D65246E77B"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/render.rs",
+      "sha256": "8E6B8DE2568EC030F3C627A8B367C199A4251B242905BA5B2486219E979731DE"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/store.rs",
+      "sha256": "9757378F21E5FADBD1A1B7DB8FACEC6AF527C7F3F2FFE5B88222E216ED0AB6AB"
+    },
+    {
+      "path": "crates/coflow-runtime/src/diff.rs",
+      "sha256": "41E3D4BE3F19DB3E4086D5DD02ABBC48341A2105F0624C890214CEC652DACCAC"
+    },
+    {
+      "path": "crates/coflow-runtime/src/indexes.rs",
+      "sha256": "00EFE33A3A06BDC853D42CCC919AA3BE05A3C3840413EE5690B6DAFD4CC5359D"
+    },
+    {
+      "path": "crates/coflow-runtime/src/lib.rs",
+      "sha256": "507A945BCB98C3BC3C04064952F75A7EBCA022C7ACBACA43308FB2A1099D3FF6"
+    },
+    {
+      "path": "crates/coflow-runtime/src/load.rs",
+      "sha256": "718678980C0CDBB2F190539FAC78901D4068F231D5AF1A53F01CCF4D9ADA5745"
+    },
+    {
+      "path": "crates/coflow-runtime/src/mutation/apply.rs",
+      "sha256": "079C7D1D7967F58FA7DD232C0016216BD81DF113B4C8E4FEF5FB3DDD729154BE"
+    },
+    {
+      "path": "crates/coflow-runtime/src/mutation/mod.rs",
+      "sha256": "44D67B2DCCE82DC596B0BFE509E4AC33AB5FD0BF7F9B8B98AEF485415714A091"
+    },
+    {
+      "path": "crates/coflow-runtime/src/runtime.rs",
+      "sha256": "57BB70E63C2FD165BD4BB14F7F82043402DA31D982FAE7BEEDBFE8EAA3D6FC1F"
+    },
+    {
+      "path": "crates/coflow-runtime/src/session_build.rs",
+      "sha256": "60C44375EBC66B190A76D2C3CBB91E6CEC4868BDF5761F03A1171998D6AB14C8"
+    },
+    {
+      "path": "crates/coflow-runtime/src/writes.rs",
+      "sha256": "ED3B5317888A9A72146AB44A2EF334D20B4E03451F9D70A1C887BE4FF0BC7E10"
+    },
+    {
+      "path": "crates/coflow-runtime/src/writes/plan.rs",
+      "sha256": "237B196809843726924B309EB52997906DD4B63EA2F36B02301FA35705317632"
+    },
+    {
+      "path": "crates/coflow-runtime/src/writes/refs.rs",
+      "sha256": "E9EE3E47C34258569257B06ED3663A4E9E2025EF7E8A91C061423EE7A2C4F927"
+    },
+    {
+      "path": "crates/coflow-runtime/tests/incremental_generation.rs",
+      "sha256": "5221A4BC13E1E50B654F85C8C34A7C7AB3E78413BF0A35ECF201936CD3A6323E"
+    },
+    {
+      "path": "crates/coflow-runtime/tests/incremental_source_failures.rs",
+      "sha256": "CF0BC5D0BCD32D0CC71E16FB4811A9556FA496CDA0A4F188D3925A26BABE59FF"
+    },
+    {
+      "path": "editors/cfd-editor/core/src/editor/session/build.rs",
+      "sha256": "2AAF0114FF74C7FF8439E127F821C4BA1872F110ABE4FA24C29E46BEFBD819A0"
+    },
+    {
+      "path": "editors/cfd-editor/core/src/editor/session/mod.rs",
+      "sha256": "0A633A1F4BBA2FD75420E061A3C8664B5D88A2BE6D405A892EADB628D6D39370"
+    },
+    {
+      "path": "editors/cfd-editor/core/src/editor/session/operations/language.rs",
+      "sha256": "189C627E97F18C2554E603AA42DD103CAEEF72921A7E7AB54EC3C49C6CCCE28D"
+    },
+    {
+      "path": "editors/cfd-editor/core/src/editor/session/operations/mutations.rs",
+      "sha256": "8E4DA3A6C5842F3CA933CB38EEABFB80FC990AE27C42A116AAE8431DE725A2A9"
+    },
+    {
+      "path": "editors/cfd-editor/core/src/editor/session/reload.rs",
+      "sha256": "F5A970AF2A9477F10DB129F07AD82125EC5DFC1742C0A2A2D5E8446501CFDC23"
+    },
+    {
+      "path": "editors/cfd-editor/core/src/watcher.rs",
+      "sha256": "E6EF92E38E99968279F0BB345D5455DD100D58A8BBF2E96B7F216AD9DDF55A7E"
+    },
+    {
+      "path": "editors/cfd-editor/src-tauri/Cargo.toml",
+      "sha256": "C7878E5C35670DE41F1EED5ED027CB28680E752190D7C74116AD33B5AB8D3CF0"
+    },
+    {
+      "path": "editors/cfd-editor/src-tauri/src/main.rs",
+      "sha256": "CCD646E97CEEFD95B3335D3313EF7E5A7BD467E79D888F82CBCE5F1F86F2ED3A"
+    },
+    {
+      "path": "src/main.rs",
+      "sha256": "1004C049A10FD4538917F8DA5B5B692970E53F7398E08CD578BDB994212CB8E7"
+    }
+  ],
+  "checks": {
+    "passed_tests": 712,
+    "cargo_test_workspace": 0,
+    "cargo_check_workspace": 0
+  },
+  "pipelines": [
+    {
+      "name": "1k-name",
+      "rows": [
+        {
+          "mode": "pipeline",
+          "samples": 3,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 1000,
+          "files": 1,
+          "fields": 20,
+          "source_bytes": 537780,
+          "mutation_field": "name",
+          "update_samples": 100
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.1492,
+            0.1325,
+            0.1265
+          ],
+          "median_ms": 0.1325,
+          "min_ms": 0.1265,
+          "max_ms": 0.1492,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.5341,
+            0.4132,
+            0.43829999999999997
+          ],
+          "median_ms": 0.43829999999999997,
+          "min_ms": 0.4132,
+          "max_ms": 0.5341,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            51.9709,
+            50.3575,
+            52.432100000000005
+          ],
+          "median_ms": 51.9709,
+          "min_ms": 50.3575,
+          "max_ms": 52.432100000000005,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 1,
+            "sources_reloaded": 0,
+            "draft_records_collected": 1000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.09280000000000001,
+            0.0701,
+            0.068,
+            0.0667,
+            0.0675,
+            0.0607,
+            0.0626,
+            0.06559999999999999,
+            0.0645,
+            0.061099999999999995,
+            0.062299999999999994,
+            0.06219999999999999,
+            0.0626,
+            0.061500000000000006,
+            0.0631,
+            0.0602,
+            0.0599,
+            0.0592,
+            0.0592,
+            0.0592
+          ],
+          "median_ms": 0.0626,
+          "min_ms": 0.0592,
+          "max_ms": 0.09280000000000001,
+          "p95_ms": 0.0701
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            17.6209,
+            17.401400000000002,
+            17.9665,
+            17.072899999999997,
+            16.9467,
+            17.154200000000003,
+            18.5823,
+            16.368000000000002,
+            16.5311,
+            17.5143,
+            17.043599999999998,
+            18.7406,
+            16.4021,
+            15.7984,
+            18.0366,
+            16.8501,
+            17.5245,
+            16.3739,
+            17.529200000000003,
+            17.0893
+          ],
+          "median_ms": 17.154200000000003,
+          "min_ms": 15.7984,
+          "max_ms": 18.7406,
+          "p95_ms": 18.5823
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples_ms": [
+            41.4362,
+            35.9929,
+            34.2632,
+            34.26499999999999,
+            32.6899,
+            31.683200000000003,
+            31.8296,
+            33.812000000000005,
+            37.1986,
+            36.3521,
+            39.6558,
+            34.9207,
+            34.554300000000005,
+            33.3748,
+            34.2494,
+            34.0535,
+            34.2226,
+            32.8201,
+            32.4039,
+            33.2329,
+            41.5857,
+            38.0195,
+            36.2052,
+            32.393,
+            35.769000000000005,
+            32.8291,
+            32.3184,
+            34.827,
+            37.339200000000005,
+            34.8807,
+            34.3201,
+            36.2258,
+            34.8376,
+            36.4925,
+            35.354499999999994,
+            31.983699999999995,
+            36.2351,
+            32.985800000000005,
+            33.3327,
+            37.0027,
+            35.1119,
+            34.168499999999995,
+            36.0352,
+            33.933400000000006,
+            35.9318,
+            37.624900000000004,
+            35.5201,
+            34.2238,
+            62.380900000000004,
+            51.2443,
+            37.579,
+            37.4501,
+            36.7398,
+            32.7123,
+            36.1892,
+            35.714299999999994,
+            33.6598,
+            34.3546,
+            34.782199999999996,
+            33.9012,
+            36.0474,
+            31.8929,
+            35.3621,
+            35.320499999999996,
+            35.0491,
+            33.0777,
+            34.7789,
+            36.3371,
+            36.219500000000004,
+            32.6526,
+            34.7587,
+            35.8539,
+            33.473000000000006,
+            31.9156,
+            37.2716,
+            34.4227,
+            33.1594,
+            31.441499999999998,
+            33.3346,
+            35.65,
+            34.2533,
+            34.5098,
+            37.9404,
+            36.4044,
+            35.215,
+            37.0938,
+            32.3555,
+            35.176399999999994,
+            38.239799999999995,
+            33.200399999999995,
+            34.4371,
+            36.818200000000004,
+            32.493300000000005,
+            37.7913,
+            35.5869,
+            38.093799999999995,
+            42.031800000000004,
+            36.7947,
+            36.9752,
+            32.2486
+          ],
+          "median_ms": 34.9207,
+          "min_ms": 31.441499999999998,
+          "max_ms": 62.380900000000004,
+          "p95_ms": 39.6558
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 1000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "process": {
+        "name": "1k-name",
+        "config": {
+          "Validation": 20,
+          "Updates": 100,
+          "Batches": "1",
+          "Files": 1,
+          "Samples": 3,
+          "Field": "name",
+          "Name": "1k-name",
+          "Records": 1000
+        },
+        "exit_code": 0,
+        "peak_working_set_bytes": 107257856,
+        "process_elapsed_seconds": 4.3304855
+      }
+    },
+    {
+      "name": "10k-name",
+      "rows": [
+        {
+          "mode": "pipeline",
+          "samples": 3,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 10000,
+          "files": 10,
+          "fields": 20,
+          "source_bytes": 5397780,
+          "mutation_field": "name",
+          "update_samples": 5
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.1581,
+            0.13990000000000002,
+            0.1494
+          ],
+          "median_ms": 0.1494,
+          "min_ms": 0.13990000000000002,
+          "max_ms": 0.1581,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.4737,
+            0.4541,
+            0.4329
+          ],
+          "median_ms": 0.4541,
+          "min_ms": 0.4329,
+          "max_ms": 0.4737,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            552.5566,
+            559.8052,
+            592.9789
+          ],
+          "median_ms": 559.8052,
+          "min_ms": 552.5566,
+          "max_ms": 592.9789,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 10,
+            "sources_reloaded": 0,
+            "draft_records_collected": 10000,
+            "records_validated": 10000,
+            "records_materialized": 10000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 20000,
+            "check_roots_executed": 40001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.07150000000000001,
+            0.0584,
+            0.06380000000000001,
+            0.058100000000000006,
+            0.058100000000000006,
+            0.0572,
+            0.0573,
+            0.0609,
+            0.059500000000000004,
+            0.0608,
+            0.0576,
+            0.056799999999999996,
+            0.057,
+            0.0706,
+            0.06609999999999999,
+            0.058,
+            0.0601,
+            0.058100000000000006,
+            0.057,
+            0.0566
+          ],
+          "median_ms": 0.058100000000000006,
+          "min_ms": 0.0566,
+          "max_ms": 0.07150000000000001,
+          "p95_ms": 0.0706
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            18.7394,
+            18.5011,
+            20.1262,
+            19.3586,
+            19.659,
+            18.1854,
+            19.6692,
+            19.1103,
+            19.6209,
+            18.4553,
+            20.583299999999998,
+            20.5848,
+            19.537599999999998,
+            18.5723,
+            20.5422,
+            21.069000000000003,
+            18.8512,
+            19.325200000000002,
+            21.1706,
+            20.5276
+          ],
+          "median_ms": 19.6209,
+          "min_ms": 18.1854,
+          "max_ms": 21.1706,
+          "p95_ms": 21.069000000000003
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples_ms": [
+            35.3082,
+            32.7215,
+            33.3542,
+            37.9292,
+            36.857800000000005
+          ],
+          "median_ms": 35.3082,
+          "min_ms": 32.7215,
+          "max_ms": 37.9292,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 10000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 9999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples_ms": [
+            88.2935,
+            83.70710000000001,
+            86.7151,
+            85.4481,
+            86.5286
+          ],
+          "median_ms": 86.5286,
+          "min_ms": 83.70710000000001,
+          "max_ms": 88.2935,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 10000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 9000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples_ms": [
+            377.30780000000004,
+            356.4968,
+            353.3884,
+            399.7018,
+            364.9644
+          ],
+          "median_ms": 364.9644,
+          "min_ms": 353.3884,
+          "max_ms": 399.7018,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 10,
+            "draft_records_collected": 10000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 9000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "process": {
+        "name": "10k-name",
+        "config": {
+          "Validation": 20,
+          "Updates": 5,
+          "Batches": "1,1000",
+          "Files": 10,
+          "Samples": 3,
+          "Field": "name",
+          "Name": "10k-name",
+          "Records": 10000
+        },
+        "exit_code": 0,
+        "peak_working_set_bytes": 829759488,
+        "process_elapsed_seconds": 6.5474461
+      }
+    },
+    {
+      "name": "10k-value",
+      "rows": [
+        {
+          "mode": "pipeline",
+          "samples": 3,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 10000,
+          "files": 10,
+          "fields": 20,
+          "source_bytes": 5397780,
+          "mutation_field": "value",
+          "update_samples": 20
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.1416,
+            0.1388,
+            0.1326
+          ],
+          "median_ms": 0.1388,
+          "min_ms": 0.1326,
+          "max_ms": 0.1416,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.49129999999999996,
+            0.4349,
+            0.4282
+          ],
+          "median_ms": 0.4349,
+          "min_ms": 0.4282,
+          "max_ms": 0.49129999999999996,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            543.609,
+            550.457,
+            549.5181
+          ],
+          "median_ms": 549.5181,
+          "min_ms": 543.609,
+          "max_ms": 550.457,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 10,
+            "sources_reloaded": 0,
+            "draft_records_collected": 10000,
+            "records_validated": 10000,
+            "records_materialized": 10000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 20000,
+            "check_roots_executed": 40001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.075,
+            0.0612,
+            0.0598,
+            0.0607,
+            0.06949999999999999,
+            0.057800000000000004,
+            0.07150000000000001,
+            0.0627,
+            0.0608,
+            0.060000000000000005,
+            0.057800000000000004,
+            0.0564,
+            0.0576,
+            0.0569,
+            0.0738,
+            0.0591,
+            0.0584,
+            0.057800000000000004,
+            0.058100000000000006,
+            0.0569
+          ],
+          "median_ms": 0.0598,
+          "min_ms": 0.0564,
+          "max_ms": 0.075,
+          "p95_ms": 0.0738
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            20.422,
+            19.977800000000002,
+            20.1067,
+            19.0614,
+            21.5652,
+            19.0391,
+            20.4253,
+            18.558600000000002,
+            21.105800000000002,
+            20.281,
+            20.2309,
+            19.8762,
+            21.9704,
+            20.3764,
+            19.8882,
+            18.719800000000003,
+            21.026699999999998,
+            20.935499999999998,
+            19.415200000000002,
+            19.0548
+          ],
+          "median_ms": 20.2309,
+          "min_ms": 18.558600000000002,
+          "max_ms": 21.9704,
+          "p95_ms": 21.5652
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples_ms": [
+            42.31420000000001,
+            39.974999999999994,
+            37.2289,
+            38.182300000000005,
+            34.4045,
+            34.5595,
+            35.7528,
+            34.9131,
+            34.3949,
+            33.6389,
+            34.3956,
+            33.281600000000005,
+            34.4257,
+            35.3816,
+            41.2829,
+            35.0959,
+            32.9505,
+            35.6781,
+            33.8417,
+            33.6567
+          ],
+          "median_ms": 34.9131,
+          "min_ms": 32.9505,
+          "max_ms": 42.31420000000001,
+          "p95_ms": 41.2829
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 10000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 9999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 8,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "process": {
+        "name": "10k-value",
+        "config": {
+          "Validation": 20,
+          "Updates": 20,
+          "Batches": "1",
+          "Files": 10,
+          "Samples": 3,
+          "Field": "value",
+          "Name": "10k-value",
+          "Records": 10000
+        },
+        "exit_code": 0,
+        "peak_working_set_bytes": 680009728,
+        "process_elapsed_seconds": 4.2864033
+      }
+    },
+    {
+      "name": "100k-local",
+      "rows": [
+        {
+          "mode": "pipeline",
+          "samples": 3,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 100000,
+          "files": 100,
+          "fields": 20,
+          "source_bytes": 54267780,
+          "mutation_field": "name",
+          "update_samples": 100
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.1614,
+            0.1427,
+            0.1307
+          ],
+          "median_ms": 0.1427,
+          "min_ms": 0.1307,
+          "max_ms": 0.1614,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.5157999999999999,
+            0.5107999999999999,
+            0.4918
+          ],
+          "median_ms": 0.5107999999999999,
+          "min_ms": 0.4918,
+          "max_ms": 0.5157999999999999,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            6535.7066,
+            6553.7193,
+            6555.7932
+          ],
+          "median_ms": 6553.7193,
+          "min_ms": 6535.7066,
+          "max_ms": 6555.7932,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.0811,
+            0.0665,
+            0.0691,
+            0.06430000000000001,
+            0.063,
+            0.0617,
+            0.0632,
+            0.062,
+            0.0645,
+            0.062,
+            0.0639,
+            0.0625,
+            0.0648,
+            0.0648,
+            0.0694,
+            0.063,
+            0.0668,
+            0.07050000000000001,
+            0.0737,
+            0.0648,
+            0.0635,
+            0.06509999999999999,
+            0.0652,
+            0.5477000000000001,
+            0.0815,
+            0.0662,
+            0.0672,
+            0.0659,
+            0.0901,
+            0.06509999999999999,
+            0.0641,
+            0.0636,
+            0.0658,
+            0.0646,
+            0.0649,
+            0.0639,
+            0.0653,
+            0.06160000000000001,
+            0.0645,
+            0.0636,
+            0.0641,
+            0.0627,
+            0.062,
+            0.0629,
+            0.0654,
+            0.061900000000000004,
+            0.09050000000000001,
+            0.0737,
+            0.0626,
+            0.062,
+            0.0701,
+            0.06420000000000001,
+            0.0628,
+            0.0635,
+            0.0634,
+            0.062,
+            0.066,
+            0.07279999999999999,
+            0.0631,
+            0.0626,
+            0.0626,
+            0.0717,
+            0.0624,
+            0.0618,
+            0.0629,
+            0.0626,
+            0.0612,
+            0.0634,
+            0.0629,
+            0.0693,
+            0.0607,
+            0.0621,
+            0.0635,
+            0.0631,
+            0.0629,
+            0.06219999999999999,
+            0.0613,
+            0.0711,
+            0.0714,
+            0.07930000000000001,
+            0.06810000000000001,
+            0.0621,
+            0.064,
+            0.062,
+            0.0751,
+            0.06219999999999999,
+            0.0613,
+            0.0631,
+            0.0614,
+            0.061900000000000004,
+            0.0629,
+            0.06160000000000001,
+            0.0679,
+            0.0613,
+            0.0686,
+            0.0633,
+            0.06380000000000001,
+            0.0631,
+            0.0613,
+            0.060399999999999995
+          ],
+          "median_ms": 0.0636,
+          "min_ms": 0.060399999999999995,
+          "max_ms": 0.5477000000000001,
+          "p95_ms": 0.07930000000000001
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            46.4759,
+            45.8347,
+            43.4732,
+            42.8354,
+            44.1533,
+            47.260000000000005,
+            48.7293,
+            44.224,
+            42.8646,
+            46.057,
+            44.3241,
+            44.3249,
+            47.604800000000004,
+            43.445299999999996,
+            42.332300000000004,
+            47.342099999999995,
+            46.2327,
+            44.3154,
+            47.1043,
+            44.301,
+            46.4574,
+            46.029,
+            43.7456,
+            43.7773,
+            43.986,
+            44.9292,
+            41.3698,
+            45.9294,
+            45.339999999999996,
+            46.220200000000006,
+            43.6994,
+            48.9215,
+            43.1234,
+            46.6802,
+            46.2902,
+            44.4023,
+            44.2516,
+            42.5216,
+            46.699,
+            43.8922,
+            46.2745,
+            45.7452,
+            43.8278,
+            45.7799,
+            49.5351,
+            46.5147,
+            47.1068,
+            45.0193,
+            42.4625,
+            44.797999999999995,
+            44.4917,
+            43.341,
+            45.9853,
+            44.2885,
+            51.104299999999995,
+            43.738899999999994,
+            44.952600000000004,
+            44.990500000000004,
+            45.2459,
+            45.062400000000004,
+            44.151700000000005,
+            47.300599999999996,
+            43.6415,
+            43.744699999999995,
+            47.1313,
+            43.311,
+            43.2076,
+            46.6888,
+            47.5338,
+            42.4153,
+            45.0876,
+            44.9309,
+            44.8718,
+            44.505500000000005,
+            44.9154,
+            44.8121,
+            45.8746,
+            46.6949,
+            47.9455,
+            51.4002,
+            47.0972,
+            44.144200000000005,
+            42.8185,
+            44.304,
+            43.911699999999996,
+            44.9746,
+            44.4655,
+            43.1271,
+            44.1014,
+            43.6881,
+            46.3091,
+            45.4488,
+            43.3284,
+            45.552099999999996,
+            46.9631,
+            41.891999999999996,
+            44.476,
+            43.523399999999995,
+            48.2878,
+            46.2257
+          ],
+          "median_ms": 44.9292,
+          "min_ms": 41.3698,
+          "max_ms": 51.4002,
+          "p95_ms": 48.2878
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples_ms": [
+            56.6661,
+            49.1767,
+            56.4469,
+            51.3842,
+            49.2602,
+            51.4731,
+            49.8563,
+            49.0289,
+            52.6979,
+            49.4784,
+            53.104,
+            51.9342,
+            49.6355,
+            50.6069,
+            53.0349,
+            54.0864,
+            52.1071,
+            54.271100000000004,
+            51.811099999999996,
+            54.461000000000006,
+            50.288399999999996,
+            49.9053,
+            51.6082,
+            51.0416,
+            49.0942,
+            49.6809,
+            48.8883,
+            51.4215,
+            48.5921,
+            46.64660000000001,
+            50.617200000000004,
+            48.727199999999996,
+            51.574099999999994,
+            50.3512,
+            50.787,
+            60.0882,
+            50.8606,
+            52.6318,
+            52.0658,
+            49.8279,
+            49.726800000000004,
+            49.8766,
+            51.5546,
+            50.804,
+            52.975500000000004,
+            53.082499999999996,
+            47.9636,
+            48.9816,
+            52.1918,
+            50.2892,
+            47.47839999999999,
+            47.845800000000004,
+            48.0928,
+            50.1365,
+            48.6626,
+            49.8886,
+            51.1331,
+            49.7931,
+            50.1956,
+            51.1475,
+            51.3466,
+            49.3332,
+            52.4197,
+            49.016799999999996,
+            51.3615,
+            51.4683,
+            46.7477,
+            51.5527,
+            47.738,
+            49.319700000000005,
+            49.9837,
+            48.3717,
+            52.8253,
+            51.3408,
+            51.7085,
+            49.742799999999995,
+            50.2648,
+            47.9763,
+            46.8345,
+            51.147999999999996,
+            51.817299999999996,
+            50.2342,
+            49.8512,
+            51.4033,
+            49.2246,
+            52.0524,
+            47.6888,
+            47.684999999999995,
+            47.5864,
+            51.6854,
+            47.745400000000004,
+            47.7396,
+            46.3977,
+            48.7083,
+            47.122699999999995,
+            50.9504,
+            50.3508,
+            51.8853,
+            48.1694,
+            50.819700000000005
+          ],
+          "median_ms": 50.2892,
+          "min_ms": 46.3977,
+          "max_ms": 60.0882,
+          "p95_ms": 54.0864
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "process": {
+        "name": "100k-local",
+        "config": {
+          "Validation": 100,
+          "Updates": 100,
+          "Batches": "1",
+          "Files": 100,
+          "Samples": 3,
+          "Field": "name",
+          "Name": "100k-local",
+          "Records": 100000
+        },
+        "exit_code": 0,
+        "peak_working_set_bytes": 6516989952,
+        "process_elapsed_seconds": 44.7939015
+      }
+    },
+    {
+      "name": "100k-batch",
+      "rows": [
+        {
+          "mode": "pipeline",
+          "samples": 1,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 100000,
+          "files": 100,
+          "fields": 20,
+          "source_bytes": 54267780,
+          "mutation_field": "name",
+          "update_samples": 7
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.154
+          ],
+          "median_ms": 0.154,
+          "min_ms": 0.154,
+          "max_ms": 0.154,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.5148
+          ],
+          "median_ms": 0.5148,
+          "min_ms": 0.5148,
+          "max_ms": 0.5148,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            6542.415400000001
+          ],
+          "median_ms": 6542.415400000001,
+          "min_ms": 6542.415400000001,
+          "max_ms": 6542.415400000001,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.0706,
+            0.07160000000000001,
+            0.0588
+          ],
+          "median_ms": 0.0706,
+          "min_ms": 0.0588,
+          "max_ms": 0.07160000000000001,
+          "p95_ms": null
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            43.1799,
+            44.1777,
+            44.0146
+          ],
+          "median_ms": 44.0146,
+          "min_ms": 43.1799,
+          "max_ms": 44.1777,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples_ms": [
+            151.35999999999999,
+            142.2405,
+            139.6246,
+            141.2962,
+            145.53740000000002,
+            143.73059999999998,
+            145.77970000000002
+          ],
+          "median_ms": 143.73059999999998,
+          "min_ms": 139.6246,
+          "max_ms": 151.35999999999999,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples_ms": [
+            3744.9158,
+            3806.854,
+            3803.6861000000004,
+            3769.3559,
+            3811.6252,
+            3919.7267,
+            3916.5749
+          ],
+          "median_ms": 3806.854,
+          "min_ms": 3744.9158,
+          "max_ms": 3919.7267,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "process": {
+        "name": "100k-batch",
+        "config": {
+          "Validation": 3,
+          "Updates": 7,
+          "Batches": "1000",
+          "Files": 100,
+          "Samples": 1,
+          "Field": "name",
+          "Name": "100k-batch",
+          "Records": 100000
+        },
+        "exit_code": 0,
+        "peak_working_set_bytes": 7842168832,
+        "process_elapsed_seconds": 53.4302159
+      }
+    }
+  ],
+  "model": [
+    {
+      "mode": "model",
+      "samples": 7,
+      "warmups": 1,
+      "allocator": "mimalloc",
+      "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+    },
+    {
+      "sizes_bytes": {
+        "CfdValue": 48,
+        "LoadedValueDraft": 56,
+        "CfdRecord": 104,
+        "CfdObject": 40,
+        "CfdDataModel": 120,
+        "CfdAstValue": 96
+      }
+    },
+    {
+      "metric": "model_build",
+      "records": 2000,
+      "fields": 8,
+      "samples_ms": [
+        3.4938000000000002,
+        3.3022,
+        3.3863,
+        3.4518999999999997,
+        3.3934,
+        3.4699,
+        3.3061000000000003
+      ],
+      "median_ms": 3.3934
+    },
+    {
+      "metric": "model_clone_10000_f8",
+      "samples_ms": [
+        0.5325,
+        0.5358,
+        0.5355,
+        0.5324,
+        0.5408999999999999,
+        0.5325,
+        0.5351
+      ],
+      "median_ms": 0.5351,
+      "min_ms": 0.5324,
+      "max_ms": 0.5408999999999999,
+      "p95_ms": null
+    },
+    {
+      "metric": "model_build",
+      "records": 2000,
+      "fields": 32,
+      "samples_ms": [
+        15.601,
+        15.751100000000001,
+        15.375399999999999,
+        14.8613,
+        16.302400000000002,
+        15.0116,
+        14.9252
+      ],
+      "median_ms": 15.375399999999999
+    },
+    {
+      "metric": "model_clone_10000_f32",
+      "samples_ms": [
+        0.5358,
+        0.5325,
+        0.5326000000000001,
+        0.5445,
+        0.5325,
+        0.5325,
+        0.5325
+      ],
+      "median_ms": 0.5325,
+      "min_ms": 0.5325,
+      "max_ms": 0.5445,
+      "p95_ms": null
+    },
+    {
+      "metric": "model_build",
+      "records": 2000,
+      "fields": 128,
+      "samples_ms": [
+        82.7711,
+        84.31020000000001,
+        85.5246,
+        80.8192,
+        81.7503,
+        81.4264,
+        85.7479
+      ],
+      "median_ms": 82.7711
+    },
+    {
+      "metric": "model_clone_10000_f128",
+      "samples_ms": [
+        0.5490999999999999,
+        0.6687000000000001,
+        0.5328,
+        0.5999,
+        0.5864,
+        0.539,
+        0.5545
+      ],
+      "median_ms": 0.5545,
+      "min_ms": 0.5328,
+      "max_ms": 0.6687000000000001,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_build_sparse_v1",
+      "records": 1000,
+      "fields": 8,
+      "variants": 1,
+      "explicit_records_per_variant": 10,
+      "samples_ms": [
+        4.542400000000001,
+        4.4997,
+        4.8397,
+        4.5382,
+        4.6072999999999995,
+        4.511,
+        5.899
+      ],
+      "median_ms": 4.542400000000001
+    },
+    {
+      "metric": "dimension_project_sparse_v1",
+      "samples_ms": [
+        4.1404,
+        4.4367,
+        4.1720999999999995,
+        4.1782,
+        5.0869,
+        4.9915,
+        4.3578
+      ],
+      "median_ms": 4.3578,
+      "min_ms": 4.1404,
+      "max_ms": 5.0869,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_project_same_sparse_v1",
+      "samples_ms": [
+        0.0003,
+        0.00019999999999999998,
+        9.999999999999999E-05,
+        0.00019999999999999998,
+        0.00019999999999999998,
+        9.999999999999999E-05,
+        9.999999999999999E-05
+      ],
+      "median_ms": 0.00019999999999999998,
+      "min_ms": 9.999999999999999E-05,
+      "max_ms": 0.0003,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_build_dense_v1",
+      "records": 1000,
+      "fields": 8,
+      "variants": 1,
+      "explicit_records_per_variant": 1000,
+      "samples_ms": [
+        5.3984000000000005,
+        5.3915999999999995,
+        5.2383999999999995,
+        5.4529000000000005,
+        6.1057999999999995,
+        5.4883,
+        5.6417
+      ],
+      "median_ms": 5.4529000000000005
+    },
+    {
+      "metric": "dimension_project_dense_v1",
+      "samples_ms": [
+        4.3609,
+        4.3698,
+        4.1748,
+        4.1104,
+        4.0789,
+        4.0402,
+        4.024299999999999
+      ],
+      "median_ms": 4.1104,
+      "min_ms": 4.024299999999999,
+      "max_ms": 4.3698,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_project_same_dense_v1",
+      "samples_ms": [
+        0.0003,
+        0.00019999999999999998,
+        9.999999999999999E-05,
+        9.999999999999999E-05,
+        0.00019999999999999998,
+        9.999999999999999E-05,
+        0.00019999999999999998
+      ],
+      "median_ms": 0.00019999999999999998,
+      "min_ms": 9.999999999999999E-05,
+      "max_ms": 0.0003,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_build_sparse_v10",
+      "records": 1000,
+      "fields": 8,
+      "variants": 10,
+      "explicit_records_per_variant": 10,
+      "samples_ms": [
+        19.532600000000002,
+        19.6268,
+        20.694899999999997,
+        18.7406,
+        18.5524,
+        20.9102,
+        19.709999999999997
+      ],
+      "median_ms": 19.6268
+    },
+    {
+      "metric": "dimension_project_sparse_v10",
+      "samples_ms": [
+        4.6495,
+        4.696,
+        4.0931,
+        3.9892,
+        4.125,
+        4.1487,
+        4.1381
+      ],
+      "median_ms": 4.1381,
+      "min_ms": 3.9892,
+      "max_ms": 4.696,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_project_same_sparse_v10",
+      "samples_ms": [
+        0.0003,
+        9.999999999999999E-05,
+        0.00019999999999999998,
+        0.00019999999999999998,
+        0.00019999999999999998,
+        9.999999999999999E-05,
+        0.0003
+      ],
+      "median_ms": 0.00019999999999999998,
+      "min_ms": 9.999999999999999E-05,
+      "max_ms": 0.0003,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_build_dense_v10",
+      "records": 1000,
+      "fields": 8,
+      "variants": 10,
+      "explicit_records_per_variant": 1000,
+      "samples_ms": [
+        32.2203,
+        31.1875,
+        32.7,
+        30.852899999999998,
+        32.5586,
+        31.784600000000005,
+        31.935100000000002
+      ],
+      "median_ms": 31.935100000000002
+    },
+    {
+      "metric": "dimension_project_dense_v10",
+      "samples_ms": [
+        4.0708,
+        4.0493,
+        4.0253,
+        4.4014,
+        4.686100000000001,
+        4.2766,
+        4.2314
+      ],
+      "median_ms": 4.2314,
+      "min_ms": 4.0253,
+      "max_ms": 4.686100000000001,
+      "p95_ms": null
+    },
+    {
+      "metric": "dimension_project_same_dense_v10",
+      "samples_ms": [
+        0.00019999999999999998,
+        0.00019999999999999998,
+        9.999999999999999E-05,
+        0.0012,
+        0.00019999999999999998,
+        0.00019999999999999998,
+        0.00019999999999999998
+      ],
+      "median_ms": 0.00019999999999999998,
+      "min_ms": 9.999999999999999E-05,
+      "max_ms": 0.0012,
+      "p95_ms": null
+    },
+    {
+      "metric": "parse_100_broken_false",
+      "samples_ms": [
+        0.025400000000000002,
+        0.0251,
+        0.0251,
+        0.0246,
+        0.0246,
+        0.0244,
+        0.024300000000000002
+      ],
+      "median_ms": 0.0246,
+      "min_ms": 0.024300000000000002,
+      "max_ms": 0.025400000000000002,
+      "p95_ms": null
+    },
+    {
+      "parse_records": 100,
+      "broken": false,
+      "bytes": 2290,
+      "diagnostics": 0
+    },
+    {
+      "metric": "parse_100_broken_true",
+      "samples_ms": [
+        0.060000000000000005,
+        0.0589,
+        0.0582,
+        0.0576,
+        0.057,
+        0.056799999999999996,
+        0.056100000000000004
+      ],
+      "median_ms": 0.0576,
+      "min_ms": 0.056100000000000004,
+      "max_ms": 0.060000000000000005,
+      "p95_ms": null
+    },
+    {
+      "parse_records": 100,
+      "broken": true,
+      "bytes": 2190,
+      "diagnostics": 100
+    },
+    {
+      "metric": "parse_1000_broken_false",
+      "samples_ms": [
+        0.2575,
+        0.2596,
+        0.2516,
+        0.2512,
+        0.2512,
+        0.2512,
+        0.2514
+      ],
+      "median_ms": 0.2514,
+      "min_ms": 0.2512,
+      "max_ms": 0.2596,
+      "p95_ms": null
+    },
+    {
+      "parse_records": 1000,
+      "broken": false,
+      "bytes": 23890,
+      "diagnostics": 0
+    },
+    {
+      "metric": "parse_1000_broken_true",
+      "samples_ms": [
+        0.5804,
+        0.5691999999999999,
+        0.578,
+        0.566,
+        0.5682,
+        0.5672,
+        0.5730999999999999
+      ],
+      "median_ms": 0.5691999999999999,
+      "min_ms": 0.566,
+      "max_ms": 0.5804,
+      "p95_ms": null
+    },
+    {
+      "parse_records": 1000,
+      "broken": true,
+      "bytes": 22890,
+      "diagnostics": 1000
+    },
+    {
+      "metric": "parse_5000_broken_false",
+      "samples_ms": [
+        1.3338,
+        1.2932,
+        1.2833,
+        1.3078,
+        1.2993,
+        1.2983,
+        1.2968000000000002
+      ],
+      "median_ms": 1.2983,
+      "min_ms": 1.2833,
+      "max_ms": 1.3338,
+      "p95_ms": null
+    },
+    {
+      "parse_records": 5000,
+      "broken": false,
+      "bytes": 123890,
+      "diagnostics": 0
+    }
+  ],
+  "allocator_comparison": {
+    "stage_profiling_enabled": true,
+    "runs": [
+      {
+        "variant": "system",
+        "rows": [
+          {
+            "mode": "pipeline",
+            "samples": 1,
+            "warmups": 1,
+            "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+          },
+          {
+            "records": 100000,
+            "files": 100,
+            "fields": 20,
+            "source_bytes": 54267780,
+            "mutation_field": "name",
+            "update_samples": 3
+          },
+          {
+            "metric": "project_open",
+            "samples_ms": [
+              0.2643
+            ],
+            "median_ms": 0.2643,
+            "min_ms": 0.2643,
+            "max_ms": 0.2643
+          },
+          {
+            "metric": "schema_compile",
+            "samples_ms": [
+              0.6133
+            ],
+            "median_ms": 0.6133,
+            "min_ms": 0.6133,
+            "max_ms": 0.6133
+          },
+          {
+            "metric": "data_open",
+            "samples_ms": [
+              18141.3881
+            ],
+            "median_ms": 18141.3881,
+            "min_ms": 18141.3881,
+            "max_ms": 18141.3881
+          },
+          {
+            "metric": "data_open_stats",
+            "stats": {
+              "sources_resolved": 100,
+              "sources_reloaded": 0,
+              "draft_records_collected": 100000,
+              "records_validated": 100000,
+              "records_materialized": 100000,
+              "records_reused": 0,
+              "ref_edges_rebuilt": 200000,
+              "check_roots_executed": 400001,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "metric": "validate_same_text",
+            "samples_ms": [
+              0.15860000000000002
+            ],
+            "median_ms": 0.15860000000000002,
+            "min_ms": 0.15860000000000002,
+            "max_ms": 0.15860000000000002
+          },
+          {
+            "metric": "validate_one_field",
+            "samples_ms": [
+              128.3236
+            ],
+            "median_ms": 128.3236,
+            "min_ms": 128.3236,
+            "max_ms": 128.3236
+          },
+          {
+            "metric": "mutate_1_grouped",
+            "samples_ms": [
+              130.635,
+              141.82639999999998,
+              151.5884
+            ],
+            "median_ms": 141.82639999999998,
+            "min_ms": 130.635,
+            "max_ms": 151.5884
+          },
+          {
+            "metric": "mutate_1_grouped_stats",
+            "stats": {
+              "sources_resolved": 0,
+              "sources_reloaded": 1,
+              "draft_records_collected": 100000,
+              "records_validated": 1,
+              "records_materialized": 1,
+              "records_reused": 99999,
+              "ref_edges_rebuilt": 2,
+              "check_roots_executed": 4,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "metric": "mutate_1000_grouped",
+            "samples_ms": [
+              547.8285000000001,
+              521.5138999999999,
+              482.6058
+            ],
+            "median_ms": 521.5138999999999,
+            "min_ms": 482.6058,
+            "max_ms": 547.8285000000001
+          },
+          {
+            "metric": "mutate_1000_grouped_stats",
+            "stats": {
+              "sources_resolved": 0,
+              "sources_reloaded": 1,
+              "draft_records_collected": 100000,
+              "records_validated": 1000,
+              "records_materialized": 1000,
+              "records_reused": 99000,
+              "ref_edges_rebuilt": 2000,
+              "check_roots_executed": 4000,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "metric": "mutate_1000_interleaved",
+            "samples_ms": [
+              9609.281599999998,
+              8558.5771,
+              9187.5319
+            ],
+            "median_ms": 9187.5319,
+            "min_ms": 8558.5771,
+            "max_ms": 9609.281599999998
+          },
+          {
+            "metric": "mutate_1000_interleaved_stats",
+            "stats": {
+              "sources_resolved": 0,
+              "sources_reloaded": 100,
+              "draft_records_collected": 100000,
+              "records_validated": 1000,
+              "records_materialized": 1000,
+              "records_reused": 99000,
+              "ref_edges_rebuilt": 2000,
+              "check_roots_executed": 4000,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+          }
+        ],
+        "process": {
+          "variant": "system",
+          "exit_code": 0,
+          "peak_working_set_bytes": 7682945024,
+          "process_elapsed_seconds": 102.6803497
+        },
+        "binary_sha256": "5B632030F34D83384ED9C05F6CD0CE4D565D4D0B693E925AE10A525FA56A9C99"
+      },
+      {
+        "variant": "mimalloc",
+        "rows": [
+          {
+            "mode": "pipeline",
+            "samples": 1,
+            "warmups": 1,
+            "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+          },
+          {
+            "records": 100000,
+            "files": 100,
+            "fields": 20,
+            "source_bytes": 54267780,
+            "mutation_field": "name",
+            "update_samples": 3
+          },
+          {
+            "metric": "project_open",
+            "samples_ms": [
+              0.1674
+            ],
+            "median_ms": 0.1674,
+            "min_ms": 0.1674,
+            "max_ms": 0.1674
+          },
+          {
+            "metric": "schema_compile",
+            "samples_ms": [
+              0.7521
+            ],
+            "median_ms": 0.7521,
+            "min_ms": 0.7521,
+            "max_ms": 0.7521
+          },
+          {
+            "metric": "data_open",
+            "samples_ms": [
+              11349.9772
+            ],
+            "median_ms": 11349.9772,
+            "min_ms": 11349.9772,
+            "max_ms": 11349.9772
+          },
+          {
+            "metric": "data_open_stats",
+            "stats": {
+              "sources_resolved": 100,
+              "sources_reloaded": 0,
+              "draft_records_collected": 100000,
+              "records_validated": 100000,
+              "records_materialized": 100000,
+              "records_reused": 0,
+              "ref_edges_rebuilt": 200000,
+              "check_roots_executed": 400001,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "metric": "validate_same_text",
+            "samples_ms": [
+              0.0764
+            ],
+            "median_ms": 0.0764,
+            "min_ms": 0.0764,
+            "max_ms": 0.0764
+          },
+          {
+            "metric": "validate_one_field",
+            "samples_ms": [
+              69.6511
+            ],
+            "median_ms": 69.6511,
+            "min_ms": 69.6511,
+            "max_ms": 69.6511
+          },
+          {
+            "metric": "mutate_1_grouped",
+            "samples_ms": [
+              110.03880000000001,
+              104.66290000000001,
+              110.5081
+            ],
+            "median_ms": 110.03880000000001,
+            "min_ms": 104.66290000000001,
+            "max_ms": 110.5081
+          },
+          {
+            "metric": "mutate_1_grouped_stats",
+            "stats": {
+              "sources_resolved": 0,
+              "sources_reloaded": 1,
+              "draft_records_collected": 100000,
+              "records_validated": 1,
+              "records_materialized": 1,
+              "records_reused": 99999,
+              "ref_edges_rebuilt": 2,
+              "check_roots_executed": 4,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "metric": "mutate_1000_grouped",
+            "samples_ms": [
+              424.2729,
+              376.8691,
+              378.6713
+            ],
+            "median_ms": 378.6713,
+            "min_ms": 376.8691,
+            "max_ms": 424.2729
+          },
+          {
+            "metric": "mutate_1000_grouped_stats",
+            "stats": {
+              "sources_resolved": 0,
+              "sources_reloaded": 1,
+              "draft_records_collected": 100000,
+              "records_validated": 1000,
+              "records_materialized": 1000,
+              "records_reused": 99000,
+              "ref_edges_rebuilt": 2000,
+              "check_roots_executed": 4000,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "metric": "mutate_1000_interleaved",
+            "samples_ms": [
+              6625.614299999999,
+              6856.1096,
+              6476.8902
+            ],
+            "median_ms": 6625.614299999999,
+            "min_ms": 6476.8902,
+            "max_ms": 6856.1096
+          },
+          {
+            "metric": "mutate_1000_interleaved_stats",
+            "stats": {
+              "sources_resolved": 0,
+              "sources_reloaded": 100,
+              "draft_records_collected": 100000,
+              "records_validated": 1000,
+              "records_materialized": 1000,
+              "records_reused": 99000,
+              "ref_edges_rebuilt": 2000,
+              "check_roots_executed": 4000,
+              "dimension_sources_planned": 0,
+              "dimension_sources_written": 0
+            }
+          },
+          {
+            "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+          }
+        ],
+        "process": {
+          "variant": "mimalloc",
+          "exit_code": 0,
+          "peak_working_set_bytes": 7836737536,
+          "process_elapsed_seconds": 62.5472329
+        },
+        "binary_sha256": "2CD8FDBE7B51D274702CF87E151E558DBE65DB6F1C0D65E4ABAF81380B2B8C38"
+      }
+    ],
+    "same_source": true
+  }
+}

@@ -3,8 +3,8 @@ use crate::api::{
 };
 use crate::cfd_loader::CfdLoader;
 use crate::data_model::{
-    CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordHandle, DimensionValueDraft,
-    LoadedRecordDraft, RecordOrigin,
+    CfdDataModel, CfdDiagnostics, CfdModelBuildStats, CfdPath, CfdPathSegment, CfdRecordHandle,
+    DimensionValueDraft, LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
 use coflow_language::cft::{CftSchema, DimensionName, VariantName};
@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use crate::checks::impact::CheckImpact;
 use crate::checks::{
-    run_full_project_checks, run_incremental_project_checks, CheckDiagnosticStore,
-    ProjectCheckOutput,
+    run_full_project_checks, run_incremental_project_checks,
+    run_incremental_project_checks_with_changed_records, CheckDiagnosticStore, ProjectCheckOutput,
 };
 use crate::indexes::{
     CfdSourceEntry, DiagnosticLogicalLocation, PendingRecordRef, RecordIndexBuilder,
@@ -45,6 +45,16 @@ pub struct DataSourceTextOverride {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SourceDataCache {
     batches: Vec<CachedSourceBatch>,
+    model: Option<CfdDataModel>,
+    record_index: Option<crate::indexes::RecordIndex>,
+    changed_sources: BTreeSet<String>,
+    diagnostic_order: Vec<CachedDiagnosticSlot>,
+}
+
+#[derive(Debug, Clone)]
+enum CachedDiagnosticSlot {
+    Discovery(DiagnosticSet),
+    Source(String),
 }
 
 #[derive(Debug, Clone)]
@@ -54,9 +64,26 @@ struct CachedSourceBatch {
     records: Arc<[LoadedRecordDraft]>,
     dimension_values: Arc<[DimensionValueDraft]>,
     dimension_variants: Arc<[(DimensionName, VariantName)]>,
+    diagnostics: Arc<DiagnosticSet>,
+    loaded: bool,
 }
 
 impl SourceDataCache {
+    pub(crate) fn cache_record_index(&mut self, index: &crate::indexes::RecordIndex) {
+        self.record_index = Some(index.clone());
+    }
+    pub(crate) fn matches_overrides(&self, overrides: &[DataSourceTextOverride]) -> bool {
+        overrides.iter().all(|source_override| {
+            !source_override.deleted
+                && self.batches.iter().any(|batch| {
+                    batch.loaded
+                        && crate::normalize_path(batch.entry.source.location.path())
+                            == source_override.normalized_path
+                        && batch.source.as_ref() == source_override.source
+                })
+        })
+    }
+
     /// 新文件先进入候选缓存，再由常规重载解析；磁盘发布前即可校验完整模型。
     pub(crate) fn with_pending_sources(
         &self,
@@ -87,7 +114,15 @@ impl SourceDataCache {
                 records: Arc::default(),
                 dimension_values: Arc::default(),
                 dimension_variants: Arc::default(),
+                diagnostics: Arc::default(),
+                loaded: false,
             });
+            pending
+                .diagnostic_order
+                .push(CachedDiagnosticSlot::Source(crate::project_path(
+                    project.root_dir(),
+                    &source_override.normalized_path,
+                )));
         }
         pending
     }
@@ -194,7 +229,6 @@ pub(crate) struct ReloadProjectDataOptions<'a> {
 
 struct LoadState<'a> {
     indexes: &'a mut SessionIndexBuilder,
-    records: Vec<LoadedRecordDraft>,
     source_data: SourceDataCache,
 }
 
@@ -203,6 +237,8 @@ struct PartialModelBuild {
     diagnostics: DiagnosticSet,
     logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
     accepted_origins: Vec<RecordOrigin>,
+    statistics: CfdModelBuildStats,
+    changed_records: Option<Vec<CfdRecordHandle>>,
 }
 
 pub(crate) fn empty_load_output(schema: &CftSchema) -> Result<ProjectLoadOutput, DiagnosticSet> {
@@ -227,7 +263,6 @@ pub(crate) fn load_project_data(
     let mut statistics = ProjectExecutionStats::default();
     let mut state = LoadState {
         indexes,
-        records: Vec::new(),
         source_data: SourceDataCache::default(),
     };
     let mut diagnostics = DiagnosticSet::empty();
@@ -247,6 +282,10 @@ pub(crate) fn load_project_data(
         let resolved_sources = match resolver.resolve_for_load(&source, &configured) {
             Ok(resolved_sources) => resolved_sources,
             Err(err) => {
+                state
+                    .source_data
+                    .diagnostic_order
+                    .push(CachedDiagnosticSlot::Discovery(err.clone()));
                 diagnostics.extend(err);
                 continue;
             }
@@ -273,8 +312,11 @@ pub(crate) fn load_project_data(
         ));
     }
 
-    let draft_record_count = state.records.len();
-    let partial = build_partial_model(schema, &state.records, &state.source_data)?;
+    // 源批次已经拥有草稿；汇总只借用记录，不再复制完整值树。
+    let records = state.source_data.record_drafts();
+    let draft_record_count = records.len();
+    let partial = build_partial_model(schema, &records, &state.source_data)?;
+    let model_healthy = partial.diagnostics.is_empty();
     let model = partial.model;
     let origins = partial.accepted_origins;
     let mut model_logical_locations = partial.logical_locations;
@@ -295,7 +337,13 @@ pub(crate) fn load_project_data(
             statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
-    record_model_work(&mut statistics, draft_record_count, &model, &check);
+    record_model_work(
+        &mut statistics,
+        draft_record_count,
+        partial.statistics,
+        &check,
+    );
+    state.source_data.model = model_healthy.then(|| model.clone());
     let check_offset = model_diagnostics.diagnostics.len();
     model_diagnostics.extend(check.diagnostics);
     model_logical_locations.extend(
@@ -323,6 +371,24 @@ pub(crate) fn reload_project_data_from_cache(
     reload_paths: &BTreeSet<String>,
     options: ReloadProjectDataOptions<'_>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
+    reload_project_data_from_cache_with_preloaded(
+        schema,
+        indexes,
+        previous,
+        reload_paths,
+        options,
+        &mut BTreeMap::new(),
+    )
+}
+
+pub(crate) fn reload_project_data_from_cache_with_preloaded(
+    schema: &CftSchema,
+    indexes: &mut SessionIndexBuilder,
+    previous: &SourceDataCache,
+    reload_paths: &BTreeSet<String>,
+    options: ReloadProjectDataOptions<'_>,
+    preloaded: &mut BTreeMap<PathBuf, crate::api::LoadedCfdSource>,
+) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut statistics = ProjectExecutionStats::default();
     let mut source_data = SourceDataCache {
         batches: previous
@@ -333,47 +399,81 @@ pub(crate) fn reload_project_data_from_cache(
             })
             .cloned()
             .collect(),
+        model: previous.model.clone(),
+        record_index: previous.record_index.clone(),
+        changed_sources: BTreeSet::new(),
+        diagnostic_order: previous.diagnostic_order.clone(),
     };
 
-    let mut diagnostics = DiagnosticSet::empty();
     let reload_indexes = source_data
         .batches
         .iter()
         .enumerate()
         .filter_map(|(index, batch)| {
-            (reload_paths.contains(&batch.entry.display_path)
-                || !previous.contains_source(&batch.entry))
-            .then_some(index)
+            (reload_paths.contains(&batch.entry.display_path) || !batch.loaded).then_some(index)
         })
         .collect::<Vec<_>>();
     statistics.sources_reloaded = reload_indexes.len();
 
     for index in reload_indexes {
         let batch = &mut source_data.batches[index];
+        source_data
+            .changed_sources
+            .insert(batch.entry.display_path.clone());
 
-        match CfdLoader::load_partial(
-            CfdLoadContext {
-                schema,
-                source_text: source_override_text(&batch.entry.source, options.source_overrides),
+        let source_text = source_override_text(&batch.entry.source, options.source_overrides);
+        let cached = preloaded
+            .remove(&crate::normalize_path(batch.entry.source.location.path()))
+            .filter(|loaded| source_text.is_some_and(|text| loaded.source.as_ref() == text));
+        let loaded = cached.map_or_else(
+            || {
+                CfdLoader::load_partial(
+                    CfdLoadContext {
+                        schema,
+                        source_text,
+                    },
+                    &batch.entry.source,
+                )
             },
-            &batch.entry.source,
-        ) {
+            Ok,
+        );
+        match loaded {
             Ok(loaded) => {
-                diagnostics.extend(loaded.diagnostics);
+                batch.diagnostics = Arc::new(loaded.diagnostics);
                 batch.source = loaded.source;
                 batch.records = loaded.records.into();
                 batch.dimension_values = loaded.dimensions.into();
                 batch.dimension_variants = loaded.dimension_variants.into();
+                batch.loaded = true;
             }
             Err(err) => {
                 batch.records = Arc::default();
                 batch.dimension_values = Arc::default();
                 batch.dimension_variants = Arc::default();
-                diagnostics.extend(err);
+                batch.diagnostics = Arc::new(err);
+                batch.loaded = false;
             }
         }
     }
 
+    // 诊断与源版本一起缓存，未变化的错误文件不能在其他文件修改后失去诊断。
+    let mut diagnostics = DiagnosticSet::empty();
+    let by_path = source_data
+        .batches
+        .iter()
+        .map(|batch| (batch.entry.display_path.as_str(), batch))
+        .collect::<BTreeMap<_, _>>();
+    for slot in &source_data.diagnostic_order {
+        match slot {
+            CachedDiagnosticSlot::Discovery(error) => diagnostics.extend(error.clone()),
+            CachedDiagnosticSlot::Source(path) => {
+                if let Some(batch) = by_path.get(path.as_str()) {
+                    diagnostics.extend((*batch.diagnostics).clone());
+                }
+            }
+        }
+    }
+    let changed_records = source_data.changed_record_inputs(schema, previous);
     build_output_from_cache(
         schema,
         indexes,
@@ -381,6 +481,7 @@ pub(crate) fn reload_project_data_from_cache(
         &options,
         statistics,
         diagnostics,
+        changed_records.as_deref(),
     )
 }
 
@@ -398,6 +499,10 @@ fn load_resolved_sources(
             continue;
         }
         let display_path = display_path_for(project, &spec);
+        state
+            .source_data
+            .diagnostic_order
+            .push(CachedDiagnosticSlot::Source(display_path.clone()));
         let source_id = SourceId(state.indexes.sources.entries.len());
         state
             .indexes
@@ -416,10 +521,9 @@ fn load_resolved_sources(
             &spec,
         ) {
             Ok(batch) => {
-                diagnostics.extend(batch.diagnostics);
+                diagnostics.extend(batch.diagnostics.clone());
                 let cached_records: Arc<[LoadedRecordDraft]> = batch.records.into();
                 push_loaded_records(
-                    &mut state.records,
                     &mut state.indexes.records,
                     source_id,
                     &display_path,
@@ -431,9 +535,22 @@ fn load_resolved_sources(
                     records: cached_records,
                     dimension_values: batch.dimensions.into(),
                     dimension_variants: batch.dimension_variants.into(),
+                    diagnostics: Arc::new(batch.diagnostics),
+                    loaded: true,
                 });
             }
-            Err(err) => diagnostics.extend(err),
+            Err(err) => {
+                diagnostics.extend(err.clone());
+                state.source_data.batches.push(CachedSourceBatch {
+                    entry,
+                    source: Arc::from(""),
+                    records: Arc::default(),
+                    dimension_values: Arc::default(),
+                    dimension_variants: Arc::default(),
+                    diagnostics: Arc::new(err),
+                    loaded: false,
+                });
+            }
         }
     }
     diagnostics
@@ -459,7 +576,6 @@ fn is_deleted_override(path: &std::path::Path, overrides: &[DataSourceTextOverri
 }
 
 fn push_loaded_records(
-    records: &mut Vec<LoadedRecordDraft>,
     records_index: &mut RecordIndexBuilder,
     source_id: SourceId,
     display_path: &str,
@@ -473,15 +589,83 @@ fn push_loaded_records(
             source_id,
             display_path: display_path.to_string(),
         });
-        records.push(record.clone());
     }
 }
 
 impl SourceDataCache {
-    fn contains_source(&self, entry: &CfdSourceEntry) -> bool {
+    /// 身份与顺序稳定时，仅比较重新解析批次的业务值；未变批次直接共享。
+    fn changed_record_inputs(
+        &self,
+        schema: &CftSchema,
+        previous: &Self,
+    ) -> Option<Vec<CfdRecordHandle>> {
+        let model = previous.model.as_ref()?;
+        if self.batches.len() != previous.batches.len() {
+            return None;
+        }
+        let mut changed = BTreeSet::new();
+        let mut offset = 0;
+        for (current, old) in self.batches.iter().zip(&previous.batches) {
+            if current.entry.display_path != old.entry.display_path
+                || current.records.len() != old.records.len()
+            {
+                return None;
+            }
+            if !Arc::ptr_eq(&current.records, &old.records) {
+                for (index, (input, prior)) in
+                    current.records.iter().zip(old.records.iter()).enumerate()
+                {
+                    if input.id != prior.id || input.actual_type != prior.actual_type {
+                        return None;
+                    }
+                    if !input.same_values(prior) {
+                        let handle = model.record_by_type_id(&input.actual_type, &input.id)?;
+                        if handle.index() != offset + index {
+                            return None;
+                        }
+                        changed.insert(handle);
+                    }
+                }
+            }
+            offset += current.records.len();
+            if !Arc::ptr_eq(&current.dimension_values, &old.dimension_values) {
+                // 覆盖的增删和目标变化同时影响旧、新宿主；来源位置由模型独立刷新。
+                let values_equal = current.dimension_values.len() == old.dimension_values.len()
+                    && current
+                        .dimension_values
+                        .iter()
+                        .zip(old.dimension_values.iter())
+                        .all(|(a, b)| {
+                            a.source_type == b.source_type
+                                && a.source_id == b.source_id
+                                && a.field == b.field
+                                && a.dimension == b.dimension
+                                && a.variant == b.variant
+                                && a.value.same_value(&b.value)
+                        });
+                if !values_equal {
+                    for value in current
+                        .dimension_values
+                        .iter()
+                        .chain(old.dimension_values.iter())
+                    {
+                        changed.insert(model.lookup_assignable(
+                            schema,
+                            &value.source_type,
+                            &value.source_id,
+                        )?);
+                    }
+                }
+            }
+        }
+        (offset == model.record_count()).then(|| changed.into_iter().collect())
+    }
+
+    fn record_drafts(&self) -> Vec<&LoadedRecordDraft> {
         self.batches
             .iter()
-            .any(|batch| batch.entry.source.location == entry.source.location)
+            .flat_map(|batch| batch.records.iter())
+            .collect()
     }
 
     /// 返回与给定规范化路径匹配的批次 display path。
@@ -503,32 +687,97 @@ impl SourceDataCache {
     }
 }
 
+fn model_builder<'a>(
+    schema: &'a CftSchema,
+    records: &[&'a LoadedRecordDraft],
+    source_data: &SourceDataCache,
+) -> crate::data_model::CfdModelBuilder<'a> {
+    let mut builder = CfdDataModel::builder(schema)
+        .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
+    for record in records {
+        builder.add_borrowed_record(record);
+    }
+    for batch in &source_data.batches {
+        builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
+        for (dimension, variant) in batch.dimension_variants.iter() {
+            builder.add_dimension_variant(dimension.clone(), variant.clone());
+        }
+    }
+    builder
+}
+
 fn build_output_from_cache(
     schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
-    source_data: SourceDataCache,
+    mut source_data: SourceDataCache,
     options: &ReloadProjectDataOptions<'_>,
     mut statistics: ProjectExecutionStats,
     source_diagnostics: DiagnosticSet,
+    changed_records: Option<&[CfdRecordHandle]>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
-    let mut records = Vec::new();
     for batch in &source_data.batches {
         let source_id = SourceId(indexes.sources.entries.len());
         indexes.sources.push(batch.entry.clone());
         indexes
             .files
             .add_source_file(batch.entry.display_path.clone(), source_id);
-
-        push_loaded_records(
-            &mut records,
-            &mut indexes.records,
-            source_id,
-            &batch.entry.display_path,
-            &batch.records,
-        );
     }
+    let records = source_data.record_drafts();
     let draft_record_count = records.len();
-    let partial = build_partial_model(schema, &records, &source_data)?;
+    let build = || -> Result<PartialModelBuild, LoadDiagnostics> {
+        Ok(match source_data.model.as_ref().zip(changed_records) {
+            Some((previous, changed)) => {
+                let builder = model_builder(schema, &records, &source_data);
+                match builder.try_build_partial_incremental(previous, changed) {
+                    Ok(Some(output)) => PartialModelBuild {
+                        // 增量模型自带最新来源，诊断按实际标签查找，避免复制全项目路径。
+                        accepted_origins: Vec::new(),
+                        model: output.model,
+                        diagnostics: DiagnosticSet::empty(),
+                        logical_locations: BTreeMap::new(),
+                        statistics: output.statistics,
+                        changed_records: Some(output.changed_records),
+                    },
+                    // 完整容错构建负责诊断归并和被拒绝记录的恢复。
+                    Ok(None) | Err(_) => build_partial_model(schema, &records, &source_data)?,
+                }
+            }
+            None => build_partial_model(schema, &records, &source_data)?,
+        })
+    };
+    let partial = match build() {
+        Ok(partial) => partial,
+        Err(error) => {
+            // 全局构建失败也保留全部可定位记录，供容错会话展示被拒绝项。
+            for (index, batch) in source_data.batches.iter().enumerate() {
+                push_loaded_records(
+                    &mut indexes.records,
+                    SourceId(index),
+                    &batch.entry.display_path,
+                    &batch.records,
+                );
+            }
+            return Err(error);
+        }
+    };
+    let model_healthy = partial.diagnostics.is_empty();
+    if partial.changed_records.is_some() {
+        indexes.previous_records = source_data.record_index.clone();
+    }
+    for (index, batch) in source_data.batches.iter().enumerate() {
+        if indexes.previous_records.is_none()
+            || source_data
+                .changed_sources
+                .contains(&batch.entry.display_path)
+        {
+            push_loaded_records(
+                &mut indexes.records,
+                SourceId(index),
+                &batch.entry.display_path,
+                &batch.records,
+            );
+        }
+    }
     let model = partial.model;
     let origins = partial.accepted_origins;
     let mut model_logical_locations = partial.logical_locations;
@@ -546,6 +795,7 @@ fn build_output_from_cache(
             &origins,
             options.previous_checks,
             options.check_impact,
+            partial.changed_records.as_deref(),
             &mut statistics,
         )
     } else {
@@ -556,7 +806,13 @@ fn build_output_from_cache(
             statistics: coflow_checker::CheckExecutionStats::default(),
         }
     };
-    record_model_work(&mut statistics, draft_record_count, &model, &check);
+    record_model_work(
+        &mut statistics,
+        draft_record_count,
+        partial.statistics,
+        &check,
+    );
+    source_data.model = model_healthy.then(|| model.clone());
     let check_offset = model_diagnostics.diagnostics.len();
     model_diagnostics.extend(check.diagnostics);
     model_logical_locations.extend(
@@ -577,11 +833,10 @@ fn build_output_from_cache(
 
 fn build_partial_model(
     schema: &CftSchema,
-    records: &[LoadedRecordDraft],
+    records: &[&LoadedRecordDraft],
     source_data: &SourceDataCache,
 ) -> Result<PartialModelBuild, LoadDiagnostics> {
-    // 只保留候选下标，成功路径下每条草稿仅克隆一次送入构建器；失败重试时
-    // 按诊断剔除候选，不必先整体克隆一遍记录。
+    // 候选只保存下标；失败重试按诊断剔除记录，始终借用源批次的草稿。
     let mut candidates = (0..records.len()).collect::<Vec<usize>>();
     let mut diagnostics = DiagnosticSet::empty();
     let mut logical_locations = BTreeMap::new();
@@ -600,7 +855,7 @@ fn build_partial_model(
         let mut builder = CfdDataModel::builder(schema)
             .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
         for &index in &candidates {
-            builder.add_loaded_record(records[index].clone());
+            builder.add_borrowed_record(records[index]);
         }
         for batch in &source_data.batches {
             builder.add_dimension_value_drafts(batch.dimension_values.iter().cloned());
@@ -628,6 +883,8 @@ fn build_partial_model(
                     diagnostics,
                     logical_locations,
                     accepted_origins: candidate_origins,
+                    statistics: output.statistics,
+                    changed_records: None,
                 });
             }
             Err(error) => {
@@ -686,18 +943,29 @@ fn run_cached_project_checks(
     origins: &[RecordOrigin],
     previous_checks: Option<&CheckDiagnosticStore>,
     check_impact: &CheckImpact,
+    changed_records: Option<&[CfdRecordHandle]>,
     _statistics: &mut ProjectExecutionStats,
 ) -> ProjectCheckOutput {
     previous_checks.map_or_else(
         || run_full_project_checks(schema, model, origins),
-        |previous| run_incremental_project_checks(schema, model, origins, previous, check_impact),
+        |previous| match changed_records {
+            Some(changed) => run_incremental_project_checks_with_changed_records(
+                schema,
+                model,
+                origins,
+                previous,
+                check_impact,
+                changed,
+            ),
+            None => run_incremental_project_checks(schema, model, origins, previous, check_impact),
+        },
     )
 }
 
 fn record_model_work(
     statistics: &mut ProjectExecutionStats,
     draft_record_count: usize,
-    model: &CfdDataModel,
+    model: CfdModelBuildStats,
     check: &ProjectCheckOutput,
 ) {
     statistics.draft_records_collected = statistics
@@ -705,13 +973,16 @@ fn record_model_work(
         .saturating_add(draft_record_count);
     statistics.records_validated = statistics
         .records_validated
-        .saturating_add(draft_record_count);
+        .saturating_add(model.validated_records);
     statistics.records_materialized = statistics
         .records_materialized
-        .saturating_add(model.record_count());
+        .saturating_add(model.materialized_records);
+    statistics.records_reused = statistics
+        .records_reused
+        .saturating_add(model.reused_records);
     statistics.ref_edges_rebuilt = statistics
         .ref_edges_rebuilt
-        .saturating_add(model.ref_edges().count());
+        .saturating_add(model.rebuilt_ref_edges);
     statistics.check_roots_executed = statistics
         .check_roots_executed
         .saturating_add(check.statistics.executed_tasks);

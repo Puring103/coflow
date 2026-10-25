@@ -76,14 +76,18 @@ impl SessionStore {
         )
         .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "batch field write failed")?;
+        // 结果已按请求下标排序，顺序游标避免每个单元格重复扫描完整批次。
+        let mut applied = report.applied.iter().peekable();
         let edits = targets
             .into_iter()
             .enumerate()
             .map(|(index, (write, old_value))| {
-                let final_coordinate = report
-                    .applied
-                    .iter()
-                    .find(|applied| applied.index == index)
+                while applied.peek().is_some_and(|item| item.index < index) {
+                    applied.next();
+                }
+                let final_coordinate = applied
+                    .peek()
+                    .filter(|item| item.index == index)
                     .and_then(|applied| applied.outcome.renamed.as_ref())
                     .and_then(|(old, new)| (old == &write.coordinate).then(|| new.clone()))
                     .unwrap_or_else(|| write.coordinate.clone());

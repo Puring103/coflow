@@ -231,8 +231,23 @@ impl CfdLoader {
                 structural_limits: crate::limits::RuntimeLimits::default().structural,
             },
         );
-        let (lowered, mut lower_errors) = lower_records_partial(ctx.schema, &ast);
-        let (overlays, overlay_errors) = lower::lower_dimensions(ctx.schema, &ast);
+        let mut loaded = Self::load_parsed_partial(ctx.schema, file, &contents, &ast);
+        let mut diagnostics =
+            cfd_error_to_diagnostics(file, &contents, syntax_diagnostics(parse_errors));
+        diagnostics.extend(loaded.diagnostics);
+        loaded.diagnostics = diagnostics;
+        Ok(loaded)
+    }
+
+    /// 写事务已检查候选语法和结构预算，直接复用该 AST 降低草稿，避免第三次解析。
+    pub(crate) fn load_parsed_partial(
+        schema: &CftSchema,
+        file: &Path,
+        contents: &str,
+        ast: &coflow_language::cfd::CfdAst,
+    ) -> LoadedCfdSource {
+        let (lowered, mut lower_errors) = lower_records_partial(schema, ast);
+        let (overlays, overlay_errors) = lower::lower_dimensions(schema, ast);
         lower_errors.extend(overlay_errors);
         // 行首索引只构建一次，避免逐条记录从文件头重新扫描（二次复杂度）。
         let line_index = LineIndex::new(&contents);
@@ -240,7 +255,7 @@ impl CfdLoader {
             .into_iter()
             .map(|(mut value, span)| {
                 value.origin = RecordOrigin::File {
-                    path: file.clone(),
+                    path: file.to_path_buf(),
                     span: Some(text_span(&line_index, &contents, span)),
                 };
                 value
@@ -251,37 +266,35 @@ impl CfdLoader {
             .map(|record| {
                 let span = text_span(&line_index, &contents, record.span);
                 record.record.with_origin(RecordOrigin::File {
-                    path: file.clone(),
+                    path: file.to_path_buf(),
                     span: Some(span),
                 })
             })
             .collect();
-        let mut diagnostics =
-            cfd_error_to_diagnostics(file, &contents, syntax_diagnostics(parse_errors));
-        diagnostics.extend(cfd_error_to_diagnostics(
+        let diagnostics = cfd_error_to_diagnostics(
             file,
             &contents,
             CfdTextDiagnostics {
                 diagnostics: lower_errors,
             },
-        ));
+        );
         let dimension_variants = ast
             .dimensions
             .iter()
             .filter_map(|block| {
                 let dimension = DimensionName::new(block.dimension.clone()).ok()?;
                 let variant = VariantName::new(block.variant.clone()).ok()?;
-                ctx.schema.resolve_dimension(dimension.as_str())?;
+                schema.resolve_dimension(dimension.as_str())?;
                 Some((dimension, variant))
             })
             .collect();
-        Ok(LoadedCfdSource {
+        LoadedCfdSource {
             records,
             dimensions,
             dimension_variants,
             diagnostics,
-            source: Arc::from(contents.as_ref()),
-        })
+            source: Arc::from(contents),
+        }
     }
 }
 

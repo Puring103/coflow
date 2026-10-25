@@ -10,6 +10,85 @@ use super::*;
 use coflow_language::cfd::parse_cfd;
 
 #[test]
+fn cfd_validation_reuses_unchanged_trees_and_updates_file_definitions() {
+    use crate::validation::{LspRequestDocument, LspValidationCore};
+    let (_cleanup, project) = test_project_with_config(
+        "lsp-cfd-content-cache",
+        "table Item { value: int; }",
+        "data/",
+    );
+    let data = project.root_dir().join("data");
+    std::fs::create_dir_all(&data).expect("data directory");
+    let a = data.join("a.cfd");
+    let b = data.join("b.cfd");
+    std::fs::write(&a, "old: Item { value: 1 }").expect("first source");
+    std::fs::write(&b, "stable: Item { value: 2 }").expect("unchanged source");
+    let a_uri = path_to_file_uri(&a);
+    let b_uri = path_to_file_uri(&b);
+    let mut core = LspValidationCore::new(project);
+    core.validate_project();
+    let LspRequestDocument::Cfd(unchanged) = core.request_document(&b_uri) else {
+        panic!("CFD source")
+    };
+    let unchanged_ast = std::ptr::from_ref(unchanged.ast);
+    let prior_definitions = core.build().expect("first build").cfd_definitions.clone();
+    // 同长度写入也需要读取实际内容；另一个文件的 AST 必须仍然共享。
+    std::fs::write(&a, "new: Item { value: 3 }").expect("same length source edit");
+    core.apply_watched_files(std::slice::from_ref(&a_uri))
+        .expect("watched edit");
+    core.validate_project();
+    let LspRequestDocument::Cfd(unchanged) = core.request_document(&b_uri) else {
+        panic!("CFD source")
+    };
+    assert_eq!(std::ptr::from_ref(unchanged.ast), unchanged_ast);
+    let build = core.build().expect("updated build");
+    let schema = build.schema().expect("schema");
+    assert_eq!(
+        build.cfd_definitions.keys(schema, "Item"),
+        ["new", "stable"]
+    );
+    assert_eq!(prior_definitions.keys(schema, "Item"), ["old", "stable"]);
+
+    core.open_document(
+        a_uri.clone(),
+        "draft: Item { value: 4 }".to_owned(),
+        Some(1),
+    )
+    .expect("open draft");
+    std::fs::write(&a, "disk: Item { value: 5 }").expect("disk edit behind draft");
+    core.apply_watched_files(std::slice::from_ref(&a_uri))
+        .expect("watched draft edit");
+    core.validate_project();
+    let build = core.build().expect("draft build");
+    assert_eq!(
+        build
+            .cfd_definitions
+            .keys(build.schema().expect("schema"), "Item"),
+        ["draft", "stable"]
+    );
+    core.close_document(&a_uri).expect("close draft");
+    let build = core.build().expect("closed build");
+    assert_eq!(
+        build
+            .cfd_definitions
+            .keys(build.schema().expect("schema"), "Item"),
+        ["disk", "stable"]
+    );
+
+    std::fs::remove_file(&a).expect("remove source");
+    core.apply_watched_files(std::slice::from_ref(&a_uri))
+        .expect("watched deletion");
+    core.validate_project();
+    let build = core.build().expect("deleted build");
+    assert_eq!(
+        build
+            .cfd_definitions
+            .keys(build.schema().expect("schema"), "Item"),
+        ["stable"]
+    );
+}
+
+#[test]
 fn cfd_definition_request_returns_schema_field_location() {
     let schema_source = "table Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);

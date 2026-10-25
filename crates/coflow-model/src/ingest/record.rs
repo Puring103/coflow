@@ -25,6 +25,14 @@ pub struct LoadedRecordDraft {
 }
 
 impl LoadedRecordDraft {
+    /// 比较源值与记录身份；来源位置变化由宿主单独刷新。
+    #[must_use]
+    pub fn same_values(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.actual_type == other.actual_type
+            && super::value::same_fields(&self.fields, &other.fields)
+    }
+
     #[must_use]
     pub fn new(
         id: impl Into<String>,

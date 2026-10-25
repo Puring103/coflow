@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_model::{CfdDataModel, CfdRecordHandle};
-use coflow_checker::{CheckTarget, CheckTask};
+use coflow_checker::{CheckPlan, CheckTarget, CheckTask};
 use coflow_language::cft::{
     CftSchema, CheckDependency, CheckField, CheckOwner, CheckStatementInfo,
 };
@@ -13,6 +13,7 @@ use crate::RecordCoordinate;
 pub(crate) fn plan_full_checks(schema: &CftSchema, model: &CfdDataModel) -> Vec<CheckTask> {
     plan_full_checks_with_limit(schema, model, usize::MAX).unwrap_or_default()
 }
+#[cfg(any(test, feature = "internal-check-bench"))]
 pub(crate) fn plan_full_checks_with_limit(
     schema: &CftSchema,
     model: &CfdDataModel,
@@ -21,12 +22,31 @@ pub(crate) fn plan_full_checks_with_limit(
     plan_selected_checks_with_limit(schema, model, max_tasks, None)
 }
 
+pub(super) fn plan_full_check_plan_with_limit<'schema>(
+    schema: &'schema CftSchema,
+    model: &CfdDataModel,
+    max_tasks: usize,
+) -> Result<CheckPlan<'schema>, CheckPlanningError> {
+    plan_selected_check_plan_with_limit(schema, model, max_tasks, None)
+}
+
+#[cfg(any(test, feature = "internal-check-bench"))]
 pub(crate) fn plan_selected_checks_with_limit(
     schema: &CftSchema,
     model: &CfdDataModel,
     max_tasks: usize,
     selected: Option<&BTreeSet<coflow_language::cft::CheckStatementId>>,
 ) -> Result<Vec<CheckTask>, CheckPlanningError> {
+    plan_selected_check_plan_with_limit(schema, model, max_tasks, selected)
+        .map(CheckPlan::into_tasks)
+}
+
+pub(crate) fn plan_selected_check_plan_with_limit<'schema>(
+    schema: &'schema CftSchema,
+    model: &CfdDataModel,
+    max_tasks: usize,
+    selected: Option<&BTreeSet<coflow_language::cft::CheckStatementId>>,
+) -> Result<CheckPlan<'schema>, CheckPlanningError> {
     let mut tasks = CheckTaskBuilder::new(max_tasks);
     for (record, value) in model.records() {
         if tasks.overflowed() {
@@ -66,12 +86,23 @@ pub(crate) fn plan_incremental_checks(
     plan_incremental_checks_with_limit(schema, model, impact, usize::MAX).unwrap_or_default()
 }
 
+#[cfg(any(test, feature = "internal-check-bench"))]
 pub(super) fn plan_incremental_checks_with_limit(
     schema: &CftSchema,
     model: &CfdDataModel,
     impact: &CheckImpact,
     max_tasks: usize,
 ) -> Result<Vec<CheckTask>, CheckPlanningError> {
+    plan_incremental_check_plan_with_limit(schema, model, impact, max_tasks)
+        .map(CheckPlan::into_tasks)
+}
+
+pub(super) fn plan_incremental_check_plan_with_limit<'schema>(
+    schema: &'schema CftSchema,
+    model: &CfdDataModel,
+    impact: &CheckImpact,
+    max_tasks: usize,
+) -> Result<CheckPlan<'schema>, CheckPlanningError> {
     let mut tasks = CheckTaskBuilder::new(max_tasks);
     for (coordinate, changes) in &impact.records {
         if tasks.overflowed() {
@@ -150,6 +181,32 @@ pub(super) fn plan_incremental_checks_with_limit(
     tasks.finish(schema)
 }
 
+pub(super) fn plan_precise_check_plan_with_limit<'schema>(
+    schema: &'schema CftSchema,
+    model: &CfdDataModel,
+    impact: &CheckImpact,
+    affected: Vec<CheckTask>,
+    max_tasks: usize,
+) -> Result<CheckPlan<'schema>, CheckPlanningError> {
+    let mut tasks = CheckTaskBuilder::new(max_tasks);
+    // 新增、替换和重排的拥有子树没有上一代读集，按变化字段枚举其当前全部实例。
+    for (coordinate, changes) in &impact.records {
+        if tasks.overflowed() {
+            break;
+        }
+        if let Some(record) = model.record_by_type_id(&coordinate.actual_type, &coordinate.id) {
+            insert_data_tasks(schema, model, record, None, Some(changes), &mut tasks);
+        }
+    }
+    for task in affected {
+        if tasks.overflowed() {
+            break;
+        }
+        tasks.insert(task);
+    }
+    tasks.finish(schema)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CheckPlanningError {
     pub(super) max_tasks: usize,
@@ -157,6 +214,8 @@ pub(crate) struct CheckPlanningError {
 
 struct CheckTaskBuilder {
     tasks: BTreeSet<CheckTask>,
+    rules: BTreeSet<(CheckTarget, String)>,
+    owner_rules: BTreeSet<String>,
     data_statements: BTreeSet<coflow_language::cft::CheckStatementId>,
     max_tasks: usize,
     overflowed: bool,
@@ -166,6 +225,8 @@ impl CheckTaskBuilder {
     const fn new(max_tasks: usize) -> Self {
         Self {
             tasks: BTreeSet::new(),
+            rules: BTreeSet::new(),
+            owner_rules: BTreeSet::new(),
             data_statements: BTreeSet::new(),
             max_tasks,
             overflowed: false,
@@ -173,29 +234,25 @@ impl CheckTaskBuilder {
     }
 
     fn insert(&mut self, task: CheckTask) {
-        if self.overflowed || self.tasks.contains(&task) {
+        if self.overflowed {
             return;
         }
-        if self.tasks.len() >= self.max_tasks {
+        if self.tasks.insert(task) && self.tasks.len() > self.max_tasks {
             self.overflowed = true;
-            return;
         }
-        self.tasks.insert(task);
     }
 
     const fn overflowed(&self) -> bool {
         self.overflowed
     }
 
-    fn finish(self, schema: &CftSchema) -> Result<Vec<CheckTask>, CheckPlanningError> {
+    fn finish(self, schema: &CftSchema) -> Result<CheckPlan<'_>, CheckPlanningError> {
         if self.overflowed {
             return Err(CheckPlanningError {
                 max_tasks: self.max_tasks,
             });
         }
-        let mut tasks = self.tasks.into_iter().collect::<Vec<_>>();
-        tasks.sort_by(|left, right| left.execution_cmp(right, schema));
-        Ok(tasks)
+        Ok(CheckPlan::from_unique_tasks(schema, self.tasks))
     }
 }
 fn plan_field_change(
@@ -257,6 +314,15 @@ fn insert_owner_tasks(
     changed_projection: &ChangedProjection,
     tasks: &mut CheckTaskBuilder,
 ) {
+    let data_owner = matches!(&info.owner, CheckOwner::Type(owner)
+        if schema.resolve_type(owner).is_some_and(|ty| ty.kind == coflow_language::cft::CftTypeKind::Data));
+    if !data_owner && !statement_matches_projection(info, changed_projection) {
+        return;
+    }
+    // 先合并失效规则，再枚举拥有者；多个根或字段命中同一规则不会重复扫描记录集合。
+    if !tasks.owner_rules.insert(info.rule_id.clone()) {
+        return;
+    }
     match &info.owner {
         CheckOwner::Project(_) => {
             insert_changed_statement_task(
@@ -278,11 +344,7 @@ fn insert_owner_tasks(
                     .extend(schema.check_statements_for_rule(&info.rule_id));
                 return;
             }
-            let records = model
-                .records_assignable_to(schema, owner)
-                .map(|(id, _)| id)
-                .collect::<BTreeSet<_>>();
-            for record in records {
+            for record in model.assignable_records(schema, owner) {
                 if tasks.overflowed() {
                     break;
                 }
@@ -306,11 +368,14 @@ fn insert_changed_statement_task(
     changed: &ChangedProjection,
     tasks: &mut CheckTaskBuilder,
 ) {
-    if matches!(changed, ChangedProjection::Base)
-        || matches!(changed, ChangedProjection::Dimension { dimension, .. } if info.dimensions.contains(dimension))
-    {
+    if statement_matches_projection(info, changed) {
         insert_statement_task(schema, info, target, tasks);
     }
+}
+
+fn statement_matches_projection(info: &CheckStatementInfo, changed: &ChangedProjection) -> bool {
+    matches!(changed, ChangedProjection::Base)
+        || matches!(changed, ChangedProjection::Dimension { dimension, .. } if info.dimensions.contains(dimension))
 }
 
 fn insert_statement_task(
@@ -319,7 +384,10 @@ fn insert_statement_task(
     target: &CheckTarget,
     tasks: &mut CheckTaskBuilder,
 ) {
-    // 命名规则是执行与失效的最小单位，避免局部重跑越过同规则先前的求值错误。
+    // 规则实例是失效单位，但每个根仍保留独立任务及求值预算。先去重，避免 R 个根扩展 R 次。
+    if !tasks.rules.insert((target.clone(), info.rule_id.clone())) {
+        return;
+    }
     for statement in schema.check_statements_for_rule(&info.rule_id) {
         tasks.insert(CheckTask {
             statement,
@@ -356,7 +424,7 @@ fn insert_data_tasks(
         })
         .map(|(field, value)| (value, CfdPath::root().field(field.as_str()), None))
         .collect::<Vec<_>>();
-    for (field, values) in &root.dimension_fields {
+    for (field, values) in root.dimension_fields.iter() {
         for (variant, value) in &values.effective_variants {
             if changes.is_some_and(|changes| {
                 !changes.affects_owned_field(field.as_str(), Some(variant.as_str()))

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -19,7 +20,8 @@ use std::hash::{Hash, Hasher};
 pub struct CfdRecord {
     #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub id: RecordId,
-    pub object: CfdObject,
+    /// 值树独立共享；来源位置变化只复制记录头，不复制全部字段。
+    pub object: Arc<CfdObject>,
     /// Where this record came from in its original source. Used by writers to
     /// dispatch edits back to the right source and by diagnostics to map
     /// record-anchored labels to file/cell locations. Defaults to
@@ -32,7 +34,7 @@ pub struct CfdRecord {
     pub origin: RecordOrigin,
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub dimension_fields: BTreeMap<FieldName, CfdDimensionFieldValues>,
+    pub dimension_fields: Arc<BTreeMap<FieldName, CfdDimensionFieldValues>>,
 }
 
 impl CfdRecord {
@@ -52,7 +54,7 @@ impl CfdRecord {
     }
 
     #[must_use]
-    pub const fn actual_type_name(&self) -> &TypeName {
+    pub fn actual_type_name(&self) -> &TypeName {
         &self.object.actual_type
     }
 
@@ -113,12 +115,12 @@ pub struct CfdDimensionFieldValues {
     pub dimension: DimensionName,
     pub variants: BTreeMap<VariantName, CfdDimensionValue>,
     /// 包含基础表达式回退的当前变体有效值，与显式覆盖来源分开保存。
-    pub effective_variants: BTreeMap<VariantName, CfdValue>,
+    pub effective_variants: BTreeMap<VariantName, Arc<CfdValue>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDimensionValue {
-    pub value: CfdValue,
+    pub value: Arc<CfdValue>,
     pub origin: RecordOrigin,
 }
 
@@ -140,6 +142,17 @@ pub struct CfdObject {
 
 impl CfdObject {
     #[must_use]
+    pub fn same_stored_value(&self, other: &Self) -> bool {
+        self.actual_type == other.actual_type
+            && self.fields.len() == other.fields.len()
+            && self.fields.iter().zip(&other.fields).all(
+                |((left_key, left), (right_key, right))| {
+                    left_key == right_key && left.same_stored_value(right)
+                },
+            )
+    }
+
+    #[must_use]
     pub const fn new(actual_type: TypeName, fields: BTreeMap<FieldName, CfdValue>) -> Self {
         Self {
             actual_type,
@@ -154,7 +167,7 @@ impl CfdObject {
     ///
     /// Returns an error when the type name or any field name is invalid.
     pub fn try_new(
-        actual_type: impl Into<String>,
+        actual_type: impl AsRef<str>,
         fields: BTreeMap<String, CfdValue>,
     ) -> Result<Self, CftNameError> {
         let fields = fields
@@ -228,14 +241,50 @@ pub struct CfdFormattedString {
 }
 
 impl CfdValue {
+    /// 快照复用和失效判定必须保留有符号零及枚举显示成员；语言等值运算仍使用原规则。
+    #[must_use]
+    pub fn same_stored_value(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Float(left), Self::Float(right)) => left.to_bits() == right.to_bits(),
+            (Self::OptionSome(left), Self::OptionSome(right)) => left.same_stored_value(right),
+            (Self::Object(left), Self::Object(right)) => left.same_stored_value(right),
+            (Self::Enum(left), Self::Enum(right)) => left == right && left.variant == right.variant,
+            (Self::Array(left), Self::Array(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|(left, right)| left.same_stored_value(right))
+            }
+            (Self::Dict(left), Self::Dict(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|((left_key, left), (right_key, right))| {
+                            same_stored_key(left_key, right_key) && left.same_stored_value(right)
+                        })
+            }
+            _ => self == other,
+        }
+    }
+
     /// Validates a raw reference id before constructing a successful value.
     ///
     /// # Errors
     ///
     /// Returns an error when `id` is not a valid record id.
-    pub fn record_ref(id: impl Into<String>) -> Result<Self, CftNameError> {
+    pub fn record_ref(id: impl AsRef<str>) -> Result<Self, CftNameError> {
         RecordId::new(id).map(Self::Ref)
     }
+}
+
+fn same_stored_key(left: &CfdDictKey, right: &CfdDictKey) -> bool {
+    left == right
+        && match (left, right) {
+            (CfdDictKey::Enum(left), CfdDictKey::Enum(right)) => left.variant == right.variant,
+            _ => true,
+        }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -287,8 +336,8 @@ impl CfdEnumValue {
     ///
     /// Returns an error when the enum or optional variant name is invalid.
     pub fn try_new(
-        enum_name: impl Into<String>,
-        variant: Option<impl Into<String>>,
+        enum_name: impl AsRef<str>,
+        variant: Option<impl AsRef<str>>,
         value: i64,
     ) -> Result<Self, CftNameError> {
         Ok(Self {

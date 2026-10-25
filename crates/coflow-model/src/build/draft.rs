@@ -1,7 +1,7 @@
 use crate::diagnostics::RecordOrigin;
-use crate::model::{CfdDictKey, CfdValue};
+use crate::model::{CfdDictKey, CfdRecordHandle, CfdValue};
 use crate::LoadedFormattedString;
-use coflow_language::cft::{FieldName, TypeName};
+use coflow_language::cft::{DimensionName, FieldName, TypeName, VariantName};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,4 +24,29 @@ pub(crate) enum ValueDraft {
     },
     Array(Vec<ValueDraft>),
     Dict(Vec<(CfdDictKey, ValueDraft)>),
+}
+
+/// 求值只按需访问记录；全量编译使用切片，增量编译在首次读取时验证输入。
+pub(crate) trait RecordDraftSource {
+    fn get(&self, index: usize) -> Option<&RecordDraft>;
+
+    fn actual_type(&self, index: usize) -> Option<&str> {
+        self.get(index).map(|record| record.actual_type.as_str())
+    }
+
+    fn dimension_value(
+        &self,
+        _record: CfdRecordHandle,
+        _field: &FieldName,
+        _dimension: &DimensionName,
+        _variant: &VariantName,
+    ) -> Option<&ValueDraft> {
+        None
+    }
+}
+
+impl RecordDraftSource for [RecordDraft] {
+    fn get(&self, index: usize) -> Option<&RecordDraft> {
+        <[RecordDraft]>::get(self, index)
+    }
 }

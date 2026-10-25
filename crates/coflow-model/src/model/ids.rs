@@ -32,8 +32,8 @@ impl RecordCoordinate {
     ///
     /// Returns an error when either component is not a valid CFT identifier.
     pub fn try_new(
-        actual_type: impl Into<String>,
-        id: impl Into<String>,
+        actual_type: impl AsRef<str>,
+        id: impl AsRef<str>,
     ) -> Result<Self, CftNameError> {
         Ok(Self::new(TypeName::new(actual_type)?, RecordId::new(id)?))
     }

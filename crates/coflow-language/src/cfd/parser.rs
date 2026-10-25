@@ -30,6 +30,7 @@ struct Parser<'a> {
     pub diagnostics: Vec<CfdSyntaxDiagnostic>,
     budget: StructuralBudget,
     open_nesting: u64,
+    recovery_starts: Option<Vec<usize>>,
 }
 
 impl<'a> Parser<'a> {
@@ -40,6 +41,7 @@ impl<'a> Parser<'a> {
             diagnostics: Vec::new(),
             budget: StructuralBudget::new(options.structural_limits),
             open_nesting: 0,
+            recovery_starts: None,
         }
     }
 
@@ -68,28 +70,35 @@ impl<'a> Parser<'a> {
     /// Skip to a record candidate only after malformed nested syntax has
     /// returned to the structural top level.
     fn recover_to_next_record(&mut self) {
-        let mut nesting = DelimiterNesting::default();
-        let mut at_line_start = true;
-        for token in tokenize_lossless(self.source) {
-            if token.span.start >= self.pos
-                && at_line_start
-                && nesting.is_top_level()
-                && matches!(
-                    token.kind,
-                    LosslessTokenKind::Identifier | LosslessTokenKind::String
-                )
-            {
-                self.pos = token.span.start;
-                return;
+        // 错误恢复共用一次全文件扫描；候选仍以原始文本的完整嵌套状态判定，
+        // 字符串和注释中的括号不会改变恢复位置，合法文件也无需支付扫描成本。
+        let starts = self.recovery_starts.get_or_insert_with(|| {
+            let mut starts = Vec::new();
+            let mut nesting = DelimiterNesting::default();
+            let mut at_line_start = true;
+            for token in tokenize_lossless(self.source) {
+                if at_line_start
+                    && nesting.is_top_level()
+                    && matches!(
+                        token.kind,
+                        LosslessTokenKind::Identifier | LosslessTokenKind::String
+                    )
+                {
+                    starts.push(token.span.start);
+                }
+                nesting.consume(token, self.source);
+                at_line_start = match token.kind {
+                    LosslessTokenKind::Newline => true,
+                    LosslessTokenKind::Whitespace | LosslessTokenKind::Comment if at_line_start => {
+                        true
+                    }
+                    _ => false,
+                };
             }
-            nesting.consume(token, self.source);
-            at_line_start = match token.kind {
-                LosslessTokenKind::Newline => true,
-                LosslessTokenKind::Whitespace | LosslessTokenKind::Comment if at_line_start => true,
-                _ => false,
-            };
-        }
-        self.pos = self.source.len();
+            starts
+        });
+        let next = starts.partition_point(|offset| *offset < self.pos);
+        self.pos = starts.get(next).copied().unwrap_or(self.source.len());
     }
 
     fn parse_top_level(&mut self) -> Result<TopLevel, CfdSyntaxDiagnostic> {

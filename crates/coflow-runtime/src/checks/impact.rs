@@ -58,8 +58,39 @@ impl CheckImpact {
         before: &crate::data_model::CfdDataModel,
         after: &crate::data_model::CfdDataModel,
     ) -> Self {
+        self.with_model_changes_from(
+            schema,
+            before,
+            after,
+            after.records().map(|(handle, _)| handle),
+            true,
+        )
+    }
+
+    pub(super) fn with_changed_records(
+        &self,
+        schema: &coflow_language::cft::CftSchema,
+        before: &crate::data_model::CfdDataModel,
+        after: &crate::data_model::CfdDataModel,
+        changed: &[crate::data_model::CfdRecordHandle],
+    ) -> Self {
+        // 调用方保证成员与句柄保持稳定；列表包含模板和维度传播后的全部有效值变化。
+        self.with_model_changes_from(schema, before, after, changed.iter().copied(), false)
+    }
+
+    fn with_model_changes_from(
+        &self,
+        schema: &coflow_language::cft::CftSchema,
+        before: &crate::data_model::CfdDataModel,
+        after: &crate::data_model::CfdDataModel,
+        records: impl IntoIterator<Item = crate::data_model::CfdRecordHandle>,
+        membership_may_change: bool,
+    ) -> Self {
         let mut impact = self.clone();
-        for (_, current) in after.records() {
+        for handle in records {
+            let Some(current) = after.record(handle) else {
+                continue;
+            };
             let coordinate = current.coordinate();
             let previous = before
                 .record_by_type_id(current.actual_type(), current.id())
@@ -68,18 +99,26 @@ impl CheckImpact {
                 impact.add_membership(schema, coordinate);
                 continue;
             };
-            for (field, value) in current.fields() {
-                if previous.field(field.as_str()) != Some(value) {
-                    impact.add_field(
-                        coordinate.clone(),
-                        ChangedField {
-                            field: field.clone(),
-                            projection: ChangedProjection::Base,
-                        },
-                    );
+            if !std::sync::Arc::ptr_eq(&previous.object, &current.object) {
+                for (field, value) in current.fields() {
+                    if !previous
+                        .field(field.as_str())
+                        .is_some_and(|previous| previous.same_stored_value(value))
+                    {
+                        impact.add_field(
+                            coordinate.clone(),
+                            ChangedField {
+                                field: field.clone(),
+                                projection: ChangedProjection::Base,
+                            },
+                        );
+                    }
                 }
             }
-            for (field, values) in &current.dimension_fields {
+            if std::sync::Arc::ptr_eq(&previous.dimension_fields, &current.dimension_fields) {
+                continue;
+            }
+            for (field, values) in current.dimension_fields.iter() {
                 let previous = previous.dimension_field(field.as_str());
                 for (variant, value) in &values.effective_variants {
                     let previous_value =
@@ -88,7 +127,14 @@ impl CheckImpact {
                         .and_then(|values| values.variants.get(variant))
                         .map(|value| &value.value);
                     let current_source = values.variants.get(variant).map(|value| &value.value);
-                    if previous_value != Some(value) || previous_source != current_source {
+                    let same_value =
+                        previous_value.is_some_and(|previous| previous.same_stored_value(value));
+                    let same_source = match (previous_source, current_source) {
+                        (None, None) => true,
+                        (Some(previous), Some(current)) => previous.same_stored_value(current),
+                        _ => false,
+                    };
+                    if !same_value || !same_source {
                         impact.add_field(
                             coordinate.clone(),
                             ChangedField {
@@ -103,12 +149,14 @@ impl CheckImpact {
                 }
             }
         }
-        for (_, previous) in before.records() {
-            if after
-                .record_by_type_id(previous.actual_type(), previous.id())
-                .is_none()
-            {
-                impact.add_membership(schema, previous.coordinate());
+        if membership_may_change {
+            for (_, previous) in before.records() {
+                if after
+                    .record_by_type_id(previous.actual_type(), previous.id())
+                    .is_none()
+                {
+                    impact.add_membership(schema, previous.coordinate());
+                }
             }
         }
         impact

@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftNameError {
@@ -51,7 +52,8 @@ fn variant_name(value: &str) -> bool {
 macro_rules! cft_name {
     ($name:ident, $kind:literal, $validator:path) => {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(String);
+        // schema 与模型中的已验证名称共享字节；克隆字段布局不重复分配短字符串。
+        pub struct $name(Arc<str>);
 
         impl $name {
             /// Creates a validated semantic name.
@@ -59,10 +61,10 @@ macro_rules! cft_name {
             /// # Errors
             ///
             /// Returns an error when the value is not valid for this name kind.
-            pub fn new(value: impl Into<String>) -> Result<Self, CftNameError> {
-                let value = value.into();
-                if $validator(&value) {
-                    Ok(Self(value))
+            pub fn new(value: impl AsRef<str>) -> Result<Self, CftNameError> {
+                let value = value.as_ref();
+                if $validator(value) {
+                    Ok(Self(Arc::from(value)))
                 } else {
                     Err(CftNameError::new($kind, &value))
                 }
@@ -147,8 +149,8 @@ macro_rules! cft_name {
         cft_name!($name, $kind, $validator);
 
         impl $name {
-            pub(in crate::schema) fn from_validated(value: impl Into<String>) -> Self {
-                Self(value.into())
+            pub(in crate::schema) fn from_validated(value: impl AsRef<str>) -> Self {
+                Self(Arc::from(value.as_ref()))
             }
         }
     };
@@ -180,7 +182,7 @@ cft_name!(CheckName, "check name", check_name, trusted);
 impl CheckName {
     // @ 不属于源码标识符，自动位置身份不会与用户命名的规则冲突。
     pub(in crate::schema) fn anonymous(module: &crate::ModuleId, span: crate::Span) -> Self {
-        Self(format!("@{module}:{}", span.start))
+        Self(format!("@{module}:{}", span.start).into())
     }
 }
 cft_name!(DimensionName, "dimension name", standard_name, trusted);

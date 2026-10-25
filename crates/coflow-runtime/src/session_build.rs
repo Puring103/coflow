@@ -9,9 +9,9 @@ use coflow_language::cft::{CftModuleSet, CftSchema};
 use crate::checks::CheckDiagnosticStore;
 use crate::indexes::{DiagnosticsStore, SessionIndexBuilder, SessionIndexes};
 use crate::load::{
-    empty_load_output, empty_model, load_project_data, reload_project_data_from_cache,
-    DataSourceTextOverride, LoadDiagnostics, LoadProjectDataOptions, ProjectLoadOutput,
-    ReloadProjectDataOptions, SourceDataCache,
+    empty_load_output, empty_model, load_project_data,
+    reload_project_data_from_cache_with_preloaded, DataSourceTextOverride, LoadDiagnostics,
+    LoadProjectDataOptions, ProjectLoadOutput, ReloadProjectDataOptions, SourceDataCache,
 };
 use crate::project_schema::open_project_schema_attempt;
 use crate::session::{ProjectSchemaSession, ProjectSession};
@@ -62,10 +62,91 @@ pub(crate) struct SessionBuildOutput {
     pub(crate) project_file_updates: Vec<crate::ProjectFileUpdate>,
 }
 
+pub(crate) fn refresh_data_session(
+    schema_session: ProjectSchemaSession,
+    previous: &SourceDataCache,
+    checks: &CheckDiagnosticStore,
+    changed_paths: &[std::path::PathBuf],
+) -> Result<ProjectSession, DiagnosticSet> {
+    let paths = changed_paths
+        .iter()
+        .map(|path| crate::normalize_path(path))
+        .collect::<BTreeSet<_>>();
+    let reload_paths = previous.display_paths_for_paths(&paths);
+    // 新增或删除来源改变发现集合；复用编译后的 schema，重新发现数据和成员。
+    if reload_paths.len() != paths.len() || paths.iter().any(|path| !path.is_file()) {
+        return finish_project_session(schema_session, &[], true).map(|output| output.session);
+    }
+    let ProjectSchemaSession {
+        project,
+        modules,
+        schema,
+        mut diagnostics,
+    } = schema_session;
+    let Some(schema) = schema else {
+        return Err(diagnostics.into_set());
+    };
+    let ctx = SessionBuildContext {
+        project,
+        modules,
+        schema,
+        source_overrides: Vec::new(),
+    };
+    let impact = crate::checks::impact::CheckImpact::default();
+    let loaded = load_cached_data(
+        &ctx,
+        previous,
+        CachedLoadOptions {
+            reload_paths: &reload_paths,
+            run_checks: true,
+            previous_checks: Some(checks),
+            check_impact: &impact,
+        },
+        &mut std::collections::BTreeMap::new(),
+    );
+    let (model, indexes, source_data, check_state, statistics) = match loaded {
+        Ok((mut output, indexes)) => {
+            diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
+            let indexes = indexes.finalize_with_model(&output.model);
+            output.source_data.cache_record_index(&indexes.records);
+            (
+                output.model,
+                indexes,
+                output.source_data,
+                output.check_state,
+                output.statistics,
+            )
+        }
+        Err(failure) => {
+            diagnostics.extend_with_logical_locations(
+                failure.diagnostics.diagnostics,
+                failure.diagnostics.logical_locations,
+            );
+            (
+                empty_model(&ctx.schema)?,
+                failure.indexes.finalize_rejected(),
+                SourceDataCache::default(),
+                CheckDiagnosticStore::default(),
+                ProjectExecutionStats::default(),
+            )
+        }
+    };
+    Ok(assemble_session(
+        ctx,
+        model,
+        diagnostics,
+        indexes,
+        source_data,
+        check_state,
+        statistics,
+    ))
+}
+
 pub(crate) fn rebuild_project_session_from_generation(
     session: &ProjectSession,
     impact: &MutationImpact,
     source_overrides: &[DataSourceTextOverride],
+    mut preloaded: std::collections::BTreeMap<std::path::PathBuf, crate::api::LoadedCfdSource>,
 ) -> Result<SessionBuildOutput, DiagnosticSet> {
     let mut ctx = SessionBuildContext {
         project: session.project.clone(),
@@ -86,7 +167,7 @@ pub(crate) fn rebuild_project_session_from_generation(
         source_data,
         check_state,
         execution_stats,
-    } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics)?;
+    } = rebuild_data_pipeline(&ctx, session, impact, &mut diagnostics, &mut preloaded)?;
     Ok(SessionBuildOutput {
         session: assemble_session(
             ctx,
@@ -188,7 +269,7 @@ fn build_data_pipeline(
     diagnostics: &mut DiagnosticsStore,
     run_checks: bool,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
-    let (output, indexes) = match load_data(ctx, run_checks) {
+    let (mut output, indexes) = match load_data(ctx, run_checks) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
             diagnostics.extend_with_logical_locations(
@@ -206,6 +287,7 @@ fn build_data_pipeline(
     };
 
     let indexes = indexes.finalize_with_model(&output.model);
+    output.source_data.cache_record_index(&indexes.records);
     diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
 
     Ok(LoadedSessionData {
@@ -223,9 +305,10 @@ fn rebuild_data_pipeline(
     previous: &ProjectSession,
     impact: &MutationImpact,
     diagnostics: &mut DiagnosticsStore,
+    preloaded: &mut std::collections::BTreeMap<std::path::PathBuf, crate::api::LoadedCfdSource>,
 ) -> Result<LoadedSessionData, DiagnosticSet> {
     let check_impact = impact.check_impact(&ctx.schema);
-    let (output, indexes) = match load_cached_data(
+    let (mut output, indexes) = match load_cached_data(
         ctx,
         &previous.source_data,
         CachedLoadOptions {
@@ -234,6 +317,7 @@ fn rebuild_data_pipeline(
             previous_checks: Some(&previous.check_state),
             check_impact: &check_impact,
         },
+        preloaded,
     ) {
         Ok(loaded) => loaded,
         Err(load_failure) => {
@@ -252,6 +336,7 @@ fn rebuild_data_pipeline(
     };
 
     let indexes = indexes.finalize_with_model(&output.model);
+    output.source_data.cache_record_index(&indexes.records);
     diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
     Ok(LoadedSessionData {
         model: output.model,
@@ -304,10 +389,11 @@ fn load_cached_data(
     ctx: &SessionBuildContext,
     previous: &SourceDataCache,
     options: CachedLoadOptions<'_>,
+    preloaded: &mut std::collections::BTreeMap<std::path::PathBuf, crate::api::LoadedCfdSource>,
 ) -> Result<(ProjectLoadOutput, SessionIndexBuilder), Box<DataLoadFailure>> {
     let mut indexes = SessionIndexBuilder::default();
     let pending = previous.with_pending_sources(&ctx.project, &ctx.source_overrides);
-    let output = match reload_project_data_from_cache(
+    let output = match reload_project_data_from_cache_with_preloaded(
         &ctx.schema,
         &mut indexes,
         &pending,
@@ -320,6 +406,7 @@ fn load_cached_data(
             check_impact: options.check_impact,
             source_overrides: &ctx.source_overrides,
         },
+        preloaded,
     ) {
         Ok(output) => output,
         Err(diagnostics) => {

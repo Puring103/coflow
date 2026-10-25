@@ -1,7 +1,5 @@
-use crate::api::{
-    byte_range, map_diagnostics_with_origins, DiagnosticContext, DiagnosticSet, Label,
-    SourceLocation,
-};
+use crate::api::diagnostics::map_diagnostics_with_origin_lookup;
+use crate::api::{byte_range, DiagnosticContext, DiagnosticSet, Label, SourceLocation};
 use crate::data_model::{CfdDataModel, CfdDiagnostics, RecordOrigin};
 use coflow_checker::{CheckDiagnostic, CheckDiagnosticContext, CheckExecutionStats};
 use coflow_language::cft::CftSchema;
@@ -28,7 +26,14 @@ pub(super) fn render_check_store(
             .map(crate::data_model::CfdRecord::coordinate)
     });
     ProjectCheckOutput {
-        diagnostics: map_check_diagnostics_with_origins(Some(schema), raw, origins),
+        diagnostics: map_check_diagnostics_with_origin_lookup(Some(schema), raw, |id| {
+            // 显式来源切片保持既有映射语义；增量代次省略切片时，按诊断涉及的句柄读取模型来源。
+            if origins.is_empty() {
+                model.record(id).map(|record| record.origin.clone())
+            } else {
+                origins.get(id.index()).cloned()
+            }
+        }),
         logical_locations,
         state,
         statistics,
@@ -40,6 +45,16 @@ pub(crate) fn map_check_diagnostics_with_origins(
     diagnostics: Vec<CheckDiagnostic>,
     origins: &[RecordOrigin],
 ) -> DiagnosticSet {
+    map_check_diagnostics_with_origin_lookup(schema, diagnostics, |id| {
+        origins.get(id.index()).cloned()
+    })
+}
+
+fn map_check_diagnostics_with_origin_lookup(
+    schema: Option<&CftSchema>,
+    diagnostics: Vec<CheckDiagnostic>,
+    resolve: impl Fn(crate::data_model::CfdRecordHandle) -> Option<RecordOrigin>,
+) -> DiagnosticSet {
     let (raw, metadata): (Vec<_>, Vec<_>) = diagnostics
         .into_iter()
         .map(|diagnostic| {
@@ -49,7 +64,7 @@ pub(crate) fn map_check_diagnostics_with_origins(
             )
         })
         .unzip();
-    let mut mapped = map_diagnostics_with_origins(CfdDiagnostics::new(raw), origins);
+    let mut mapped = map_diagnostics_with_origin_lookup(CfdDiagnostics::new(raw), resolve);
     for (diagnostic, (contexts, schema_location)) in mapped.diagnostics.iter_mut().zip(metadata) {
         diagnostic.contexts = contexts.into_iter().map(map_check_context).collect();
         if let (Some(schema), Some(location)) = (schema, schema_location) {

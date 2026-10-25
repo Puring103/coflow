@@ -33,6 +33,7 @@
 ## 工程维护
 
 - [质量要求](development/quality.md)：代码、诊断、测试、文档及检查职责。
+- [引擎核心性能优化方案](development/engine-performance-plan.zh-CN.md)：十万条记录与高频编辑的优化目标、已实施结构、增量安全边界和验收方式。
 - [发布流程](releasing.md)：版本、安装器、发布资产与更新签名。
 - [macOS 签名](releasing-macos-signing.md)：证书、公证和发布环境配置。
 - [VS Code 扩展](../editors/vscode-coflow/README.md)：语言服务接入和扩展开发。

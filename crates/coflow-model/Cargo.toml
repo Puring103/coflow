@@ -16,7 +16,7 @@ ts-export = ["dep:ts-rs"]
 [dependencies]
 coflow-diagnostics = { path = "../coflow-diagnostics" }
 coflow-language = { path = "../coflow-language" }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 ts-rs = { version = "10", optional = true }
 unicode-ident = "1"
 

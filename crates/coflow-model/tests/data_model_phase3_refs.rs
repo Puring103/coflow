@@ -11,6 +11,154 @@ mod common;
 use common::*;
 
 #[test]
+fn reference_plan_includes_polymorphic_recursive_objects_and_preserves_edge_order() {
+    let schema = compile_schema(
+        r#"
+            table Target {}
+            abstract data Base {}
+            abstract data Middle : Base {}
+            data Link : Middle {
+                z: &Target;
+                a: &Target;
+                next: Option<Base> = None;
+            }
+            data Plain { values: [int]; }
+            data Wrapper { nodes: Option<{string: [Base]}>; }
+            table Holder { value: Wrapper; plain: Plain; }
+        "#,
+    );
+    let link = || {
+        LoadedValueDraft::object(
+            "Link",
+            [
+                ("z", LoadedValueDraft::record_ref("second")),
+                ("a", LoadedValueDraft::record_ref("first")),
+            ],
+        )
+    };
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "first",
+        "Target",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
+    builder.add_record(
+        "second",
+        "Target",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [
+            (
+                "value",
+                LoadedValueDraft::object(
+                    "Wrapper",
+                    [(
+                        "nodes",
+                        LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::dict([
+                            (
+                                LoadedDictKeyDraft::from("zslot"),
+                                LoadedValueDraft::Array(vec![link()]),
+                            ),
+                            (
+                                LoadedDictKeyDraft::from("aslot"),
+                                LoadedValueDraft::Array(vec![link()]),
+                            ),
+                        ]))),
+                    )],
+                ),
+            ),
+            (
+                "plain",
+                LoadedValueDraft::object(
+                    "Plain",
+                    [("values", LoadedValueDraft::Array(vec![1_i64.into()]))],
+                ),
+            ),
+        ],
+    );
+    let model = builder.build().unwrap();
+    let host = model.record_by_type_id("Holder", "holder").unwrap();
+    let first = model.record_by_type_id("Target", "first").unwrap();
+    let second = model.record_by_type_id("Target", "second").unwrap();
+    let expected = ["zslot", "aslot"]
+        .into_iter()
+        .flat_map(|slot| {
+            [("a", first), ("z", second)]
+                .into_iter()
+                .map(move |(field, target)| {
+                    (
+                        CfdPath::root()
+                            .field("value")
+                            .field("nodes")
+                            .dict_key_value(&CfdDictKey::String(slot.to_string()))
+                            .index(0)
+                            .field(field),
+                        target,
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    let actual = model
+        .ref_edges_from_host(host)
+        .map(|edge| (edge.site.path.clone(), edge.target))
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+    for (path, target) in expected {
+        assert_eq!(model.resolve_ref(&RefSite::new(host, path)), Some(target));
+    }
+    assert_eq!(model.ref_edges_to_target(first).count(), 2);
+    assert_eq!(model.ref_edges_to_target(second).count(), 2);
+}
+
+#[test]
+fn repeated_validation_preserves_nested_editable_diagnostic_severity_and_order() {
+    for invalid_enum in [false, true] {
+        let schema = compile_schema(
+            "enum Kind { Valid } data Child { value: Kind; } table Holder { child: Child; }",
+        );
+        let fields = if invalid_enum {
+            vec![("value", LoadedValueDraft::enum_variant("Kind", "Missing"))]
+        } else {
+            Vec::new()
+        };
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "holder",
+            "Holder",
+            [("child", LoadedValueDraft::object("Child", fields))],
+        );
+        let diagnostics = builder
+            .build_partial()
+            .expect_err("nested incomplete objects remain blocking");
+        let codes = diagnostics
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            [
+                CfdErrorCode::MissingRequiredField,
+                if invalid_enum {
+                    CfdErrorCode::InvalidEnumVariant
+                } else {
+                    CfdErrorCode::MissingRequiredField
+                },
+            ]
+        );
+        for diagnostic in &diagnostics.diagnostics {
+            assert_eq!(
+                diagnostic.primary.as_ref().unwrap().path,
+                CfdPath::root().field("child").field("value")
+            );
+        }
+    }
+}
+
+#[test]
 fn key_only_record_ref_helper_builds_ref_values_for_ref_fields() {
     let schema = compile_schema(
         r#"

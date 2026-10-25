@@ -22,6 +22,7 @@ mod graph;
 pub(crate) mod mutation_apply;
 mod operations;
 mod project_commands;
+mod reload;
 mod revision;
 pub(crate) mod row_build;
 mod settings_commands;

@@ -2,6 +2,7 @@ pub(crate) mod impact;
 #[cfg(test)]
 mod incremental_tests;
 pub(crate) mod planning;
+mod read_graph;
 pub(crate) mod render;
 mod store;
 
@@ -9,16 +10,24 @@ use std::collections::BTreeMap;
 
 use crate::api::DiagnosticSet;
 use crate::data_model::{CfdDataModel, RecordOrigin};
-use coflow_checker::{execute_checks, CheckExecutionStats, CheckLimits, CheckOutput, CheckTask};
+#[cfg(test)]
+use coflow_checker::execute_checks;
+#[cfg(any(test, feature = "internal-check-bench"))]
+use coflow_checker::CheckTask;
+use coflow_checker::{CheckExecutionStats, CheckLimits, CheckOutput, CheckPlan};
 use coflow_language::cft::CftSchema;
 
 use crate::indexes::DiagnosticLogicalLocation;
 use impact::CheckImpact;
 #[cfg(any(test, feature = "internal-check-bench"))]
-pub(crate) use planning::{plan_full_checks, plan_incremental_checks};
+use planning::plan_full_checks_with_limit;
+#[cfg(test)]
+use planning::plan_incremental_checks_with_limit;
 use planning::{
-    plan_full_checks_with_limit, plan_incremental_checks_with_limit, CheckPlanningError,
+    plan_full_check_plan_with_limit, plan_incremental_check_plan_with_limit, CheckPlanningError,
 };
+#[cfg(any(test, feature = "internal-check-bench"))]
+pub(crate) use planning::{plan_full_checks, plan_incremental_checks};
 use render::render_check_store;
 pub(crate) use store::CheckDiagnosticStore;
 
@@ -48,12 +57,8 @@ pub(crate) fn run_full_project_checks(
         evaluation: crate::limits::RuntimeLimits::default().evaluation,
         ..CheckLimits::default()
     };
-    let output = execute_plan(
-        plan_full_checks_with_limit(schema, model, limits.max_tasks),
-        schema,
-        model,
-        limits,
-    );
+    let plan = plan_full_check_plan_with_limit(schema, model, limits.max_tasks);
+    let output = execute_prepared_plan(plan, model, limits);
     let statistics = output.statistics;
     let mut state = CheckDiagnosticStore::default();
     state.replace_results(schema, model, output);
@@ -67,6 +72,35 @@ pub(crate) fn run_incremental_project_checks(
     previous: &CheckDiagnosticStore,
     impact: &CheckImpact,
 ) -> ProjectCheckOutput {
+    run_incremental_project_checks_impl(schema, model, origins, previous, impact, None)
+}
+
+pub(crate) fn run_incremental_project_checks_with_changed_records(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+    previous: &CheckDiagnosticStore,
+    impact: &CheckImpact,
+    changed_records: &[crate::data_model::CfdRecordHandle],
+) -> ProjectCheckOutput {
+    run_incremental_project_checks_impl(
+        schema,
+        model,
+        origins,
+        previous,
+        impact,
+        Some(changed_records),
+    )
+}
+
+fn run_incremental_project_checks_impl(
+    schema: &CftSchema,
+    model: &CfdDataModel,
+    origins: &[RecordOrigin],
+    previous: &CheckDiagnosticStore,
+    impact: &CheckImpact,
+    changed_records: Option<&[crate::data_model::CfdRecordHandle]>,
+) -> ProjectCheckOutput {
     // 预算中断后不把未完成的上一代当作可复用检查结果。
     if previous.is_incomplete() || previous.variant_catalog_changed(schema, model) {
         return run_full_project_checks(schema, model, origins);
@@ -75,13 +109,29 @@ pub(crate) fn run_incremental_project_checks(
         evaluation: crate::limits::RuntimeLimits::default().evaluation,
         ..CheckLimits::default()
     };
-    let impact = previous.effective_impact(schema, model, impact);
-    let plan = plan_incremental_checks_with_limit(schema, model, &impact, limits.max_tasks);
+    let impact = changed_records.map_or_else(
+        || previous.effective_impact(schema, model, impact),
+        |records| previous.effective_impact_for_records(schema, model, impact, records),
+    );
+    let plan = previous.precise_tasks(schema, model, &impact).map_or_else(
+        || plan_incremental_check_plan_with_limit(schema, model, &impact, limits.max_tasks),
+        |tasks| {
+            planning::plan_precise_check_plan_with_limit(
+                schema,
+                model,
+                &impact,
+                tasks,
+                limits.max_tasks,
+            )
+        },
+    );
     let planned = plan.is_ok();
-    let output = execute_plan(plan, schema, model, limits);
+    let output = execute_prepared_plan(plan, model, limits);
     let statistics = output.statistics;
     let mut state = previous.clone();
-    state.remove_missing_records(model);
+    if !impact.record_sets.is_empty() {
+        state.remove_missing_records(model);
+    }
     // 规划失败保留既有诊断；成功规划后，清理拥有字段下已消失或移动的内联路径。
     if planned {
         state.remove_changed_data(&impact);
@@ -90,14 +140,27 @@ pub(crate) fn run_incremental_project_checks(
     render_check_store(schema, model, origins, state, statistics)
 }
 
+#[cfg(test)]
 fn execute_plan(
     plan: Result<Vec<CheckTask>, CheckPlanningError>,
     schema: &CftSchema,
     model: &CfdDataModel,
     limits: CheckLimits,
 ) -> CheckOutput {
+    execute_prepared_plan(
+        plan.map(|tasks| CheckPlan::from_unique_tasks(schema, tasks.into_iter().collect())),
+        model,
+        limits,
+    )
+}
+
+fn execute_prepared_plan(
+    plan: Result<CheckPlan<'_>, CheckPlanningError>,
+    model: &CfdDataModel,
+    limits: CheckLimits,
+) -> CheckOutput {
     match plan {
-        Ok(tasks) => execute_checks(schema, model, tasks, limits),
+        Ok(plan) => plan.execute(model, limits),
         Err(error) => CheckOutput {
             results: Vec::new(),
             request_diagnostics: vec![crate::data_model::CfdDiagnostic::error(

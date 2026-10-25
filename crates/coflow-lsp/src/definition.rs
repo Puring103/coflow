@@ -4,6 +4,8 @@ use coflow_language::cft::CftSchema;
 use coflow_language::source::Span;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::{
     byte_offset_from_position, byte_range, cfd, current_type_at, dotted_chain_at, field_by_type,
@@ -11,37 +13,72 @@ use super::{
     LspPosition,
 };
 
+type CfdRecordLocations = BTreeMap<PathBuf, Arc<Vec<Value>>>;
+type CfdTypeDefinitions = BTreeMap<String, Arc<CfdRecordLocations>>;
+
 #[derive(Debug, Default)]
+pub(crate) struct CfdFileDefinitions {
+    records: BTreeMap<String, BTreeMap<String, Arc<Vec<Value>>>>,
+}
+
+impl CfdFileDefinitions {
+    pub(crate) fn new(uri: &str, text: &str, ast: &CfdAst) -> Self {
+        let mut records = BTreeMap::<String, BTreeMap<String, Arc<Vec<Value>>>>::new();
+        let line_index = coflow_runtime::LineIndex::new(text);
+        for record in &ast.records {
+            let range = cfd::byte_range_with_index(
+                &line_index,
+                text,
+                record.id_span.start,
+                record.id_span.end,
+            );
+            let locations = records
+                .entry(record.type_name.clone())
+                .or_default()
+                .entry(record.id.clone())
+                .or_default();
+            Arc::make_mut(locations).push(json!({ "uri": uri, "range": range }));
+        }
+        Self { records }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub(crate) struct CfdDefinitionIndex {
-    records: BTreeMap<String, BTreeMap<String, Vec<Value>>>,
+    records: BTreeMap<String, Arc<CfdTypeDefinitions>>,
 }
 
 impl CfdDefinitionIndex {
-    pub(crate) fn from_documents<'a>(
-        documents: impl IntoIterator<Item = (&'a str, &'a str, &'a CfdAst)>,
-    ) -> Self {
-        let mut records = BTreeMap::<String, BTreeMap<String, Vec<Value>>>::new();
-        for (uri, text, ast) in documents {
-            let line_index = coflow_runtime::LineIndex::new(text);
-            for record in &ast.records {
-                let range = cfd::byte_range_with_index(
-                    &line_index,
-                    text,
-                    record.id_span.start,
-                    record.id_span.end,
-                );
-                records
-                    .entry(record.type_name.clone())
-                    .or_default()
-                    .entry(record.id.clone())
-                    .or_default()
-                    .push(json!({
-                        "uri": uri,
-                        "range": range,
-                    }));
+    pub(crate) fn remove_document(&mut self, path: &Path, definitions: &CfdFileDefinitions) {
+        for (type_name, records) in &definitions.records {
+            let Some(indexed) = self.records.get_mut(type_name) else {
+                continue;
+            };
+            let indexed = Arc::make_mut(indexed);
+            for id in records.keys() {
+                let Some(locations) = indexed.get_mut(id) else {
+                    continue;
+                };
+                Arc::make_mut(locations).remove(path);
+                if locations.is_empty() {
+                    indexed.remove(id);
+                }
+            }
+            if indexed.is_empty() {
+                self.records.remove(type_name);
             }
         }
-        Self { records }
+    }
+
+    pub(crate) fn insert_document(&mut self, path: &Path, definitions: &CfdFileDefinitions) {
+        // 文件级替换只复制命中的类型/记录索引；位置及未变化子树由旧快照共同持有。
+        for (type_name, records) in &definitions.records {
+            let indexed = Arc::make_mut(self.records.entry(type_name.clone()).or_default());
+            for (id, locations) in records {
+                let indexed = Arc::make_mut(indexed.entry(id.clone()).or_default());
+                indexed.insert(path.to_path_buf(), Arc::clone(locations));
+            }
+        }
     }
 
     fn location(&self, schema: &CftSchema, expected_type: &str, key: &str) -> Option<Value> {
@@ -49,7 +86,8 @@ impl CfdDefinitionIndex {
             .records
             .get(expected_type)
             .and_then(|records| records.get(key))
-            .and_then(|locations| locations.first())
+            .and_then(|locations| locations.first_key_value())
+            .and_then(|(_, locations)| locations.first())
         {
             return Some(location.clone());
         }
@@ -61,7 +99,8 @@ impl CfdDefinitionIndex {
                 self.records
                     .get(actual_type.as_str())
                     .and_then(|records| records.get(key))
-                    .and_then(|locations| locations.first())
+                    .and_then(|locations| locations.first_key_value())
+                    .and_then(|(_, locations)| locations.first())
                     .cloned()
             })
     }

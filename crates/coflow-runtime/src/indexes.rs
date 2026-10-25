@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::api::{source_location_display_path, CfdSource, DiagnosticSet, FlatDiagnostic};
 use crate::data_model::RecordOrigin;
@@ -18,13 +19,17 @@ pub(crate) struct SessionIndexBuilder {
     pub(crate) sources: SourceIndex,
     pub(crate) records: RecordIndexBuilder,
     pub(crate) files: FileIndex,
+    pub(crate) previous_records: Option<RecordIndex>,
 }
 
 impl SessionIndexBuilder {
     pub(crate) fn finalize_with_model(self, model: &CfdDataModel) -> SessionIndexes {
         SessionIndexes {
             sources: self.sources,
-            records: self.records.finalize_with_model(model),
+            records: match self.previous_records {
+                Some(previous) => self.records.finalize_incremental(previous),
+                None => self.records.finalize_with_model(model),
+            },
             files: self.files,
         }
     }
@@ -229,9 +234,9 @@ impl SourceId {
 ///
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RecordIndex {
-    by_id: BTreeMap<CfdRecordHandle, RecordRef>,
-    by_coordinate: BTreeMap<RecordCoordinate, CfdRecordHandle>,
-    files: BTreeMap<String, Vec<CfdRecordHandle>>,
+    by_id: Arc<Vec<Option<Arc<RecordRef>>>>,
+    by_coordinate: Arc<BTreeMap<RecordCoordinate, CfdRecordHandle>>,
+    files: Arc<BTreeMap<String, Vec<CfdRecordHandle>>>,
     rejected: Vec<RejectedRecordRef>,
     rejected_files: BTreeMap<String, Vec<usize>>,
     rejected_by_coordinate: BTreeMap<RecordCoordinate, Vec<usize>>,
@@ -254,14 +259,14 @@ pub(crate) struct PendingRecordRef {
 impl RecordIndex {
     #[must_use]
     pub(crate) fn get(&self, id: CfdRecordHandle) -> Option<&RecordRef> {
-        self.by_id.get(&id)
+        self.by_id.get(id.index()).and_then(Option::as_deref)
     }
 
     #[must_use]
     pub(crate) fn get_by_coordinate(&self, actual_type: &str, id: &str) -> Option<&RecordRef> {
         let coordinate = RecordCoordinate::try_new(actual_type, id).ok()?;
         let id = self.by_coordinate.get(&coordinate)?;
-        self.by_id.get(id)
+        self.get(*id)
     }
 
     #[must_use]
@@ -282,7 +287,7 @@ impl RecordIndex {
     }
 
     #[must_use]
-    pub(crate) const fn by_id(&self) -> &BTreeMap<CfdRecordHandle, RecordRef> {
+    pub(crate) fn by_id(&self) -> &[Option<Arc<RecordRef>>] {
         &self.by_id
     }
 
@@ -321,6 +326,22 @@ impl RecordIndexBuilder {
 
     fn finalize_with_model(self, model: &CfdDataModel) -> RecordIndex {
         let mut index = RecordIndex::default();
+        Arc::make_mut(&mut index.by_id).resize_with(model.record_count(), || None);
+        // 健康模型保留输入顺序，直接连接来源与句柄，省去完整临时坐标映射。
+        if self.pending.len() == model.record_count()
+            && self
+                .pending
+                .iter()
+                .zip(model.records())
+                .all(|(pending, (_, record))| {
+                    pending.actual_type == record.actual_type() && pending.id == record.id()
+                })
+        {
+            for (pending, (id, record)) in self.pending.into_iter().zip(model.records()) {
+                index.push_record(id, record.coordinate(), pending);
+            }
+            return index;
+        }
         // Index pending by coordinate, popping each entry as it's matched so
         // duplicate loader output (theoretically impossible since model
         // build rejects duplicates) doesn't reuse the same metadata twice.
@@ -346,27 +367,40 @@ impl RecordIndexBuilder {
             for duplicate in candidates {
                 index.push_rejected(duplicate);
             }
-            index
-                .files
-                .entry(pending.display_path.clone())
-                .or_default()
-                .push(id);
-            index.by_coordinate.insert(coordinate.clone(), id);
-            index.by_id.insert(
-                id,
-                RecordRef {
-                    id,
-                    coordinate,
-                    origin: pending.origin,
-                    source_id: pending.source_id,
-                    display_path: pending.display_path,
-                },
-            );
+            index.push_record(id, coordinate, pending);
         }
         for pending in pending_by_coordinate.into_values().flatten() {
             index.push_rejected(pending);
         }
         index
+    }
+
+    fn finalize_incremental(self, mut previous: RecordIndex) -> RecordIndex {
+        // 成员和句柄已由模型增量构建核对；只更新重新解析文件中的来源头部。
+        // 坐标/文件成员索引共享，记录值与来源头部都不随整项目复制。
+        for pending in self.pending {
+            let Some(id) = previous.id_for_coordinate(&pending.actual_type, &pending.id) else {
+                continue;
+            };
+            let Some(old) = previous.get(id) else {
+                continue;
+            };
+            if old.origin == pending.origin
+                && old.source_id == pending.source_id
+                && old.display_path == pending.display_path
+            {
+                continue;
+            }
+            let coordinate = old.coordinate.clone();
+            Arc::make_mut(&mut previous.by_id)[id.index()] = Some(Arc::new(RecordRef {
+                id,
+                coordinate,
+                origin: pending.origin,
+                source_id: pending.source_id,
+                display_path: pending.display_path,
+            }));
+        }
+        previous
     }
 
     fn finalize_rejected(self) -> RecordIndex {
@@ -379,6 +413,26 @@ impl RecordIndexBuilder {
 }
 
 impl RecordIndex {
+    fn push_record(
+        &mut self,
+        id: CfdRecordHandle,
+        coordinate: RecordCoordinate,
+        pending: PendingRecordRef,
+    ) {
+        Arc::make_mut(&mut self.files)
+            .entry(pending.display_path.clone())
+            .or_default()
+            .push(id);
+        Arc::make_mut(&mut self.by_coordinate).insert(coordinate.clone(), id);
+        Arc::make_mut(&mut self.by_id)[id.index()] = Some(Arc::new(RecordRef {
+            id,
+            coordinate,
+            origin: pending.origin,
+            source_id: pending.source_id,
+            display_path: pending.display_path,
+        }));
+    }
+
     fn push_rejected(&mut self, pending: PendingRecordRef) {
         let index = self.rejected.len();
         self.rejected_files

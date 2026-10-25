@@ -1,4 +1,4 @@
-use super::super::definition::CfdDefinitionIndex;
+use super::super::definition::{CfdDefinitionIndex, CfdFileDefinitions};
 use super::super::diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
@@ -35,6 +35,7 @@ pub(crate) struct ValidationInput {
     project_diagnostics: Option<DiagnosticSet>,
     open_documents: BTreeMap<PathBuf, OpenDocument>,
     schema_runtime: Arc<Mutex<ProjectRuntime>>,
+    cfd_cache: Arc<Mutex<CfdValidationCache>>,
 }
 
 impl ValidationInput {
@@ -44,6 +45,7 @@ impl ValidationInput {
         project_diagnostics: Option<&DiagnosticSet>,
         open_documents: &BTreeMap<PathBuf, OpenDocument>,
         schema_runtime: Arc<Mutex<ProjectRuntime>>,
+        cfd_cache: Arc<Mutex<CfdValidationCache>>,
     ) -> Self {
         Self {
             revision,
@@ -51,6 +53,7 @@ impl ValidationInput {
             project_diagnostics: project_diagnostics.cloned(),
             open_documents: open_documents.clone(),
             schema_runtime,
+            cfd_cache,
         }
     }
 
@@ -65,13 +68,23 @@ pub(crate) struct ValidationSnapshot {
     pub(super) diagnostics: BTreeMap<String, Vec<Value>>,
     pub(super) active_uris: BTreeSet<String>,
     pub(super) document_versions: BTreeMap<String, i64>,
-    pub(super) cfd_documents: BTreeMap<PathBuf, CfdDocumentSnapshot>,
+    pub(super) cfd_documents: BTreeMap<PathBuf, Arc<CfdDocumentSnapshot>>,
 }
 
+#[derive(Debug)]
 pub(super) struct CfdDocumentSnapshot {
-    pub(super) source: String,
+    pub(super) source: Arc<str>,
     pub(super) ast: coflow_language::cfd::CfdAst,
     pub(super) syntax_valid: bool,
+    uri: String,
+    diagnostics: Vec<Value>,
+    definitions: CfdFileDefinitions,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct CfdValidationCache {
+    documents: BTreeMap<PathBuf, Arc<CfdDocumentSnapshot>>,
+    definitions: CfdDefinitionIndex,
 }
 
 impl ValidationSnapshot {
@@ -135,7 +148,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
             overrides.push(SchemaTextOverride {
                 requested_module: Some(module_id.clone()),
                 normalized_path: normalized_path.clone(),
-                source: document.text.clone(),
+                source: document.text.to_string(),
             });
         } else if !is_cfd_path(normalized_path) {
             snapshot.diagnostics.insert(
@@ -148,7 +161,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
         }
     }
 
-    let (cfd_sources, cfd_failures) = add_cfd_documents(&mut snapshot, input);
+    let cfd_definitions = add_cfd_documents(&mut snapshot, input);
 
     let raw_build = input.schema_runtime.lock().ok().and_then(|mut runtime| {
         let _ = runtime.refresh_with_overrides(&overrides);
@@ -179,14 +192,7 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
             .active_uris
             .insert(preferred_diagnostic_uri(&preferred_uris, module.path()));
     }
-    if cfd_failures.is_empty() {
-        let definitions =
-            CfdDefinitionIndex::from_documents(cfd_sources.iter().filter_map(|source| {
-                snapshot
-                    .cfd_documents
-                    .get(&source.path)
-                    .map(|document| (source.uri.as_str(), document.source.as_str(), &document.ast))
-            }));
+    if let Some(definitions) = cfd_definitions {
         snapshot.build = Some(LspBuild::new(raw_build).with_cfd_definitions(definitions));
     }
     snapshot
@@ -195,25 +201,62 @@ pub(crate) fn build_snapshot(input: &ValidationInput) -> ValidationSnapshot {
 fn add_cfd_documents(
     snapshot: &mut ValidationSnapshot,
     input: &ValidationInput,
-) -> (Vec<CfdProjectSource>, Vec<CfdSourceFailure>) {
+) -> Option<CfdDefinitionIndex> {
     let (sources, failures) = collect_cfd_sources(&input.project, &input.open_documents);
+    let mut cache = input
+        .cfd_cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut documents = BTreeMap::new();
     for source in &sources {
-        let (ast, errors) = parse_cfd(&source.text);
-        if let Some(document) = input.open_documents.get(&source.path) {
-            snapshot.diagnostics.insert(
-                document.uri.clone(),
-                super::super::cfd::syntax_diagnostics(&source.text, &errors),
-            );
-        }
-        snapshot.cfd_documents.insert(
-            source.path.clone(),
-            CfdDocumentSnapshot {
-                source: source.text.clone(),
+        // 以实际内容校验缓存；同长度/同时间戳的外部写入也不能误复用旧语法树。
+        let parsed = if let Some(previous) = cache
+            .documents
+            .get(&source.path)
+            .filter(|previous| previous.source == source.text && previous.uri == source.uri)
+        {
+            Arc::clone(previous)
+        } else {
+            let (ast, errors) = parse_cfd(&source.text);
+            let definitions = CfdFileDefinitions::new(&source.uri, &source.text, &ast);
+            let parsed = Arc::new(CfdDocumentSnapshot {
+                source: Arc::clone(&source.text),
                 ast,
                 syntax_valid: errors.is_empty(),
-            },
-        );
+                uri: source.uri.clone(),
+                diagnostics: super::super::cfd::syntax_diagnostics(&source.text, &errors),
+                definitions,
+            });
+            if let Some(previous) = cache.documents.get(&source.path).cloned() {
+                cache
+                    .definitions
+                    .remove_document(&source.path, &previous.definitions);
+            }
+            cache
+                .definitions
+                .insert_document(&source.path, &parsed.definitions);
+            parsed
+        };
+        if let Some(document) = input.open_documents.get(&source.path) {
+            snapshot
+                .diagnostics
+                .insert(document.uri.clone(), parsed.diagnostics.clone());
+        }
+        documents.insert(source.path.clone(), parsed);
     }
+    let removed: Vec<_> = cache
+        .documents
+        .iter()
+        .filter(|(path, _)| !documents.contains_key(*path))
+        .map(|(path, document)| (path.clone(), Arc::clone(document)))
+        .collect();
+    for (path, previous) in removed {
+        cache
+            .definitions
+            .remove_document(&path, &previous.definitions);
+    }
+    cache.documents = documents;
+    snapshot.cfd_documents.clone_from(&cache.documents);
     for failure in &failures {
         snapshot.active_uris.insert(failure.uri.clone());
         snapshot
@@ -222,7 +265,7 @@ fn add_cfd_documents(
             .or_default()
             .push(lsp_error_diagnostic("CFD-LSP", &failure.message));
     }
-    (sources, failures)
+    failures.is_empty().then(|| cache.definitions.clone())
 }
 
 fn add_open_documents(
@@ -277,7 +320,7 @@ fn add_diagnostic_set(
 struct CfdProjectSource {
     path: PathBuf,
     uri: String,
-    text: String,
+    text: Arc<str>,
 }
 
 struct CfdSourceFailure {
@@ -358,7 +401,7 @@ fn collect_cfd_source(
         Ok(text) => sources.push(CfdProjectSource {
             uri: path_to_file_uri(&normalized),
             path: normalized,
-            text,
+            text: text.into(),
         }),
         Err(err) => failures.push(CfdSourceFailure {
             uri: path_to_file_uri(&normalized),

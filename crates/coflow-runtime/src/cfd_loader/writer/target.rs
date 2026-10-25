@@ -103,10 +103,17 @@ fn locate_target_in_value(
             ty: current_type.clone(),
         });
     }
-    if let (CftValueType::Option(inner_type), AstValue::OptionSome(inner_value, _)) =
-        (current_type, value)
-    {
-        return locate_target_in_value(schema, inner_type, inner_value, path, depth);
+    if let CftValueType::Option(inner_type) = current_type {
+        // 写回会把普通 Some(value) 输出为隐式 value；两种语法必须使用同一内层类型导航。
+        match value {
+            AstValue::OptionSome(inner_value, _) => {
+                return locate_target_in_value(schema, inner_type, inner_value, path, depth);
+            }
+            AstValue::OptionNone(_) => {}
+            inner_value => {
+                return locate_target_in_value(schema, inner_type, inner_value, path, depth);
+            }
+        }
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {

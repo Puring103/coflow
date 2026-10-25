@@ -13,6 +13,7 @@ pub struct CheckTaskResult {
     pub status: CheckTaskStatus,
     pub task: CheckTask,
     pub diagnostics: Vec<CheckDiagnostic>,
+    pub reads: crate::CheckReadSet,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

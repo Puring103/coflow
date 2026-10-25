@@ -14,9 +14,9 @@ pub(crate) struct SessionSnapshotParts {
     pub(crate) file_tree: Vec<FileTreeNode>,
 }
 
-type FileTypeNames = BTreeMap<String, Vec<String>>;
-type FileTypeCounts = BTreeMap<String, BTreeMap<String, usize>>;
-type TypeDisplayNames = BTreeMap<(String, String), String>;
+pub(super) type FileTypeNames = BTreeMap<String, Vec<String>>;
+pub(super) type FileTypeCounts = BTreeMap<String, BTreeMap<String, usize>>;
+pub(super) type TypeDisplayNames = BTreeMap<(String, String), String>;
 
 pub(crate) fn session_capabilities_for_file(
     session: &EditorSession,
@@ -81,7 +81,7 @@ pub(crate) fn build_session(
 }
 
 /// 一次遍历同时产出每个文件的类型列表与类型记录计数，避免加载时对全部记录扫两遍。
-fn type_navigation(
+pub(super) fn type_navigation(
     queries: ProjectQueries<'_>,
 ) -> (FileTypeNames, FileTypeCounts, TypeDisplayNames) {
     let display_names = BTreeMap::new();
