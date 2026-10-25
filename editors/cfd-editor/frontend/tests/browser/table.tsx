@@ -1,3 +1,5 @@
+import { EnumDirectSelect } from '../../src/components/DataCard'
+import type { FieldValue } from '../../src/wire'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { TableView } from '../../src/components/TableView'
@@ -26,13 +28,19 @@ const fixture = {
   })),
 }
 
-const control = { writes: 0, fail: false, delay: 40, selectionEvents: [] as string[], writtenKinds: [] as string[] }
+const control = { writes: 0, batches: 0, fail: false, delay: 40, selectionEvents: [] as string[], writtenKinds: [] as string[] }
 Object.assign(window, { tableTest: control })
-const lookups = new EditorLookupController(createMockLookups(() => MOCK_FILE_RECORDS))
+const lookupBackend = createMockLookups(() => MOCK_FILE_RECORDS)
+const getEnumVariants = lookupBackend.getEnumVariants
+lookupBackend.getEnumVariants = async (session, name) => name === 'Permissions'
+  ? ['None', 'Read', 'Write', 'Execute'].map((name, index) => ({ name, value: index === 0 ? 0n : 1n << BigInt(index - 1), label: null, description: null }))
+  : getEnumVariants(session, name)
+const lookups = new EditorLookupController(lookupBackend)
 lookups.adopt({ sessionId: 1, revision: 1 })
 
 function Fixture() {
   const [data, setData] = useState(fixture)
+  const [flags, setFlags] = useState<FieldValue & {kind: 'enum' | 'option_none'}>({ kind: 'enum', value: { enum_name: 'Permissions', variant: null, value: 0n } })
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const [dimension, setDimension] = useState<DimensionFileRow>({
     coordinate: seed.coordinate, field: 'name', owner_file_path: data.file_path,
@@ -60,6 +68,22 @@ function Fixture() {
           setSelection(current => updateRecordSelection(current, data.file_path, coordinate, visible, mode))
         }}
         onClearSelection={() => setSelection(null)}
+        onRenderCellText={async (coordinate, path) => {
+          const value = data.records.find(record => record.coordinate.id === coordinate.id)!.fields.find(field => field.name === path[0].value)!.value
+          return value.kind === 'string' ? JSON.stringify(value.value) : value.kind === 'int' ? String(value.value) : 'None'
+        }}
+        onParseCellText={async (_coordinate, _path, text) => ({ kind: 'string', value: JSON.parse(text) as string })}
+        onWriteFieldBatch={async writes => {
+          control.batches++
+          await new Promise(resolve => setTimeout(resolve, control.delay))
+          if (control.fail) throw new Error('测试批量写入失败')
+          setData(current => ({ ...current, revision: current.revision + 1,
+            records: current.records.map(record => ({ ...record, fields: record.fields.map(field => {
+              const write = writes.find(write => write.coordinate.id === record.coordinate.id && write.field_path[0].value === field.name)
+              return write ? { ...field, value: write.new_value } : field
+            }) })),
+          }))
+        }}
         onWriteField={async (coordinate, path, value) => {
           control.writes++
           control.writtenKinds.push(value.kind)
@@ -76,6 +100,7 @@ function Fixture() {
         }} />
     </div>
     <button id="outside">outside</button>
+    <div id="flags"><EnumDirectSelect value={flags} enumType="Permissions" isFlag onCommit={next => setFlags(next as typeof flags)} /><output>{flags.kind === 'enum' ? String(flags.value.value) : 'null'}</output></div>
     <div id="dimension" style={{ width: 300 }}><DimensionCellEditor row={dimension} variant="en"
       onWrite={async (_row, variant, _expected, next) => {
         await new Promise(resolve => setTimeout(resolve, 30))

@@ -33,6 +33,8 @@ interface Props {
   ariaLabel?: string
   autoFocus?: boolean
   onModifiedClick?: () => void
+  onPreview?: () => void
+  reference?: boolean
 }
 
 interface MenuPosition {
@@ -80,6 +82,8 @@ export function SearchableSelect({
   ariaLabel,
   autoFocus,
   onModifiedClick,
+  onPreview,
+  reference = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const exitNotifiedRef = useRef(false)
@@ -298,10 +302,11 @@ export function SearchableSelect({
   )
 
   return (
-    <>
+    <span className={reference ? "searchable-reference-wrap" : undefined}>
+      {reference && <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={!onPreview} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); onPreview?.() }}>&amp;</button>}
       <input
         ref={inputRef}
-        className={`${className ?? ''} searchable-select${open ? ' searchable-select-open' : ''}`.trim()}
+        className={`${className ?? ''} searchable-select${reference ? ' searchable-select-reference' : ''}${open ? ' searchable-select-open' : ''}`.trim()}
         style={style}
         title={title}
         role="combobox"
@@ -347,7 +352,8 @@ export function SearchableSelect({
           if (open) closeMenu(true)
         }}
       />
+
       {menu}
-    </>
+    </span>
   )
 }

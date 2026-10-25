@@ -128,7 +128,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
       row('Npc', 'Npc_001', [
         { name: 'name', value: strVal('村民甲'), annotation: null },
         { name: 'level', value: intVal(1), annotation: null },
-        { name: 'reward_item', value: refVal('ItemConfig.Item_001'), annotation: null },
+        { name: 'reward_item', value: refVal('Item_001'), annotation: { enum_int_value: null, declared_type: 'Item', ref_target_type: 'Item', enum_type: null, enum_is_flag: false, nullable: false, read_only: false, item_annotation: null, polymorphic_types: [], object_type: null, field_order: [], children: {} } },
         { name: 'faction', value: enumVal('Faction', 'Neutral', 0), annotation: null },
         {
           name: 'drops',

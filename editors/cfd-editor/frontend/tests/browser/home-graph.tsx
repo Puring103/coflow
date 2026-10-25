@@ -1,3 +1,4 @@
+import { useState, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { GraphView } from '../../src/components/GraphView'
 import { ObjectDraftHost } from '../../src/components/ObjectDraftHost'
@@ -45,14 +46,26 @@ const positions = Object.fromEntries(records.map(([id], index) => [coordinateId(
   [[990, 140], [660, 0], [660, 280], [330, 0], [330, 280], [0, 140]][index] as [number, number],
 ]))
 document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || 'light'
-createRoot(document.getElementById('root')!).render(
+function GraphExample() {
+  const [data, setData] = useState(graph)
+  const interactive = new URLSearchParams(location.search).has('interactive')
+  const remove: NonNullable<ComponentProps<typeof GraphView>['onCollectionEdit']> = async (_file, record, _path, operation) => {
+    if (operation.kind !== 'array_remove') throw new Error('测试仅接受删除引用项')
+    setData(previous => ({ ...previous, revision: previous.revision + 1,
+      nodes: previous.nodes.map(node => node.coordinate.id !== record.id ? node : { ...node, fields: node.fields.map(field => field.name !== 'prerequisites' || field.value.kind !== 'array' ? field : { ...field, value: { kind: 'array', value: field.value.value.filter((_, index) => index !== operation.index) } }) }),
+      edges: previous.edges.filter(edge => edge.source.id !== record.id || edge.field_path !== `prerequisites[${operation.index}]`),
+    }))
+  }
+  return (
   <ObjectDraftHost lookups={lookups} generationKey="1:1" sessionId={1} onOpenReference={() => {}}>
     <ShortNameContext.Provider value={{ fields: { Skill: 'name' } }}>
       <div style={{ width: 960, height: 500 }}>
-        <GraphView viewKey="website-skill-tree" graphData={graph} filePath="skills.cfd" activeType="Skill"
+        <GraphView viewKey="website-skill-tree" graphData={data} filePath="skills.cfd" activeType="Skill"
+          onWriteField={interactive ? async () => {} : undefined} onCollectionEdit={interactive ? remove : undefined}
           savedCompact={false} savedPositions={positions} visibleCardFields={new Set(['name', 'tier', 'power'])} onOpenRecord={() => {}} />
       </div>
     </ShortNameContext.Provider>
-  </ObjectDraftHost>,
-)
-
+  </ObjectDraftHost>
+  )
+}
+createRoot(document.getElementById('root')!).render(<GraphExample />)

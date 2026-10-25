@@ -1,3 +1,5 @@
+import { DataFillContext } from '../state/dataFillContext'
+import { sameFieldValue } from '../state/fieldProjection'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { finishOffscreenDataEdit } from '../state/editSession'
 import { recordMatchesKeySearch } from '../value/fieldValue'
@@ -38,7 +40,6 @@ import {
   errorMessage,
   fieldPathField,
   isComplexValue,
-  nullValue,
   presentationValue,
   recordActualType,
   recordId,
@@ -50,8 +51,6 @@ import {
 } from '../wire'
 import { DataCardCompact, EnumDirectSelect, MissingValueRepair, RefDirectSelect, highlightSearchText } from './DataCard'
 import {
-  parseFieldValueText,
-  plainFieldValueText,
   recordMatchesFullTextSearch,
   recordMatchesSearch,
 } from '../value/fieldValue'
@@ -59,7 +58,7 @@ import { CreateRecordDialog } from './CreateRecordDialog'
 import { ConfirmDialog, TextInputDialog } from './ActionDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
-import { StringValueInput } from './StringValueInput'
+import { ScalarValueInput } from './ScalarValueInput'
 import { visibilityScrollDelta } from '../state/scrollVisibility'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
 import {
@@ -257,6 +256,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     startWidth: number
   } | null>(null)
   const clipboardBusyRef = useRef(false)
+  const pendingCut = useRef<{ text: string; targets: ReturnType<typeof pasteCellFor>[] } | null>(null)
   columnSizingRef.current = columnSizing
 
   const updateColumnResize = (pointerId: number, clientX: number) => {
@@ -959,8 +959,15 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     || (contextMenu.records.length > 1 && !!onCreateGroup)
   )
 
+  const fillSelection = async (value: FieldValue) => {
+    if (selection?.kind !== 'value' || !onWriteFieldBatch) throw new Error('当前视图不支持批量填充')
+    const targets = selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat().map(anchor => pasteCellFor(anchor, visibleRows.map(row => row.original), canEdit))
+    if (targets.some(cell => !cell.writable || cell.annotation?.read_only)) throw new Error('选区包含只读字段，未写入任何数据')
+    await onWriteFieldBatch(targets.map(cell => ({ coordinate: cell.coordinate, field_path: cell.fieldPath, new_value: replacePresentationValue(cell.value, value) })))
+  }
+
   return (
-    <div
+    <DataFillContext.Provider value={fillSelection}><div
       className={`table-view${rowPresentation ? ' table-view-comparison' : ''}`}
       onClick={e => {
         setContextMenu(null)
@@ -1018,14 +1025,28 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             pointerSelectionRef.current = false
             pointerCellKeyRef.current = null
             if (isNativeEditorTarget(e.target, false)) return
+            if (e.key === 'Escape' && pendingCut.current) { pendingCut.current = null; setCellNotice(null); e.preventDefault(); return }
             if (!selection || selection.filePath !== data.file_path) return
             if (e.nativeEvent.isComposing || e.keyCode === 229) return
 
+            if (e.key === 'Tab' && selection.kind === 'value') {
+              const row = visibleCoordinates.findIndex(item => sameCoordinate(item, selection.coordinate))
+              const column = allFieldNames.indexOf(selectedTopLevelField(selection.fieldPath) ?? '')
+              const next = row * allFieldNames.length + column + (e.shiftKey ? -1 : 1)
+              if (next >= 0 && next < visibleCoordinates.length * allFieldNames.length) {
+                e.preventDefault()
+                const coordinate = visibleCoordinates[Math.floor(next / allFieldNames.length)]
+                const path = [fieldPathField(allFieldNames[next % allFieldNames.length])]
+                onSelectValue?.(coordinate, path, 'replace')
+                revealTableSelection({ ...selection, coordinate, fieldPath: path })
+              }
+              return
+            }
+
             if (selection.kind === 'value' && !e.ctrlKey && !e.metaKey && !e.altKey
               && (e.key === 'Enter' || e.key === 'F2' || e.key.length === 1)) {
-              const range = valueSelectionRange(selection, visibleCoordinates, allFieldNames)
               const field = selectedTopLevelField(selection.fieldPath)
-              if (field && range?.rowStart === range?.rowEnd && range?.columnStart === range?.columnEnd) {
+              if (field) {
                 const input = tableScrollRef.current?.querySelector<HTMLTextAreaElement>(
                   `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] .cell-string-textarea`,
                 )
@@ -1092,6 +1113,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               return
             }
 
+            if ((e.key === 'Enter' || e.key === 'F2') && selection.kind === 'value') {
+              const field = selectedTopLevelField(selection.fieldPath)
+              const dropdown = field ? tableScrollRef.current?.querySelector<HTMLInputElement>(`[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] input.searchable-select`) : null
+              if (dropdown) { e.preventDefault(); dropdown.focus({ preventScroll: true }); return }
+            }
             if (e.key === 'Enter' && onEnterInspector) {
               if (selection.kind === 'value') {
                 const field = selectedTopLevelField(selection.fieldPath)
@@ -1138,18 +1164,15 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       visibleRows.map(row => row.original),
                       canEdit,
                     ))
-                    if (targets.some(target => !target.writable || !target.annotation?.nullable)) {
+                    if (targets.some(target => !target.writable || target.annotation?.read_only || (!target.annotation?.nullable && !['string', 'formatted_string', 'array', 'dict'].includes(target.value.kind)))) {
                       throw new Error('剪切区域包含只读或不可清空的单元格')
                     }
-                    const writes = targets.filter(target => target.value.kind !== 'option_none').map(target => ({
-                      coordinate: target.coordinate,
-                      field_path: target.fieldPath,
-                      new_value: nullValue(),
-                    }))
-                    if (writes.length > 0) await onWriteFieldBatch(writes)
+                    pendingCut.current = { text, targets }
+
                   }
                 }
-                setCellNotice(null)
+                if (shortcut === 'c') pendingCut.current = null
+                setCellNotice(shortcut === 'x' ? '已标记剪切，粘贴成功后移除来源；Esc 取消' : null)
               } catch (error) {
                 setCellNotice(`${shortcut === 'x' ? '剪切' : '复制'}失败：${errorMessage(error)}`)
               } finally {
@@ -1170,7 +1193,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
               clipboardBusyRef.current = true
               try {
-                const source = parseCfdClipboard(await readClipboardText())
+                const clipboardText = await readClipboardText()
+                if (pendingCut.current?.text !== clipboardText) pendingCut.current = null
+                const source = parseCfdClipboard(clipboardText)
                 const records = visibleRows.map(row => row.original)
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
                 const selectedTarget = anchors.length === 1 && anchors[0].length === 1
@@ -1196,7 +1221,19 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 if (!result.ok) {
                   throw new Error(result.errors.map(error => error.message).join('; '))
                 }
-                if (result.writes.length > 0) await onWriteFieldBatch(result.writes)
+                let writes = result.writes
+                if (pendingCut.current) {
+                  const { targets: originals } = pendingCut.current
+                  for (const original of originals) {
+                    const latest = pasteCellFor({ coordinate: original.coordinate, fieldPath: original.fieldPath }, data.records, canEdit)
+                    if (!sameFieldValue(latest.value, original.value)) { pendingCut.current = null; throw new Error('剪切来源已改变，已取消移动') }
+                  }
+                  const destinations = new Set(targets.flat().map(target => `${coordinateId(target.coordinate)}:${JSON.stringify(target.fieldPath)}`))
+                  const clears = originals.filter(source => !destinations.has(`${coordinateId(source.coordinate)}:${JSON.stringify(source.fieldPath)}`)).map(source => ({ coordinate: source.coordinate, field_path: source.fieldPath, new_value: defaultValueForClear(source.annotation, source.value.kind) }))
+                  writes = [...clears, ...writes]
+                }
+                if (writes.length > 0) await onWriteFieldBatch(writes)
+                pendingCut.current = null
                 setCellNotice(null)
               } catch (error) {
                 setCellNotice(`粘贴失败：${errorMessage(error)}`)
@@ -1217,15 +1254,15 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 e.preventDefault()
                 const cells = selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat()
                 const records = visibleRows.map(row => row.original)
-                const writes = cells.flatMap(anchor => {
-                  const f = selectedTopLevelField(anchor.fieldPath)
-                  const row = records.find(r => sameCoordinate(r.coordinate, anchor.coordinate))
-                  const cell = f && row ? fieldCell(row, f) : undefined
-                  if (!cell || cellReadOnly(cell)) return []
-                  const next = defaultValueForClear(cell.annotation, cell.value.kind)
-                  return [{ coordinate: anchor.coordinate, field_path: anchor.fieldPath, new_value: next }]
-                })
                 try {
+                  const writes = cells.map(anchor => {
+                    const f = selectedTopLevelField(anchor.fieldPath)
+                    const row = records.find(r => sameCoordinate(r.coordinate, anchor.coordinate))
+                    const cell = f && row ? fieldCell(row, f) : undefined
+                    if (!cell || cellReadOnly(cell)) throw new Error('选区包含只读字段，未写入任何数据')
+                    const next = defaultValueForClear(cell.annotation, cell.value.kind)
+                    return { coordinate: anchor.coordinate, field_path: anchor.fieldPath, new_value: next }
+                  })
                   if (writes.length > 0) await onWriteFieldBatch(writes)
                   setCellNotice(null)
                 } catch (error) {
@@ -1682,7 +1719,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           }}
         />
       )}
-    </div>
+    </div></DataFillContext.Provider>
   )
 })
 
@@ -1777,7 +1814,6 @@ function EditableCell(props: EditableCellProps) {
 function EditableCellBuiltIn({
   value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished,
 }: EditableCellProps) {
-  const [editing, setEditing] = useState(false)
   const shownValue = presentationValue(value)
   const commitValue = onCommit
     ? (next: FieldValue) => onCommit(replacePresentationValue(value, next))
@@ -1793,8 +1829,8 @@ function EditableCellBuiltIn({
     requestAnimationFrame(() => onEditingFinished?.())
   }
 
-  if (canEdit && (shownValue.kind === 'string' || shownValue.kind === 'formatted_string')) {
-    return <StringValueInput value={shownValue} onCommit={commitValue!} />
+  if (canEdit && (shownValue.kind === 'string' || shownValue.kind === 'formatted_string' || shownValue.kind === 'int' || shownValue.kind === 'float')) {
+    return <ScalarValueInput value={shownValue} onCommit={commitValue!} />
   }
 
   // Bool: checkbox, always visible
@@ -1844,27 +1880,11 @@ function EditableCellBuiltIn({
 
 
 
-  // 数值保留点击编辑；字符串始终直接输入。
-  if (editing && canEdit) {
-    return (
-      <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-        <CellTextEditor
-          value={shownValue as FieldValue & { kind: 'int' | 'float' }}
-          onCommit={next => commitValue!(next)}
-          onCancel={() => setEditing(false)}
-        />
-      </div>
-    )
-  }
+
   return (
     <div
       className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
-      onClick={canEdit ? (e: React.MouseEvent) => {
-        if (e.shiftKey || e.ctrlKey || e.metaKey) return
-        e.stopPropagation()
-        setEditing(true)
-      } : undefined}
-      title={canEdit ? '单击编辑' : undefined}
+
     >
       <DataCardCompact
         value={shownValue}
@@ -1886,36 +1906,6 @@ function selectionOwnsRow(
     && (selection.kind === 'value'
       ? sameCoordinate(selection.coordinate, coordinate)
       : selection.coordinates.some(item => sameCoordinate(item, coordinate)))
-}
-
-function CellTextEditor({
-  value, onCommit, onCancel,
-}: {
-  value: FieldValue & { kind: 'int' | 'float' }
-  onCommit: (next: FieldValue) => void
-  onCancel: () => void
-}) {
-  const [text, setText] = useState(String(value.value))
-  function commit() {
-    const next = parseFieldValueText(value, text)
-    if (next) onCommit(next)
-    else setText(plainFieldValueText(value))
-  }
-  return (
-    <input
-      className="dc-input dc-input-flat"
-      type={value.kind === 'float' ? 'number' : 'text'}
-      inputMode={value.kind === 'int' ? 'numeric' : undefined}
-      value={text}
-      autoFocus
-      onChange={e => setText(e.target.value)}
-      onBlur={() => { commit(); onCancel() }}
-      onKeyDown={e => {
-        if (e.key === 'Enter') commit()
-        if (e.key === 'Escape') setText(String(value.value))
-      }}
-    />
-  )
 }
 
 function EditableKeyCell({

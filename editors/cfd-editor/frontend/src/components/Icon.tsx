@@ -10,7 +10,7 @@ interface IconProps {
     | 'download' | 'refresh' | 'build' | 'copy' | 'paste'
     | 'sparkles' | 'gear' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
     | 'extensions' | 'code' | 'git-branch' | 'save' | 'trash' | 'undo' | 'redo'
-    | 'key' | 'panel-bottom' | 'panel-bottom-closed' | 'panel-left-closed' | 'panel-right-closed' | 'panel-left' | 'panel-right' | 'layout' | 'overview' | 'center'
+    | 'key' | 'panel-bottom' | 'panel-bottom-closed' | 'panel-left-closed' | 'panel-right-closed' | 'panel-left' | 'panel-right' | 'layout' | 'overview' | 'center' | 'card-detail' | 'card-compact'
   size?: number
   className?: string
 }
@@ -73,11 +73,13 @@ const PATHS: Record<IconProps['name'], string> = {
   'save':          'M5 3h12l2 2v16H5zM8 3v6h8V3M8 21v-7h8v7',
   'trash':         'M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6',
   // 自动布局：树状层级（父节点连两个子节点）。
-  'layout':        'M9 3h6v4H9zM4 17h5v4H4zM15 17h5v4h-5zM12 7v5M6.5 17v-5h11v5',
+  'layout': 'M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h6v6h-6zM9 6h6M6 9v6M18 9v6',
+  'card-detail': 'M4 3h16v18H4zM4 9h16M8 13h8M8 17h6',
+  'card-compact': 'M4 7h16v10H4zM8 12h8',
   // 缩略/完整模式：眼睛（概览）。
   'overview':      'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6zM12 15a3 3 0 100-6 3 3 0 000 6z',
   // 回正：四角箭头指向中心（缩放到整张图）。
-  'center':        'M3 3l6 6M5 9h4V5M21 3l-6 6M19 9h-4v-4M3 21l6-6M5 15h4v4M21 21l-6-6M19 15h-4v4',
+  'center':        'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M8 8h8v8H8z',
 }
 
 export function Icon({ name, size = 14, className }: IconProps) {

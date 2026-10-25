@@ -1,3 +1,5 @@
+import { defaultValueForClear } from '../state/selectionKeyboard'
+import { parseCfdClipboard, pasteCellAtRecordPath, planPaste } from '../state/clipboard'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { recordMatchesFullTextSearch, recordMatchesKeySearch } from '../value/fieldValue'
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
@@ -269,8 +271,25 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const rowSeverity = (row: RecordRow): 'error' | 'warning' | null =>
     diagnosticProjection(row).severity
 
+  const pasteIntoRecordPath = async (path: FieldPathSegment[], text: string, mode: 'replace' | 'append') => {
+    if (!onParseCellText || !onWriteField) return
+    const target = pasteCellAtRecordPath(record, path, !readOnly)
+    if (!target) throw new Error('目标字段不存在')
+    const result = await planPaste(parseCfdClipboard(text), [[target]], {
+      mode, parse: (coordinate, fieldPath, value) => onParseCellText(coordinate, fieldPath, value),
+    })
+    if (!result.ok) throw new Error(result.errors.map(error => error.message).join('; '))
+    for (const write of result.writes) await onWriteField(write.coordinate, write.field_path, write.new_value)
+  }
+
   const recordKeyboard = useRecordItemKeyboard({
+    clearValue: path => {
+      const cell = record ? pasteCellAtRecordPath(record, path, !readOnly) : null
+      if (!cell || !cell.writable || cell.annotation?.read_only) throw new Error('目标字段不可编辑')
+      return defaultValueForClear(cell.annotation, cell.value.kind)
+    },
     rootRef: mainRef,
+    onPaste: pasteIntoRecordPath,
     selectedFieldPath,
     selectedActionPathWire,
     expandedPaths,
@@ -582,7 +601,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           expandedPaths={expandedPaths}
           onRowToggle={toggleExpandedPath}
           actualType={recordActualType(record)}
-          onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.coordinate, path, val) }}
+          onEdit={readOnly || !onWriteField ? undefined : (path, val) => onWriteField(record.coordinate, path, val)}
           onCollectionEdit={readOnly || !onCollectionEdit ? undefined : (path, edit) => { onCollectionEdit(record.coordinate, path, edit) }}
           diagnostics={fieldDiags}
           highlightField={highlightField === RECORD_HIGHLIGHT_SENTINEL ? null : highlightField}
@@ -647,8 +666,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
               try {
                 if (!onParseCellText || !onWriteField) return
                 const text = await readClipboardText()
-                const next = await onParseCellText(record.coordinate, path, text)
-                await onWriteField(record.coordinate, path, next)
+                await pasteIntoRecordPath(path, text, 'replace')
                 setKeyboardNotice(null)
               } catch (error) {
                 setKeyboardNotice(`粘贴格式不正确：${errorMessage(error)}`)

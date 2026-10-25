@@ -631,7 +631,8 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 
 .sidebar-update {
   flex-shrink: 0;
-  padding: 5px 6px;
+  height: var(--h-toolbar);
+  padding: 3px 6px;
   border-top: 1px solid var(--border);
   background: var(--bg-1);
 }
@@ -2773,8 +2774,8 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   position: absolute;
   inset: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   pointer-events: none;
   color: var(--text);
 }
@@ -2876,13 +2877,6 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   transition: background 80ms, border-color 80ms;
   max-width: 100%;
   overflow: hidden;
-}
-.vc-ref::before {
-  content: '&';
-  color: var(--ref-color, var(--accent));
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-  font-weight: 600;
-  flex-shrink: 0;
 }
 .vc-ref:hover {
   background: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, transparent);
@@ -3928,29 +3922,11 @@ select.dc-pill-select.dc-pill-select-enum:hover, input.dc-pill-select.dc-pill-se
   background-color: transparent;
   overflow: hidden;
 }
-/* Ref pill wrap uses `position: relative` + `::before` for the `&` prefix
- * so the prefix visually sits inside the pill but doesn't take a sibling
- * slot next to the select. Because the select consumes the full wrapper
- * width, the native dropdown popup that Chromium opens matches the wrap
- * width too — including the `&`. */
+/* 引用符号按钮与目标选择器共享胶囊边框。 */
 .dc-pill-wrap-ref {
   position: relative;
   border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 40%, var(--border));
   background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-2));
-}
-.dc-pill-wrap-ref::before {
-  content: '&';
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--ref-color, var(--accent));
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-  font-size: var(--fs-ui);
-  font-weight: 600;
-  pointer-events: none;
-  user-select: none;
-  z-index: 1;
 }
 .dc-pill-wrap-ref:hover, .dc-row:hover .dc-pill-wrap-ref, td:hover .dc-pill-wrap-ref, .dc-node-card:hover .dc-pill-wrap-ref {
   border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 42%, var(--border-strong));
@@ -4208,7 +4184,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 /* 线体拖动热区：透明加粗路径，按下后转发给最近的重连锚点。 */
 .graph-edge-drag {
   pointer-events: stroke;
-  cursor: grab;
+  cursor: default;
 }
 
 .gn-header {
@@ -4782,6 +4758,8 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .data-table .vc { font-size: 14px; }
 .app .table-footer { min-height: 24px; background: var(--bg-1); }
 .app .table-footer > .btn { display: none; }
+/* 新建入口已移到工具栏，无状态信息时不保留空白页脚。 */
+.app .table-footer:not(:has(.table-footer-readonly, .table-cell-notice)) { display: none; }
 .app .table-footer:has(.table-cell-notice) { min-height: 28px; }
 .app .inspector-panel { background: var(--bg-1); }
 .app .diag-panel { background: var(--bg-1); }
@@ -4831,7 +4809,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .global-search-bar { background: var(--bg-1); height: auto; flex-wrap: nowrap; gap: 8px; padding: 8px 14px; min-height: 42px; padding-top: 6px; padding-bottom: 6px; }
 .app .layout-navigation { width: var(--sidebar-w, 220px); flex: 0 0 var(--sidebar-w, 220px); min-height: 0; display: flex; flex-direction: column; background: var(--bg-0); position: relative; padding-bottom: 0; }
 .app.navigation-collapsed .navigation-toggle { width: 32px; justify-content: center; }
-.app .activity-bar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 8px 10px; gap: 4px; align-items: center; border: 0; border-bottom: 1px solid var(--border); background: transparent; z-index: 5; position: static; flex-shrink: 0; }
+.app .activity-bar { min-width: 0; flex: 1; width: auto; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding: 0; gap: 2px; align-items: center; border: 0; background: transparent; z-index: 5; position: static; flex-shrink: 0; }
 .app .inspector-head { min-height: 36px; height: 36px; background: var(--bg-0); }
 .app .inspector-head > button[aria-label="关闭记录面板"] { display: none; }
 .app .inspector-collapse-btn { width: 28px; height: 28px; }
@@ -4852,13 +4830,13 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .diag-icon { margin-top: 4px; }
 .app .diag-body { min-height: 0; overflow: auto; }
 .app .data-table th:hover .th-label-type { opacity: 1; }
-.app .navigation-header { order: -1; flex: 0 0 36px; display: flex; align-items: center; border-bottom: 1px solid var(--border); gap: 4px; height: 44px; flex-basis: 44px; padding: 0 8px; }
-.app .navigation-header .project-menu { display: block; min-width: 0; flex: 1; margin: 0; }
-.app .navigation-header .project-menu summary { padding: 0 7px; gap: 7px; border-color: transparent; background: transparent; }
-.app .navigation-header .project-menu summary > span { flex: 1; }
-.app .navigation-header .navigation-toggle { flex-direction: row-reverse; flex: 0 0 26px; width: 26px; padding: 0; justify-content: center; }
-.app.navigation-collapsed .navigation-header .project-menu { display: none; }
-.app.navigation-collapsed .navigation-header { justify-content: center; padding: 0; }
+/* 导航与文件标签共用行高，折叠后将入口竖排保留。 */
+.app .navigation-header { flex: 0 0 35px; display: flex; align-items: center; border-bottom: 1px solid var(--border); gap: 4px; height: 35px; padding: 0 6px; }
+.app .navigation-header .activity-btn { width: 28px; height: 28px; }
+.app .navigation-header .navigation-toggle { flex: 0 0 26px; width: 26px; padding: 0; justify-content: center; }
+.app.navigation-collapsed .navigation-header { flex-direction: column; flex-basis: auto; height: auto; padding: 4px 0; }
+.app.navigation-collapsed .navigation-header .activity-bar { flex-direction: column; flex: none; padding: 0; overflow: visible; }
+.app.navigation-collapsed .sidebar-update { display: none; }
 .app .topbar { grid-template-columns: minmax(0, 1fr) minmax(180px, 350px) minmax(0, 1fr); gap: 12px; padding: 0 14px; background: var(--bg-1); }
 .app .activity-btn.active { color: var(--accent); font-weight: 600; background: var(--bg-4); }
 .app .project-search-dialog[open] { display: flex; flex-direction: column; }
@@ -4974,3 +4952,60 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 
 .structured-view-content { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .structured-view-content > .view-container { min-width: 0; }
+
+.reference-panel-overlay { position: fixed; inset: 0; z-index: 150; background: #0003; display: flex; align-items: center; justify-content: center; }
+.reference-panel { width: min(560px, calc(100vw - 40px)); height: min(720px, calc(100vh - 60px)); background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 16px 64px #0004; display: flex; flex-direction: column; overflow: hidden; outline: none; }
+.reference-panel-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.reference-panel-toolbar strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-panel .inspector-panel { width: 100% !important; flex: 1; min-height: 0; border: 0; }
+.reference-panel .inspector-splitter { display: none; }
+
+
+/* 引用预览有独立的更换按钮，输入框不再绘制第二个箭头。 */
+input.searchable-select.searchable-select-reference,
+[data-theme] input.searchable-select.searchable-select-reference { background-image: none; padding-right: 4px; }
+
+
+/* 编辑器浮在当前格之上，行高和相邻单元格保持稳定。 */
+.data-table .cell-string-input { height: 20px; }
+.data-table td:has(.cell-string-input.focused) { overflow: visible; position: relative; z-index: 12; }
+.data-table .cell-string-input.focused .cell-string-textarea { position: absolute; top: 0; left: 0; z-index: 12; background: var(--bg-1); padding: 5px 10px; box-shadow: none; outline: none; max-height: 320px; overflow-y: auto; }
+.searchable-reference-wrap { position: relative; display: flex; align-items: center; min-width: 0; flex: 1; }
+/* 引用符号负责打开记录，正文负责选择目标；两者共用一个胶囊。 */
+.searchable-reference-wrap > input.searchable-select,
+[data-theme] .searchable-reference-wrap > input.searchable-select { width: 100%; min-width: 0; padding: 0 5px; background-image: none; }
+.reference-open { flex: 0 0 22px; align-self: stretch; padding: 0; border: 0; background: transparent; color: var(--ref-color, var(--accent)); font: inherit; font-weight: 600; cursor: pointer; }
+.reference-open:hover:not(:disabled) { background: var(--bg-3); }
+.reference-open:disabled { cursor: default; opacity: .5; }
+.view-drag-preview { position: fixed; z-index: 1000; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--accent); border-radius: 5px; background: var(--bg-1); box-shadow: 0 5px 16px #0003; transform: rotate(-2deg); }
+.app .view-picker-tab.dragging { opacity: .25; }
+
+.structured-view-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+
+/* 图控件使用项目线框图标，不继承 React Flow 的实心填充。 */
+.graph-view-wrap .react-flow__controls button svg { fill: none; width: 16px; height: 16px; max-width: none; max-height: none; }
+
+/* 编辑浮层沿用当前单元格的唯一边界，清除原选中框的内层轮廓。 */
+.data-table td:has(.cell-string-input.focused) { outline: none !important; box-shadow: none !important; }
+.data-table .cell-string-input.focused { outline: none; position: static; }
+.data-table .cell-string-input.focused .cell-string-textarea { border: 0; outline: 1px solid var(--accent); }
+
+.data-table td.selected-cell:has(.cell-string-input.focused)::after { display: none; }
+/* 原生控件与系统指针使用当前主题的配色方案，拖动结束由状态类恢复抓手。 */
+[data-theme="light"] .graph-view-wrap { color-scheme: light; }
+[data-theme="dark"] .graph-view-wrap { color-scheme: dark; }
+.graph-view-wrap .react-flow__pane.draggable,
+.graph-view-wrap .react-flow__node.draggable { cursor: default; }
+.graph-view-wrap .react-flow__pane.dragging,
+.graph-view-wrap .react-flow__node.dragging { cursor: default; }
+
+.reference-panel-toolbar strong { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.reference-record-id { font-family: var(--font-mono); color: var(--text-mute); font-size: 12px; }
+/* 图画布与节点使用系统箭头，避免抓手在部分 Windows 环境中变为纯白。 */
+.graph-view-wrap .gn-graph-header, .graph-view-wrap .gn-compact-body { cursor: inherit; }
+
+/* 溢出提示覆盖在正文末端，不修改正文，也不占用字符宽度。 */
+.cell-string-overflow { position: absolute; right: 0; top: calc(var(--cell-preview-height, 20px) - 20px); height: 20px; width: 28px; text-align: right; background: linear-gradient(to right, transparent, var(--bg-1) 45%); color: var(--text-mute); pointer-events: none; }
+.cell-string-input.focused .cell-string-textarea { scrollbar-width: none; }
+.cell-string-input.focused .cell-string-textarea::-webkit-scrollbar { display: none; }
+.reference-panel-toolbar { border-left: 4px solid var(--node-color, var(--accent)); background: color-mix(in srgb, var(--node-color, var(--accent)) 9%, var(--bg-1)); }

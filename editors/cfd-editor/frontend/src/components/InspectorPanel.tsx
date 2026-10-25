@@ -1,3 +1,4 @@
+import { defaultValueForClear } from '../state/selectionKeyboard'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
@@ -48,6 +49,7 @@ import { isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
 
 interface Props {
   open: boolean
+  embedded?: boolean
   data: FileRecords | null
   selection: EditorSelection | null
   valueCells?: readonly CellAnchor[]
@@ -104,6 +106,7 @@ const MAX_W = 720
 
 export function InspectorPanel({
   open,
+  embedded = false,
   data,
   selection,
   valueCells = [],
@@ -291,6 +294,11 @@ export function InspectorPanel({
   }, [data, onParseCellText, onWriteField, readOnly, record])
 
   const recordKeyboard = useRecordItemKeyboard({
+    clearValue: path => {
+      const cell = record ? pasteCellAtRecordPath(record, path, !readOnly) : null
+      if (!cell || !cell.writable || cell.annotation?.read_only) throw new Error('目标字段不可编辑')
+      return defaultValueForClear(cell.annotation, cell.value.kind)
+    },
     rootRef: bodyRef,
     selectedFieldPath: selectedActionPathWire ? null : keyboardFieldPath,
     selectedActionPathWire,
@@ -362,7 +370,7 @@ export function InspectorPanel({
       style={{ width }}
       aria-label={inspectingValue ? '单元格详情面板' : '记录详情面板'}
     >
-      <div
+      {!embedded && <div
         className="inspector-splitter"
         onMouseDown={onSplitterDown}
         role="separator"
@@ -373,8 +381,8 @@ export function InspectorPanel({
           if (e.key === 'ArrowLeft') onWidthChange(Math.min(MAX_W, width + 24))
           if (e.key === 'ArrowRight') onWidthChange(Math.max(MIN_W, width - 24))
         }}
-      />
-      <div className="inspector-head">
+      />}
+      {!embedded && <div className="inspector-head">
         {<span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
         {visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
           <button
@@ -397,7 +405,7 @@ export function InspectorPanel({
             <Icon name="close" size={13} />
           </button>
         )}
-      </div>
+      </div>}
       {(
         <div
           className="inspector-body"
@@ -455,7 +463,7 @@ export function InspectorPanel({
             />
           ) : record && data ? (
             <>
-              {!inspectingValue && (
+              {!embedded && !inspectingValue && (
                 <>
                   <CardHeader
                     recordId={recordId(record)}
@@ -486,7 +494,7 @@ export function InspectorPanel({
                   actualType={recordActualType(record)}
                   onEdit={readOnly || !onWriteField
                     ? undefined
-                    : (path, val) => { onWriteField(data.file_path, record.coordinate, path, val) }}
+                    : (path, val) => onWriteField(data.file_path, record.coordinate, path, val)}
                   onCollectionEdit={readOnly || !onCollectionEdit
                     ? undefined
                     : (path, edit) => { onCollectionEdit(data.file_path, record.coordinate, path, edit) }}

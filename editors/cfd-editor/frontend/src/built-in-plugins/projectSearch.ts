@@ -126,6 +126,8 @@ function mountProjectSearch(
     const currentRequest = ++request
     selectedIndex = -1
     failure = null
+    // 查询或模式变化后旧结果不能继续响应 Enter，避免跳到上一轮结果。
+    results = null
     if (timeout !== null) window.clearTimeout(timeout)
     timeout = null
     if (!context.identity || !query.trim()) {
@@ -300,6 +302,7 @@ function mountProjectSearch(
         if (target) {
           selectedIndex = next
           target.focus({ preventScroll: true })
+          target.scrollIntoView({ block: 'nearest' })
           return
         }
         next += direction

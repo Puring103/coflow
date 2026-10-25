@@ -52,7 +52,7 @@ import {
 } from '../wire'
 import { Icon } from './Icon'
 import { RichTextString } from './RichTextString'
-import { StringValueInput } from './StringValueInput'
+import { ScalarValueInput } from './ScalarValueInput'
 import { DiagBadge } from './DiagBadge'
 import { typeColor, fieldTypeColor } from '../utils/typeColor'
 import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
@@ -258,15 +258,13 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
         <span
           className={`vc vc-ref${refTargetType && navigation ? ' vc-ref-navigable' : ''}`}
           style={{ '--ref-color': refColor } as CSSProperties}
-          title={refTargetType ? `${refKey} · Ctrl/Cmd+点击跳转` : refKey}
-          onClick={event => {
-            if (!refTargetType || !navigation || (!event.ctrlKey && !event.metaKey)) return
+          title={refTargetType ? `${refKey} · 点击 & 查看或编辑记录` : refKey}
+        >
+          <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={!refTargetType || !navigation} onClick={event => {
             event.preventDefault()
             event.stopPropagation()
-            navigation.openReference(refTargetType, refKey)
-          }}
-        >
-          <Icon name="dot" size={9} />
+            if (refTargetType) navigation?.openReference(refTargetType, refKey)
+          }}>&amp;</button>
           <span className="vc-ref-key">{highlightSearchText(shortName ?? refKey, highlightQuery)}</span>
         </span>
       )
@@ -459,6 +457,7 @@ export function DataCardExpanded({
     [diagnostics, onDiagnosticBadgeClick],
   )
   const inspectorRef = useRef<HTMLDivElement>(null)
+  const pointerField = useRef<string | null>(null)
 
   useEffect(() => {
     if (!highlightField) return
@@ -526,7 +525,14 @@ export function DataCardExpanded({
   }, [expandAlongPath])
 
   const body = (
-    <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
+    <div className="dc-inspector" ref={inspectorRef} tabIndex={0} onPointerDownCapture={event => {
+      const input = (event.target as HTMLElement).closest('textarea.cell-string-textarea')
+      if (!input || input === document.activeElement) return
+      const key = input.closest<HTMLElement>('[data-field-path-wire]')?.dataset.fieldPathWire
+      const selected = selectedFieldPath ? JSON.stringify(selectedFieldPath) : pointerField.current
+      if (key && key !== selected) { event.preventDefault(); inspectorRef.current?.focus({ preventScroll: true }) }
+      pointerField.current = key ?? null
+    }} style={{ '--depth': depth } as CSSProperties}>
       {fields.map((fc) => {
         const fieldEdit = cellReadOnly(fc) ? undefined : onEdit
         const declaredType = cellDeclaredType(fc)
@@ -1272,7 +1278,6 @@ function topLevelSegmentOfPathKey(pathKey: string): string {
 export function DirectEditor({
   value,
   onCommit,
-  declaredType,
   refTargetType,
   enumType,
   enumIsFlag,
@@ -1304,60 +1309,13 @@ export function DirectEditor({
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'string' || value.kind === 'formatted_string') {
-    return <StringValueInput value={value} onCommit={onCommit} />
+    return <ScalarValueInput value={value} onCommit={onCommit} />
   }
   if (value.kind === 'int' || value.kind === 'float') {
-    return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
+    return <ScalarValueInput value={value} onCommit={onCommit} label="数值" />
   }
 
   return <ValueChip value={value} />
-}
-
-function TextDirectInput({
-  value,
-  onCommit,
-  color,
-}: {
-  value: FieldValue & { kind: 'int' | 'float' }
-  onCommit: (next: FieldValue) => void
-  color: string
-}) {
-  const initial = plainFieldValueText(value)
-  const [text, setText] = useState(initial)
-  const cancelled = useRef(false)
-  const rowSelection = useContext(ValueRowSelectionCtx)
-  useEffect(() => { setText(initial) }, [initial])
-
-  function commit() {
-    if (text === initial) return
-    const next = parseFieldValueText(value, text)
-    if (next) onCommit(next)
-    else setText(initial)
-  }
-
-  return (
-    <input
-      className="dc-input dc-input-flat dc-input-themed"
-      style={{ '--field-color': color } as CSSProperties}
-      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
-      value={text}
-      onChange={e => setText(e.target.value)}
-      onBlur={() => {
-        if (!cancelled.current) commit()
-        cancelled.current = false
-      }}
-      onKeyDown={e => {
-        if (e.nativeEvent.isComposing || e.keyCode === 229) return
-        if (e.key === 'Enter' || e.key === 'Escape') {
-          e.preventDefault()
-          if (e.key === 'Escape') { cancelled.current = true; setText(initial) }
-          e.currentTarget.blur()
-          // 只有显式结束键盘编辑才返回行导航；鼠标失焦不抢回焦点。
-          rowSelection?.onEditingFinished?.()
-        }
-      }}
-    />
-  )
 }
 
 export function EnumDirectSelect({
@@ -1665,7 +1623,7 @@ export function RefDirectSelect({
   if (targetType && targets !== null && targets.length > 0) {
     const hasCurrent = value.kind === 'ref' && !!currentKey && targets.some(target => target.key === currentKey)
     const select = (
-      <SearchableSelect
+      <SearchableSelect reference
         className={inputClass}
         style={{ '--ref-color': color } as CSSProperties}
         value={value.kind === 'option_none' && !nullable ? '' : selectedValue}
@@ -1680,9 +1638,8 @@ export function RefDirectSelect({
         ]}
         onCommit={commit}
         onExit={onExit}
-        onModifiedClick={value.kind === 'ref' && targetType && navigation
-          ? () => navigation.openReference(targetType, currentKey)
-          : undefined}
+        onPreview={value.kind === 'ref' && targetType && navigation ? () => navigation.openReference(targetType, currentKey) : undefined}
+
       />
     )
     return variant === 'input'
@@ -1691,6 +1648,8 @@ export function RefDirectSelect({
   }
 
   const input = (
+    <span className="searchable-reference-wrap">
+    <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={value.kind !== 'ref' || !targetType || !navigation} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); if (targetType) navigation?.openReference(targetType, currentKey) }}>&amp;</button>
     <input
       className={inputClass}
       style={{ '--ref-color': color } as CSSProperties}
@@ -1703,23 +1662,12 @@ export function RefDirectSelect({
         commit(event.target.value)
         requestAnimationFrame(() => onExit?.())
       }}
-        onClick={event => {
-          if (
-            value.kind === 'ref'
-            && targetType
-            && navigation
-            && (event.ctrlKey || event.metaKey)
-          ) {
-            event.preventDefault()
-            event.stopPropagation()
-            navigation.openReference(targetType, currentKey)
-          }
-        }}
       onKeyDown={event => {
         if (event.key === 'Escape') event.currentTarget.value = currentKey
         if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur()
       }}
     />
+    </span>
   )
   return variant === 'input'
     ? input
