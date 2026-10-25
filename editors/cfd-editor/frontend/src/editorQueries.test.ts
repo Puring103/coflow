@@ -1,7 +1,7 @@
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import type { FileRecords } from './bindings/FileRecords'
-import { fetchFileRecords, fetchSourceText, removeSessionQueries, validateQueryRevision } from './editorQueries'
+import { pruneObsoleteQueries, fetchFileRecords, fetchSourceText, removeSessionQueries, validateQueryRevision } from './editorQueries'
 import { editorQueryKeys } from './queryKeys'
 
 const records = (revision: number): FileRecords => ({
@@ -60,4 +60,20 @@ describe('editor queries', () => {
     expect(validateQueryRevision(records(3), 3)).toEqual(records(3))
     expect(() => validateQueryRevision(records(4), 3)).toThrow('期望 3，收到 4')
   })
+})
+
+it('releases obsolete snapshots while preserving active, current and other-session data', () => {
+  const client = new QueryClient()
+  for (let revision = 1; revision <= 100; revision++) client.setQueryData(editorQueryKeys.fileRecords(7, revision, 'a.cfd'), records(revision))
+  const activeKey = editorQueryKeys.fileRecords(7, 1, 'a.cfd')
+  const observer = new QueryObserver(client, { queryKey: activeKey, staleTime: Infinity })
+  const unsubscribe = observer.subscribe(() => {})
+  client.setQueryData(editorQueryKeys.fileRecords(8, 1, 'a.cfd'), records(1))
+  pruneObsoleteQueries(client, 7, 100)
+  expect(client.getQueryCache().getAll()).toHaveLength(3)
+  expect(client.getQueryData(activeKey)).toEqual(records(1))
+  unsubscribe()
+  pruneObsoleteQueries(client, 7, 100)
+  expect(client.getQueryCache().getAll()).toHaveLength(2)
+  client.clear()
 })

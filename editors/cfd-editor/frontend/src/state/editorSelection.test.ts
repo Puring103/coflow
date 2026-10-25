@@ -3,6 +3,9 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import { fieldPathField } from '../wire'
 import {
   cellAnchorsIdentity,
+  iterateSelectedCells,
+  selectedCellCount,
+  selectedCellsIdentity,
   editorSelectionIdentity,
   recordSelection,
   recordSelectionCoordinates,
@@ -187,4 +190,27 @@ describe('editor selection', () => {
       { coordinate, fieldPath: name },
     ]))
   })
+})
+
+describe('compact cell ranges', () => {
+  it('iterates in view order and keeps a million-cell selection compact', () => {
+    const rows = Array.from({ length: 10000 }, (_, id) => ({ actual_type: 'Item', id: String(id) }))
+    const columns = Array.from({ length: 100 }, (_, id) => `f${id}`)
+    const selected = { rows, columns, range: { rowStart: 0, rowEnd: 9999, columnStart: 0, columnEnd: 99 } }
+    expect(selectedCellCount(selected)).toBe(1000000)
+    const iterator = iterateSelectedCells(selected)
+    expect(iterator.next().value).toEqual({ coordinate: rows[0], fieldPath: [fieldPathField('f0')] })
+    expect(iterator.next().value).toEqual({ coordinate: rows[0], fieldPath: [fieldPathField('f1')] })
+    expect(Array.from(iterateSelectedCells({ rows: [...rows].reverse(), columns, range: { rowStart: 1, rowEnd: 2, columnStart: 3, columnEnd: 3 } })).map(cell => cell.coordinate.id)).toEqual(['9998', '9997'])
+  })
+})
+
+it('keeps range editor identity stable when the same rows and columns are reordered', () => {
+  const rows = [{ actual_type: 'Item', id: 'a' }, { actual_type: 'Item', id: 'b' }]
+  const columns = ['name', 'title']
+  const range = { rowStart: 0, rowEnd: 1, columnStart: 0, columnEnd: 1 }
+  expect(selectedCellsIdentity('a.cfd', { rows, columns, range }))
+    .toBe(selectedCellsIdentity('a.cfd', { rows: [...rows].reverse(), columns: [...columns].reverse(), range }))
+  expect(selectedCellsIdentity('a.cfd', { rows, columns, range }))
+    .not.toBe(selectedCellsIdentity('b.cfd', { rows, columns, range }))
 })

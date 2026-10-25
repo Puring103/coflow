@@ -22,11 +22,18 @@ use crate::editor::types::{FieldAnnotation, FieldCell, FieldDiagnostic, RecordRo
 /// `field_shape` 只依赖 schema：同一项目代际内形状不变。表格、图谱与记录视图
 /// 会针对每条记录的每个字段重复请求它，缓存后把 `记录数 × 字段数` 的形状重建
 /// 降到一次/字段。
-type ShapeCacheMap = HashMap<(String, String), Option<Arc<FieldShapeInfo>>>;
+type ShapeCacheMap = HashMap<String, HashMap<String, Option<Arc<FieldShapeInfo>>>>;
+
+#[derive(Debug)]
+struct FieldOrder {
+    names: Vec<String>,
+    names_set: BTreeSet<String>,
+}
 
 #[derive(Debug, Default)]
 pub struct ShapeCache {
     inner: RwLock<ShapeCacheMap>,
+    field_orders: RwLock<HashMap<String, Arc<FieldOrder>>>,
 }
 
 impl ShapeCache {
@@ -38,13 +45,42 @@ impl ShapeCache {
         actual_type: &str,
         field_name: &str,
     ) -> Option<Arc<FieldShapeInfo>> {
-        let key = (actual_type.to_string(), field_name.to_string());
-        if let Some(cached) = self.inner.read().get(&key) {
+        // 借用字符串查找，命中缓存时不为每个字段分配两个临时 String。
+        if let Some(cached) = self
+            .inner
+            .read()
+            .get(actual_type)
+            .and_then(|fields| fields.get(field_name))
+        {
             return cached.clone();
         }
         let shape = queries.field_shape(actual_type, field_name).map(Arc::new);
-        self.inner.write().insert(key, shape.clone());
+        self.inner
+            .write()
+            .entry(actual_type.to_string())
+            .or_default()
+            .insert(field_name.to_string(), shape.clone());
         shape
+    }
+
+    fn field_order(&self, queries: ProjectQueries<'_>, actual_type: &str) -> Arc<FieldOrder> {
+        if let Some(order) = self.field_orders.read().get(actual_type) {
+            return order.clone();
+        }
+        // 声明顺序只依赖 schema，同一代际内所有记录共享有序字段与成员索引。
+        let names: Vec<_> = queries
+            .schema_type_fields(actual_type)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        let order = Arc::new(FieldOrder {
+            names_set: names.iter().cloned().collect(),
+            names,
+        });
+        self.field_orders
+            .write()
+            .insert(actual_type.to_string(), order.clone());
+        order
     }
 }
 
@@ -152,21 +188,17 @@ fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
     // `CfdRecord` stores fields in a BTreeMap for deterministic lookup, not
     // presentation. The schema retains the declared (including inherited)
     // field order, which is what users expect in the editor.
-    let declared_names = ctx
-        .queries
-        .schema_type_fields(record.actual_type())
-        .into_iter()
-        .map(|(name, _)| name)
-        .collect::<Vec<_>>();
-    let declared_name_set = declared_names.iter().cloned().collect::<BTreeSet<_>>();
+    let order = ctx.shapes.field_order(ctx.queries, record.actual_type());
     let remaining_names = record
         .fields()
         .keys()
         .map(ToString::to_string)
-        .filter(|name| !declared_name_set.contains(name));
+        .filter(|name| !order.names_set.contains(name));
 
-    declared_names
-        .into_iter()
+    order
+        .names
+        .iter()
+        .cloned()
         .chain(remaining_names)
         .map(|name| {
             let present = record.fields().get(name.as_str());

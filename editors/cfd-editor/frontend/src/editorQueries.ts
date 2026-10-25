@@ -46,3 +46,10 @@ export function removeSessionQueries(client: QueryClient, sessionId: number): vo
   // 所有编辑器 query key 的第二项都是 session id。
   client.removeQueries({ predicate: query => query.queryKey[1] === sessionId })
 }
+
+/** 旧代际的非活动快照不再用于导航；及时释放，避免连续编辑积累大文件副本。 */
+export function pruneObsoleteQueries(client: QueryClient, sessionId: number, revision: number): void {
+  const kinds = new Set(['file-records', 'dimension-records', 'graph', 'source-text', 'project-diff'])
+  client.removeQueries({ type: 'inactive', predicate: query => kinds.has(String(query.queryKey[0]))
+    && query.queryKey[1] === sessionId && typeof query.queryKey[2] === 'number' && query.queryKey[2] < revision })
+}

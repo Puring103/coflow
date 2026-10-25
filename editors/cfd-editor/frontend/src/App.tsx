@@ -113,7 +113,7 @@ import {
   updateValueSelection,
   valueSelection,
   RECORD_HIGHLIGHT_SENTINEL,
-  type CellAnchor,
+  type SelectedCells,
   type EditorSelection,
   type RecordSelectionMode,
   type ValueSelectionMode,
@@ -2110,8 +2110,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     },
     [currentRoute?.view, currentRoute?.file],
   )
-  const [inspectorValueCells, setInspectorValueCells] = useState<readonly CellAnchor[]>([])
-  const tableOnValueSelectionCellsChange = useCallback((cells: readonly CellAnchor[]) => {
+  const [inspectorValueCells, setInspectorValueCells] = useState<SelectedCells>([])
+  const tableOnValueSelectionCellsChange = useCallback((cells: SelectedCells) => {
     setInspectorValueCells(current => sameValueCells(current, cells) ? current : cells)
   }, [])
   const tableOnWriteFieldBatch = useCallback(

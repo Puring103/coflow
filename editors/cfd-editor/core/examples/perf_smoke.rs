@@ -68,7 +68,9 @@ fn main() {
         config.project_root.display()
     );
 
-    breakdown(&config);
+    if std::env::var_os("PERF_SNAPSHOT_ONLY").is_none() {
+        breakdown(&config);
+    }
 
     let store = SessionStore::new().expect("session store");
     let (bootstrap, load) = timed(|| {
@@ -94,6 +96,13 @@ fn main() {
         records.columns.len()
     );
 
+    println!(
+        "column content metrics  : {}",
+        serde_json::to_value(&records).expect("serialize records")["columns"][0]
+            .get("content_metrics")
+            .is_some()
+    );
+
     // Warm file records (same revision; exercises any backend cache).
     let (_, second) = timed(|| {
         store
@@ -101,6 +110,33 @@ fn main() {
             .expect("get file records")
     });
     println!("get_file_records warm   : {}", format_duration(second));
+
+    let samples = env_usize("PERF_RECORD_SAMPLES", 0);
+    if samples > 0 {
+        // 重复查询同一代际，报告中位数与尾部耗时，降低单次测量噪声。
+        let mut times = Vec::with_capacity(samples);
+        for _ in 0..samples {
+            let (_, elapsed) = timed(|| {
+                store
+                    .get_file_records(session_id, &file_path)
+                    .expect("sample records")
+            });
+            times.push(elapsed);
+        }
+        times.sort();
+        println!(
+            "get_file_records samples: {} p50={} p95={}",
+            samples,
+            format_duration(times[samples / 2]),
+            format_duration(times[(samples * 95 / 100).min(samples - 1)])
+        );
+    }
+    if std::env::var_os("PERF_SNAPSHOT_ONLY").is_some() {
+        if !config.keep {
+            fs::remove_dir_all(&config.project_root).expect("remove perf project");
+        }
+        return;
+    }
 
     let source = store
         .read_source_text(session_id, &file_path)

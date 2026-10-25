@@ -64,6 +64,19 @@ pub struct RecordColumn {
     pub name: String,
     pub type_names: Vec<String>,
     pub max_summary_len: usize,
+    /// 按实际类型聚合的内容宽度，避免前端逐列扫描所有记录。
+    pub content_metrics: BTreeMap<String, ColumnContentMetrics>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct ColumnContentMetrics {
+    pub max_width: f64,
+    pub has_complex_value: bool,
 }
 
 /// One top-level record's view inside a file.

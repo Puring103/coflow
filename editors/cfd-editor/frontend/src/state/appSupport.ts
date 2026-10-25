@@ -4,11 +4,19 @@ import type { GraphData } from '../bindings/GraphData'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import type { RecordRow } from '../bindings/RecordRow'
 import { coordinateId } from '../wire'
-import { sameFieldPath, type CellAnchor } from './editorSelection'
+import { sameFieldPath, type SelectedCells, type CellSelectionRange } from './editorSelection'
 
 const LAST_PROJECT_STORAGE_KEY = 'cfd-editor-last-project-yaml'
 
-export function sameValueCells(left: readonly CellAnchor[], right: readonly CellAnchor[]): boolean {
+export function sameValueCells(left: SelectedCells, right: SelectedCells): boolean {
+  if (left === right) return true
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    if (Array.isArray(left) || Array.isArray(right)) return false
+    const a = left as CellSelectionRange, b = right as CellSelectionRange
+    return a.rows === b.rows && a.columns === b.columns
+      && a.range.rowStart === b.range.rowStart && a.range.rowEnd === b.range.rowEnd
+      && a.range.columnStart === b.range.columnStart && a.range.columnEnd === b.range.columnEnd
+  }
   return left.length === right.length && left.every((cell, index) => {
     const other = right[index]
     return !!other
