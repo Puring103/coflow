@@ -24,6 +24,25 @@ import type { FrontendPluginBundle } from '../api'
 afterEach(() => resetPluginRegistryForTests())
 
 describe('DataCardCompact complex previews', () => {
+  it('renders editable scalar controls inside compact object previews', () => {
+    const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
+      lookups: {} as never,
+      generationKey: 'test',
+      onOpenReference: () => {},
+      children: createElement(DataCardCompact, {
+        value: { kind: 'object', value: { actual_type: 'Config', fields: {
+          Count: { kind: 'int', value: 42n },
+          Enabled: { kind: 'bool', value: true },
+        } } },
+        fieldPath: [{ kind: 'field', value: 'Config' }],
+        onEdit: () => {},
+      }),
+    }))
+    expect(html).toContain('aria-invalid="false">42</textarea>')
+    expect(html).toContain('type="checkbox"')
+    expect(html).not.toContain('readonly=""')
+  })
+
   const polymorphicObjectAnnotation: FieldAnnotation = {
     enum_int_value: null,
     declared_type: 'Reward',
@@ -323,7 +342,8 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('vc-ref')
     expect(html).toContain('vc-enum')
     expect(html).toContain('vc-count">5')
-    expect(html).not.toContain('mobile')
+    expect(html).toContain('mobile')
+    expect(html).not.toContain('data-field-path="rates[mobile]"')
     expect(html).not.toContain('iron')
   })
 
