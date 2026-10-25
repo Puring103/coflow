@@ -1,3 +1,4 @@
+import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import { ShortNameMenuItem } from './ShortNameContext'
@@ -9,7 +10,6 @@ import type { CollectionEdit } from '../bindings/CollectionEdit'
 import {
   recordActualType,
   recordId,
-  sameCoordinate,
   coordinateId,
   errorMessage,
   type DiagnosticItem,
@@ -48,8 +48,6 @@ import { isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
 
 interface Props {
   open: boolean
-  collapsed: boolean
-  onToggleCollapse: () => void
   data: FileRecords | null
   selection: EditorSelection | null
   valueCells?: readonly CellAnchor[]
@@ -106,8 +104,6 @@ const MAX_W = 720
 
 export function InspectorPanel({
   open,
-  collapsed,
-  onToggleCollapse,
   data,
   selection,
   valueCells = [],
@@ -181,9 +177,9 @@ export function InspectorPanel({
     window.addEventListener('mouseup', onUp)
   }, [onWidthChange])
 
-  const record = data && coordinate
-    ? data.records.find(r => sameCoordinate(r.coordinate, coordinate))
-    : null
+  // 大选区按坐标索引记录，避免每个选中单元格都重新线性扫描整张表。
+  const rowsByCoordinate = useMemo(() => new Map(data?.records.map(row => [coordinateId(row.coordinate), row]) ?? []), [data?.records])
+  const record = coordinate ? rowsByCoordinate.get(coordinateId(coordinate)) ?? null : null
   const rootPresentation = usePluginPresentation('inspector', record?.coordinate.actual_type ?? '')
   const pluginIdentity = currentPluginIdentity()
   const rootPresentationContext = useMemo<PluginPresentationContext | null>(() => (
@@ -198,12 +194,11 @@ export function InspectorPanel({
         }
       : null
   ), [data, pluginIdentity?.sessionId, pluginIdentity?.revision, record])
-  const selectedRecords = data && selection?.kind === 'record'
+  const selectedRecords = useMemo(() => selection?.kind === 'record'
     ? selection.coordinates.flatMap(selected => {
-        const row = data.records.find(item => sameCoordinate(item.coordinate, selected))
+        const row = rowsByCoordinate.get(coordinateId(selected))
         return row ? [row] : []
-      })
-    : []
+      }) : [], [selection, rowsByCoordinate])
   const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
   const batchCells = useMemo(() => {
     if (!data || selection?.kind !== 'value' || valueCells.length < 2) return []
@@ -211,12 +206,13 @@ export function InspectorPanel({
       const name = anchor.fieldPath.length === 1 && anchor.fieldPath[0].kind === 'field'
         ? anchor.fieldPath[0].value
         : null
-      const row = data.records.find(item => sameCoordinate(item.coordinate, anchor.coordinate))
-      const cell = name ? row?.fields.find(item => item.name === name) : undefined
+      const row = rowsByCoordinate.get(coordinateId(anchor.coordinate))
+      const index = name ? row?.field_index[name] : undefined
+      const cell = index !== undefined ? row?.fields[index] : undefined
       return cell ? [{ anchor, cell }] : []
     })
-  }, [data, selection?.kind, valueCells])
-  const hasBatchCellEditor = !!projectBatchCells(batchCells.map(item => item.cell))
+  }, [data, rowsByCoordinate, selection?.kind, valueCells])
+  const hasBatchCellEditor = useMemo(() => !!projectBatchCells(batchCells.map(item => item.cell)), [batchCells])
   const editTargetIdentity = selection
     ? (hasBatchCellEditor && data
         ? cellAnchorsIdentity(data.file_path, batchCells.map(item => item.anchor))
@@ -362,33 +358,25 @@ export function InspectorPanel({
 
   return (
     <aside
-      className={`inspector-panel${collapsed ? ' collapsed' : ''}${dragging ? ' dragging' : ''}`}
-      style={collapsed ? undefined : { width }}
+      className={`inspector-panel${dragging ? ' dragging' : ''}`}
+      style={{ width }}
       aria-label={inspectingValue ? '单元格详情面板' : '记录详情面板'}
     >
       <div
         className="inspector-splitter"
-        onMouseDown={collapsed ? undefined : onSplitterDown}
+        onMouseDown={onSplitterDown}
         role="separator"
         aria-orientation="vertical"
         aria-label="调整记录面板宽度"
-        tabIndex={collapsed ? -1 : 0}
+        tabIndex={0}
         onKeyDown={e => {
           if (e.key === 'ArrowLeft') onWidthChange(Math.min(MAX_W, width + 24))
           if (e.key === 'ArrowRight') onWidthChange(Math.max(MIN_W, width - 24))
         }}
       />
       <div className="inspector-head">
-        <button
-          className="btn btn-icon inspector-collapse-btn"
-          onClick={onToggleCollapse}
-          title={collapsed ? '展开面板' : '折叠面板'}
-          aria-label={collapsed ? '展开面板' : '折叠面板'}
-        >
-          <Icon name={collapsed ? "panel-right-closed" : "panel-right"} size={17} />
-        </button>
-        {!collapsed && <span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
-        {!collapsed && visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
+        {<span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
+        {visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
           <button
             className={`btn btn-icon inspector-showall-btn${showAllFields ? ' active' : ''}`}
             onClick={() => setShowAllFields(show => !show)}
@@ -399,7 +387,7 @@ export function InspectorPanel({
             <Icon name="filter" size={13} />
           </button>
         )}
-        {!collapsed && (
+        {(
           <button
             className="btn btn-icon"
             onClick={onClose}
@@ -410,7 +398,7 @@ export function InspectorPanel({
           </button>
         )}
       </div>
-      {!collapsed && (
+      {(
         <div
           className="inspector-body"
           ref={bodyRef}
@@ -547,7 +535,7 @@ export function InspectorPanel({
               setRecordTreeMenu(null)
               try {
                 if (!onRenderCellText) return
-                await navigator.clipboard.writeText(await onRenderCellText(data.file_path, record.coordinate, path))
+                await writeClipboardText(await onRenderCellText(data.file_path, record.coordinate, path))
                 setKeyboardNotice(null)
               } catch (error) {
                 setKeyboardNotice(`复制失败：${errorMessage(error)}`)
@@ -568,7 +556,7 @@ export function InspectorPanel({
               setRecordTreeMenu(null)
               try {
                 if (!onParseCellText || !onWriteField) return
-                const text = await navigator.clipboard.readText()
+                const text = await readClipboardText()
                 await pasteIntoRecordPath(path, text, 'replace')
                 setKeyboardNotice(null)
               } catch (error) {

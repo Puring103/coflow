@@ -23,10 +23,8 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
       return Number.isFinite(value) ? { kind: 'float', value } : null
     }
     case 'string':
-      return { kind: 'string', value: raw }
     case 'formatted_string':
-      // 模板由显式源码模式决定，普通文本不根据花括号自动转成模板。
-      return { kind: 'formatted_string', value: { ...original.value, source: `f${JSON.stringify(raw)}` } }
+      return automaticStringValue(raw)
     case 'enum':
       return { kind: 'enum', value: { ...original.value, variant: raw } }
     case 'ref':
@@ -45,7 +43,7 @@ function formattedSourceText(source: string): string {
   const quoted = source.slice(1)
   try {
     const value: unknown = JSON.parse(quoted)
-    return typeof value === 'string' ? value : source
+    return typeof value === 'string' ? value.replace(/\{\{|\}\}/g, brace => brace[0]) : source
   } catch {
     return source
   }
@@ -216,4 +214,24 @@ function valueKindLabel(value: FieldValue): string {
 /** 仅匹配记录键，不把名称、类型或字段内容纳入搜索。 */
 export function recordMatchesKeySearch(record: RecordRow, query: string): boolean {
   return record.coordinate.id.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+}
+
+const INTERPOLATION_NAME = '[\\p{XID_Start}_][\\p{XID_Continue}_]*'
+const INTERPOLATION_PATH = new RegExp(`^(?:self|&${INTERPOLATION_NAME}::${INTERPOLATION_NAME})(?:\\.${INTERPOLATION_NAME})+$`, 'u')
+
+/** 编辑器按合法插值自动选择字符串类型；正文中的其他花括号作为文本保留。 */
+export function automaticStringValue(text: string): FieldValue & { kind: 'string' | 'formatted_string' } {
+  let found = false
+  const source = text.replace(/\{[^{}]*\}|[{}]/g, token => {
+    const expression = token.slice(1, -1).trim()
+    if (token.length > 2 && INTERPOLATION_PATH.test(expression)
+      && expression.split('.').length <= (expression.startsWith('self.') ? 128 : 129)) {
+      found = true
+      return token
+    }
+    return token.replace(/[{}]/g, brace => brace + brace)
+  })
+  return found
+    ? { kind: 'formatted_string', value: { source: `f${JSON.stringify(source)}`, rendered: text } }
+    : { kind: 'string', value: text }
 }

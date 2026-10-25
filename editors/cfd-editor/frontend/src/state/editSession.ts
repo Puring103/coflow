@@ -8,3 +8,12 @@ export function finishActiveDataEdit(): void {
   if (!active.matches('.gn-key-editor, .dc-input, .searchable-select, .cell-string-textarea')) return
   active.blur()
 }
+
+/** 虚拟行滚出视窗时先提交编辑，避免节点卸载后丢失尚未触发 blur 的草稿。 */
+export function finishOffscreenDataEdit(root: HTMLElement): void {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement) || active === root || !root.contains(active)) return
+  const viewport = root.getBoundingClientRect()
+  const bounds = active.getBoundingClientRect()
+  if (bounds.bottom < viewport.top || bounds.top > viewport.bottom) finishActiveDataEdit()
+}

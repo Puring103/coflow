@@ -651,17 +651,19 @@ export class EditorMutationController {
     newValue: DimensionValueState,
     options: MutationOptions,
   ): Promise<MutationResult<DimensionValueState>> {
+    // 虚拟路由只标识界面，后端写入和提交后的文件刷新均使用实际覆盖来源。
+    const sourceFile = filePath.startsWith('@dimension/')
+      ? filePath.slice('@dimension/'.length).split('/').slice(1).join('/')
+      : filePath
     return this.execute(
       '维度值写入失败',
-      filePath,
+      sourceFile,
       sessionId => this.backend.writeDimensionValue(
         sessionId,
         coordinate,
         expectedValue,
         newValue,
-        filePath.startsWith('@dimension/')
-          ? filePath.slice('@dimension/'.length).split('/').slice(1).join('/')
-          : filePath,
+        sourceFile,
       ),
       undefined,
       outcome => {
@@ -669,7 +671,7 @@ export class EditorMutationController {
           this.history.record({
             kind: 'dimension',
             revision: outcome.revision,
-            filePath: outcome.affected_files[0] ?? filePath,
+            filePath: outcome.affected_files[0] ?? sourceFile,
             coordinate: outcome.coordinate,
             oldValue: cloneDimensionState(outcome.old_value),
             newValue: cloneDimensionState(outcome.new_value),

@@ -126,14 +126,19 @@ describe('publishMutationGeneration', () => {
     const port: MutationPublicationPort = {
       acceptRevision,
       isCurrent: vi.fn(() => true),
-      getFileRecords: vi.fn(async (_sessionId, file) => fileRecords(2, file)),
+      getFileRecords: vi.fn(async (_sessionId, file) => {
+        if (file.startsWith('@dimension/')) throw new Error('virtual view is not a source file')
+        return fileRecords(2, file)
+      }),
       publishFileRecords: vi.fn(),
     }
     const result = await publishMutationGeneration(port, {
       sessionId: 1, revision: 2, diagnostics: [],
-      affectedFiles: ['data/items.language.cfd'], fallbackFile: '@dimension/language',
+      affectedFiles: ['data/items.language.cfd'], fallbackFile: 'data/items.language.cfd',
       projectMetadata: metadata,
     })
+    expect(port.getFileRecords).toHaveBeenCalledTimes(1)
+    expect(port.getFileRecords).toHaveBeenCalledWith(1, 'data/items.language.cfd')
     expect(result.status).toBe('committed')
     expect(acceptRevision).toHaveBeenCalledWith(1, 2, [], metadata)
   })

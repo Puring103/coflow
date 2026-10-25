@@ -1,3 +1,4 @@
+import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { recordMatchesFullTextSearch, recordMatchesKeySearch } from '../value/fieldValue'
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
@@ -624,7 +625,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
               setRecordTreeMenu(null)
               try {
                 if (!onRenderCellText) return
-                await navigator.clipboard.writeText(await onRenderCellText(record.coordinate, path))
+                await writeClipboardText(await onRenderCellText(record.coordinate, path))
                 setKeyboardNotice(null)
               } catch (error) {
                 setKeyboardNotice(`复制失败：${errorMessage(error)}`)
@@ -645,7 +646,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
               setRecordTreeMenu(null)
               try {
                 if (!onParseCellText || !onWriteField) return
-                const text = await navigator.clipboard.readText()
+                const text = await readClipboardText()
                 const next = await onParseCellText(record.coordinate, path, text)
                 await onWriteField(record.coordinate, path, next)
                 setKeyboardNotice(null)

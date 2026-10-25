@@ -1,10 +1,12 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../bindings/ViewConfig'
 import type { ViewKind } from '../bindings/ViewKind'
 import { DEFAULT_TABLE_VIEW_ID, newViewId } from '../state/views'
 import { Icon } from './Icon'
+import { errorMessage } from '../wire'
 
 interface Props {
   /** null => create mode; an existing ViewConfig => edit mode. */
@@ -36,6 +38,10 @@ export function ViewEditorDialog({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [fieldSearch, setFieldSearch] = useState('')
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const discardDialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (confirmDiscard) discardDialogRef.current?.showModal()
+  }, [confirmDiscard])
   const [name, setName] = useState(initial?.name ?? '')
   const [kind, setKind] = useState<ViewKind>(initial?.kind ?? 'table')
   // Which fields are checked (membership only; ordering is separate).
@@ -91,7 +97,7 @@ export function ViewEditorDialog({
       fields: kind === 'graph' ? cleanFields : [],
     })
     onClose()
-    } catch (error) { setSaveError(String(error)) } finally { setSaving(false) }
+    } catch (error) { setSaveError(errorMessage(error)) } finally { setSaving(false) }
   }
 
   function toggleSelected(field: string) {
@@ -290,7 +296,11 @@ export function ViewEditorDialog({
         </div>
 
         {saveError && <div className="view-save-error" role="alert">{saveError}</div>}
-        {confirmDiscard && <div className="view-discard-confirm" role="alert"><span>放弃尚未保存的视图设置？</span><button className="btn" onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="btn" onClick={onClose}>放弃更改</button></div>}
+        {confirmDiscard && createPortal(<dialog ref={discardDialogRef} className="view-discard-dialog" aria-label="放弃更改" onCancel={() => setConfirmDiscard(false)} onKeyDown={event => event.stopPropagation()}>
+          <h3>放弃尚未保存的视图设置？</h3>
+          <p>确认后，本次修改将不会保存。</p>
+          <div className="view-editor-actions"><button autoFocus className="btn" onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="btn btn-primary" onClick={onClose}>确认</button></div>
+        </dialog>, document.body)}
         <div className="view-editor-actions">
           <button className="btn btn-outlined" onClick={requestClose}>取消</button>
           <button className="btn btn-primary" onClick={submit} disabled={!trimmedName || saving}>

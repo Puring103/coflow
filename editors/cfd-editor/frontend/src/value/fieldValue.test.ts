@@ -46,15 +46,29 @@ describe('FieldValue authoring', () => {
     expect(plainFieldValueText(value)).toBe('<b>{&Item::sword.name}</b>')
   })
 
-  it('keeps ordinary strings literal and preserves the declared template kind', () => {
+  it('automatically uses templates for legal interpolation and returns to plain text', () => {
     const text = '当前 {self.name}，跨类型 {&Item::sword.name}'
-    expect(parseFieldValueText({ kind: 'string', value: '' }, text)).toEqual({ kind: 'string', value: text })
-    expect(parseFieldValueText({ kind: 'formatted_string', value: { source: 'f"old"', rendered: 'old' } }, text)).toEqual({
-      kind: 'formatted_string', value: { source: `f${JSON.stringify(text)}`, rendered: 'old' },
-    })
-    expect(parseFieldValueText({ kind: 'formatted_string', value: { source: 'f"old"', rendered: 'old' } }, 'plain text')).toEqual({
-      kind: 'formatted_string', value: { source: 'f"plain text"', rendered: 'old' },
-    })
+    for (const original of [
+      { kind: 'string' as const, value: '' },
+      { kind: 'formatted_string' as const, value: { source: 'f"old"', rendered: 'old' } },
+    ]) {
+      expect(parseFieldValueText(original, text)).toEqual({
+        kind: 'formatted_string', value: { source: `f${JSON.stringify(text)}`, rendered: text },
+      })
+      expect(parseFieldValueText(original, 'plain {text}')).toEqual({ kind: 'string', value: 'plain {text}' })
+    }
+  })
+
+  it('keeps literal braces and Unicode references when mixed with interpolation', () => {
+    const text = 'literal {text} / {self.名称} / {&物品::剑.名称} / }'
+    const value = parseFieldValueText({ kind: 'string', value: '' }, text)!
+    expect(value).toMatchObject({ kind: 'formatted_string', value: {
+      source: `f${JSON.stringify('literal {{text}} / {self.名称} / {&物品::剑.名称} / }}')}`,
+    } })
+    expect(plainFieldValueText(value)).toBe(text)
+    for (const raw of ['{self}', '{&Item::id}', '{self.a + 1}', '{self.}', '{not.an.expression}', '{self.name']) {
+      expect(parseFieldValueText({ kind: 'string', value: '' }, raw)).toEqual({ kind: 'string', value: raw })
+    }
   })
 
   it('renders references as keys without type qualifiers', () => {

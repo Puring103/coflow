@@ -4285,7 +4285,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   color: var(--text-mute);
   font-family: 'JetBrains Mono', monospace;
 }
-/* 图节点头部：上方 ID/缩略名，下方类型小字；与 Inspector/记录头部不再一致。 */
+/* 图卡片以业务名称为主标题，技术 ID 与类型使用次级样式。 */
 .gn-graph-header {
   padding-top: 7px;
   padding-bottom: 7px;
@@ -4301,7 +4301,22 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 }
 .gn-graph-heading .gn-key {
   max-width: 100%;
-  line-height: 1.15;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.gn-graph-id {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-mute);
 }
 .gn-graph-heading .gn-type {
   background: none;
@@ -4391,7 +4406,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 }
 .diag-panel.collapsed {
   height: var(--h-toolbar) !important;
-  max-height: var(--h-toolbar);
 }
 .diag-panel.resizing { transition: none; }
 
@@ -4597,10 +4611,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   position: relative;
   overflow: hidden;
 }
-.inspector-panel.collapsed {
-  width: 32px !important;
-  flex-shrink: 0;
-}
 .inspector-splitter {
   position: absolute;
   top: 0;
@@ -4609,9 +4619,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   width: 6px;
   cursor: col-resize;
   z-index: 2;
-}
-.inspector-panel.collapsed .inspector-splitter {
-  display: none;
 }
 .inspector-splitter:hover, .inspector-panel.dragging .inspector-splitter {
   background: var(--accent);
@@ -4625,16 +4632,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   height: var(--h-toolbar);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-}
-.inspector-panel.collapsed .inspector-head {
-  justify-content: center;
-  border-bottom: none;
-  flex-direction: column;
-  height: auto;
-  padding: 8px 0;
-}
-.inspector-collapse-btn svg {
-  transition: transform 150ms;
 }
 .icon-flip-h {
   transform: scaleX(-1);
@@ -4798,7 +4795,8 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   .app .layout-navigation { flex-basis: 175px; width: 175px; }
   .app .global-search-bar { padding-left: 8px; padding-right: 8px; gap: 5px; }
 }
-.app.navigation-collapsed .sidebar, .app.navigation-collapsed .sidebar-splitter { display: none; }
+.app.navigation-collapsed .sidebar { visibility: hidden; pointer-events: none; }
+.app.navigation-collapsed .sidebar-splitter { visibility: hidden; pointer-events: none; }
 .app .view-add-menu { padding: 5px; border-radius: 8px; box-shadow: 0 8px 28px #0003; }
 .app .view-add-menu button { min-height: 32px; border-radius: 5px; }
 .app .build-state { display: inline-flex; align-items: center; gap: 6px; color: var(--text-mute); font-size: 11px; white-space: nowrap; }
@@ -4836,7 +4834,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .activity-bar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 8px 10px; gap: 4px; align-items: center; border: 0; border-bottom: 1px solid var(--border); background: transparent; z-index: 5; position: static; flex-shrink: 0; }
 .app .inspector-head { min-height: 36px; height: 36px; background: var(--bg-0); }
 .app .inspector-head > button[aria-label="关闭记录面板"] { display: none; }
-.app .inspector-panel.collapsed .inspector-head { padding: 0; justify-content: center; }
 .app .inspector-collapse-btn { width: 28px; height: 28px; }
 .app .project-menu { border: 0; margin-left: 14px; padding-left: 0; }
 .app .project-menu summary { height: 30px; gap: 8px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2); }
@@ -4855,7 +4852,6 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .diag-icon { margin-top: 4px; }
 .app .diag-body { min-height: 0; overflow: auto; }
 .app .data-table th:hover .th-label-type { opacity: 1; }
-.app .inspector-panel.collapsed { width: 36px; flex: 0 0 36px; display: none; }
 .app .navigation-header { order: -1; flex: 0 0 36px; display: flex; align-items: center; border-bottom: 1px solid var(--border); gap: 4px; height: 44px; flex-basis: 44px; padding: 0 8px; }
 .app .navigation-header .project-menu { display: block; min-width: 0; flex: 1; margin: 0; }
 .app .navigation-header .project-menu summary { padding: 0 7px; gap: 7px; border-color: transparent; background: transparent; }
@@ -4893,13 +4889,12 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .data-table .table-row.selected > td { background-color: var(--bg-3); }
 .app .data-table .sticky-key-column { border-right: 1px solid var(--border); border-right-color: var(--border); }
 .app .navigation-toggle[aria-expanded="false"] { color: var(--accent); background: var(--bg-3); }
-.app .view-picker { position: relative; flex: 0 0 auto; min-width: 44px; }
-.app .view-picker summary { display: flex; align-items: center; gap: 8px; list-style: none; height: 29px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-1); cursor: pointer; font-size: 12px; }
-.app .view-picker summary::-webkit-details-marker { display: none; }
-.app .view-picker summary > span { flex: 1; }
-.app .view-picker-menu { position: absolute; left: 0; top: 34px; min-width: 200px; max-height: 360px; overflow-y: auto; z-index: 100; padding: 5px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-1); box-shadow: 0 8px 24px #0002; }
-.app .view-picker-menu .btn { width: 100%; height: 32px; justify-content: flex-start; gap: 9px; font-size: 12px; }
-.app .view-picker-menu .btn[aria-current="true"] { background: var(--bg-4); color: var(--accent); }
+/* 视图标签直接展示名称，超出工具栏时横向滚动。 */
+.app .view-picker { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; flex: 0 1 auto; }
+.app .view-picker > .btn { flex: 0 0 auto; white-space: nowrap; height: 29px; gap: 6px; }
+.app .view-picker-tab { touch-action: pan-y; }
+.app .view-picker-tab[aria-selected="true"] { background: var(--bg-4); color: var(--accent); border-color: var(--accent); }
+
 .app .data-table .table-group-row > td { padding: 0; }
 /* 键列在同一行保留拖动手柄和诊断空间，不随徽标出现而跳动。 */
 .app .data-table .table-row .cell-key-wrap { display: flex; align-items: center; gap: 5px; padding-left: 0; padding-right: 18px; white-space: nowrap; }
@@ -4952,19 +4947,30 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 
 .view-toolbar { display: flex; align-items: center; min-height: 34px; padding: 3px 12px; border-bottom: 1px solid var(--border); }
 .editor-settings > summary { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 5px; }
-.view-discard-confirm, .view-save-error { padding: 12px 22px; font-size: 12px; color: var(--red); }
-.view-discard-confirm .btn { margin-left: 8px; }
 
-.view-picker-group + .view-picker-group { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
-.view-picker-heading { display: block; padding: 6px 9px; color: var(--text-mute); font-size: 11px; }
-.view-picker-menu .btn > span { flex: 1; text-align: left; }
 .diag-filters { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
 .diag-filters label { display: flex; align-items: center; gap: 5px; }
 .diag-filters select { background: var(--bg-1); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 3px 6px; }
 .diag-filters > span { margin-left: auto; }
 
 /* 文本和模板共用 string 字段，模式选择与正文保持同一编辑行。 */
-.dc-string-editor { display: flex; align-items: start; gap: 6px; min-width: 0; width: 100%; }
-.dc-string-editor > .string-value-input { flex: 1; }
-.dc-string-mode { flex: none; font-size: var(--fs-xs); color: var(--text-dim); background: transparent; border: 1px solid transparent; border-radius: 4px; }
-.dc-string-mode:hover, .dc-string-mode:focus-visible { border-color: var(--border-strong); }
+
+/* 折叠只改变容器尺寸，保留内容才能完成收起和展开动画。 */
+.app .layout-navigation { transition: width 180ms ease, flex-basis 180ms ease; overflow: hidden; }
+.app .layout-navigation.resizing { transition: none; }
+.app .sidebar { flex: 1 1 auto; min-height: 0; }
+.app .diag-panel { transition: height 180ms ease; }
+.app .diag-panel.resizing { transition: none; }
+.app .diag-panel.collapsed .diag-body { visibility: hidden; }
+/* 全局 reset 清除了 dialog 默认的 auto margin，显式恢复视口居中。 */
+.view-discard-dialog { position: fixed; inset: 0; margin: auto; padding: 22px; max-width: min(420px, calc(100vw - 40px)); border: 1px solid var(--border); border-radius: 10px; background: var(--bg-1); color: var(--text); box-shadow: 0 16px 60px #0005; }
+.view-discard-dialog::backdrop { background: #0006; }
+.view-discard-dialog h3 { margin: 0 0 12px; }
+.view-discard-dialog p { color: var(--text-dim); }
+.view-discard-dialog .view-editor-actions { padding: 16px 0 0; }
+@media (prefers-reduced-motion: reduce) {
+  .app .layout-navigation, .app .diag-panel { transition: none; }
+}
+
+.structured-view-content { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.structured-view-content > .view-container { min-width: 0; }

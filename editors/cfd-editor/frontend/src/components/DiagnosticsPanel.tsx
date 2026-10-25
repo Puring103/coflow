@@ -123,7 +123,7 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
     <div
       ref={panelRef}
       className={`diag-panel${collapsed || isEmpty ? ' collapsed' : ''}${resizing ? ' resizing' : ''}`}
-      style={collapsed || isEmpty ? undefined : { height }}
+      style={{ height: collapsed || isEmpty ? 'var(--h-toolbar)' : height }}
     >
       {!collapsed && !isEmpty && (
         <div
@@ -186,8 +186,8 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
           </span>
         )}
       </button>
-      {!collapsed && !isEmpty && (
-        <div className="diag-body" id="diag-list-region">
+      {!isEmpty && (
+        <div className="diag-body" id="diag-list-region" inert={collapsed} aria-hidden={collapsed}>
           <div className="diag-filters">
             <select aria-label="诊断级别" value={severity} onChange={event => setSeverity(event.target.value)}><option value="all">所有级别</option><option value="error">错误</option><option value="warning">警告</option><option value="info">信息</option></select>
             <label><input type="checkbox" checked={onlyCurrentFile} disabled={!currentFile} onChange={event => setOnlyCurrentFile(event.target.checked)} />当前文件</label>

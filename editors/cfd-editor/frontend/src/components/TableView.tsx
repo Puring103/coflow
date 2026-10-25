@@ -1,3 +1,5 @@
+import { readClipboardText, writeClipboardText } from '../api/clipboard'
+import { finishOffscreenDataEdit } from '../state/editSession'
 import { recordMatchesKeySearch } from '../value/fieldValue'
 import { useState, useEffect, useMemo, useRef, memo } from 'react'
 
@@ -70,7 +72,6 @@ import {
   recordSelection,
   recordSelectionCoordinates,
   selectionMatchesRecord,
-  selectionMatchesValue,
   valueSelectionRange,
   type CellAnchor,
   type EditorSelection,
@@ -766,9 +767,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     () => visibleRows.map(row => row.original.coordinate),
     [visibleRows],
   )
-  const selectedValueRange = valueSelectionRange(selection ?? null, visibleCoordinates, allFieldNames)
+  const visibleRowIndexes = useMemo(() => new Map(visibleCoordinates.map((coordinate, index) => [coordinateId(coordinate), index])), [visibleCoordinates])
+  const fieldIndexes = useMemo(() => new Map(allFieldNames.map((field, index) => [field, index])), [allFieldNames])
+  const selectedValueRange = useMemo(() => selection?.filePath === data.file_path
+    ? valueSelectionRange(selection, visibleCoordinates, allFieldNames) : null,
+  [selection, data.file_path, visibleCoordinates, allFieldNames])
   const pointerSelectionRef = useRef(false)
   const pointerCellKeyRef = useRef<string | null>(null)
+  const pointerStringEditRef = useRef(false)
   const revealFrameRef = useRef(0)
   useEffect(() => {
     const finishPointer = () => { pointerSelectionRef.current = false }
@@ -973,6 +979,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         <div
           className="table-scroll"
           ref={tableScrollRef}
+          onScrollCapture={event => { if (event.target === event.currentTarget) finishOffscreenDataEdit(event.currentTarget) }}
           onScroll={event => {
             if (columnResizeRef.current || scrollWidthFloor === null) return
             const tableWidth = table.getTotalSize() * tableZoom
@@ -1119,11 +1126,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 if (selection.kind === 'record') {
                   if (shortcut === 'x') throw new Error('不支持剪切整条记录')
                   const coordinates = recordSelectionCoordinates(selection)
-                  await navigator.clipboard.writeText(serializeRecordRefsAsCfd(coordinates))
+                  await writeClipboardText(serializeRecordRefsAsCfd(coordinates))
                 } else {
                   const matrix = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
                   const text = await serializeCfdCellMatrix(matrix, onRenderCellText)
-                  await navigator.clipboard.writeText(text)
+                  await writeClipboardText(text)
                   if (shortcut === 'x') {
                     if (!onWriteFieldBatch) throw new Error('当前来源不支持批量写入')
                     const targets = matrix.flat().map(anchor => pasteCellFor(
@@ -1163,7 +1170,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               }
               clipboardBusyRef.current = true
               try {
-                const source = parseCfdClipboard(await navigator.clipboard.readText())
+                const source = parseCfdClipboard(await readClipboardText())
                 const records = visibleRows.map(row => row.original)
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
                 const selectedTarget = anchors.length === 1 && anchors[0].length === 1
@@ -1470,18 +1477,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       const fieldPath = cell.column.id === 'id'
                         ? null
                         : [fieldPathField(cell.column.id)]
-                      const selected = fieldPath !== null && selectionMatchesValue(
-                        selection ?? null,
-                        data.file_path,
-                        row.original.coordinate,
-                        fieldPath,
-                        visibleCoordinates,
-                        allFieldNames,
-                      )
-                      const selectedRowIndex = selected
-                        ? visibleCoordinates.findIndex(item => sameCoordinate(item, row.original.coordinate))
-                        : -1
-                      const selectedColumnIndex = selected ? allFieldNames.indexOf(cell.column.id) : -1
+                      // 每次选择只计算一次矩形；可见单元格直接比较索引，不展开整个选区。
+                      const selectedRowIndex = visibleRowIndexes.get(coordinateId(row.original.coordinate)) ?? -1
+                      const selectedColumnIndex = fieldIndexes.get(cell.column.id) ?? -1
+                      const selected = fieldPath !== null && selectedValueRange !== null
+                        && selectedRowIndex >= selectedValueRange.rowStart && selectedRowIndex <= selectedValueRange.rowEnd
+                        && selectedColumnIndex >= selectedValueRange.columnStart && selectedColumnIndex <= selectedValueRange.columnEnd
                       const classes = [
                         pillColumns.has(cell.column.id) ? 'pill-cell' : '',
                         fieldPath && isComplexValue(fieldCell(row.original, cell.column.id)?.value) ? 'complex-cell' : '',
@@ -1504,11 +1505,25 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           data-record-label={!fieldPath ? recordId(row.original) : undefined}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
+                          onPointerDownCapture={event => {
+                            if (event.button !== 0) return
+                            // 在拖选控制器更新选择之前记录状态：首次点击只选中，再次点击才编辑。
+                            pointerStringEditRef.current = selected
+                              && selectedValueRange?.rowStart === selectedValueRange?.rowEnd
+                              && selectedValueRange?.columnStart === selectedValueRange?.columnEnd
+                              && !event.shiftKey && !event.ctrlKey && !event.metaKey
+                            if (!pointerStringEditRef.current
+                              && (event.target as HTMLElement).closest('.cell-string-textarea')) {
+                              event.preventDefault()
+                              tableScrollRef.current?.focus({ preventScroll: true })
+                            }
+                          }}
                           onClick={event => {
                             if (!fieldPath || event.shiftKey || event.ctrlKey || event.metaKey) return
+                            if (!pointerStringEditRef.current) return
                             const target = event.target as HTMLElement
                             if (target.closest('button, a, input, textarea, select, [contenteditable="true"]')) return
-                            // 点击单元格留白也直接输入；拖选结束的 click 已由拖选控制器拦截。
+                            // 已选中的字符串单元格再次点击留白进入编辑；拖选结束的 click 已被拦截。
                             event.currentTarget.querySelector<HTMLTextAreaElement>('.cell-string-textarea')?.focus({ preventScroll: true })
                           }}
                           onFocusCapture={e => {

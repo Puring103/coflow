@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { CellAnchor } from '../state/editorSelection'
@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function BatchCellEditor({ cells, readOnly, onWriteBatch }: Props) {
-  const projection = projectBatchCells(cells.map(item => item.cell))
+  const projection = useMemo(() => projectBatchCells(cells.map(item => item.cell)), [cells])
   const [busy, setBusy] = useState(false)
   if (!projection) return null
   const commit = async (value: FieldValue, relativePath: readonly FieldPathSegment[] = []) => {

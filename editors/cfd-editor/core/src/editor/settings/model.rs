@@ -152,13 +152,13 @@ impl SettingsFile {
         project_root: &Path,
     ) -> Result<EditorProjectSettings, EditorError> {
         self.views = map_outer_keys(self.views, &mut |path| {
-            Ok(runtime_file_path(project_root, path))
+            runtime_file_path(project_root, path)
         })?;
         self.record_groups = map_outer_keys(self.record_groups, &mut |path| {
-            Ok(runtime_file_path(project_root, path))
+            runtime_file_path(project_root, path)
         })?;
         self.graph_positions = map_graph_keys(self.graph_positions, &mut |path| {
-            Ok(runtime_file_path(project_root, path))
+            runtime_file_path(project_root, path)
         })?;
         Ok(EditorProjectSettings {
             graph_positions: self.graph_positions,
@@ -223,7 +223,7 @@ impl LocalSettingsFile {
         project_root: &Path,
         settings: &mut EditorProjectSettings,
     ) -> Result<(), EditorError> {
-        self.map_file_paths(|path| Ok(runtime_file_path(project_root, path)))?;
+        self.map_file_paths(|path| runtime_file_path(project_root, path))?;
         settings.graph_compact_modes = self.graph_compact_modes;
         settings.view_order = self.view_order;
         settings.default_table_column_widths = self.default_table_column_widths;
@@ -315,8 +315,23 @@ fn map_graph_keys<T>(
         .collect()
 }
 
-fn runtime_file_path(project_root: &Path, stored: &str) -> String {
-    coflow_runtime::project_path(project_root, Path::new(stored))
+fn runtime_file_path(project_root: &Path, stored: &str) -> Result<String, EditorError> {
+    let path = Path::new(stored);
+    // 磁盘设置只接受项目相对路径，禁止把其他机器或旧项目的绝对路径带入会话。
+    let windows_prefix = stored.as_bytes().get(1) == Some(&b':')
+        && stored.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
+    if windows_prefix
+        || stored.starts_with('\\')
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|part| matches!(part, Component::Prefix(_) | Component::RootDir))
+    {
+        return Err(EditorError::other(format!(
+            "编辑器设置中的路径 `{stored}` 必须相对于项目根目录，请修正 editor-setting/editor.json 中的旧路径"
+        )));
+    }
+    Ok(coflow_runtime::project_path(project_root, path))
 }
 
 fn stored_file_path(project_root: &Path, runtime: &str) -> Result<String, EditorError> {
@@ -369,4 +384,30 @@ fn normalize_relative(path: &Path) -> PathBuf {
         }
     }
     normalized
+}
+
+#[cfg(test)]
+mod path_tests {
+    #![allow(clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn stored_settings_reject_absolute_paths_before_resolving() {
+        let root = std::env::temp_dir();
+        let absolute = root.join("old-project").join("items.cfd");
+        let error = runtime_file_path(&root, &absolute.to_string_lossy())
+            .expect_err("absolute settings path must be rejected");
+        assert!(error.message.contains("必须相对于项目根目录"));
+        for stored in ["E:/old-project/items.cfd", r"E:\old-project\items.cfd", r"\\server\share\items.cfd"] {
+            assert!(runtime_file_path(&root, stored).is_err());
+        }
+    }
+
+    #[test]
+    fn sibling_data_paths_remain_project_relative_on_disk() {
+        let root = std::env::temp_dir().join("coflow-settings-project");
+        let runtime = runtime_file_path(&root, "../data/items.cfd").expect("resolve sibling path");
+        assert_eq!(stored_file_path(&root, &runtime).expect("encode sibling path"), "../data/items.cfd");
+    }
 }
