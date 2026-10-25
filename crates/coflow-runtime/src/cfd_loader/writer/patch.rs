@@ -96,7 +96,7 @@ pub(super) fn field_patch(
         Err(error) => return Err(error),
     };
     match target {
-        WriteTarget::Replace { span, ty } => {
+        WriteTarget::Replace { span, ty, .. } => {
             if span.start > source.len() || span.end > source.len() || span.start > span.end {
                 return Err(DiagnosticSet::one(diag(
                     "CFD-WRITE",
@@ -160,6 +160,48 @@ pub(super) fn field_patch(
             );
             patch.independent_syntax = has_independent_syntax(new_value, &value);
             Ok(patch)
+        }
+    }
+}
+
+/// 独立补丁的前后子树都已经过真实解析；以语法节点计数保留每一步的文件预算。
+pub(super) fn field_node_change(
+    before: &AstRecord,
+    after: &AstRecord,
+    request: &WriteCellRequest<'_>,
+) -> Result<(u64, u64), DiagnosticSet> {
+    let root_path;
+    let (old_target, path) = match locate_target(
+        request.schema,
+        request.actual_type,
+        before,
+        request.field_path,
+    ) {
+        Ok(target) => (target, request.field_path),
+        Err(error) => {
+            if request.field_path.len() <= 1 || request.materialized_top_level.is_none() {
+                return Err(error);
+            }
+            // 与 field_patch 的默认父对象实体化一致，实际补丁可能替换整个顶层值。
+            root_path = [request.field_path[0].clone()];
+            let target = locate_target(request.schema, request.actual_type, before, &root_path)?;
+            (target, root_path.as_slice())
+        }
+    };
+    let (removed, inserted_field) = match old_target {
+        WriteTarget::Replace { value, .. } => (value.structural_node_count(), 0),
+        WriteTarget::InsertTopLevel { .. } | WriteTarget::InsertNested { .. } => (0, 1),
+    };
+    let new_target = locate_target(request.schema, request.actual_type, after, path)?;
+    match new_target {
+        WriteTarget::Replace { value, .. } => {
+            Ok((removed, value.structural_node_count() + inserted_field))
+        }
+        WriteTarget::InsertTopLevel { .. } | WriteTarget::InsertNested { .. } => {
+            Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "written field is absent from the parsed batch candidate",
+            )))
         }
     }
 }

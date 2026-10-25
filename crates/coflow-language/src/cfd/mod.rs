@@ -2,6 +2,7 @@
 
 pub mod ast;
 mod parser;
+mod structure;
 
 pub use ast::{
     CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdBlock, CfdDimensionBlock, CfdField,
