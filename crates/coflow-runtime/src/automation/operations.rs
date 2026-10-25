@@ -277,7 +277,9 @@ impl Candidate {
                     actual_type: &record.actual_type,
                     field_path: &path,
                     new_value: &value,
-                    materialized_top_level: top.as_ref().map(crate::api::FieldMaterialization::Value),
+                    materialized_top_level: top
+                        .as_ref()
+                        .map(crate::api::FieldMaterialization::Value),
                     schema,
                 })?;
                 self.publish_writer(&writer)?;

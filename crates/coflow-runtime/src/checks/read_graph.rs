@@ -30,7 +30,8 @@ impl<K: Ord + Hash, V: Clone> SharedIndex<K, V> {
     fn bucket(key: &K) -> usize {
         let mut hash = DefaultHasher::new();
         key.hash(&mut hash);
-        (hash.finish() as usize) % INDEX_BUCKETS
+        // 256 桶只需哈希低 8 位，避免 usize 在 32 位平台上的截断转换。
+        usize::from(hash.finish().to_le_bytes()[0])
     }
 
     fn get(&self, key: &K) -> Option<&Arc<V>> {
@@ -118,8 +119,10 @@ impl CheckReadGraph {
             return;
         }
         // 求值结果的读集通常不变；只更新新增或消失的字段关联，投影变化留在规则读集中。
-        let old_fields: BTreeSet<_> = previous.iter()
-            .flat_map(|reads| reads.fields.iter().map(|read| &read.key)).collect();
+        let old_fields: BTreeSet<_> = previous
+            .iter()
+            .flat_map(|reads| reads.fields.iter().map(|read| &read.key))
+            .collect();
         let new_fields: BTreeSet<_> = reads.fields.iter().map(|read| &read.key).collect();
         for field in old_fields.difference(&new_fields) {
             self.readers.retain_value(field, |readers| {
@@ -145,12 +148,7 @@ impl CheckReadGraph {
         let Some(previous) = self.rules.remove(rule) else {
             return;
         };
-        for field in previous
-            .fields
-            .iter()
-            .map(|read| &read.key)
-            .collect::<BTreeSet<_>>()
-        {
+        for field in previous.fields.iter().map(|read| &read.key) {
             self.readers.retain_value(field, |readers| {
                 readers.remove(rule);
                 !readers.is_empty()
@@ -181,8 +179,17 @@ impl CheckReadGraph {
                 for rule in readers.iter() {
                     if self.rules.get(rule).is_some_and(|reads| {
                         // 只查当前字段的有序投影区间，避免全局规则对每个变化字段重扫完整读集。
-                        reads.fields.range(StableFieldRead { key: key.clone(), projection: CheckReadProjection::Base }
-                            ..=StableFieldRead { key: key.clone(), projection: CheckReadProjection::AllVariants })
+                        reads
+                            .fields
+                            .range(
+                                StableFieldRead {
+                                    key: key.clone(),
+                                    projection: CheckReadProjection::Base,
+                                }..=StableFieldRead {
+                                    key: key.clone(),
+                                    projection: CheckReadProjection::AllVariants,
+                                },
+                            )
                             .any(|read| projection_changed(&read.projection, &changed.projection))
                     }) {
                         affected.insert(Arc::clone(rule));
@@ -248,7 +255,7 @@ impl CheckReadGraph {
     }
 }
 
-fn host(target: &StableCheckTarget) -> Option<&RecordCoordinate> {
+const fn host(target: &StableCheckTarget) -> Option<&RecordCoordinate> {
     match target {
         StableCheckTarget::Record(record) | StableCheckTarget::Data { record, .. } => Some(record),
         StableCheckTarget::Project => None,
@@ -267,32 +274,59 @@ fn projection_changed(read: &CheckReadProjection, changed: &ChangedProjection) -
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
     use super::super::impact::ChangedField;
+    use super::*;
 
     #[test]
     fn read_replacement_preserves_snapshots_and_projection_invalidation() {
         let record = RecordCoordinate::new("Item".try_into().unwrap(), "a".try_into().unwrap());
-        let rule = StableCheckRule { target: StableCheckTarget::Record(record.clone()), rule_id: "rule".into() };
-        let key = StableFieldKey { record: record.clone(), field: "value".into() };
-        let reads = |projection| StoredRuleReads { fields: BTreeSet::from([StableFieldRead { key: key.clone(), projection }]) };
+        let rule = StableCheckRule {
+            target: StableCheckTarget::Record(record.clone()),
+            rule_id: "rule".into(),
+        };
+        let key = StableFieldKey {
+            record: record.clone(),
+            field: "value".into(),
+        };
+        let reads = |projection| StoredRuleReads {
+            fields: BTreeSet::from([StableFieldRead {
+                key: key.clone(),
+                projection,
+            }]),
+        };
         let impact = CheckImpact {
-            records: BTreeMap::from([(record.clone(), ChangedRecordFields::Fields(BTreeSet::from([ChangedField {
-                field: "value".try_into().unwrap(), projection: ChangedProjection::Dimension {
-                    dimension: "locale".try_into().unwrap(), variant: "en".try_into().unwrap(),
-                },
-            }])))]), ..Default::default()
+            records: BTreeMap::from([(
+                record.clone(),
+                ChangedRecordFields::Fields(BTreeSet::from([ChangedField {
+                    field: "value".try_into().unwrap(),
+                    projection: ChangedProjection::Dimension {
+                        dimension: "locale".try_into().unwrap(),
+                        variant: "en".try_into().unwrap(),
+                    },
+                }])),
+            )]),
+            ..Default::default()
         };
         let mut graph = CheckReadGraph::default();
         graph.replace_rule(rule.clone(), reads(CheckReadProjection::Base));
         let previous = graph.clone();
         graph.replace_rule(rule.clone(), reads(CheckReadProjection::Base));
-        assert!(Arc::ptr_eq(graph.rules.get(&rule).unwrap(), previous.rules.get(&rule).unwrap()));
-        graph.replace_rule(rule.clone(), reads(CheckReadProjection::Variant("en".into())));
+        assert!(Arc::ptr_eq(
+            graph.rules.get(&rule).unwrap(),
+            previous.rules.get(&rule).unwrap()
+        ));
+        graph.replace_rule(
+            rule.clone(),
+            reads(CheckReadProjection::Variant("en".into())),
+        );
         assert!(previous.affected(&impact).is_empty());
         assert_eq!(graph.affected(&impact).len(), 1);
-        assert!(Arc::ptr_eq(graph.readers.get(&key).unwrap(), previous.readers.get(&key).unwrap()));
+        assert!(Arc::ptr_eq(
+            graph.readers.get(&key).unwrap(),
+            previous.readers.get(&key).unwrap()
+        ));
         let projected = graph.clone();
         graph.replace_rule(rule.clone(), StoredRuleReads::default());
         assert!(graph.affected(&impact).is_empty());

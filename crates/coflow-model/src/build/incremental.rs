@@ -2,7 +2,8 @@ use super::draft::{RecordDraftSource, ValueDraft};
 use super::resolve::ValueResolver;
 use super::validate::Validator;
 use super::{
-    BuildSchema, CfdModelBuildOutput, CfdModelBuildStats, CfdModelBuilder, RecordDraft, RecordInputs,
+    BuildSchema, CfdModelBuildOutput, CfdModelBuildStats, CfdModelBuilder, RecordDraft,
+    RecordInputs,
 };
 use crate::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDimensionFieldValues, CfdDimensionValue,
@@ -78,10 +79,12 @@ struct LazyDimension<'a> {
 }
 
 /// 只暂存本轮真正访问过的已验证草稿，不在模型里永久保留第三份完整数据树。
+type DraftPage = Box<[OnceCell<Option<Box<RecordDraft>>>]>;
+
 struct LazyDrafts<'a, 'input> {
     schema: BuildSchema<'a>,
     inputs: &'a RecordInputs<'input>,
-    records: Vec<OnceCell<Box<[OnceCell<Option<Box<RecordDraft>>>]>>>,
+    records: Vec<OnceCell<DraftPage>>,
     dimensions: BTreeMap<DimensionKey, LazyDimension<'a>>,
     diagnostics: RefCell<Vec<CfdDiagnostic>>,
     validated: Cell<usize>,
@@ -168,7 +171,95 @@ pub(super) fn rebuild(
     mut builder: CfdModelBuilder<'_>,
     previous: &CfdDataModel,
     changed: &[CfdRecordHandle],
-) -> Result<Option<CfdModelBuildOutput>, CfdDiagnostics> {
+) -> Option<CfdModelBuildOutput> {
+    if !can_reuse_model(&builder, previous, changed) {
+        return None;
+    }
+    for input in &builder.dimension_values {
+        builder
+            .dimension_variants
+            .entry(input.dimension.clone())
+            .or_default()
+            .insert(input.variant.clone());
+    }
+    if &builder.dimension_variants != previous.dimension_variants.as_ref() {
+        return None;
+    }
+    let schema = BuildSchema::new(builder.schema);
+    let dimensions = prepare_dimensions(&builder, previous, schema)?;
+    let drafts = LazyDrafts {
+        schema,
+        inputs: &builder.records,
+        records: (0..builder.records.len().div_ceil(512))
+            .map(|_| OnceCell::new())
+            .collect(),
+        dimensions,
+        diagnostics: RefCell::new(Vec::new()),
+        validated: Cell::new(0),
+        limits: builder.structural_limits,
+    };
+    let affected = previous.template_dependencies.affected(changed);
+    let ResolvedIncremental {
+        records: replacements,
+        reads,
+    } = resolve_replacements(&builder, previous, schema, &drafts, &affected)?;
+    let mut model = previous.clone();
+    let changed_records = apply_replacements(&mut model, &builder, &drafts, replacements);
+    let context = SemanticContext(&model);
+    for id in &affected {
+        let record = model.record(*id)?;
+        for (name, value) in record.fields() {
+            let field = schema.field(record.actual_type(), name)?;
+            let request = ValueValidationRequest::new(
+                &field.value_type,
+                value,
+                ValueValidationMode::Complete,
+            );
+            if crate::validate_value_for_schema(builder.schema, &context, request).is_err() {
+                return None;
+            }
+        }
+    }
+    let mut dependencies = Arc::clone(&previous.template_dependencies);
+    for id in &affected {
+        let old = dependencies.by_reader.get(id).map(AsRef::as_ref);
+        let new = reads.get(id);
+        if old == new || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty) {
+            continue;
+        }
+        Arc::make_mut(&mut dependencies).replace(*id, new.cloned().unwrap_or_default());
+    }
+    model.template_dependencies = dependencies;
+    let mut refs = previous.refs.as_ref().clone();
+    let rebuilt_ref_edges = refs.replace_hosts(
+        changed_records
+            .iter()
+            .filter_map(|id| model.record(*id).map(|record| (*id, record))),
+        &model.record_by_domain_id,
+        schema,
+    );
+    model.refs = Arc::new(refs);
+    let statistics = CfdModelBuildStats {
+        validated_records: drafts.validated.get(),
+        materialized_records: affected.len(),
+        reused_records: previous.record_count() - changed_records.len(),
+        rebuilt_ref_hosts: changed_records.len(),
+        rebuilt_ref_edges,
+    };
+    Some(CfdModelBuildOutput {
+        model,
+        diagnostics: CfdDiagnostics::new(Vec::new()),
+        statistics,
+        changed_records,
+    })
+}
+
+// 身份与预算是复用已有句柄的前提，结构变化仍交给完整构建。
+fn can_reuse_model(
+    builder: &CfdModelBuilder<'_>,
+    previous: &CfdDataModel,
+    changed: &[CfdRecordHandle],
+) -> bool {
     // 这些类别改变全局身份、诊断或预算语义，必须重新执行完整编译流程。
     if !previous.incremental_ready
         || previous.projection.is_some()
@@ -179,43 +270,33 @@ pub(super) fn rebuild(
             .iter()
             .any(|id| id.index() >= previous.record_count())
     {
-        return Ok(None);
+        return false;
     }
     for (input, (_, record)) in builder.records.iter().zip(previous.records()) {
         if input.id != record.id() || input.actual_type != record.actual_type() {
-            return Ok(None);
+            return false;
         }
     }
-    for input in &builder.dimension_values {
-        builder
-            .dimension_variants
-            .entry(input.dimension.clone())
-            .or_default()
-            .insert(input.variant.clone());
-    }
-    if &builder.dimension_variants != previous.dimension_variants.as_ref() {
-        return Ok(None);
-    }
-    let schema = BuildSchema::new(builder.schema);
+    true
+}
+
+fn prepare_dimensions<'a>(
+    builder: &'a CfdModelBuilder<'_>,
+    previous: &CfdDataModel,
+    schema: BuildSchema<'_>,
+) -> Option<BTreeMap<DimensionKey, LazyDimension<'a>>> {
     let mut dimensions = BTreeMap::new();
     for input in &builder.dimension_values {
-        let Some(host) =
-            previous.lookup_assignable(builder.schema, &input.source_type, &input.source_id)
-        else {
-            return Ok(None);
-        };
-        let Some(owner) = previous.record(host) else {
-            return Ok(None);
-        };
-        let Some(field) = schema.field(owner.actual_type(), &input.field) else {
-            return Ok(None);
-        };
+        let host =
+            previous.lookup_assignable(builder.schema, &input.source_type, &input.source_id)?;
+        let owner = previous.record(host)?;
+        let field = schema.field(owner.actual_type(), &input.field)?;
         if field
             .dimension
             .as_ref()
             .is_none_or(|binding| binding.dimension != input.dimension)
         {
-            return Ok(None);
+            return None;
         }
         let key = (
             host,
@@ -233,39 +314,39 @@ pub(super) fn rebuild(
             )
             .is_some()
         {
-            return Ok(None);
+            return None;
         }
     }
-    let drafts = LazyDrafts {
-        schema,
-        inputs: &builder.records,
-        records: (0..builder.records.len().div_ceil(512))
-            .map(|_| OnceCell::new())
-            .collect(),
-        dimensions,
-        diagnostics: RefCell::new(Vec::new()),
-        validated: Cell::new(0),
-        limits: builder.structural_limits,
-    };
-    let affected = previous.template_dependencies.affected(changed);
+    Some(dimensions)
+}
+
+struct ResolvedIncremental {
+    records: BTreeMap<CfdRecordHandle, CfdRecord>,
+    reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+}
+
+// 所有受影响记录与维度先求值成功，再发布到新代次，失败时不修改旧快照。
+fn resolve_replacements(
+    builder: &CfdModelBuilder<'_>,
+    previous: &CfdDataModel,
+    schema: BuildSchema<'_>,
+    drafts: &LazyDrafts<'_, '_>,
+    affected: &BTreeSet<CfdRecordHandle>,
+) -> Option<ResolvedIncremental> {
     let mut replacements = BTreeMap::<CfdRecordHandle, CfdRecord>::new();
     let mut diagnostics = Vec::new();
     let reads;
     {
         let mut resolver = ValueResolver::new(
             &schema,
-            &drafts,
+            drafts,
             &previous.record_by_domain_id,
             &mut diagnostics,
             builder.structural_limits,
         );
-        for id in &affected {
-            let Some(old) = previous.record(*id) else {
-                return Ok(None);
-            };
-            let Some(fields) = resolver.resolve_record_fields(*id, None) else {
-                return Ok(None);
-            };
+        for id in affected {
+            let old = previous.record(*id)?;
+            let fields = resolver.resolve_record_fields(*id, None)?;
             replacements.insert(
                 *id,
                 CfdRecord {
@@ -279,15 +360,10 @@ pub(super) fn rebuild(
         // 依赖在所有维度上下文取并集；闭包内记录重新求值每个已有变体，未影响记录保持共享。
         for (dimension, variants) in &builder.dimension_variants {
             for variant in variants {
-                for id in &affected {
-                    let Some(mut values) = resolver
-                        .resolve_record_fields(*id, Some((dimension.clone(), variant.clone())))
-                    else {
-                        return Ok(None);
-                    };
-                    let Some(record) = replacements.get_mut(id) else {
-                        return Ok(None);
-                    };
+                for id in affected {
+                    let mut values = resolver
+                        .resolve_record_fields(*id, Some((dimension.clone(), variant.clone())))?;
+                    let record = replacements.get_mut(id)?;
                     for field in schema.full_fields(record.actual_type()) {
                         if field
                             .dimension
@@ -331,13 +407,24 @@ pub(super) fn rebuild(
         reads = resolver.take_reads();
         // 任意新诊断交由全量构建统一归并，包括预算、循环、维度及可编辑错误，避免漏旧标签。
         if !reference_diagnostics.is_empty() {
-            return Ok(None);
+            return None;
         }
     }
     if !diagnostics.is_empty() || !drafts.diagnostics.borrow().is_empty() {
-        return Ok(None);
+        return None;
     }
-    let mut model = previous.clone();
+    Some(ResolvedIncremental {
+        records: replacements,
+        reads,
+    })
+}
+
+fn apply_replacements(
+    model: &mut CfdDataModel,
+    builder: &CfdModelBuilder<'_>,
+    drafts: &LazyDrafts<'_, '_>,
+    replacements: BTreeMap<CfdRecordHandle, CfdRecord>,
+) -> Vec<CfdRecordHandle> {
     let records = Arc::make_mut(&mut model.records);
     let mut changed_records = Vec::new();
     for (id, replacement) in replacements {
@@ -377,57 +464,7 @@ pub(super) fn rebuild(
             }
         }
     }
-    let context = SemanticContext(&model);
-    for id in &affected {
-        let Some(record) = model.record(*id) else {
-            return Ok(None);
-        };
-        for (name, value) in record.fields() {
-            let Some(field) = schema.field(record.actual_type(), name) else {
-                return Ok(None);
-            };
-            let request = ValueValidationRequest::new(
-                &field.value_type,
-                value,
-                ValueValidationMode::Complete,
-            );
-            if crate::validate_value_for_schema(builder.schema, &context, request).is_err() {
-                return Ok(None);
-            }
-        }
-    }
-    let mut dependencies = Arc::clone(&previous.template_dependencies);
-    for id in &affected {
-        let old = dependencies.by_reader.get(id).map(|set| set.as_ref());
-        let new = reads.get(id);
-        if old == new || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty) {
-            continue;
-        }
-        Arc::make_mut(&mut dependencies).replace(*id, new.cloned().unwrap_or_default());
-    }
-    model.template_dependencies = dependencies;
-    let mut refs = previous.refs.as_ref().clone();
-    let rebuilt_ref_edges = refs.replace_hosts(
-        changed_records
-            .iter()
-            .filter_map(|id| model.record(*id).map(|record| (*id, record))),
-        &model.record_by_domain_id,
-        schema,
-    );
-    model.refs = Arc::new(refs);
-    let statistics = CfdModelBuildStats {
-        validated_records: drafts.validated.get(),
-        materialized_records: affected.len(),
-        reused_records: previous.record_count() - changed_records.len(),
-        rebuilt_ref_hosts: changed_records.len(),
-        rebuilt_ref_edges,
-    };
-    Ok(Some(CfdModelBuildOutput {
-        model,
-        diagnostics: CfdDiagnostics::new(Vec::new()),
-        statistics,
-        changed_records,
-    }))
+    changed_records
 }
 
 fn same_dimension_values(left: &CfdRecord, right: &CfdRecord) -> bool {

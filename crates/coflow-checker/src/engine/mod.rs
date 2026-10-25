@@ -19,10 +19,6 @@ use crate::operations::{
     access, builtins, comparison as ops, predicates as type_predicates, quantifiers,
 };
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
-)]
 pub(crate) fn execute_tasks(
     schema: &CftSchema,
     model: &CfdDataModel,
@@ -50,6 +46,10 @@ pub(crate) fn execute_tasks(
     execute_plan(CheckPlan::from_unique_tasks(schema, unique), model, limits)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
+)]
 pub(crate) fn execute_plan(
     plan: CheckPlan<'_>,
     model: &CfdDataModel,

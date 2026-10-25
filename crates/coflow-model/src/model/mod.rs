@@ -21,6 +21,8 @@ use coflow_language::cft::{CftSchema, DimensionName, RecordId, TypeName, Variant
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+pub(crate) type RecordSetCache = BTreeMap<TypeName, std::sync::OnceLock<Arc<[CfdRecordHandle]>>>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DimensionProjection {
     // 视图始终共享最初的基础模型，后续选择不能把前一视图的覆盖误当作基础来源。
@@ -33,7 +35,7 @@ pub(crate) struct DimensionProjection {
 pub struct CfdDataModel {
     pub(crate) tables: Arc<BTreeMap<TypeName, CfdTable>>,
     // 成员稳定的代次共享惰性集合；字段变化不重新分配 records(Type) 的句柄数组。
-    pub(crate) record_sets: Arc<BTreeMap<TypeName, std::sync::OnceLock<Arc<[CfdRecordHandle]>>>>,
+    pub(crate) record_sets: Arc<RecordSetCache>,
     pub(crate) record_by_domain_id: Arc<BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>>,
     pub(crate) records: Arc<coflow_storage::PagedVec<Arc<CfdRecord>>>,
     pub(crate) refs: Arc<RefIndexes>,
@@ -58,6 +60,13 @@ impl PartialEq for CfdDataModel {
 }
 
 impl CfdDataModel {
+    pub(crate) fn empty_record_sets(schema: &CftSchema) -> RecordSetCache {
+        schema
+            .all_types()
+            .map(|ty| (ty.name.clone(), std::sync::OnceLock::new()))
+            .collect()
+    }
+
     pub fn dimension_variants(&self, dimension: &str) -> impl Iterator<Item = &VariantName> {
         self.dimension_variants
             .get(dimension)
@@ -90,15 +99,24 @@ impl CfdDataModel {
         schema: &CftSchema,
         expected_type: &str,
     ) -> Vec<CfdRecordHandle> {
-        self.shared_assignable_records(schema, expected_type).to_vec()
+        self.shared_assignable_records(schema, expected_type)
+            .to_vec()
     }
 
-    /// 返回按 (actual_type, record_id) 排序的共享成员快照。
+    /// 返回按 (`actual_type`, `record_id`) 排序的共享成员快照。
     #[must_use]
-    pub fn shared_assignable_records(&self, schema: &CftSchema, expected_type: &str) -> Arc<[CfdRecordHandle]> {
-        let collect = || self.tables.iter()
-            .filter(|(actual_type, _)| schema.is_assignable(actual_type, expected_type))
-            .flat_map(|(_, table)| table.primary_index.values().copied()).collect();
+    pub fn shared_assignable_records(
+        &self,
+        schema: &CftSchema,
+        expected_type: &str,
+    ) -> Arc<[CfdRecordHandle]> {
+        let collect = || {
+            self.tables
+                .iter()
+                .filter(|(actual_type, _)| schema.is_assignable(actual_type, expected_type))
+                .flat_map(|(_, table)| table.primary_index.values().copied())
+                .collect()
+        };
         if self.schema_compilation == schema.compilation_id() {
             if let Some(members) = self.record_sets.get(expected_type) {
                 return Arc::clone(members.get_or_init(collect));
@@ -214,7 +232,7 @@ impl CfdDataModel {
         &self,
         host: CfdRecordHandle,
     ) -> impl Iterator<Item = &RefEdge> + '_ {
-        self.refs.from_host(host)
+        self.refs.edges_from_host(host)
     }
 
     pub fn ref_edges_to_target(

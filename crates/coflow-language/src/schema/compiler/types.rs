@@ -406,7 +406,7 @@ impl ResolvedTypes<'_> {
             }
             TypeRefKind::Ref(inner) => match self.resolve_field_type(inner).object_name() {
                 Some(name) if self.type_is_table(name) => InferredType::Value(
-                    CftValueType::RecordRef(crate::TypeName::from_validated(name.to_string())),
+                    CftValueType::RecordRef(crate::TypeName::from_validated(name)),
                 ),
                 _ => InferredType::Unknown,
             },
@@ -521,7 +521,7 @@ impl ResolvedTypes<'_> {
         if let Some(name) = resolved.object_name() {
             if self.type_is_table(name) {
                 return InferredType::Value(CftValueType::RecordRef(
-                    crate::TypeName::from_validated(name.to_string()),
+                    crate::TypeName::from_validated(name),
                 ));
             }
         }
@@ -538,7 +538,7 @@ impl ResolvedTypes<'_> {
     }
 
     fn named_value_type(name: &str) -> InferredType {
-        InferredType::object(crate::TypeName::from_validated(name.to_string()))
+        InferredType::object(crate::TypeName::from_validated(name))
     }
 
     fn type_is_table(&self, name: &str) -> bool {

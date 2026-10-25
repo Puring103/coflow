@@ -17,11 +17,15 @@ impl Chunk<'_> {
         }
     }
 
-    fn len(&self) -> usize {
-        match self {
-            Self::Individual(records) => records.len(),
-            Self::Batch(records) => records.len(),
-        }
+    fn iter(&self) -> impl Iterator<Item = &LoadedRecordDraft> {
+        let (individual, batch): (&[RecordInput<'_>], &[LoadedRecordDraft]) = match self {
+            Self::Individual(records) => (records, &[]),
+            Self::Batch(records) => (&[], records),
+        };
+        individual
+            .iter()
+            .map(|record| &**record)
+            .chain(batch.iter())
     }
 }
 
@@ -56,7 +60,8 @@ impl<'a> RecordInputs<'a> {
         let end = self.len() + 1;
         if let Some(Chunk::Individual(records)) = self.chunks.last_mut() {
             records.push(record);
-            *self.ends.last_mut().expect("chunk boundary") = end;
+            let last = self.ends.len() - 1;
+            self.ends[last] = end;
         } else {
             self.chunks.push(Chunk::Individual(vec![record]));
             self.ends.push(end);
@@ -72,15 +77,15 @@ impl<'a> RecordInputs<'a> {
 
     pub fn get(&self, index: usize) -> Option<&LoadedRecordDraft> {
         let chunk = self.ends.partition_point(|end| *end <= index);
-        let start = chunk.checked_sub(1).map_or(0, |previous| self.ends[previous]);
+        let start = chunk
+            .checked_sub(1)
+            .map_or(0, |previous| self.ends[previous]);
         self.chunks.get(chunk)?.get(index - start)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &LoadedRecordDraft> {
-        self.chunks.iter().flat_map(|chunk| (0..chunk.len()).map(|index| {
-            // 顺序迭代直接访问当前批次，不能逐记录二分查找批次边界。
-            chunk.get(index).expect("index within chunk")
-        }))
+        // 顺序迭代直接访问当前批次，不为每条记录重复二分或解包。
+        self.chunks.iter().flat_map(Chunk::iter)
     }
 
     pub fn into_iter(self) -> impl Iterator<Item = RecordInput<'a>> {
@@ -96,6 +101,13 @@ impl Index<usize> for RecordInputs<'_> {
     type Output = LoadedRecordDraft;
 
     fn index(&self, index: usize) -> &Self::Output {
-        self.get(index).expect("record input index out of bounds")
+        let chunk = self.ends.partition_point(|end| *end <= index);
+        let start = chunk
+            .checked_sub(1)
+            .map_or(0, |previous| self.ends[previous]);
+        match &self.chunks[chunk] {
+            Chunk::Individual(records) => &records[index - start],
+            Chunk::Batch(records) => &records[index - start],
+        }
     }
 }

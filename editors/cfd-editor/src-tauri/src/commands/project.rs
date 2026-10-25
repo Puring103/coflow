@@ -180,8 +180,10 @@ pub(crate) async fn set_table_row_heights(
     heights: BTreeMap<String, f64>,
 ) -> Result<EditorProjectSettings, EditorError> {
     run_host_command(host, move |host| {
-        host.sessions().set_table_row_heights(session_id, file_path, actual_type, view_id, heights)
-    }).await
+        host.sessions()
+            .set_table_row_heights(session_id, file_path, actual_type, view_id, heights)
+    })
+    .await
 }
 
 #[tauri::command]

@@ -33,7 +33,7 @@ impl RefIndexes {
         self.hosts.iter().flat_map(|host| host.edges.iter())
     }
 
-    pub(crate) fn from_host(&self, host: CfdRecordHandle) -> impl Iterator<Item = &RefEdge> {
+    pub(crate) fn edges_from_host(&self, host: CfdRecordHandle) -> impl Iterator<Item = &RefEdge> {
         self.hosts
             .get(host.index())
             .into_iter()
@@ -60,7 +60,8 @@ impl RefIndexes {
             schema,
             plan: &plan,
         };
-        let mut targets = BTreeMap::<CfdRecordHandle, (BTreeSet<CfdRecordHandle>, Vec<RefEdgeId>)>::new();
+        let mut targets =
+            BTreeMap::<CfdRecordHandle, (BTreeSet<CfdRecordHandle>, Vec<RefEdgeId>)>::new();
         let mut visited = 0;
         for (host, record) in records {
             let references = record_refs(record, host, &context);
@@ -73,7 +74,11 @@ impl RefIndexes {
                 targets.entry(edge.target).or_default().0.insert(host);
             }
             for (index, edge) in references.edges.iter().enumerate() {
-                targets.entry(edge.target).or_default().1.push(RefEdgeId::new(host, index));
+                targets
+                    .entry(edge.target)
+                    .or_default()
+                    .1
+                    .push(RefEdgeId::new(host, index));
             }
             self.hosts[host.index()] = Arc::new(references);
         }
@@ -95,9 +100,11 @@ pub(crate) fn build_ref_indexes(
     schema: BuildSchema<'_>,
     plan: &ReferenceFieldPlan<'_>,
 ) -> RefIndexes {
+    // 空入边共享同一不可变块，修改时由 Arc 写时复制隔离。
+    let empty_incoming = Arc::new(Vec::new());
     let mut out = RefIndexes {
         hosts: coflow_storage::PagedVec::default(),
-        incoming: vec![Arc::new(Vec::new()); records.len()].into(),
+        incoming: vec![empty_incoming; records.len()].into(),
     };
     let context = RefEdgeBuildContext {
         record_by_domain_id,

@@ -5,8 +5,8 @@ mod dimensions;
 mod names;
 mod plans;
 mod queries;
-mod value_type;
 mod traversal;
+mod value_type;
 
 pub use check_builtins::CftCheckBuiltin;
 pub use compiler::{build_schema, build_schema_with_limits};

@@ -313,7 +313,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
                     return None;
                 }
                 Some(ValueDraft::PendingRef {
-                    explicit_type: Some(TypeName::new(&type_name).ok()?),
+                    explicit_type: Some(TypeName::new(type_name).ok()?),
                     id: id.clone(),
                 })
             }

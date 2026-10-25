@@ -130,7 +130,10 @@ mod tests {
         fs::write(&path, "internal").expect("write internal content");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"internal"))]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(
+            path.clone(),
+            Some(b"internal"),
+        )]);
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&root)));
         assert!(!coordinator.has_external_change(&root, &[root.clone(), path.clone()]));
@@ -148,7 +151,10 @@ mod tests {
         let root = std::env::temp_dir();
         let path = root.join(format!("coflow-editor-ticket-{}", std::process::id()));
         fs::write(&path, "newer").expect("write revision fixture");
-        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"newer"))]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(
+            path.clone(),
+            Some(b"newer"),
+        )]);
 
         assert!(coordinator.commit_reload(ticket).is_none());
         fs::remove_file(path).expect("remove revision fixture");
@@ -166,7 +172,10 @@ mod tests {
         fs::write(&path, "table Item {}\n").expect("write internal source");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"table Item {}\n"))]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(
+            path.clone(),
+            Some(b"table Item {}\n"),
+        )]);
         let ticket = coordinator.begin_reload();
         let reloaded = coordinator.commit_reload(ticket).expect("commit reload");
 
@@ -187,7 +196,10 @@ mod tests {
         fs::remove_file(&path).expect("remove generated file");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), None)]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(
+            path.clone(),
+            None,
+        )]);
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
 
         fs::write(&path, "external").expect("recreate generated file");
@@ -198,6 +210,8 @@ mod tests {
 
 #[cfg(test)]
 mod publication_tests {
+    #![allow(clippy::expect_used)]
+
     use super::*;
     #[test]
     fn external_write_between_publish_and_registration_is_detected() {

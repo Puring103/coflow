@@ -325,8 +325,11 @@ fn materialized_top_level_value(
     if path.len() <= 1 {
         return Ok(None);
     }
-    let root_path = CfdPath { segments: path[..1].to_vec() };
-    let record = session.record_view(&coordinate.actual_type, &coordinate.id)
+    let root_path = CfdPath {
+        segments: path[..1].to_vec(),
+    };
+    let record = session
+        .record_view(&coordinate.actual_type, &coordinate.id)
         .map(|view| view.record)
         .ok_or_else(|| one_path_error("record was not found while materializing a field"))?;
     let root = record.value_at_path(&root_path).ok_or_else(|| {
@@ -561,8 +564,13 @@ fn set_pending_insert_value(
     set_nested_value(current, &path[1..], value)
 }
 
-pub(super) fn set_nested_value(current: &mut CfdValue, path: &[CfdPathSegment], value: CfdValue) -> Result<(), DiagnosticSet> {
-    crate::value_path::replace(current, path, value).map_err(|error| one_path_error(error.message()))
+pub(super) fn set_nested_value(
+    current: &mut CfdValue,
+    path: &[CfdPathSegment],
+    value: CfdValue,
+) -> Result<(), DiagnosticSet> {
+    crate::value_path::replace(current, path, value)
+        .map_err(|error| one_path_error(error.message()))
 }
 
 fn prepare_insert_fields(
@@ -822,8 +830,20 @@ mod deferred_path_tests {
 
     #[test]
     fn borrowed_validation_matches_materialized_path_errors() {
-        let values = [CfdValue::OptionNone, CfdValue::OptionSome(Box::new(CfdValue::Array(vec![CfdValue::Int(1)]))), CfdValue::Array(vec![CfdValue::Int(2)])];
-        let paths = [vec![], vec![CfdPathSegment::Index(0)], vec![CfdPathSegment::Index(1)], vec![CfdPathSegment::Index(0), CfdPathSegment::Field("missing".into())]];
+        let values = [
+            CfdValue::OptionNone,
+            CfdValue::OptionSome(Box::new(CfdValue::Array(vec![CfdValue::Int(1)]))),
+            CfdValue::Array(vec![CfdValue::Int(2)]),
+        ];
+        let paths = [
+            vec![],
+            vec![CfdPathSegment::Index(0)],
+            vec![CfdPathSegment::Index(1)],
+            vec![
+                CfdPathSegment::Index(0),
+                CfdPathSegment::Field("missing".into()),
+            ],
+        ];
         for value in values {
             for path in &paths {
                 let borrowed = validate_nested_path(&value, path);

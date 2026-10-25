@@ -416,19 +416,38 @@ pub(crate) fn reload_project_data_from_cache_with_preloaded(
 
     for index in reload_indexes {
         let batch = &mut source_data.batches[index];
-        let contents = CfdLoader::read_source(&batch.entry.source, source_override_text(&batch.entry.source, options.source_overrides));
-        if batch.loaded && contents.as_ref().is_ok_and(|text| text.as_ref() == batch.source.as_ref()) {
+        let contents = CfdLoader::read_source(
+            &batch.entry.source,
+            source_override_text(&batch.entry.source, options.source_overrides),
+        );
+        if batch.loaded
+            && contents
+                .as_ref()
+                .is_ok_and(|text| text.as_ref() == batch.source.as_ref())
+        {
             // 重复 watcher 通知或相同文本覆盖只校验实际字节，不重复解析与构建。
             continue;
         }
-        source_data.changed_sources.insert(batch.entry.display_path.clone());
+        source_data
+            .changed_sources
+            .insert(batch.entry.display_path.clone());
         statistics.sources_reloaded += 1;
         let loaded = contents.and_then(|contents| {
-            let cached = preloaded.remove(&crate::normalize_path(batch.entry.source.location.path()))
+            let cached = preloaded
+                .remove(&crate::normalize_path(batch.entry.source.location.path()))
                 .filter(|loaded| loaded.source.as_ref() == contents.as_ref());
-            cached.map_or_else(|| CfdLoader::load_partial(CfdLoadContext {
-                schema, source_text: Some(&contents),
-            }, &batch.entry.source), Ok)
+            cached.map_or_else(
+                || {
+                    CfdLoader::load_partial(
+                        CfdLoadContext {
+                            schema,
+                            source_text: Some(&contents),
+                        },
+                        &batch.entry.source,
+                    )
+                },
+                Ok,
+            )
         });
         match loaded {
             Ok(loaded) => {
@@ -449,23 +468,7 @@ pub(crate) fn reload_project_data_from_cache_with_preloaded(
         }
     }
 
-    // 诊断与源版本一起缓存，未变化的错误文件不能在其他文件修改后失去诊断。
-    let mut diagnostics = DiagnosticSet::empty();
-    let by_path = source_data
-        .batches
-        .iter()
-        .map(|batch| (batch.entry.display_path.as_str(), batch))
-        .collect::<BTreeMap<_, _>>();
-    for slot in &source_data.diagnostic_order {
-        match slot {
-            CachedDiagnosticSlot::Discovery(error) => diagnostics.extend(error.clone()),
-            CachedDiagnosticSlot::Source(path) => {
-                if let Some(batch) = by_path.get(path.as_str()) {
-                    diagnostics.extend((*batch.diagnostics).clone());
-                }
-            }
-        }
-    }
+    let diagnostics = cached_source_diagnostics(&source_data);
     let changed_records = source_data.changed_record_inputs(schema, previous);
     build_output_from_cache(
         schema,
@@ -543,6 +546,27 @@ fn load_resolved_sources(
                     diagnostics: Arc::new(err),
                     loaded: false,
                 });
+            }
+        }
+    }
+    diagnostics
+}
+
+fn cached_source_diagnostics(source_data: &SourceDataCache) -> DiagnosticSet {
+    // 诊断与源版本一起缓存，未变化的错误文件不能在其他文件修改后失去诊断。
+    let mut diagnostics = DiagnosticSet::empty();
+    let by_path = source_data
+        .batches
+        .iter()
+        .map(|batch| (batch.entry.display_path.as_str(), batch))
+        .collect::<BTreeMap<_, _>>();
+    for slot in &source_data.diagnostic_order {
+        match slot {
+            CachedDiagnosticSlot::Discovery(error) => diagnostics.extend(error.clone()),
+            CachedDiagnosticSlot::Source(path) => {
+                if let Some(batch) = by_path.get(path.as_str()) {
+                    diagnostics.extend((*batch.diagnostics).clone());
+                }
             }
         }
     }
@@ -696,6 +720,60 @@ fn model_builder<'a>(
     builder
 }
 
+// 增量选择与来源索引装配分开；只有完整容错路径才收集平面候选表。
+fn build_cached_model(
+    schema: &CftSchema,
+    source_data: &SourceDataCache,
+    changed_records: Option<&[CfdRecordHandle]>,
+) -> Result<(PartialModelBuild, usize), LoadDiagnostics> {
+    let unchanged = changed_records.is_some_and(<[_]>::is_empty)
+        && source_data.changed_sources.is_empty()
+        && source_data.model.is_some();
+    // 健康增量直接借用源批次；只有完整容错重建才建立用于剔除候选的平面表。
+    let records = std::cell::OnceCell::new();
+    let full_build = || {
+        build_partial_model(
+            schema,
+            records.get_or_init(|| source_data.record_drafts()),
+            source_data,
+        )
+    };
+    let build = || -> Result<PartialModelBuild, LoadDiagnostics> {
+        Ok(match source_data.model.as_ref().zip(changed_records) {
+            Some((previous, _)) if unchanged => PartialModelBuild {
+                model: previous.clone(),
+                diagnostics: DiagnosticSet::empty(),
+                logical_locations: BTreeMap::new(),
+                accepted_origins: Vec::new(),
+                changed_records: Some(Vec::new()),
+                statistics: CfdModelBuildStats {
+                    reused_records: previous.record_count(),
+                    ..Default::default()
+                },
+            },
+            Some((previous, changed)) => {
+                let builder = model_builder(schema, source_data);
+                match builder.try_build_partial_incremental(previous, changed) {
+                    Some(output) => PartialModelBuild {
+                        // 增量模型自带最新来源，诊断按实际标签查找，避免复制全项目路径。
+                        accepted_origins: Vec::new(),
+                        model: output.model,
+                        diagnostics: DiagnosticSet::empty(),
+                        logical_locations: BTreeMap::new(),
+                        statistics: output.statistics,
+                        changed_records: Some(output.changed_records),
+                    },
+                    // 完整容错构建负责诊断归并和被拒绝记录的恢复。
+                    None => full_build()?,
+                }
+            }
+            None => full_build()?,
+        })
+    };
+    let partial = build()?;
+    Ok((partial, records.get().map_or(0, Vec::len)))
+}
+
 fn build_output_from_cache(
     schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
@@ -712,58 +790,27 @@ fn build_output_from_cache(
             .files
             .add_source_file(batch.entry.display_path.clone(), source_id);
     }
-    let unchanged = changed_records.is_some_and(<[_]>::is_empty)
-        && source_data.changed_sources.is_empty() && source_data.model.is_some();
-    // 健康增量直接借用源批次；只有完整容错重建才建立用于剔除候选的平面表。
-    let records = std::cell::OnceCell::new();
-    let full_build = || {
-        build_partial_model(schema, records.get_or_init(|| source_data.record_drafts()), &source_data)
-    };
-    let build = || -> Result<PartialModelBuild, LoadDiagnostics> {
-        Ok(match source_data.model.as_ref().zip(changed_records) {
-            Some((previous, _)) if unchanged => PartialModelBuild {
-                model: previous.clone(), diagnostics: DiagnosticSet::empty(), logical_locations: BTreeMap::new(),
-                accepted_origins: Vec::new(), changed_records: Some(Vec::new()),
-                statistics: CfdModelBuildStats { reused_records: previous.record_count(), ..Default::default() },
-            },
-            Some((previous, changed)) => {
-                let builder = model_builder(schema, &source_data);
-                match builder.try_build_partial_incremental(previous, changed) {
-                    Ok(Some(output)) => PartialModelBuild {
-                        // 增量模型自带最新来源，诊断按实际标签查找，避免复制全项目路径。
-                        accepted_origins: Vec::new(),
-                        model: output.model,
-                        diagnostics: DiagnosticSet::empty(),
-                        logical_locations: BTreeMap::new(),
-                        statistics: output.statistics,
-                        changed_records: Some(output.changed_records),
-                    },
-                    // 完整容错构建负责诊断归并和被拒绝记录的恢复。
-                    Ok(None) | Err(_) => full_build()?,
+    let (partial, draft_record_count) =
+        match build_cached_model(schema, &source_data, changed_records) {
+            Ok(partial) => partial,
+            Err(error) => {
+                // 全局构建失败也保留全部可定位记录，供容错会话展示被拒绝项。
+                for (index, batch) in source_data.batches.iter().enumerate() {
+                    push_loaded_records(
+                        &mut indexes.records,
+                        SourceId(index),
+                        &batch.entry.display_path,
+                        &batch.records,
+                    );
                 }
+                return Err(error);
             }
-            None => full_build()?,
-        })
-    };
-    let partial = match build() {
-        Ok(partial) => partial,
-        Err(error) => {
-            // 全局构建失败也保留全部可定位记录，供容错会话展示被拒绝项。
-            for (index, batch) in source_data.batches.iter().enumerate() {
-                push_loaded_records(
-                    &mut indexes.records,
-                    SourceId(index),
-                    &batch.entry.display_path,
-                    &batch.records,
-                );
-            }
-            return Err(error);
-        }
-    };
-    let draft_record_count = records.get().map_or(0, Vec::len);
+        };
     let model_healthy = partial.diagnostics.is_empty();
     if partial.changed_records.is_some() {
-        indexes.previous_records = source_data.record_index.clone();
+        indexes
+            .previous_records
+            .clone_from(&source_data.record_index);
     }
     for (index, batch) in source_data.batches.iter().enumerate() {
         if indexes.previous_records.is_none()
@@ -866,7 +913,8 @@ fn build_partial_model(
         match builder.build_partial() {
             Ok(output) => {
                 let offset = diagnostics.diagnostics.len();
-                let current_locations = logical_locations_from_cfd(&output.diagnostics, candidate_coordinate);
+                let current_locations =
+                    logical_locations_from_cfd(&output.diagnostics, candidate_coordinate);
                 logical_locations.extend(
                     current_locations
                         .into_iter()
@@ -944,21 +992,25 @@ fn run_cached_project_checks(
 ) -> ProjectCheckOutput {
     previous_checks.map_or_else(
         || run_full_project_checks(schema, model, origins),
-        |previous| match changed_records {
-            Some(changed) => run_incremental_project_checks_with_changed_records(
-                schema,
-                model,
-                origins,
-                previous,
-                check_impact,
-                changed,
-            ),
-            None => run_incremental_project_checks(schema, model, origins, previous, check_impact),
+        |previous| {
+            changed_records.map_or_else(
+                || run_incremental_project_checks(schema, model, origins, previous, check_impact),
+                |changed| {
+                    run_incremental_project_checks_with_changed_records(
+                        schema,
+                        model,
+                        origins,
+                        previous,
+                        check_impact,
+                        changed,
+                    )
+                },
+            )
         },
     )
 }
 
-fn record_model_work(
+const fn record_model_work(
     statistics: &mut ProjectExecutionStats,
     draft_record_count: usize,
     model: CfdModelBuildStats,

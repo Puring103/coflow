@@ -52,6 +52,10 @@ fn env_usize(key: &str, fallback: usize) -> usize {
         .unwrap_or(fallback)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "冒烟基准按顺序建立同一项目并验证编辑和重载结果。"
+)]
 fn main() {
     let config = Config::from_env();
     if config.project_root.exists() {

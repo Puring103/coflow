@@ -436,7 +436,10 @@ fn precise_reference_reads_only_recheck_the_actual_inline_owner() {
     assert_eq!(output.state.diagnostics(&after).len(), 1);
     assert_equivalent(&schema, &after, &output);
     // 共享索引的候选更新不能修改仍被宿主持有的旧代次。
-    assert!(previous.state.diagnostics(&before).is_empty());
+    assert_eq!(
+        previous.state.diagnostics(&before),
+        [] as [coflow_checker::CheckDiagnostic; 0]
+    );
 }
 
 #[test]
@@ -715,7 +718,10 @@ fn any_keeps_later_errors_and_later_element_reads_after_a_true_element() {
     };
     let before = build(false);
     let previous = run_full_project_checks(&schema, &before, &[]);
-    assert!(!previous.state.diagnostics(&before).is_empty());
+    assert_ne!(
+        previous.state.diagnostics(&before),
+        [] as [coflow_checker::CheckDiagnostic; 0]
+    );
     let after = build(true);
     let output = run_incremental_project_checks(
         &schema,
@@ -725,7 +731,10 @@ fn any_keeps_later_errors_and_later_element_reads_after_a_true_element() {
         &CheckImpact::default(),
     );
     assert_eq!(output.statistics.executed_tasks, 1);
-    assert!(output.state.diagnostics(&after).is_empty());
+    assert_eq!(
+        output.state.diagnostics(&after),
+        [] as [coflow_checker::CheckDiagnostic; 0]
+    );
     assert_equivalent(&schema, &after, &output);
 }
 
@@ -773,11 +782,11 @@ fn deterministic_edit_sequences_match_full_checks_through_references_and_owned_a
         seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         let index = ((seed >> 24) % 6) as usize;
         match seed % 4 {
-            0 => counts[index] = ((seed >> 32) % 7) as i64 - 2,
+            0 => counts[index] = i64::try_from((seed >> 32) % 7).unwrap() - 2,
             1 => {
                 targets = (0..(seed >> 40) as usize % 5)
                     .map(|offset| (index + offset) % 6)
-                    .collect()
+                    .collect();
             }
             2 => targets.reverse(),
             _ => enabled = !enabled,

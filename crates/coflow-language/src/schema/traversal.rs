@@ -135,17 +135,18 @@ fn contained_type(mut ty: &CftValueType) -> &CftValueType {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use crate::cft::{build_schema, parse_modules, CftFile, ModuleId};
     #[test]
     fn traversal_plan_covers_recursive_and_polymorphic_children() {
-        let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("main"), r#"
+        let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("main"), r"
             table Target {}
             abstract data Base {}
             data Checked : Base { next: Option<Base> = None; link: Option<&Target> = None; check Valid { true; } }
             data Wrapper { children: [Base] = []; numbers: [int] = []; }
             table Owner { wrapped: Wrapper; link: Option<&Target> = None; numbers: [int] = []; }
-        "#)])).expect("schema");
+        ")])).expect("schema");
         let names = |ty| {
             schema
                 .data_check_fields(ty)

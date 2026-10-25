@@ -1,5 +1,5 @@
 //! 核心引擎基准：只在独立临时目录运行，不启动编辑器。
-//! ENGINE_MODE=model|pipeline，其他参数见归档测量报告。
+//! `ENGINE_MODE=model|pipeline，其他参数见归档测量报告`。
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -103,8 +103,12 @@ fn model(samples: usize) {
                 builder.add_record(
                     format!("r{record}"),
                     "Row",
-                    (0..fields)
-                        .map(|field| (format!("f{field}"), LoadedValueDraft::from(field as i64))),
+                    (0..fields).map(|field| {
+                        (
+                            format!("f{field}"),
+                            LoadedValueDraft::from(i64::from(field)),
+                        )
+                    }),
                 );
             }
             let start = Instant::now();
@@ -165,18 +169,22 @@ fn model(samples: usize) {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "基准完整保留维度夹具、计时边界和结果对照，避免隐藏测量成本。"
+)]
 fn dimension_models(samples: usize, default_records: usize) {
     let records = env_usize("ENGINE_DIMENSION_RECORDS", default_records.min(1_000));
     assert!(records > 0);
     let schema = compile(
-        r#"
+        r"
         table Item {
             @localized name: string;
             caption: string;
             parent: &Item;
             f0: int; f1: int; f2: int; f3: int; f4: int;
         }
-    "#,
+    ",
     );
     let coflow_runtime::cell_value::ParsedCell::Value(caption) =
         coflow_runtime::cell_value::parse_cell(&schema, "string", r#"f"{self.parent.name}""#)
@@ -203,7 +211,10 @@ fn dimension_models(samples: usize, default_records: usize) {
                         ),
                     ]);
                     for field in 0..5 {
-                        fields.insert(format!("f{field}"), LoadedValueDraft::from(field as i64));
+                        fields.insert(
+                            format!("f{field}"),
+                            LoadedValueDraft::from(i64::from(field)),
+                        );
                     }
                     builder.add_record(format!("i{index}"), "Item", fields);
                 }
@@ -267,7 +278,7 @@ fn dimension_models(samples: usize, default_records: usize) {
                     .unwrap();
                 let record = projected.record(id).unwrap();
                 let expected = |target: usize| {
-                    if target % stride == 0 {
+                    if target.is_multiple_of(stride) {
                         format!("Variant 0 {target}")
                     } else {
                         format!("Base {target}")
@@ -323,6 +334,10 @@ table Row {
 check ProjectIntegrity { records(Row).len() > 0; }
 "#;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "基准完整保留夹具、计时边界与独立重载验证，避免隐藏测量成本。"
+)]
 fn pipeline(samples: usize) {
     let count = env_usize("ENGINE_RECORDS", 1_000);
     let files = env_usize("ENGINE_FILES", 10);
@@ -334,7 +349,7 @@ fn pipeline(samples: usize) {
         "name" | "value" | "rating"
     ));
     assert!(update_samples > 0);
-    assert!(count > 0 && files > 0 && count % files == 0);
+    assert!(count > 0 && files > 0 && count.is_multiple_of(files));
     let per_file = count / files;
     let root = tempfile::tempdir().expect("isolated project");
     std::fs::create_dir(root.path().join("data")).unwrap();
@@ -401,12 +416,12 @@ fn pipeline(samples: usize) {
         "name" => source.replacen("name: \"Row 0\"", "name: \"Edited Row 0\"", 1),
         "value" => source.replacen("value: 0", "value: 10", 1),
         "rating" => source.replacen("rating: 1", "rating: 10", 1),
-        _ => unreachable!(),
+        _ => panic!("unsupported benchmark field: {mutation_field}"),
     };
     assert_ne!(changed_source, source);
     // 此处固定在修改前代次测重复校验；每次均重新校验同一份实际有变更的覆盖文本。
     for (name, source) in [
-        ("validate_same_text", source.clone()),
+        ("validate_same_text", source),
         ("validate_one_field", changed_source),
     ] {
         let overrides = [DataSourceTextOverride {

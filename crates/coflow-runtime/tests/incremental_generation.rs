@@ -65,7 +65,12 @@ fn unchanged_source_diagnostics_survive_validation_and_other_file_mutations() {
     });
     assert!(result.write_ok, "{result:?}");
     let written = std::fs::read(&path).expect("published bytes");
-    assert!(result.published_files.contains(&coflow_runtime::PublishedFile::from_content(normalize_path(&path), Some(&written))));
+    assert!(result
+        .published_files
+        .contains(&coflow_runtime::PublishedFile::from_content(
+            normalize_path(&path),
+            Some(&written)
+        )));
 
     assert!(!result.check_ok);
     let fresh = Runtime::new()
@@ -128,7 +133,7 @@ fn disk_refresh_matches_full_generations_through_errors_membership_and_templates
         }
         session = session
             .refresh_context()
-            .refresh_data_sources(&[path.to_owned()])
+            .refresh_data_sources(std::slice::from_ref(path))
             .expect("refresh");
         let full = Runtime::new()
             .open_read_only_session(project.clone())
@@ -180,16 +185,29 @@ fn disk_refresh_matches_full_generations_through_errors_membership_and_templates
 #[test]
 fn unchanged_disk_refresh_reuses_sources_and_preserves_existing_diagnostics() {
     let root = tempfile::tempdir().expect("project");
-    std::fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: data.cfd\ncodegen:\n  - language: csharp\n    dir: generated/\n").expect("config");
-    std::fs::write(root.path().join("schema.cft"), "table Item { value: int; check Positive { value > 0; } }").expect("schema");
+    std::fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+    )
+    .expect("config");
+    std::fs::write(
+        root.path().join("schema.cft"),
+        "table Item { value: int; check Positive { value > 0; } }",
+    )
+    .expect("schema");
     let path = root.path().join("data.cfd");
     std::fs::write(&path, "a: Item { value: -1 }\nbroken: Item { value: , }\n").expect("data");
     let project = Project::open_schema_only(Some(root.path())).expect("project");
-    let mut session = Runtime::new().open_write_session(project.clone()).expect("session");
+    let mut session = Runtime::new()
+        .open_write_session(project.clone())
+        .expect("session");
     let expected = session.queries().diagnostics().as_set().clone();
     assert!(!expected.is_empty());
     for _ in 0..2 {
-        session = session.refresh_context().refresh_data_sources(std::slice::from_ref(&path)).expect("refresh");
+        session = session
+            .refresh_context()
+            .refresh_data_sources(std::slice::from_ref(&path))
+            .expect("refresh");
         assert_eq!(session.queries().diagnostics().as_set(), &expected);
         let stats = session.queries().execution_stats();
         assert_eq!(stats.sources_reloaded, 0);
@@ -197,6 +215,11 @@ fn unchanged_disk_refresh_reuses_sources_and_preserves_existing_diagnostics() {
         assert_eq!(stats.records_validated, 0);
         assert_eq!(stats.check_roots_executed, 0);
     }
-    let full = Runtime::new().open_read_only_session(project).expect("full load");
-    assert_eq!(session.queries().diagnostics().as_set(), full.queries().diagnostics().as_set());
+    let full = Runtime::new()
+        .open_read_only_session(project)
+        .expect("full load");
+    assert_eq!(
+        session.queries().diagnostics().as_set(),
+        full.queries().diagnostics().as_set()
+    );
 }

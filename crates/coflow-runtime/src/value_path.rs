@@ -30,7 +30,7 @@ pub(crate) fn validate(current: &CfdValue, path: &[CfdPathSegment]) -> Result<()
             .map(|(_, entry_value)| entry_value),
         _ => None,
     }
-    .ok_or_else(|| PathError::Missing)?;
+    .ok_or(PathError::Missing)?;
     validate(next, rest)
 }
 
@@ -61,6 +61,6 @@ pub(crate) fn replace(
             .map(|(_, entry_value)| entry_value),
         _ => None,
     }
-    .ok_or_else(|| PathError::Missing)?;
+    .ok_or(PathError::Missing)?;
     replace(next, rest, value)
 }

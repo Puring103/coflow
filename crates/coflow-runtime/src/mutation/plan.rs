@@ -299,14 +299,13 @@ fn fold_pending_insert_rename(
     let insert_file = file.clone();
     let folded =
         prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_id)?;
-    let new_record =
-        RecordCoordinate::try_new(record.actual_type.to_string(), new_id).map_err(|error| {
-            DiagnosticSet::one(Diagnostic::error(
-                "MUTATION-COORDINATE",
-                "MUTATION",
-                error.to_string(),
-            ))
-        })?;
+    let new_record = RecordCoordinate::try_new(&record.actual_type, new_id).map_err(|error| {
+        DiagnosticSet::one(Diagnostic::error(
+            "MUTATION-COORDINATE",
+            "MUTATION",
+            error.to_string(),
+        ))
+    })?;
     let typed_new_id = new_record.id.clone();
     if new_record != *record && pending_inserts.contains_key(&new_record) {
         return Err(DiagnosticSet::one(Diagnostic::error(

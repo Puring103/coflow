@@ -76,9 +76,16 @@ mod tests {
             .entry("Item".to_string())
             .or_default()
             .insert("name".to_string(), 240.0);
-        settings.table_row_heights.insert("data/items.cfd".to_string(), BTreeMap::from([(
-            "Item".to_string(), BTreeMap::from([("__default_table".to_string(), BTreeMap::from([("Item::a".to_string(), 240.0)]))])
-        )]));
+        settings.table_row_heights.insert(
+            "data/items.cfd".to_string(),
+            BTreeMap::from([(
+                "Item".to_string(),
+                BTreeMap::from([(
+                    "__default_table".to_string(),
+                    BTreeMap::from([("Item::a".to_string(), 240.0)]),
+                )]),
+            )]),
+        );
         settings
             .record_groups
             .entry("data/items.cfd".to_string())

@@ -35,7 +35,12 @@ pub struct EditorProjectSettings {
     pub default_table_column_widths: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     /// 个人行高按文件、类型、视图和记录身份保存，排序不改变绑定关系。
     #[serde(default)]
-    pub table_row_heights: BTreeMap<String, BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>>,
+    #[expect(
+        clippy::type_complexity,
+        reason = "线协议按文件、类型、视图、记录四级索引，保持 TypeScript 内联结构一致。"
+    )]
+    pub table_row_heights:
+        BTreeMap<String, BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>>,
     #[serde(default)]
     pub record_groups: BTreeMap<String, BTreeMap<String, Vec<EditorRecordGroup>>>,
     #[serde(default)]
