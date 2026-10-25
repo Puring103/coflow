@@ -1,4 +1,10 @@
 #![allow(clippy::multiple_crate_versions)]
+
+// Windows 大量语法节点和模型小对象使用同一分配器，降低分配及代次回收成本。
+#[cfg(windows)]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use coflow_runtime::automation::{Arguments, Failure, InputSnapshot, Response, Result, Status};
 use coflow_runtime::Project;
 use serde_json::json;

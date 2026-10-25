@@ -8,7 +8,7 @@ use super::{cmp_op_str, render_expr, CheckExplanation};
 use crate::eval::{LocatedEvalValue, ScalarValue, ValueLocation};
 
 pub(crate) fn explain_false_value_expr(
-    trace: &EvaluationTrace,
+    trace: &EvaluationTrace<'_>,
     expr: &CftSchemaCheckExpr,
     value: &LocatedEvalValue<'_>,
     rendered: String,
@@ -76,7 +76,7 @@ pub(crate) fn explain_false_value_expr(
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn explain_false_expr(
-    trace: &EvaluationTrace,
+    trace: &EvaluationTrace<'_>,
     expr: &CftSchemaCheckExpr,
     value: &LocatedEvalValue<'_>,
 ) -> Option<CheckExplanation> {
@@ -182,8 +182,8 @@ pub(crate) fn explain_false_expr(
             coflow_language::cft::CftSchemaTypePredicate::Type(type_name) => {
                 let actual = trace
                     .fact(inner)
-                    .and_then(|fact| fact.actual_type.clone())
-                    .unwrap_or_else(|| "非对象".to_string());
+                    .and_then(|fact| fact.actual_type)
+                    .unwrap_or("非对象");
                 Some(
                     CheckExplanation::new(
                         CfdErrorCode::CheckTypePredicateFailed,
@@ -203,16 +203,16 @@ pub(crate) fn explain_false_expr(
 }
 
 fn explain_failed_comparison(
-    trace: &EvaluationTrace,
+    trace: &EvaluationTrace<'_>,
     rendered: &str,
     fallback_location: Option<ValueLocation>,
 ) -> Option<CheckExplanation> {
     let failure = trace.comparison_failure()?;
     let location = failure.location.clone().or(fallback_location);
     let (actual_expr, actual_value) = if failure.lhs.location.is_some() {
-        (&failure.lhs_expression, failure.lhs.display.as_deref())
+        (&failure.lhs_expression, failure.lhs.display())
     } else {
-        (&failure.rhs_expression, failure.rhs.display.as_deref())
+        (&failure.rhs_expression, failure.rhs.display())
     };
     Some(
         CheckExplanation::new(
@@ -222,7 +222,7 @@ fn explain_failed_comparison(
         )
         .with_actual(format!(
             "{actual_expr} = {}",
-            actual_value.unwrap_or("<unknown>")
+            actual_value.as_deref().unwrap_or("<unknown>")
         ))
         .with_expected(format!(
             "{} {}",
@@ -232,10 +232,10 @@ fn explain_failed_comparison(
     )
 }
 
-pub(crate) fn value_expr_actual(trace: &EvaluationTrace, expr: &CftSchemaCheckExpr) -> String {
+pub(crate) fn value_expr_actual(trace: &EvaluationTrace<'_>, expr: &CftSchemaCheckExpr) -> String {
     trace
         .fact(expr)
-        .and_then(|fact| fact.display.as_ref())
+        .and_then(super::trace::TraceFact::display)
         .map_or_else(
             || render_expr(expr),
             |display| format!("{} = {display}", render_expr(expr)),
@@ -243,7 +243,7 @@ pub(crate) fn value_expr_actual(trace: &EvaluationTrace, expr: &CftSchemaCheckEx
 }
 
 fn unique_failed_explanation(
-    trace: &EvaluationTrace,
+    trace: &EvaluationTrace<'_>,
     rendered: &str,
     collection: &CftSchemaCheckExpr,
     location: Option<ValueLocation>,

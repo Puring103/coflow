@@ -32,6 +32,7 @@ mod eval;
 mod limits;
 mod operations;
 mod output;
+mod reads;
 mod task;
 
 use coflow_language::cft::CftSchema;
@@ -41,7 +42,8 @@ pub use diagnostics::{
 };
 pub use limits::EvaluationLimits;
 pub use output::{CheckExecutionStats, CheckOutput, CheckTaskResult, CheckTaskStatus};
-pub use task::{CheckLimits, CheckTarget, CheckTask};
+pub use reads::{CheckFieldRead, CheckReadProjection, CheckReadSet};
+pub use task::{CheckLimits, CheckPlan, CheckTarget, CheckTask};
 
 /// Executes the requested CFT `check` statement tasks.
 ///

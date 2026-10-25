@@ -210,6 +210,51 @@ fn language_position_offset(source: &str, position: &LanguagePosition) -> usize 
     source.len()
 }
 
+impl LanguageSession {
+    pub(crate) fn refresh_data_files(
+        &mut self,
+        paths: &[std::path::PathBuf],
+    ) -> Result<(), EditorError> {
+        let changes = paths
+            .iter()
+            .map(|path| {
+                json!({
+                    "uri": coflow_lsp::EmbeddedLsp::file_uri(path),
+                    "type": if path.exists() { 2 } else { 3 },
+                })
+            })
+            .collect::<Vec<_>>();
+        let messages = self
+            .server
+            .notify(
+                "workspace/didChangeWatchedFiles",
+                &json!({ "changes": changes }),
+            )
+            .map_err(|error| EditorError::other(format!("LSP source refresh failed: {error}")))?;
+        for message in &messages {
+            if message.get("method").and_then(Value::as_str)
+                != Some("textDocument/publishDiagnostics")
+            {
+                continue;
+            }
+            let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(diagnostics) = message
+                .pointer("/params/diagnostics")
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            self.diagnostics.insert(
+                uri.to_string(),
+                diagnostics.iter().filter_map(language_diagnostic).collect(),
+            );
+        }
+        Ok(())
+    }
+}
+
 impl SessionStore {
     #[allow(clippy::significant_drop_tightening)]
     pub fn highlight_source_snapshot(
@@ -450,10 +495,11 @@ impl SessionStore {
             })?;
         session.commit_internal_write(&[file_path.to_string()]);
         drop(session);
-        self.reload_session(id).map_err(|mut error| {
-            // 磁盘已提交，前端必须恢复会话而不能再次执行这次保存。
-            error.kind = crate::editor::types::EditorErrorKind::Committed;
-            error
-        })
+        self.reload_session_paths(id, std::slice::from_ref(&path))
+            .map_err(|mut error| {
+                // 磁盘已提交，前端必须恢复会话而不能再次执行这次保存。
+                error.kind = crate::editor::types::EditorErrorKind::Committed;
+                error
+            })
     }
 }

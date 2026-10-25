@@ -357,8 +357,15 @@ pub fn map_diagnostics_with_origins(
     diagnostics: CfdDiagnostics,
     origins: &[RecordOrigin],
 ) -> DiagnosticSet {
-    let mapped =
-        crate::data_model::map_diagnostics(diagnostics, |id| origins.get(id.index()).cloned());
+    map_diagnostics_with_origin_lookup(diagnostics, |id| origins.get(id.index()).cloned())
+}
+
+/// 仅为实际出现的诊断标签查询来源，避免预先复制整个模型的路径与位置。
+pub(crate) fn map_diagnostics_with_origin_lookup(
+    diagnostics: CfdDiagnostics,
+    resolve: impl Fn(crate::data_model::CfdRecordHandle) -> Option<RecordOrigin>,
+) -> DiagnosticSet {
+    let mapped = crate::data_model::map_diagnostics(diagnostics, resolve);
     DiagnosticSet {
         diagnostics: mapped
             .into_iter()

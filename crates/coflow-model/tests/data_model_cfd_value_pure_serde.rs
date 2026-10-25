@@ -59,9 +59,9 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
 
     let record = CfdRecord {
         id: RecordCoordinate::try_new("Item", "potion")?.id,
-        object: CfdObject::try_new("Item", fields)?,
+        object: CfdObject::try_new("Item", fields)?.into(),
         origin: RecordOrigin::None,
-        dimension_fields: BTreeMap::new(),
+        dimension_fields: BTreeMap::new().into(),
     };
 
     let json = serde_json::to_string(&record)?;

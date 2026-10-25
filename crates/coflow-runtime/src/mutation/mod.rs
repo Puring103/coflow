@@ -58,8 +58,8 @@ pub(super) fn enum_value(
 }
 
 pub(super) fn validated_record_coordinate(
-    actual_type: impl Into<String>,
-    key: impl Into<String>,
+    actual_type: impl AsRef<str>,
+    key: impl AsRef<str>,
 ) -> Result<crate::RecordCoordinate, DiagnosticSet> {
     crate::RecordCoordinate::try_new(actual_type, key)
         .map_err(|error| one_mutation_error("MUTATION-COORDINATE", error.to_string()))

@@ -95,7 +95,8 @@ pub use records::{
     RecordView, RefTargetInfo, WriteOutcome,
 };
 pub use runtime::{
-    BuildProjectSession, ProjectRuntime, ReadOnlyProjectSession, Runtime, WriteProjectSession,
+    BuildProjectSession, ProjectRefreshContext, ProjectRuntime, ReadOnlyProjectSession, Runtime,
+    WriteProjectSession,
 };
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaConstInfo, SchemaConstValueInfo, SchemaDefaultValueInfo,

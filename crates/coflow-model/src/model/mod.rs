@@ -29,14 +29,30 @@ pub(crate) struct DimensionProjection {
 }
 
 /// 不可变模型共享记录与索引；克隆可用于代次快照和投影来源，无需复制数据树。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CfdDataModel {
     pub(crate) tables: Arc<BTreeMap<TypeName, CfdTable>>,
     pub(crate) record_by_domain_id: Arc<BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>>,
-    pub(crate) records: Arc<Vec<CfdRecord>>,
+    pub(crate) records: Arc<Vec<Arc<CfdRecord>>>,
     pub(crate) refs: Arc<RefIndexes>,
     pub(crate) dimension_variants: Arc<BTreeMap<DimensionName, BTreeSet<VariantName>>>,
     pub(crate) projection: Option<DimensionProjection>,
+    pub(crate) template_dependencies: Arc<crate::build::TemplateDependencies>,
+    pub(crate) incremental_ready: bool,
+    pub(crate) structural_limits: coflow_language::limits::StructuralLimits,
+    pub(crate) schema_compilation: coflow_language::cft::CftSchemaIdentity,
+}
+
+impl PartialEq for CfdDataModel {
+    fn eq(&self, other: &Self) -> bool {
+        // 编译身份与增量依赖属于缓存元数据，不改变模型原有值语义。
+        self.tables == other.tables
+            && self.record_by_domain_id == other.record_by_domain_id
+            && self.records == other.records
+            && self.refs == other.refs
+            && self.dimension_variants == other.dimension_variants
+            && self.projection == other.projection
+    }
 }
 
 impl CfdDataModel {
@@ -54,14 +70,14 @@ impl CfdDataModel {
 
     #[must_use]
     pub fn record(&self, id: CfdRecordHandle) -> Option<&CfdRecord> {
-        self.records.get(id.index())
+        self.records.get(id.index()).map(AsRef::as_ref)
     }
 
     pub fn records(&self) -> impl Iterator<Item = (CfdRecordHandle, &CfdRecord)> {
         self.records
             .iter()
             .enumerate()
-            .map(|(index, record)| (CfdRecordHandle::new(index), record))
+            .map(|(index, record)| (CfdRecordHandle::new(index), record.as_ref()))
     }
 
     /// Returns top-level records assignable to `expected_type` in stable
@@ -154,7 +170,7 @@ impl CfdDataModel {
             .get(type_name)
             .map_or(&[] as &[CfdRecordHandle], |table| table.records.as_slice());
         ids.iter()
-            .filter_map(move |id| self.records.get(id.index()).map(|record| (*id, record)))
+            .filter_map(move |id| self.record(*id).map(|record| (*id, record)))
     }
 
     /// Iterates over records whose actual type is assignable to `type_name`.
@@ -175,38 +191,24 @@ impl CfdDataModel {
     /// Returns `None` when no ref lives at that path.
     #[must_use]
     pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordHandle> {
-        self.refs
-            .by_site
-            .get(site)
-            .and_then(|edge_id| self.refs.edges.get(edge_id.index()))
-            .map(|edge| edge.target)
+        self.refs.resolve(site)
     }
 
     pub fn ref_edges(&self) -> impl Iterator<Item = &RefEdge> {
-        self.refs.edges.iter()
+        self.refs.edges()
     }
 
     pub fn ref_edges_from_host(
         &self,
         host: CfdRecordHandle,
     ) -> impl Iterator<Item = &RefEdge> + '_ {
-        self.refs
-            .by_host
-            .get(&host)
-            .into_iter()
-            .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.refs.edges.get(id.index()))
+        self.refs.from_host(host)
     }
 
     pub fn ref_edges_to_target(
         &self,
         target: CfdRecordHandle,
     ) -> impl Iterator<Item = &RefEdge> + '_ {
-        self.refs
-            .by_target
-            .get(&target)
-            .into_iter()
-            .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.refs.edges.get(id.index()))
+        self.refs.to_target(target)
     }
 }

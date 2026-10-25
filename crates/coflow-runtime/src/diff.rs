@@ -547,7 +547,7 @@ fn record_states(
             },
         );
         // 覆盖值按真实来源文件和维度独立比较，不混入基础记录。
-        for (field_name, dimensions) in &record.dimension_fields {
+        for (field_name, dimensions) in record.dimension_fields.iter() {
             for (variant, value) in &dimensions.variants {
                 let Some(source) = session.source_data.dimension_source(
                     session.schema(),

@@ -736,9 +736,10 @@ fn record_with_fields(
         id: crate::RecordId::new(&record.id)
             .map_err(|error| Failure::request(error.to_string()))?,
         object: crate::CfdObject::try_new(&record.actual_type, fields)
-            .map_err(|error| Failure::request(error.to_string()))?,
+            .map_err(|error| Failure::request(error.to_string()))?
+            .into(),
         origin: RecordOrigin::None,
-        dimension_fields: BTreeMap::new(),
+        dimension_fields: BTreeMap::new().into(),
     })
 }
 fn path_record(

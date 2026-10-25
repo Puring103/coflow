@@ -12,8 +12,6 @@ use super::schema_nav::type_after_field_segment;
 use super::target::{locate_target, WriteTarget};
 use super::CFD_INDENT;
 
-// 补丁生成按路径形态完整分派，拆散会重复记录定位与类型校验上下文。
-#[allow(clippy::too_many_lines)]
 pub(super) fn apply_patch(
     source: &str,
     ast: &CfdAst,
@@ -28,6 +26,43 @@ pub(super) fn apply_patch(
             ),
         ))
     })?;
+    let patch = field_patch(source, record, request)?;
+    Ok(patch.apply(source))
+}
+
+/// 补丁只拥有变化片段；未变化源码由批次收尾时一次复制。
+pub(super) struct FieldPatch {
+    pub(super) span: Span,
+    pub(super) replacement: String,
+    pub(super) formatting_start: Option<usize>,
+    pub(super) insertion: Option<FieldInsertion>,
+    pub(super) independent_syntax: bool,
+}
+
+pub(super) struct FieldInsertion {
+    pub(super) field: String,
+    pub(super) fragment_start: usize,
+}
+
+impl FieldPatch {
+    pub(super) fn apply(&self, source: &str) -> String {
+        let mut result = String::with_capacity(
+            source.len() - (self.span.end - self.span.start) + self.replacement.len(),
+        );
+        result.push_str(&source[..self.span.start]);
+        result.push_str(&self.replacement);
+        result.push_str(&source[self.span.end..]);
+        result
+    }
+}
+
+// 所有字段形态共用补丁表示，包含集合、对象、嵌套路径和缺省父对象实体化。
+#[allow(clippy::too_many_lines)]
+pub(super) fn field_patch(
+    source: &str,
+    record: &AstRecord,
+    request: &WriteCellRequest<'_>,
+) -> Result<FieldPatch, DiagnosticSet> {
     if request.field_path.is_empty() {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -60,8 +95,6 @@ pub(super) fn apply_patch(
         }
         Err(error) => return Err(error),
     };
-    validate_value(new_value)?;
-
     match target {
         WriteTarget::Replace { span, ty } => {
             if span.start > source.len() || span.end > source.len() || span.start > span.end {
@@ -78,12 +111,18 @@ pub(super) fn apply_patch(
             let depth = replacement_serialization_depth(source, span.start, new_value);
             let fragment =
                 serialize_value_for_type(new_value, Some(request.schema), Some(&ty), depth);
-            Ok(format!(
-                "{}{}{}",
-                &source[..span.start],
-                fragment,
-                &source[span.end..]
-            ))
+            let independent_syntax = has_independent_syntax(new_value, &fragment);
+            Ok(FieldPatch {
+                span,
+                replacement: fragment,
+                formatting_start: Some(
+                    source[..span.start]
+                        .rfind('\n')
+                        .map_or(0, |index| index + 1),
+                ),
+                insertion: None,
+                independent_syntax,
+            })
         }
         WriteTarget::InsertTopLevel {
             ty,
@@ -91,16 +130,12 @@ pub(super) fn apply_patch(
         } => {
             let block_end = record.span.end.min(source.len());
             let insert_pos = find_closing_brace(source, block_end)?;
-            let fragment = format!(
-                "{CFD_INDENT}{top_field}: {},\n",
-                serialize_value_for_type(new_value, Some(request.schema), Some(&ty), 2)
-            );
-            Ok(insert_field_fragment(
-                source,
-                insert_pos,
-                previous_value_end,
-                &fragment,
-            ))
+            let value = serialize_value_for_type(new_value, Some(request.schema), Some(&ty), 2);
+            let fragment = format!("{CFD_INDENT}{top_field}: {value},\n");
+            let mut patch =
+                insert_field_patch(source, insert_pos, previous_value_end, &fragment, top_field);
+            patch.independent_syntax = has_independent_syntax(new_value, &value);
+            Ok(patch)
         }
         WriteTarget::InsertNested {
             previous_value_end,
@@ -113,41 +148,87 @@ pub(super) fn apply_patch(
             let insert_pos = find_closing_brace(source, block_end)?;
             let indent = CFD_INDENT.repeat(depth + 1);
             let outer = CFD_INDENT.repeat(depth);
-            let fragment = format!(
-                "{indent}{field_name}: {},\n{outer}",
-                serialize_value_for_type(new_value, Some(request.schema), Some(&ty), depth + 2)
-            );
-            Ok(insert_field_fragment(
+            let value =
+                serialize_value_for_type(new_value, Some(request.schema), Some(&ty), depth + 2);
+            let fragment = format!("{indent}{field_name}: {value},\n{outer}");
+            let mut patch = insert_field_patch(
                 source,
                 insert_pos,
                 previous_value_end,
                 &fragment,
-            ))
+                &field_name,
+            );
+            patch.independent_syntax = has_independent_syntax(new_value, &value);
+            Ok(patch)
         }
     }
 }
 
 // 缺失末尾逗号的合法对象在追加字段时补齐分隔符，注释和未修改源码保持原样。
-fn insert_field_fragment(
+fn insert_field_patch(
     source: &str,
     position: usize,
     previous: Option<usize>,
     fragment: &str,
-) -> String {
-    let mut prefix = source[..position].to_string();
+    field: &str,
+) -> FieldPatch {
+    let start = previous.unwrap_or(position);
+    let mut replacement = String::new();
     if let Some(end) = previous {
         let suffix = &source[end..position];
         let has_comma = coflow_language::lexical::tokenize_lossless(suffix)
             .iter()
             .any(|token| token.text(suffix) == ",");
         if !has_comma {
-            prefix.insert(end, ',');
+            replacement.push(',');
+        }
+        replacement.push_str(suffix);
+    }
+    let ends_with_newline = if replacement.is_empty() {
+        source[..position].ends_with('\n')
+    } else {
+        replacement.ends_with('\n')
+    };
+    if !ends_with_newline {
+        replacement.push('\n');
+    }
+    let fragment_start = replacement.len();
+    replacement.push_str(fragment);
+    FieldPatch {
+        span: Span::new(start, position),
+        replacement,
+        formatting_start: None,
+        insertion: Some(FieldInsertion {
+            field: field.to_string(),
+            fragment_start,
+        }),
+        independent_syntax: true,
+    }
+}
+
+fn has_independent_syntax(value: &CfdValue, rendered: &str) -> bool {
+    fn contains_source(value: &CfdValue) -> bool {
+        match value {
+            CfdValue::FormattedString(_) => true,
+            CfdValue::Object(object) => object.fields.values().any(contains_source),
+            CfdValue::Array(items) => items.iter().any(contains_source),
+            CfdValue::Dict(items) => items.iter().any(|(_, value)| contains_source(value)),
+            CfdValue::OptionSome(value) => contains_source(value),
+            _ => false,
         }
     }
-    if !prefix.ends_with('\n') {
-        prefix.push('\n');
+    if !contains_source(value) {
+        return true;
     }
-    format!("{prefix}{fragment}{}", &source[position..])
+    // 模板携带原始源码。只有封闭的单个值才能合批，防止后续补丁意外修复
+    // 本应在当前操作报告的未闭合字符串、注释或额外字段。
+    const PREFIX: &str = "patch: Patch { value: ";
+    let wrapped = format!("{PREFIX}{rendered} }}");
+    let (ast, diagnostics) = coflow_language::cfd::parse_cfd(&wrapped);
+    diagnostics.is_empty()
+        && ast.records.len() == 1
+        && ast.records[0].fields.len() == 1
+        && ast.records[0].fields[0].value.span().end == PREFIX.len() + rendered.len()
 }
 
 fn replacement_serialization_depth(source: &str, offset: usize, value: &CfdValue) -> usize {
@@ -280,39 +361,6 @@ fn removed_field_span(source: &str, field_span: Span) -> Span {
         end += 1;
     }
     Span::new(start, end)
-}
-
-fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
-    match v {
-        CfdValue::Object(record) => {
-            for v in record.fields.values() {
-                validate_value(v)?;
-            }
-            Ok(())
-        }
-        CfdValue::Array(items) => {
-            for v in items {
-                validate_value(v)?;
-            }
-            Ok(())
-        }
-        CfdValue::Dict(entries) => {
-            for (_, v) in entries {
-                validate_value(v)?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-pub(super) fn validate_values<'a>(
-    values: impl IntoIterator<Item = &'a CfdValue>,
-) -> Result<(), DiagnosticSet> {
-    for value in values {
-        validate_value(value)?;
-    }
-    Ok(())
 }
 
 pub(super) fn validate_record_id(key: &str) -> Result<(), DiagnosticSet> {
@@ -459,11 +507,11 @@ pub(super) fn replace_spans(
     source: &str,
     replacements: &[(Span, String)],
 ) -> Result<String, DiagnosticSet> {
-    let mut out = source.to_string();
-    let mut sorted = replacements.to_vec();
+    // 借用补丁并按源码顺序一次拼接，重排大量记录时不反复移动整段文件尾部。
+    let mut sorted = replacements.iter().collect::<Vec<_>>();
     sorted.sort_by_key(|(span, _)| span.start);
     for (span, _) in &sorted {
-        if span.start > source.len() || span.end > source.len() || span.start > span.end {
+        if source.get(span.start..span.end).is_none() {
             return Err(DiagnosticSet::one(diag(
                 "CFD-WRITE",
                 format!(
@@ -476,8 +524,64 @@ pub(super) fn replace_spans(
         }
     }
     sorted.dedup_by_key(|(span, _)| (span.start, span.end));
-    for (span, replacement) in sorted.into_iter().rev() {
-        out.replace_range(span.start..span.end, &replacement);
+    let mut cursor = 0;
+    let mut capacity = source.len();
+    for (span, replacement) in &sorted {
+        if span.start < cursor {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "source replacement spans overlap",
+            )));
+        }
+        cursor = span.end;
+        capacity = capacity - (span.end - span.start) + replacement.len();
     }
+    let mut out = String::with_capacity(capacity);
+    cursor = 0;
+    for (span, replacement) in sorted {
+        out.push_str(&source[cursor..span.start]);
+        out.push_str(replacement);
+        cursor = span.end;
+    }
+    out.push_str(&source[cursor..]);
     Ok(out)
+}
+
+#[cfg(test)]
+mod replacement_tests {
+    #![allow(clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn source_replacements_keep_order_unicode_and_duplicate_span_semantics() {
+        let source = "甲 first, second 乙";
+        let first = source.find("first").expect("first");
+        let second = source.find("second").expect("second");
+        let edits = [
+            (Span::new(second, second + 6), "二".into()),
+            (Span::new(first, first + 5), "一".into()),
+            (Span::new(first, first + 5), "ignored duplicate".into()),
+            (Span::new(source.len(), source.len()), "\n".into()),
+        ];
+        assert_eq!(
+            replace_spans(source, &edits).expect("replacements"),
+            "甲 一, 二 乙\n"
+        );
+        assert_eq!(
+            replace_spans(source, &[]).expect("empty replacement"),
+            source
+        );
+    }
+
+    #[test]
+    fn invalid_or_overlapping_source_spans_return_diagnostics() {
+        assert!(replace_spans("甲abc", &[(Span::new(1, 2), "x".into())]).is_err());
+        assert!(replace_spans("abc", &[(Span::new(2, 4), "x".into())]).is_err());
+        assert!(replace_spans(
+            "abc",
+            &[(Span::new(0, 2), "x".into()), (Span::new(1, 3), "y".into()),]
+        )
+        .is_err());
+    }
 }

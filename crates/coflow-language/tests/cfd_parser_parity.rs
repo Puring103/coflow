@@ -73,6 +73,26 @@ fn recovery_ignores_delimiters_inside_strings_and_comments() {
 }
 
 #[test]
+fn repeated_recovery_preserves_diagnostics_and_following_unicode_source_spans() {
+    let mut source = String::new();
+    for index in 0..1_000 {
+        source.push_str(&format!(
+            "bad{index}: Sample {{ value: , text: \"括号 }} ] 不改变层级\" }}\r\n# {{ [ ignored\r\n"
+        ));
+    }
+    let expected_start = source.len();
+    source.push_str("survivor: Sample { value: 3 }\r\n");
+    let (ast, diagnostics) = parse_cfd(&source);
+    assert_eq!(diagnostics.len(), 1_000);
+    assert!(diagnostics
+        .windows(2)
+        .all(|pair| pair[0].span.start < pair[1].span.start));
+    assert_eq!(ast.records.len(), 1);
+    assert_eq!(ast.records[0].id, "survivor");
+    assert_eq!(ast.records[0].span.start, expected_start);
+}
+
+#[test]
 fn option_constructors_share_the_structural_depth_budget() {
     use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
     use coflow_language::limits::StructuralLimits;

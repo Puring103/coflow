@@ -27,6 +27,19 @@ use crate::limits::{
 use crate::module::ModuleId;
 use crate::{CftDiagnostic, CftDiagnostics, CftErrorCode, Span};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+/// 编译代次身份随 schema 克隆共享，缓存持有身份期间地址不会被复用。
+#[derive(Debug, Clone)]
+pub struct CftSchemaIdentity(Arc<()>);
+
+impl PartialEq for CftSchemaIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for CftSchemaIdentity {}
 
 #[derive(Debug)]
 pub(super) struct LocatedBudgetError {
@@ -75,6 +88,7 @@ impl LocatedBudgetError {
 
 #[derive(Debug, Clone)]
 pub struct CftSchema {
+    compilation_id: CftSchemaIdentity,
     consts: BTreeMap<ConstName, CftConst>,
     pub(crate) types: BTreeMap<TypeName, CftType>,
     inheritance_root_by_type: BTreeMap<TypeName, TypeName>,
@@ -91,6 +105,11 @@ pub struct CftSchema {
 }
 
 impl CftSchema {
+    #[must_use]
+    pub fn compilation_id(&self) -> CftSchemaIdentity {
+        self.compilation_id.clone()
+    }
+
     pub(in crate::schema) fn from_declarations(
         declarations: SchemaDeclarations,
         budget: &mut AnalysisBudget,
@@ -152,6 +171,7 @@ impl CftSchema {
         let value_dependencies = ValueDependencyPlan::compile(&types, budget)
             .map_err(LocatedBudgetError::into_diagnostics)?;
         Ok(Self {
+            compilation_id: CftSchemaIdentity(Arc::new(())),
             consts,
             types,
             inheritance_root_by_type,

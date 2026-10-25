@@ -182,7 +182,7 @@ fn field_value(
         dimension: dimension.into(),
         variant: variant.into(),
         base: encode(base)?,
-        override_value: encode(explicit.map(|value| &value.value))?,
+        override_value: encode(explicit.map(|value| value.value.as_ref()))?,
         state: DimensionState {
             explicit: explicit.is_some(),
             effective: encode(effective)?,

@@ -187,7 +187,7 @@ pub(super) fn reference_update_actions(
             let Some(value) = values.variants.get(&dimension.variant) else {
                 continue;
             };
-            let mut root = value.value.clone();
+            let mut root = value.value.as_ref().clone();
             if !replace_ref_value(&mut root, relative_path, &new_id) {
                 continue;
             }

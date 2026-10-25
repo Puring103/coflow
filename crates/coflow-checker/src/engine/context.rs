@@ -33,7 +33,7 @@ impl<'a> ExecutionContext<'a> {
         &self,
         check: &CftTopLevelCheck,
         statement: &CftSchemaCheckStmt,
-    ) -> (Vec<CheckDiagnostic>, u64, bool) {
+    ) -> (Vec<CheckDiagnostic>, u64, bool, crate::CheckReadSet) {
         let mut evaluator = CheckEvaluator::new(
             self.schema,
             self.model,
@@ -65,7 +65,7 @@ impl<'a> ExecutionContext<'a> {
         rule_id: &str,
         location: ValueLocation,
         statement: &CftSchemaCheckStmt,
-    ) -> (Vec<CheckDiagnostic>, u64, bool) {
+    ) -> (Vec<CheckDiagnostic>, u64, bool, crate::CheckReadSet) {
         let mut evaluator = CheckEvaluator::new(
             self.schema,
             self.model,

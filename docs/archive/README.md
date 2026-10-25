@@ -8,6 +8,8 @@
 | [编辑器值创建](plans/editor-value-creation-design.zh-CN.md) | 历史设计与实施计划 | [值创建](../editor-design/value-creation.md) |
 | [编辑器布局草图](previews/editor-layout-draft.html)、[版本一](previews/editor-layout-draft-v1.html) | 历史静态预览 | [视图与工作区](../editor-design/views.md) |
 | [编辑器宽表与大工程性能测量](benchmarks/editor-performance-2026-10-25.md) | 生产构建、功能回归与后端大工程测量 | [性能约束](../editor-design/performance.md) |
+| [引擎核心性能基线](benchmarks/engine-performance-2026-10-25.md) | 模型、check、真实更新与十万条容量测量 | [引擎优化方案](../development/engine-performance-plan.zh-CN.md) |
+| [引擎核心优化验收](benchmarks/engine-performance-optimized-2026-10-25.md) | 十万条连续编辑、批量更新、增量等价与底层微基准 | [引擎优化方案](../development/engine-performance-plan.zh-CN.md) |
 | [静态检查依赖性能测量](benchmarks/check-static-dependency-2026-07-27.md) | 指定版本与机器的测量结果 | [系统架构](../architecture/overview.md) |
 
 归档资料保留原始设计和测量语境，其语法、命令、接口及验收状态以对应历史版本为背景。现行开发与发布检查统一见 [AGENTS.md](../../AGENTS.md)。

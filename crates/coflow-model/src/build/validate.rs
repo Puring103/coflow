@@ -8,7 +8,7 @@ use crate::model::{CfdEnumValue, CfdRecordHandle, CfdValue};
 use crate::semantics::{CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest};
 use coflow_language::cft::{CftField, CftValueType, TypeName};
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Validation and resolution helper.
 ///
@@ -138,15 +138,9 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             }
         }
 
-        // `fields` has lifetime 's, independent of `self`, so it can be held
-        // across calls to &mut self methods below.
-        let fields = schema.full_fields(actual_type).collect::<Vec<_>>();
-        let known_fields = fields
-            .iter()
-            .map(|field| field.name.as_str())
-            .collect::<BTreeSet<_>>();
+        // 每条记录复用 schema 的字段索引；字段顺序仍由声明顺序决定。
         for name in input_fields.keys() {
-            if !known_fields.contains(name.as_str()) {
+            if actual_type_meta.field(name).is_none() {
                 self.push(
                     CfdDiagnostic::error(
                         CfdErrorCode::UnknownField,
@@ -158,7 +152,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         }
 
         let mut out = BTreeMap::new();
-        for field in fields {
+        for field in actual_type_meta.all_fields() {
             let field_path = path.clone().field(field.name.as_str());
             let value = if let Some(value) = input_fields.get(field.name.as_str()) {
                 self.validate_field_value(field, value, record, field_path, cursor)

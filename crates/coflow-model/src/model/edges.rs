@@ -43,17 +43,24 @@ pub struct DimensionRefCoordinate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct RefEdgeId(usize);
+pub(crate) struct RefEdgeId {
+    host: CfdRecordHandle,
+    index: usize,
+}
 
 impl RefEdgeId {
     #[must_use]
-    pub(crate) const fn new(index: usize) -> Self {
-        Self(index)
+    pub(crate) const fn new(host: CfdRecordHandle, index: usize) -> Self {
+        Self { host, index }
+    }
+
+    pub(crate) const fn host(self) -> CfdRecordHandle {
+        self.host
     }
 
     #[must_use]
     pub(crate) fn index(self) -> usize {
-        self.0
+        self.index
     }
 }
 

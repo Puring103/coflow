@@ -216,14 +216,13 @@ fn watch_loop(
                         Ok(Err(err)) => emit_watch_error(events, session_id, err.to_string()),
                         Err(RecvTimeoutError::Timeout) => {
                             let relevant_paths = filter_relevant_paths(&pending_paths);
-                            let changed_paths = normalize_paths(&relevant_paths);
                             let external =
                                 sessions.has_external_file_changes(session_id, &relevant_paths);
                             pending_paths.clear();
                             match external {
                                 Ok(false) => break,
                                 Ok(true) => {
-                                    if emit_reload(sessions, events, session_id, changed_paths) {
+                                    if emit_reload(sessions, events, session_id, &relevant_paths) {
                                         if let Some(registry) = registry.upgrade() {
                                             if let Err(err) =
                                                 registry.refresh_session(session_id, project_root)
@@ -305,13 +304,13 @@ fn emit_reload(
     sessions: &SessionStore,
     events: &Arc<dyn EditorEventSink>,
     session_id: u32,
-    changed_paths: Vec<String>,
+    changed_paths: &[PathBuf],
 ) -> bool {
-    match sessions.reload_session(session_id) {
+    match sessions.reload_session_paths(session_id, changed_paths) {
         Ok(snapshot) => {
             events.emit(EditorEvent::ProjectReloaded(ProjectReloadedPayload {
                 session_id,
-                changed_paths,
+                changed_paths: normalize_paths(changed_paths),
                 revision: snapshot.revision,
                 diagnostics: snapshot.diagnostics,
             }));

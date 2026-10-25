@@ -13,19 +13,21 @@ use coflow_runtime::{CfdObject, CfdPathSegment, CfdValue, RecordCoordinate};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use tempfile::TempDir;
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+fn project_directory(prefix: &str) -> TempDir {
+    // 目录由操作系统原子创建并随机隔离，避免并行测试进程互删夹具或覆盖待提交源码。
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir()
+        .expect("create isolated editor project")
+}
 
 #[test]
 fn configured_external_sources_can_be_opened() {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-external-source-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old external-source project");
-    }
-    let project_root = root.join("project");
-    let shared_root = root.join("shared");
+    let root = project_directory("cfd-editor-external-source-");
+    let project_root = root.path().join("project");
+    let shared_root = root.path().join("shared");
     fs::create_dir_all(&project_root).expect("create project directory");
     fs::create_dir_all(&shared_root).expect("create shared directory");
     fs::write(
@@ -69,19 +71,15 @@ fn configured_external_sources_can_be_opened() {
         coflow_runtime::canonicalize_path(&schema_path).expect("canonicalize external schema")
     );
 
-    fs::remove_dir_all(&root).expect("remove external-source project");
+    root.close().expect("remove external-source project");
 }
 
-fn array_project() -> (PathBuf, PathBuf) {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-array-workflow-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old test project");
-    }
-    let data_dir = root.join("data");
+fn array_project() -> (TempDir, PathBuf) {
+    let root = project_directory("cfd-editor-array-workflow-");
+    let data_dir = root.path().join("data");
     fs::create_dir_all(&data_dir).expect("create test data directory");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         concat!(
             "schema: schema.cft\n",
             "data: data/\n",
@@ -92,7 +90,7 @@ fn array_project() -> (PathBuf, PathBuf) {
     )
     .expect("write project config");
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         include_str!("../../../../examples/showcase/schema/05-arrays.cft"),
     )
     .expect("write schema");
@@ -105,16 +103,12 @@ fn array_project() -> (PathBuf, PathBuf) {
     (root, data_file)
 }
 
-fn nested_default_collection_project() -> (PathBuf, PathBuf) {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-nested-default-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old nested-default project");
-    }
-    let data_dir = root.join("data");
+fn nested_default_collection_project() -> (TempDir, PathBuf) {
+    let root = project_directory("cfd-editor-nested-default-");
+    let data_dir = root.path().join("data");
     fs::create_dir_all(&data_dir).expect("create nested-default data directory");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         concat!(
             "schema: schema.cft\n",
             "data: data/\n",
@@ -125,7 +119,7 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
     )
     .expect("write nested-default project config");
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         concat!(
             "enum Element { Fire, Ice, }\n",
             "data Combat { health: int = 100; resistances: {Element: float} = {}; }\n",
@@ -149,16 +143,12 @@ fn nested_default_collection_project() -> (PathBuf, PathBuf) {
     (root, data_file)
 }
 
-fn inheritance_project() -> (PathBuf, PathBuf) {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-inheritance-workflow-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old inheritance test project");
-    }
-    let data_dir = root.join("data");
+fn inheritance_project() -> (TempDir, PathBuf) {
+    let root = project_directory("cfd-editor-inheritance-workflow-");
+    let data_dir = root.path().join("data");
     fs::create_dir_all(&data_dir).expect("create inheritance data directory");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         concat!(
             "schema: schema.cft\n",
             "data: data/\n",
@@ -169,7 +159,7 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
     )
     .expect("write inheritance project config");
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         concat!(
             "abstract data Reward { label: string; }\n",
             "data ItemReward : Reward { count: int; tags: [string]; }\n",
@@ -197,15 +187,11 @@ fn inheritance_project() -> (PathBuf, PathBuf) {
     (root, populated)
 }
 
-fn string_defaults_project() -> PathBuf {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-string-defaults-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old string defaults project");
-    }
-    fs::create_dir_all(root.join("data")).expect("create string defaults data directory");
+fn string_defaults_project() -> TempDir {
+    let root = project_directory("cfd-editor-string-defaults-");
+    fs::create_dir_all(root.path().join("data")).expect("create string defaults data directory");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         concat!(
             "schema: schema.cft\n",
             "data: data/\n",
@@ -216,7 +202,7 @@ fn string_defaults_project() -> PathBuf {
     )
     .expect("write string defaults config");
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         concat!(
             "table Rule {\n",
             "  name: string = \"base\";\n",
@@ -225,19 +211,15 @@ fn string_defaults_project() -> PathBuf {
         ),
     )
     .expect("write string defaults schema");
-    fs::write(root.join("data/empty.cfd"), "").expect("write empty data file");
+    fs::write(root.path().join("data/empty.cfd"), "").expect("write empty data file");
     root
 }
 
-fn repairable_invalid_project() -> PathBuf {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-repairable-invalid-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old repairable project");
-    }
-    fs::create_dir_all(root.join("data")).expect("create repairable data directory");
+fn repairable_invalid_project() -> TempDir {
+    let root = project_directory("cfd-editor-repairable-invalid-");
+    fs::create_dir_all(root.path().join("data")).expect("create repairable data directory");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         concat!(
             "schema: schema.cft\n",
             "data: data/\n",
@@ -248,7 +230,7 @@ fn repairable_invalid_project() -> PathBuf {
     )
     .expect("write repairable config");
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         concat!(
             "enum Rarity { Common, Rare }\n",
             "table Target { label: string; }\n",
@@ -263,7 +245,7 @@ fn repairable_invalid_project() -> PathBuf {
     )
     .expect("write repairable schema");
     fs::write(
-        root.join("data/items.cfd"),
+        root.path().join("data/items.cfd"),
         concat!(
             "target: Target { label: \"usable\" }\n",
             "item: Item {\n",
@@ -276,15 +258,11 @@ fn repairable_invalid_project() -> PathBuf {
     root
 }
 
-fn cyclic_reference_project() -> PathBuf {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-cyclic-reference-{id}"));
-    if root.exists() {
-        fs::remove_dir_all(&root).expect("remove old cyclic-reference project");
-    }
-    fs::create_dir_all(root.join("data")).expect("create cyclic-reference data directory");
+fn cyclic_reference_project() -> TempDir {
+    let root = project_directory("cfd-editor-cyclic-reference-");
+    fs::create_dir_all(root.path().join("data")).expect("create cyclic-reference data directory");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         concat!(
             "schema: schema.cft\n",
             "data: data/\n",
@@ -296,11 +274,11 @@ fn cyclic_reference_project() -> PathBuf {
     )
     .expect("write cyclic-reference project config");
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         "table Quest { prerequisite: Option<&Quest> = None; }\n",
     )
     .expect("write cyclic-reference schema");
-    fs::write(root.join("data/quests.cfd"), "advanced: Quest {}\n")
+    fs::write(root.path().join("data/quests.cfd"), "advanced: Quest {}\n")
         .expect("write cyclic-reference data");
     root
 }
@@ -327,7 +305,7 @@ fn field(name: &str) -> CfdPathSegment {
 fn short_names_are_type_scoped_persisted_and_refreshed() {
     let (root, data_file) = array_project();
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         "table Item { name: string; title: string = \"\"; count: int = 1; }\n",
     )
     .expect("write schema");
@@ -337,13 +315,13 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
     )
     .expect("write first file");
     fs::write(
-        root.join("data/other.cfd"),
+        root.path().join("data/other.cfd"),
         "shield: Item { name: \"Shield\" }\n",
     )
     .expect("write second file");
     let store = SessionStore::new().expect("session store");
     let project = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load project");
     let id = project.session_id;
     assert!(store
@@ -374,7 +352,7 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
     assert_eq!(settings.short_name_fields.len(), 1);
     assert_eq!(settings.short_name_fields["Item"], "title");
     let reloaded = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("reopen project");
     assert_eq!(
         store
@@ -414,7 +392,7 @@ fn short_names_are_type_scoped_persisted_and_refreshed() {
         .expect("cleared targets")
         .iter()
         .all(|target| target.short_name.is_none()));
-    fs::remove_dir_all(root).expect("remove project");
+    root.close().expect("remove project");
 }
 
 #[test]
@@ -422,7 +400,7 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("session store");
     let project = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load project");
     let positions = BTreeMap::from([("Item::one".to_string(), [-320.5, 480.25])]);
     store
@@ -454,7 +432,7 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
         project.revision
     );
     let reopened = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("reopen project");
     let settings = store
         .get_project_settings(reopened.session_id)
@@ -467,7 +445,7 @@ fn graph_positions_persist_per_view_without_changing_data_revision() {
         settings.graph_positions[r#"["data/05-arrays.cfd","second-view","ArrayExample"]"#]
             .is_empty()
     );
-    fs::remove_dir_all(root).expect("remove project");
+    root.close().expect("remove project");
 }
 
 #[test]
@@ -475,7 +453,7 @@ fn editor_field_write_preserves_a_self_referencing_record() {
     let root = cyclic_reference_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load cyclic-reference project");
     let coordinate = RecordCoordinate::try_new("Quest", "advanced").expect("coordinate");
 
@@ -574,7 +552,7 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
     let (root, populated) = inheritance_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load inheritance project");
     let session_id = snapshot.session_id;
 
@@ -644,7 +622,7 @@ fn inherited_and_optional_polymorphic_values_edit_end_to_end() {
         )
         .expect("wrap a bare editor value for an Option field");
 
-    assert_inheritance_edits(&store, session_id, &root, &populated);
+    assert_inheritance_edits(&store, session_id, root.path(), &populated);
 }
 
 fn assert_inheritance_edits(store: &SessionStore, session_id: u32, root: &Path, populated: &Path) {
@@ -674,7 +652,7 @@ fn array_editor_mutations_round_trip_through_reload() {
     let (root, data_file) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load array project");
     let session_id = snapshot.session_id;
     let file_path = "data/05-arrays.cfd";
@@ -733,7 +711,7 @@ fn nested_collection_edit_materializes_a_missing_top_level_default() {
     let (root, data_file) = nested_default_collection_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load nested-default project");
     let coordinate = RecordCoordinate::try_new("Unit", "collection").expect("unit coordinate");
 
@@ -765,7 +743,7 @@ fn nested_scalar_edit_materializes_a_missing_top_level_default() {
     let (root, data_file) = nested_default_collection_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load nested-default project");
     let coordinate = RecordCoordinate::try_new("Unit", "scalar").expect("unit coordinate");
 
@@ -789,7 +767,7 @@ fn batch_nested_edits_materialize_missing_top_level_defaults() {
     let (root, data_file) = nested_default_collection_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load nested-default project");
     let path = vec![field("stats"), field("health")];
     let scalar = RecordCoordinate::try_new("Unit", "scalar").expect("scalar coordinate");
@@ -829,7 +807,7 @@ fn deep_default_parents_materialize_for_collection_and_batch_edits() {
     let (root, data_file) = nested_default_collection_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load nested-default project");
     let deep_collection =
         RecordCoordinate::try_new("Unit", "deep_collection").expect("deep collection coordinate");
@@ -902,7 +880,7 @@ fn source_text_edit_saves_invalid_data_with_complete_diagnostics() {
     let (root, data_file) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load source editing project");
     let session_id = snapshot.session_id;
     let file_path = "data/05-arrays.cfd";
@@ -971,7 +949,7 @@ fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sourc
     let (root, _) = array_project();
     let store = SessionStore::new().expect("create session store");
     let project = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load project");
     let source = store
         .read_source_text(project.session_id, "schema.cft")
@@ -998,10 +976,10 @@ fn diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sourc
         .expect("read live language state");
     assert_eq!(live.semantic_token_data, current.semantic_token_data);
     assert_eq!(
-        fs::read_to_string(root.join("schema.cft")).expect("read disk"),
+        fs::read_to_string(root.path().join("schema.cft")).expect("read disk"),
         source
     );
-    fs::remove_dir_all(root).expect("remove project");
+    root.close().expect("remove project");
 }
 
 #[test]
@@ -1009,7 +987,7 @@ fn editor_language_features_are_served_by_embedded_lsp() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load language-service project");
     let file_path = "data/05-arrays.cfd";
     let source = store
@@ -1085,7 +1063,7 @@ fn missing_optional_default_ref_and_enum_states_are_structurally_repairable() {
     let root = repairable_invalid_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load repairable project");
     let coordinate = RecordCoordinate::try_new("Item", "item").expect("coordinate");
     let records = store
@@ -1192,7 +1170,7 @@ fn new_record_can_be_created_with_a_missing_required_reference() {
     let root = repairable_invalid_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load repairable project");
     let object = CfdObject::try_new("Item", BTreeMap::new()).expect("object");
 
@@ -1210,7 +1188,7 @@ fn new_record_can_be_created_with_a_missing_required_reference() {
         diagnostic.severity == "error"
             && matches!(&diagnostic.target, coflow_runtime::DiagnosticTarget::TableField { field_path, .. } if field_path == "target")
     }));
-    let source = fs::read_to_string(root.join("data/items.cfd")).expect("source");
+    let source = fs::read_to_string(root.path().join("data/items.cfd")).expect("source");
     assert!(source.contains("new_item: Item"), "{source}");
     assert_eq!(
         source.matches("target: &missing").count(),
@@ -1224,7 +1202,7 @@ fn cft_string_defaults_are_supported_through_the_editor_backend() {
     let root = string_defaults_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load defaults project");
     let source = store
         .read_source_text(snapshot.session_id, "schema.cft")
@@ -1255,7 +1233,7 @@ fn cft_source_is_visible_editable_and_validated() {
     let (root, _) = array_project();
     let store = SessionStore::new().expect("create editor session store");
     let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("load schema editing project");
     let file_path = "schema.cft";
     let source = store
@@ -1309,39 +1287,40 @@ fn cft_source_is_visible_editable_and_validated() {
 fn editor_check_command_runs_rules_while_build_only_generates_data_types() {
     let (root, data_file) = array_project();
     fs::write(
-        root.join("schema.cft"),
+        root.path().join("schema.cft"),
         "table Item { name: string; check Valid { false : \"editor business issue\"; } }",
     )
     .expect("schema");
     fs::write(data_file, "item: Item { name: \"Item\" }").expect("data");
     let sessions = SessionStore::new().expect("session store");
     let bootstrap = sessions
-        .load_project(&root.join("coflow.yaml"))
+        .load_project(&root.path().join("coflow.yaml"))
         .expect("editor session");
     assert!(sessions.check_project(bootstrap.session_id).is_err());
     assert!(sessions.build_project(bootstrap.session_id).is_ok());
-    fs::remove_dir_all(root).expect("remove project");
+    root.close().expect("remove project");
 }
 
 #[test]
 fn cell_templates_and_explicit_reference_constraints_survive_reload() {
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!("cfd-editor-template-owner-{id}"));
-    fs::create_dir_all(root.join("data")).expect("create project");
+    let root = project_directory("cfd-editor-template-owner-");
+    fs::create_dir_all(root.path().join("data")).expect("create project");
     fs::write(
-        root.join("coflow.yaml"),
+        root.path().join("coflow.yaml"),
         "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated\n",
     )
     .expect("config");
-    fs::write(root.join("schema.cft"), r#"
+    fs::write(root.path().join("schema.cft"), r#"
         data Payload { score: int; label: string = f"{self.score}"; labels: [string] = []; optional: Option<string> = None; }
         table Node { label: string = f"{self.id}"; }
         table Child: Node {}
         table Entry { payload: Payload; target: &Node; }
     "#).expect("schema");
-    fs::write(root.join("data/main.cfd"), "base: Node {} child: Child {} entry: Entry { payload: Payload { score: 7 }, target: &base }").expect("data");
+    fs::write(root.path().join("data/main.cfd"), "base: Node {} child: Child {} entry: Entry { payload: Payload { score: 7 }, target: &base }").expect("data");
     let store = SessionStore::new().expect("store");
-    let session = store.load_project(&root.join("coflow.yaml")).expect("load");
+    let session = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .expect("load");
     assert!(session.diagnostics.is_empty(), "{:?}", session.diagnostics);
     let coordinate = RecordCoordinate::try_new("Entry", "entry").expect("coordinate");
     for (name, text) in [
@@ -1412,7 +1391,7 @@ fn cell_templates_and_explicit_reference_constraints_survive_reload() {
     assert!(
         matches!(payload.field("optional"), Some(CfdValue::OptionSome(value)) if matches!(&**value, CfdValue::FormattedString(text) if text.rendered == "maybe 7"))
     );
-    fs::remove_dir_all(root).expect("remove fixture");
+    root.close().expect("remove fixture");
 }
 
 fn copy_directory(source: &Path, target: &Path) {

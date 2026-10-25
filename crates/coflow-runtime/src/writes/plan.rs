@@ -106,6 +106,16 @@ pub(crate) struct ResolvedRecordPosition {
 }
 
 impl MutationExecutionPlan {
+    /// 只有纯字段写入可以跨文件重组；结构、维度及引用改名操作形成顺序屏障。
+    pub(crate) fn field_batch_key(&self) -> Option<(&std::path::Path, *const CfdWriter)> {
+        match self {
+            Self::WriteField(plan) => {
+                Some((plan.source.location.path(), Arc::as_ptr(&plan.writer)))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) const fn changes_generation(&self) -> bool {
         !matches!(
             self,

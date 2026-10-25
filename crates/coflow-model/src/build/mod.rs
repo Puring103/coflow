@@ -1,14 +1,16 @@
 mod context;
 mod defaults;
 mod draft;
+mod incremental;
 mod resolve;
 mod validate;
 
 pub(crate) use context::BuildSchema;
 pub(crate) use draft::{RecordDraft, ValueDraft};
+pub(crate) use incremental::TemplateDependencies;
 
 use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin};
-use crate::indexes::{self, build_ref_indexes};
+use crate::indexes::{self, build_ref_indexes, ReferenceFieldPlan};
 use crate::ingest::{DimensionValueDraft, LoadedRecordDraft, LoadedValueDraft};
 use crate::model::{
     CfdDataModel, CfdDimensionFieldValues, CfdDimensionValue, CfdObject, CfdRecord,
@@ -21,21 +23,54 @@ use coflow_language::cft::{CftSchema, DimensionName, FieldName, RecordId, TypeNa
 use coflow_language::limits::StructuralLimits;
 use resolve::ValueResolver;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
+use std::sync::Arc;
 use validate::Validator;
 
 #[derive(Debug)]
 pub struct CfdModelBuilder<'a> {
     schema: &'a CftSchema,
-    records: Vec<LoadedRecordDraft>,
+    records: Vec<RecordInput<'a>>,
     dimension_values: Vec<DimensionValueDraft>,
     dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     structural_limits: StructuralLimits,
+}
+
+/// 拥有态放在 Box 内，使借用缓存时的输入表每项只占指针大小量级。
+/// Cow<LoadedRecordDraft> 会让每个借用项也承担整条拥有态记录的内联布局。
+#[derive(Debug)]
+pub(crate) enum RecordInput<'a> {
+    Borrowed(&'a LoadedRecordDraft),
+    Owned(Box<LoadedRecordDraft>),
+}
+
+impl Deref for RecordInput<'_> {
+    type Target = LoadedRecordDraft;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Borrowed(input) => input,
+            Self::Owned(input) => input,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct CfdModelBuildOutput {
     pub model: CfdDataModel,
     pub diagnostics: CfdDiagnostics,
+    pub statistics: CfdModelBuildStats,
+    /// 当前代次中值语义发生变化的记录；仅来源位置变化不在其中。
+    pub changed_records: Vec<CfdRecordHandle>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CfdModelBuildStats {
+    pub validated_records: usize,
+    pub materialized_records: usize,
+    pub reused_records: usize,
+    pub rebuilt_ref_hosts: usize,
+    pub rebuilt_ref_edges: usize,
 }
 
 impl<'a> CfdModelBuilder<'a> {
@@ -63,12 +98,22 @@ impl<'a> CfdModelBuilder<'a> {
         fields: impl IntoIterator<Item = (impl Into<String>, LoadedValueDraft)>,
     ) -> &mut Self {
         self.records
-            .push(LoadedRecordDraft::new(id, actual_type, fields));
+            .push(RecordInput::Owned(Box::new(LoadedRecordDraft::new(
+                id,
+                actual_type,
+                fields,
+            ))));
         self
     }
 
     pub fn add_loaded_record(&mut self, record: LoadedRecordDraft) -> &mut Self {
-        self.records.push(record);
+        self.records.push(RecordInput::Owned(Box::new(record)));
+        self
+    }
+
+    /// 复用文件缓存中的不可变输入，构建过程中不克隆整条原始值树。
+    pub fn add_borrowed_record(&mut self, record: &'a LoadedRecordDraft) -> &mut Self {
+        self.records.push(RecordInput::Borrowed(record));
         self
     }
 
@@ -138,22 +183,34 @@ impl<'a> CfdModelBuilder<'a> {
         output.model.dimension_variants = self.dimension_variants.into();
         Ok(output)
     }
+
+    /// 尝试复用同一 schema、同一记录身份与顺序的健康模型。
+    /// `changed` 必须包含所有基础值或维度覆盖发生变化的宿主；来源位置自动刷新。
+    /// 不满足增量条件或需要重新归并完整诊断时返回 `Ok(None)`，调用方执行全量构建。
+    pub fn try_build_partial_incremental(
+        self,
+        previous: &CfdDataModel,
+        changed: &[CfdRecordHandle],
+    ) -> Result<Option<CfdModelBuildOutput>, CfdDiagnostics> {
+        incremental::rebuild(self, previous, changed)
+    }
 }
 
 pub(crate) struct ModelCompiler<'a> {
     schema: BuildSchema<'a>,
-    input: Vec<LoadedRecordDraft>,
+    input: Vec<RecordInput<'a>>,
     dimension_values: Vec<DimensionValueDraft>,
     dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     diagnostics: Vec<CfdDiagnostic>,
     editable_diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
+    template_reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
 }
 
 impl<'a> ModelCompiler<'a> {
     pub(crate) fn new(
         schema_source: &'a CftSchema,
-        input: Vec<LoadedRecordDraft>,
+        input: Vec<RecordInput<'a>>,
         dimension_values: Vec<DimensionValueDraft>,
         dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
         structural_limits: StructuralLimits,
@@ -166,6 +223,7 @@ impl<'a> ModelCompiler<'a> {
             diagnostics: Vec::new(),
             editable_diagnostics: Vec::new(),
             structural_limits,
+            template_reads: BTreeMap::new(),
         }
     }
 
@@ -194,11 +252,14 @@ impl<'a> ModelCompiler<'a> {
 
         let mut records = self.resolve_records(&drafts, &indexes.record_by_domain_id);
         self.fail_if_diagnostics()?;
+        let reference_plan = ReferenceFieldPlan::new(self.schema);
         validate_resolved_records(
             self.schema,
             &records,
             &indexes.record_by_domain_id,
             &mut self.diagnostics,
+            &reference_plan,
+            self.editable_diagnostics.is_empty(),
         );
         self.move_editable_diagnostics(|code| {
             matches!(
@@ -221,8 +282,7 @@ impl<'a> ModelCompiler<'a> {
         attach_dimension_values(&mut records, dimension_values);
         for (record_id, field, dimension, variant, value) in effective_values {
             if let Some(record) = records.get_mut(record_id.index()) {
-                record
-                    .dimension_fields
+                Arc::make_mut(&mut record.dimension_fields)
                     .entry(field)
                     .or_insert_with(|| CfdDimensionFieldValues {
                         dimension,
@@ -234,17 +294,37 @@ impl<'a> ModelCompiler<'a> {
             }
         }
 
-        let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_id, self.schema);
+        let ref_indexes = build_ref_indexes(
+            &records,
+            &indexes.record_by_domain_id,
+            self.schema,
+            &reference_plan,
+        );
+        let record_count = records.len();
+        let ref_count = ref_indexes.edges().count();
+        let incremental_ready = self.editable_diagnostics.is_empty();
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
                 tables: indexes.tables.into(),
                 record_by_domain_id: indexes.record_by_domain_id.into(),
-                records: records.into(),
+                records: records.into_iter().map(Arc::new).collect::<Vec<_>>().into(),
                 refs: ref_indexes.into(),
                 dimension_variants: BTreeMap::new().into(),
                 projection: None,
+                template_dependencies: Arc::new(TemplateDependencies::new(self.template_reads)),
+                incremental_ready,
+                structural_limits: self.structural_limits,
+                schema_compilation: self.schema.cft().compilation_id(),
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
+            statistics: CfdModelBuildStats {
+                validated_records: drafts.len(),
+                materialized_records: record_count,
+                reused_records: 0,
+                rebuilt_ref_hosts: record_count,
+                rebuilt_ref_edges: ref_count,
+            },
+            changed_records: (0..record_count).map(CfdRecordHandle::new).collect(),
         })
     }
 
@@ -272,7 +352,7 @@ impl<'a> ModelCompiler<'a> {
             ) else {
                 continue;
             };
-            draft.origin = record.origin;
+            draft.origin = record.origin.clone();
             drafts.push(draft);
         }
         drafts
@@ -284,6 +364,8 @@ impl<'a> ModelCompiler<'a> {
         record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     ) -> Vec<CfdRecord> {
         let mut records = Vec::with_capacity(drafts.len());
+        // 无维度记录共享同一个空索引，不能为每条记录单独分配空 Arc。
+        let empty_dimension_fields = Arc::default();
         let mut resolver = ValueResolver::new(
             &self.schema,
             drafts,
@@ -304,13 +386,15 @@ impl<'a> ModelCompiler<'a> {
                 object: CfdObject {
                     actual_type: draft.actual_type.clone(),
                     fields,
-                },
+                }
+                .into(),
                 origin: draft.origin.clone(),
-                dimension_fields: BTreeMap::default(),
+                dimension_fields: Arc::clone(&empty_dimension_fields),
             });
         }
         self.editable_diagnostics
             .extend(resolver.take_reference_diagnostics());
+        merge_reads(&mut self.template_reads, resolver.take_reads());
         records
     }
 
@@ -386,11 +470,7 @@ impl<'a> ModelCompiler<'a> {
             ));
             return None;
         }
-        let Some(field) = self
-            .schema
-            .full_fields(record.actual_type())
-            .find(|field| field.name == input.field)
-        else {
+        let Some(field) = self.schema.field(record.actual_type(), &input.field) else {
             self.diagnostics.push(dimension_diagnostic(
                 &input,
                 Some(record_id),
@@ -521,6 +601,8 @@ impl<'a> ModelCompiler<'a> {
                                 let Some(value) = fields.remove(&field.name) else {
                                     continue;
                                 };
+                                // 显式来源与有效结果共享同一不可变值，避免维度大容器保存两份。
+                                let value = Arc::new(value);
                                 if let Some(input) = inputs.get(&(
                                     record_id,
                                     field.name.clone(),
@@ -560,6 +642,7 @@ impl<'a> ModelCompiler<'a> {
                     ));
                 }
             }
+            merge_reads(&mut self.template_reads, resolver.take_reads());
         }
         for (start, end, dimension, variant) in diagnostic_contexts {
             attach_dimension_context(
@@ -584,14 +667,23 @@ impl<'a> ModelCompiler<'a> {
     }
 }
 
+fn merge_reads(
+    target: &mut BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+) {
+    for (host, values) in reads {
+        target.entry(host).or_default().extend(values);
+    }
+}
+
 type ValidatedDimensionValue = (CfdRecordHandle, DimensionValueDraft, ValueDraft, CfdPath);
-type ResolvedDimensionValue = (CfdRecordHandle, DimensionValueDraft, CfdValue);
+type ResolvedDimensionValue = (CfdRecordHandle, DimensionValueDraft, Arc<CfdValue>);
 type EffectiveDimensionValue = (
     CfdRecordHandle,
     FieldName,
     DimensionName,
     VariantName,
-    CfdValue,
+    Arc<CfdValue>,
 );
 
 type DimensionInputs<'a> =
@@ -635,8 +727,7 @@ fn attach_dimension_values(records: &mut [CfdRecord], values: Vec<ResolvedDimens
         let Some(record) = records.get_mut(record_id.index()) else {
             continue;
         };
-        let field_values = record
-            .dimension_fields
+        let field_values = Arc::make_mut(&mut record.dimension_fields)
             .entry(input.field)
             .or_insert_with(|| CfdDimensionFieldValues {
                 dimension: input.dimension,
@@ -713,6 +804,8 @@ fn validate_resolved_records(
     records: &[CfdRecord],
     record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
     diagnostics: &mut Vec<CfdDiagnostic>,
+    plan: &ReferenceFieldPlan<'_>,
+    references_only: bool,
 ) {
     let context = BuildValueSemanticContext {
         records,
@@ -720,11 +813,10 @@ fn validate_resolved_records(
     };
     for (index, record) in records.iter().enumerate() {
         let record_id = CfdRecordHandle::new(index);
-        for (field_name, value) in record.fields() {
-            let Some(field) = schema
-                .cft()
-                .field(record.actual_type(), field_name.as_str())
-            else {
+        // 健康输入的普通值已由 Validator 校验，求值只新增引用目标与模板结果。
+        // 有可编辑诊断时仍完整检查，以保留缺失嵌套字段等错误的级别和顺序。
+        for field in plan.fields(record.actual_type(), references_only) {
+            let Some(value) = record.field(field.name.as_str()) else {
                 continue;
             };
             let request = ValueValidationRequest::new(
@@ -739,7 +831,7 @@ fn validate_resolved_records(
                     CfdDiagnostic::error(semantic_error_code(error.kind()), error.message())
                         .with_primary(
                             Some(record_id),
-                            prefixed_field_path(field_name, error.path()),
+                            prefixed_field_path(&field.name, error.path()),
                         ),
                 );
             }

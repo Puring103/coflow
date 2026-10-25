@@ -26,6 +26,7 @@ pub(super) fn eval_expr<'model>(
         }
         CftSchemaCheckExprKind::Name(name) => evaluator.eval_name(name),
         CftSchemaCheckExprKind::Records { type_name } => {
+            evaluator.reads.record_sets.insert(type_name.clone());
             let records = evaluator
                 .model
                 .assignable_records(evaluator.schema, type_name);

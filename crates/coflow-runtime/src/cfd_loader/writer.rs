@@ -5,6 +5,7 @@
 //! origin is [`RecordOrigin::File`]. Writes are accumulated in a workspace,
 //! verified against disk state, and published atomically enough that external
 //! edits are observed by the next operation.
+mod batch;
 mod dimensions;
 mod patch;
 mod render;
@@ -12,21 +13,23 @@ mod schema_nav;
 mod target;
 
 #[cfg(test)]
+mod batch_tests;
+#[cfg(test)]
 mod tests;
 
 const CFD_INDENT: &str = "  ";
 
 use crate::api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RenameRecordRequest,
-    ReorderRecordsOperation, ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest,
-    WriteOutcome, WriterCapabilities,
+    ReorderRecordsOperation, ReorderRecordsRequest, WriteCellRequest, WriteOutcome,
+    WriterCapabilities,
 };
 use crate::data_model::RecordOrigin;
 use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
 use coflow_staging::{StagedChange, StagedFile, StagedRemoval};
 use patch::{
-    append_record_source, apply_patch, apply_unset_field_patch, delete_record_span, find_record,
-    reorder_record_spans, replace_spans, serialize_record, validate_record_id, validate_values,
+    append_record_source, apply_unset_field_patch, delete_record_span, find_record,
+    reorder_record_spans, replace_spans, serialize_record, validate_record_id,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -46,6 +49,8 @@ pub(crate) const CFD_WRITER_CAPABILITIES: WriterCapabilities = WriterCapabilitie
 #[derive(Debug, Default)]
 pub(crate) struct CfdWriter {
     workspace: Arc<Mutex<WriteWorkspace>>,
+    #[cfg(test)]
+    field_batch_parses: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Debug, Default)]
@@ -58,6 +63,7 @@ struct WorkspaceFile {
     original: Option<Vec<u8>>,
     current: String,
     deleted: bool,
+    preloaded: Option<crate::api::LoadedCfdSource>,
 }
 
 impl CfdWriter {
@@ -65,6 +71,8 @@ impl CfdWriter {
     pub(crate) fn new() -> Self {
         Self {
             workspace: Arc::new(Mutex::new(WriteWorkspace::default())),
+            #[cfg(test)]
+            field_batch_parses: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -102,6 +110,7 @@ impl CfdWriter {
                 original: Some(original),
                 current: text.clone(),
                 deleted: false,
+                preloaded: None,
             },
         );
         drop(workspace);
@@ -118,13 +127,28 @@ impl CfdWriter {
     fn write_source(&self, path: &Path, new_source: &str) -> Result<(), DiagnosticSet> {
         let (_, diagnostics) = parse_cfd(new_source);
         ensure_parse_ok(path, new_source, &diagnostics)?;
+        self.stage_source(path, new_source.to_string())
+    }
 
+    /// 已经校验的候选文本直接转移所有权，避免批次收尾再次解析和复制整份源码。
+    fn stage_source(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
+        self.stage_preloaded_source(path, new_source, None)
+    }
+
+    fn stage_preloaded_source(
+        &self,
+        path: &Path,
+        new_source: String,
+        preloaded: Option<crate::api::LoadedCfdSource>,
+    ) -> Result<(), DiagnosticSet> {
         let mut workspace = self.workspace.lock().map_err(|_| {
             DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
         if let Some(file) = workspace.files.get_mut(path) {
             file.deleted = false;
-            file.current = new_source.to_string();
+            file.current = new_source;
+            // 同一文件的结构/维度操作会替换文本，先前字段批次的降低结果随之失效。
+            file.preloaded = preloaded;
         } else {
             let original = match std::fs::read(path) {
                 Ok(bytes) => Some(bytes),
@@ -140,13 +164,37 @@ impl CfdWriter {
                 path.to_path_buf(),
                 WorkspaceFile {
                     original,
-                    current: new_source.to_string(),
+                    current: new_source,
                     deleted: false,
+                    preloaded,
                 },
             );
         }
         drop(workspace);
         Ok(())
+    }
+
+    /// 降低结果只在当前事务内传递，重建逐文件接收所有权后便可释放中间态。
+    pub(crate) fn take_preloaded_sources(
+        &self,
+    ) -> Result<
+        std::collections::BTreeMap<std::path::PathBuf, crate::api::LoadedCfdSource>,
+        DiagnosticSet,
+    > {
+        let mut workspace = self.workspace.lock().map_err(|_| {
+            DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
+        })?;
+        let sources = workspace
+            .files
+            .iter_mut()
+            .filter_map(|(path, file)| {
+                file.preloaded
+                    .take()
+                    .map(|loaded| (crate::normalize_path(path), loaded))
+            })
+            .collect();
+        drop(workspace);
+        Ok(sources)
     }
 
     pub(crate) fn source_overrides(&self) -> Result<Vec<DataSourceTextOverride>, DiagnosticSet> {
@@ -204,6 +252,7 @@ impl CfdWriter {
                     original: update.expected,
                     current,
                     deleted: false,
+                    preloaded: None,
                 },
             );
         }
@@ -334,85 +383,9 @@ impl CfdWriter {
         &self,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let RecordOrigin::File { path, .. } = request.origin else {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                "cfd writer requires a File origin",
-            )));
-        };
-        if request.field_path.is_empty() {
-            return Err(DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                "field_path must not be empty",
-            )));
-        }
-
-        let (source, ast) = self.read_or_parse(path)?;
-
-        let new_source = apply_patch(&source, &ast, request)?;
-
-        self.write_source(path, &new_source)?;
-
-        Ok(WriteOutcome::default())
-    }
-
-    pub(crate) fn write_field_batch(
-        &self,
-        requests: &[WriteCellRequest<'_>],
-    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
-        let Some(first) = requests.first() else {
-            return Ok(Vec::new());
-        };
-        let RecordOrigin::File { path, .. } = first.origin else {
-            return Err(WriteBatchFailure {
-                index: 0,
-                diagnostics: DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    "cfd writer requires a File origin",
-                )),
-            });
-        };
-        let (mut source, mut ast) =
-            self.read_or_parse(path)
-                .map_err(|diagnostics| WriteBatchFailure {
-                    index: 0,
-                    diagnostics,
-                })?;
-        for (index, request) in requests.iter().enumerate() {
-            let RecordOrigin::File {
-                path: request_path, ..
-            } = request.origin
-            else {
-                return Err(WriteBatchFailure {
-                    index,
-                    diagnostics: DiagnosticSet::one(diag(
-                        "CFD-WRITE",
-                        "cfd writer requires a File origin",
-                    )),
-                });
-            };
-            if request_path != path {
-                return Err(WriteBatchFailure {
-                    index,
-                    diagnostics: DiagnosticSet::one(diag(
-                        "CFD-WRITE",
-                        "cfd field batch must target one source file",
-                    )),
-                });
-            }
-            source = apply_patch(&source, &ast, request)
-                .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
-            let (next_ast, diagnostics) = parse_cfd(&source);
-            ensure_parse_ok(path, &source, &diagnostics)
-                .map_err(|diagnostics| WriteBatchFailure { index, diagnostics })?;
-            ast = next_ast;
-        }
-        self.write_source(path, &source)
-            .map_err(|diagnostics| WriteBatchFailure {
-                index: requests.len() - 1,
-                diagnostics,
-            })?;
-        Ok(vec![WriteOutcome::default(); requests.len()])
+        self.write_field_batch(std::slice::from_ref(request))
+            .map(|_| WriteOutcome::default())
+            .map_err(|failure| failure.diagnostics)
     }
 
     pub(crate) fn unset_field(
@@ -442,7 +415,6 @@ impl CfdWriter {
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let path = request.source.location.path();
         validate_record_id(request.record_id)?;
-        validate_values(request.fields.values())?;
 
         let (source, ast) = self.read_or_parse(path)?;
         if ast

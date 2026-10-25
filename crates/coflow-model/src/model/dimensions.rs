@@ -34,7 +34,7 @@ impl CfdDataModel {
         let record = source.record(source_record)?;
         record
             .dimension_field(field_name)
-            .and_then(|values| values.effective_variants.get(variant))
+            .and_then(|values| values.effective_variants.get(variant).map(AsRef::as_ref))
             .or_else(|| record.field(field_name))
     }
 
@@ -87,7 +87,7 @@ impl CfdDataModel {
         let Some(value) = values.variants.get(variant) else {
             return Ok(DimensionValueLookup::Missing);
         };
-        if matches!(value.value, CfdValue::OptionNone) {
+        if matches!(value.value.as_ref(), CfdValue::OptionNone) {
             Ok(DimensionValueLookup::ExplicitNone {
                 origin: &value.origin,
             })

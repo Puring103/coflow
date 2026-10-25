@@ -51,6 +51,42 @@ pub struct LoadedFieldReference {
 }
 
 impl LoadedValueDraft {
+    /// 输入缓存比较保留浮点符号等可观察状态，不使用语言中的数值等值规则。
+    #[must_use]
+    pub fn same_value(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Float(left), Self::Float(right)) => left.to_bits() == right.to_bits(),
+            (Self::OptionSome(left), Self::OptionSome(right)) => left.same_value(right),
+            (Self::Array(left), Self::Array(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|(left, right)| left.same_value(right))
+            }
+            (Self::Dict(left), Self::Dict(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|((left_key, left), (right_key, right))| {
+                            left_key == right_key && left.same_value(right)
+                        })
+            }
+            (
+                Self::Object {
+                    actual_type: left_type,
+                    fields: left,
+                },
+                Self::Object {
+                    actual_type: right_type,
+                    fields: right,
+                },
+            ) => left_type == right_type && same_fields(left, right),
+            _ => self == other,
+        }
+    }
+
     #[must_use]
     pub fn enum_variant(enum_name: impl Into<String>, variant: impl Into<String>) -> Self {
         Self::EnumVariant {
@@ -103,6 +139,19 @@ impl LoadedValueDraft {
     pub fn record_ref(id: impl Into<String>) -> Self {
         Self::RecordRef(id.into())
     }
+}
+
+pub(super) fn same_fields(
+    left: &BTreeMap<String, LoadedValueDraft>,
+    right: &BTreeMap<String, LoadedValueDraft>,
+) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|((left_key, left), (right_key, right))| {
+                left_key == right_key && left.same_value(right)
+            })
 }
 
 impl From<bool> for LoadedValueDraft {

@@ -452,7 +452,7 @@ pub fn query(
                             .and_then(|d| d.variants.get(variant))
                         {
                             counts[1] += 1;
-                            if matches!(value.value, CfdValue::OptionNone) {
+                            if matches!(value.value.as_ref(), CfdValue::OptionNone) {
                                 counts[2] += 1;
                             }
                         }

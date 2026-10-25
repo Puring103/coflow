@@ -25,6 +25,11 @@ impl<'a> BuildSchema<'a> {
             .flat_map(CftType::all_fields)
     }
 
+    pub(crate) fn field(self, type_name: &str, field_name: &str) -> Option<&'a CftField> {
+        // 字段名索引已在 schema 编译时建立，运行时无需重复线性扫描继承字段。
+        self.cft.field(type_name, field_name)
+    }
+
     pub(crate) fn is_assignable(self, actual_type: &str, expected_type: &str) -> bool {
         self.cft.is_assignable(actual_type, expected_type)
     }

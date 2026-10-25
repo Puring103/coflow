@@ -31,6 +31,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+mimalloc = "0.1.52"
+
 # 保留源码行号调试信息，避免 Windows 工作区链接的 PDB 超出容量限制。
 [profile.dev]
 debug = 1
@@ -72,3 +75,6 @@ schemars = "0.8.22"
 
 [dev-dependencies]
 tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+mimalloc.workspace = true

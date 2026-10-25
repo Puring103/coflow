@@ -27,6 +27,7 @@ pub(crate) struct LspValidationCore {
     // The worker receives a clone of this handle, so unchanged CFT input
     // reuses the runtime generation across validation revisions.
     schema_runtime: Arc<Mutex<ProjectRuntime>>,
+    cfd_cache: Arc<Mutex<snapshot::CfdValidationCache>>,
     revision: ValidationRevision,
     snapshot: Option<ValidationSnapshot>,
 }
@@ -34,7 +35,7 @@ pub(crate) struct LspValidationCore {
 #[derive(Debug, Clone)]
 pub(crate) struct OpenDocument {
     pub(crate) uri: String,
-    pub(crate) text: String,
+    pub(crate) text: Arc<str>,
     pub(crate) version: Option<i64>,
 }
 
@@ -65,6 +66,7 @@ impl LspValidationCore {
     pub(crate) fn new(project: Project) -> Self {
         Self {
             schema_runtime: Arc::new(Mutex::new(ProjectRuntime::new(project.clone()))),
+            cfd_cache: Arc::new(Mutex::new(snapshot::CfdValidationCache::default())),
             project,
             project_diagnostics: None,
             open_documents: BTreeMap::new(),
@@ -98,8 +100,14 @@ impl LspValidationCore {
         let Some(path) = path_from_file_uri(&uri) else {
             return Ok(false);
         };
-        self.open_documents
-            .insert(normalize_path(&path), OpenDocument { uri, text, version });
+        self.open_documents.insert(
+            normalize_path(&path),
+            OpenDocument {
+                uri,
+                text: text.into(),
+                version,
+            },
+        );
         self.advance_revision()?;
         Ok(true)
     }
@@ -119,6 +127,7 @@ impl LspValidationCore {
         }) {
             return Ok(false);
         }
+        let text = Arc::<str>::from(text);
         self.open_documents
             .entry(normalized)
             .and_modify(|document| {
@@ -155,6 +164,7 @@ impl LspValidationCore {
             self.project_diagnostics.as_ref(),
             &self.open_documents,
             Arc::clone(&self.schema_runtime),
+            Arc::clone(&self.cfd_cache),
         )
     }
 
@@ -279,6 +289,7 @@ impl LspValidationCore {
             .as_ref()?
             .cfd_documents
             .get(&normalize_path(&path))
+            .map(Arc::as_ref)
     }
 
     pub(crate) fn apply_watched_files(&mut self, uris: &[String]) -> Result<bool, String> {
@@ -308,6 +319,7 @@ impl LspValidationCore {
                     // so its generation cache must not survive this boundary.
                     self.schema_runtime =
                         Arc::new(Mutex::new(ProjectRuntime::new(project.clone())));
+                    self.cfd_cache = Arc::new(Mutex::new(snapshot::CfdValidationCache::default()));
                     self.project = project;
                     self.project_diagnostics = None;
                 }

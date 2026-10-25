@@ -4,8 +4,8 @@ mod expressions;
 mod statements;
 
 use crate::{
-    CheckDiagnostic, CheckExecutionStats, CheckLimits, CheckOutput, CheckTarget, CheckTask,
-    CheckTaskResult, CheckTaskStatus,
+    CheckDiagnostic, CheckExecutionStats, CheckLimits, CheckOutput, CheckPlan, CheckTarget,
+    CheckTask, CheckTaskResult, CheckTaskStatus,
 };
 use coflow_language::cft::{CftSchema, CftSchemaCheckStmt, CftTopLevelCheck, CftType, CheckOwner};
 use coflow_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode};
@@ -47,8 +47,31 @@ pub(crate) fn execute_tasks(
             };
         }
     }
-    let mut tasks = unique.into_iter().collect::<Vec<_>>();
-    tasks.sort_by(|left, right| left.execution_cmp(right, schema));
+    execute_plan(CheckPlan::from_unique_tasks(schema, unique), model, limits)
+}
+
+pub(crate) fn execute_plan(
+    plan: CheckPlan<'_>,
+    model: &CfdDataModel,
+    limits: CheckLimits,
+) -> CheckOutput {
+    let CheckPlan { schema, tasks } = plan;
+    if tasks.len() > limits.max_tasks {
+        // 调用方可在计划建立后收紧预算，不能通过预编译入口绕过公共执行器的限制。
+        let rejected = limits.max_tasks.saturating_add(1);
+        return CheckOutput {
+            results: Vec::new(),
+            request_diagnostics: vec![budget_diagnostic(format!(
+                "check task limit {} exceeded",
+                limits.max_tasks
+            ))],
+            statistics: CheckExecutionStats {
+                requested_tasks: rejected,
+                rejected_tasks: rejected,
+                ..CheckExecutionStats::default()
+            },
+        };
+    }
     let prepared = tasks
         .iter()
         .map(|task| task.statement)
@@ -91,6 +114,7 @@ pub(crate) fn execute_tasks(
                 task,
                 diagnostics: Vec::new(),
                 status: CheckTaskStatus::NotExecuted,
+                reads: crate::CheckReadSet::tracked(),
             });
             continue;
         }
@@ -103,6 +127,7 @@ pub(crate) fn execute_tasks(
                     limits.max_request_work
                 ))],
                 task,
+                reads: crate::CheckReadSet::default(),
             });
             continue;
         }
@@ -113,7 +138,7 @@ pub(crate) fn execute_tasks(
             .saturating_sub(1);
         let mut task_limits = limits.evaluation;
         task_limits.max_work = task_limits.max_work.min(remaining_work);
-        let (diagnostics, work, triggered) = execute_task(
+        let (diagnostics, work, triggered, reads) = execute_task(
             schema,
             model,
             &task,
@@ -152,6 +177,7 @@ pub(crate) fn execute_tasks(
             status,
             task,
             diagnostics,
+            reads,
         });
     }
 
@@ -180,12 +206,13 @@ fn execute_task(
     prepared: Option<&PreparedStatement<'_>>,
     evaluation_limits: crate::EvaluationLimits,
     regex_cache: &RefCell<builtins::RegexCache>,
-) -> (Vec<CheckDiagnostic>, u64, bool) {
+) -> (Vec<CheckDiagnostic>, u64, bool, crate::CheckReadSet) {
     let Some(prepared) = prepared else {
         return (
             vec![internal_diagnostic("unknown check statement")],
             0,
             true,
+            crate::CheckReadSet::default(),
         );
     };
     let context = context::ExecutionContext::new(schema, model, evaluation_limits, regex_cache);
@@ -199,6 +226,7 @@ fn execute_task(
                     vec![internal_diagnostic("unknown check record target")],
                     0,
                     true,
+                    crate::CheckReadSet::default(),
                 );
             };
             let direct = owner.name == *target.actual_type_name()
@@ -218,6 +246,7 @@ fn execute_task(
                     )],
                     0,
                     true,
+                    crate::CheckReadSet::default(),
                 )
             }
         }
@@ -247,6 +276,7 @@ fn execute_task(
                     )],
                     0,
                     true,
+                    crate::CheckReadSet::default(),
                 );
             }
             context.execute_record(
@@ -263,6 +293,7 @@ fn execute_task(
             )],
             0,
             true,
+            crate::CheckReadSet::default(),
         ),
     }
 }

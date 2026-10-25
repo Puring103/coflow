@@ -295,7 +295,7 @@ pub(crate) fn check_with_limits(
         }
         return Ok(validation);
     }
-    let Ok(tasks) = crate::checks::planning::plan_selected_checks_with_limit(
+    let Ok(tasks) = crate::checks::planning::plan_selected_check_plan_with_limit(
         session.schema(),
         session.model(),
         limits.max_tasks,
@@ -315,7 +315,7 @@ pub(crate) fn check_with_limits(
             explanations: BTreeMap::default(),
         });
     };
-    let output = crate::execute_checks(session.schema(), session.model(), tasks, limits);
+    let output = tasks.execute(session.model(), limits);
     let raw: Vec<_> = output.diagnostics().cloned().collect();
     let exhausted = raw
         .iter()

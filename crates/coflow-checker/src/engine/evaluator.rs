@@ -23,11 +23,12 @@ pub(super) struct CheckEvaluator<'model> {
     pub(super) contexts: Vec<CheckDiagnosticContext>,
     pub(super) diagnostics: Vec<CheckDiagnostic>,
     pub(super) root_triggered: bool,
-    trace: Option<EvaluationTrace>,
+    trace: Option<EvaluationTrace<'model>>,
     regex_cache: &'model RefCell<builtins::RegexCache>,
     budget: EvaluationBudget,
     eval_stack: Vec<EvaluationCursor>,
     pub(super) schema_location: Option<crate::CheckSchemaLocation>,
+    pub(super) reads: crate::reads::ReadCollector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,14 +67,16 @@ impl<'model> CheckEvaluator<'model> {
             budget: EvaluationBudget::new(evaluation_limits),
             eval_stack: Vec::new(),
             schema_location: None,
+            reads: crate::reads::ReadCollector::default(),
         }
     }
 
-    pub(super) fn into_execution(self) -> (Vec<CheckDiagnostic>, u64, bool) {
+    pub(super) fn into_execution(self) -> (Vec<CheckDiagnostic>, u64, bool, crate::CheckReadSet) {
         (
             self.diagnostics,
             self.budget.work_used(),
             self.root_triggered,
+            self.reads.finish(),
         )
     }
 
@@ -129,6 +132,9 @@ impl<'model> CheckEvaluator<'model> {
         let mut bindings = self.scopes.pop().unwrap_or_default();
         let _ = self.eval_stack.pop();
         if let Ok(value) = &result {
+            if let Some(location) = &value.location {
+                self.reads.location(location);
+            }
             if let Some(trace) = &mut self.trace {
                 trace.record(expr, value, self.model);
             }
@@ -201,7 +207,10 @@ impl<'model> CheckEvaluator<'model> {
     pub(super) fn eval_expr_with_trace(
         &mut self,
         expr: &CftSchemaCheckExpr,
-    ) -> (EvalResult<LocatedEvalValue<'model>>, EvaluationTrace) {
+    ) -> (
+        EvalResult<LocatedEvalValue<'model>>,
+        EvaluationTrace<'model>,
+    ) {
         debug_assert!(self.trace.is_none());
         self.trace = Some(EvaluationTrace::for_explanation(expr));
         let result = self.eval_expr(expr);
@@ -239,6 +248,17 @@ impl<'model> CheckEvaluator<'model> {
                 return Ok(value);
             }
         }
+        // 先登记读取再取值，缺失字段与失败查找也属于依赖，不能只缓存成功路径。
+        if let EvalValue::Record(record) = &self.current {
+            if record
+                .actual_type(self.model)
+                .is_some_and(|ty| self.schema.field(ty, name).is_some())
+            {
+                if let Some(location) = record.location() {
+                    self.reads.location(&location.field(name));
+                }
+            }
+        }
         let current_field = access::current_field(
             self.schema,
             self.model,
@@ -269,6 +289,11 @@ impl<'model> CheckEvaluator<'model> {
         target: LocatedEvalValue<'model>,
         name: &str,
     ) -> EvalResult<LocatedEvalValue<'model>> {
+        if let EvalValue::Record(record) = &target.value {
+            if let Some(location) = record.location() {
+                self.reads.location(&location.field(name));
+            }
+        }
         let field = access::field_value(self.schema, self.model, target, name, &mut self.budget);
         self.eval_ops(field)
     }
@@ -383,6 +408,11 @@ impl<'model> CheckEvaluator<'model> {
                     return Err(EvalAbort::Error);
                 };
                 let present = base.location.as_ref().is_some_and(|location| {
+                    self.reads.field(
+                        location.storage.record,
+                        field.as_str(),
+                        crate::CheckReadProjection::Variant(variant.to_owned()),
+                    );
                     self.model.has_dimension_variant(
                         location.storage.record,
                         field.as_str(),
@@ -404,6 +434,11 @@ impl<'model> CheckEvaluator<'model> {
                     let Some(location) = base.location else {
                         return Err(EvalAbort::Error);
                     };
+                    self.reads.field(
+                        location.storage.record,
+                        field.as_str(),
+                        crate::CheckReadProjection::AllVariants,
+                    );
                     let variants = self
                         .model
                         .dimension_variants(dimension.as_str())
@@ -521,6 +556,11 @@ impl<'model> CheckEvaluator<'model> {
             return Ok(*base);
         };
         let record_id = location.storage.record;
+        self.reads.field(
+            record_id,
+            field.as_str(),
+            crate::CheckReadProjection::Variant(variant.to_owned()),
+        );
         let Some(overlay) = self
             .model
             .dimension_value(record_id, field.as_str(), variant)

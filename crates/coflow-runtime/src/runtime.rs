@@ -533,11 +533,41 @@ pub struct WriteProjectSession {
     revision: u64,
 }
 
+/// 文件刷新使用的不可变代次快照；宿主可在释放会话锁后构建候选。
+#[derive(Debug, Clone)]
+pub struct ProjectRefreshContext {
+    schema_session: ProjectSchemaSession,
+    source_data: crate::load::SourceDataCache,
+    check_state: crate::checks::CheckDiagnosticStore,
+    revision: u64,
+}
+
+impl ProjectRefreshContext {
+    /// 刷新磁盘上的 CFD 变化。调用方在发布候选前仍需核对宿主 revision。
+    pub fn refresh_data_sources(
+        self,
+        changed_paths: &[std::path::PathBuf],
+    ) -> Result<WriteProjectSession, DiagnosticSet> {
+        let session = crate::session_build::refresh_data_session(
+            self.schema_session,
+            &self.source_data,
+            &self.check_state,
+            changed_paths,
+        )?;
+        Ok(WriteProjectSession {
+            session,
+            revision: self.revision.saturating_add(1),
+        })
+    }
+}
+
 /// 编辑器对未保存草稿做项目级校验所需的只读快照。
 #[derive(Debug, Clone)]
 pub struct SourceValidationContext {
     schema: Arc<CftSchema>,
     source_data: crate::load::SourceDataCache,
+    check_state: crate::checks::CheckDiagnosticStore,
+    diagnostics: Vec<FlatDiagnostic>,
 }
 
 impl SourceValidationContext {
@@ -547,6 +577,10 @@ impl SourceValidationContext {
     /// 都从磁盘重新加载整个项目。
     #[must_use]
     pub fn validate(&self, overrides: &[DataSourceTextOverride]) -> Vec<FlatDiagnostic> {
+        // 相同源版本直接复用该代次的完整诊断，包含之前已有的错误和预算状态。
+        if self.source_data.matches_overrides(overrides) {
+            return self.diagnostics.clone();
+        }
         let override_paths = overrides
             .iter()
             .map(|source_override| source_override.normalized_path.clone())
@@ -561,7 +595,7 @@ impl SourceValidationContext {
             &reload_paths,
             ReloadProjectDataOptions {
                 load: LoadProjectDataOptions { run_checks: true },
-                previous_checks: None,
+                previous_checks: Some(&self.check_state),
                 check_impact: &check_impact,
                 source_overrides: overrides,
             },
@@ -589,6 +623,21 @@ impl WriteProjectSession {
     #[must_use]
     pub const fn project(&self) -> &Project {
         &self.session.project
+    }
+
+    #[must_use]
+    pub fn refresh_context(&self) -> ProjectRefreshContext {
+        ProjectRefreshContext {
+            schema_session: ProjectSchemaSession {
+                project: self.session.project.clone(),
+                modules: Arc::clone(&self.session.modules),
+                schema: Some(Arc::clone(&self.session.schema)),
+                diagnostics: crate::indexes::DiagnosticsStore::empty(),
+            },
+            source_data: self.session.source_data.clone(),
+            check_state: self.session.check_state.clone(),
+            revision: self.revision,
+        }
     }
 
     /// Render one effective field value using the CFD value grammar.
@@ -648,6 +697,8 @@ impl WriteProjectSession {
         SourceValidationContext {
             schema: Arc::clone(&self.session.schema),
             source_data: self.session.source_data.clone(),
+            check_state: self.session.check_state.clone(),
+            diagnostics: self.session.diagnostics.as_set().flat_diagnostics(),
         }
     }
 

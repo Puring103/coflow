@@ -37,3 +37,6 @@ serde_json = "1"
 cfd-editor-core = { path = "../core" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 ts-rs = { version = "10", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+mimalloc.workspace = true
