@@ -246,11 +246,16 @@ test('folding preserves row density and reference presentation across surfaces a
 })
 
 
-test('polymorphic types move between label and value without triggering foldout or losing editing', async () => {
+test('polymorphic types stay before the summary in the value area without losing editing', async () => {
   const dialog = await expand('多态字段')
   const effect = dialog.locator('.dc-row-structure').filter({ has: page.locator('.dc-row-label-text', { hasText: /^Effect$/ }) })
-  assert.equal(await effect.locator('.dc-row-label input[aria-label="选择具体类型"]').inputValue(), 'Damage')
+  assert.equal(await effect.locator('.dc-row-value input[aria-label="选择具体类型"]').inputValue(), 'Damage')
   assert.equal(await effect.locator('.dc-business-summary').count(), 1)
+  assert.equal(await effect.locator('.dc-row-label input').count(), 0)
+  const typeBounds = await effect.locator('.dc-structure-type-control').boundingBox()
+  const summaryBounds = await effect.locator('.dc-business-summary').boundingBox()
+  assert.ok(typeBounds.x + typeBounds.width <= summaryBounds.x)
+
   await effect.locator('.dc-row-label-text').click()
   assert.equal(await effect.locator('.dc-row-label input').count(), 0)
   assert.equal(await effect.locator('.dc-row-value input[aria-label="选择具体类型"]').inputValue(), 'Damage')
@@ -262,9 +267,9 @@ test('polymorphic types move between label and value without triggering foldout 
   assert.equal(await field(dialog, 'Range').count(), 0)
   assert.equal(await field(dialog, 'Amount').locator('textarea').inputValue(), '8')
   await effect.locator('.dc-row-label-text').click()
-  assert.equal(await effect.locator('.dc-row-label input').inputValue(), 'Heal')
+  assert.equal(await effect.locator('.dc-row-value input').inputValue(), 'Heal')
   const passive = dialog.locator('.dc-row-structure').filter({ has: page.locator('.dc-row-label-text', { hasText: /^Passive$/ }) })
-  assert.equal(await passive.locator('.dc-row-label .dc-structure-type').innerText(), 'Heal')
+  assert.equal(await passive.locator('.dc-row-value .dc-structure-type').innerText(), 'Heal')
   assert.equal(await passive.getByRole('combobox').count(), 0)
   await passive.locator('.dc-row-label-text').click()
   assert.equal(await passive.locator('.dc-row-value .dc-structure-type').innerText(), 'Heal')
