@@ -3069,7 +3069,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   font-style: italic;
 }
 .dc-inspector-compact .dc-row {
-  grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 0;
+  grid-template-columns: minmax(56px, 38%) minmax(0, 1fr) 24px;
   min-height: 28px;
   border-bottom-color: color-mix(in srgb, var(--border) 25%, transparent);
 }
@@ -3138,7 +3138,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   gap: 5px;
 }
 .dc-row-structure > .dc-row-value .dc-row-value-inner {
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-height: 18px;
 }
 .dc-row-structure .vc-count {
@@ -5106,11 +5106,10 @@ input.searchable-select.searchable-select-reference,
 .dc-inspector-compact .dc-row > .dc-row-value { padding-top: 1px; padding-bottom: 1px; }
 .dc-inspector .dc-group-body { padding-top: 0; padding-bottom: 0; }
 .dc-row-structure[data-list-item="true"] .dc-row-label-text { font: inherit; color: var(--text); font-weight: 500; }
-.dc-row-structure .dc-row-value-inner { justify-content: flex-start; }
 .dc-item-position { min-width: 18px; text-align: right; color: var(--text-mute); font-size: 10px; font-weight: 400; opacity: .5; }
 .dc-row-field[data-list-item="true"] > .dc-row-label { display: none; }
 .dc-row-field[data-list-item="true"] > .dc-row-value { grid-column: 1 / 3; padding-left: calc(18px + min(var(--dc-indent, 0px), 48px)); }
-.dc-inspector-compact .dc-row-structure[data-list-item="true"] { grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 24px; }
+.dc-inspector-compact .dc-row-structure[data-list-item="true"] { grid-template-columns: minmax(56px, 38%) minmax(0, 1fr) 24px; }
 .dc-inspector-compact .dc-row-structure[data-list-item="true"] > .dc-row-actions { display: flex; padding: 1px 2px; }
 .dc-inspector-compact .dc-row-structure[data-list-item="true"] > .dc-row-actions > :not(.dc-item-position) { display: none; }
 
@@ -5141,13 +5140,30 @@ input.searchable-select.searchable-select-reference,
 }
 
 /* 摘要只排版结构片段；引用沿用全局组件的颜色、尺寸和图标。 */
-.dc-summary-part { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; vertical-align: middle; }
+.dc-summary-part { display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; }
+.dc-summary-part[hidden], .dc-summary-rest[hidden] { display: none; }
 .dc-summary-key { color: var(--text-dim); font-weight: 400; flex: none; }
 .dc-summary-rest { color: var(--text-mute); flex: none; font-size: 11px; }
-.dc-row-structure .dc-business-summary { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-dim); overflow: hidden; white-space: nowrap; }
+.dc-row-structure .dc-business-summary { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; color: var(--text-dim); overflow: hidden; white-space: nowrap; }
 .dc-summary-part .vc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 多态类型固定在右侧摘要之前，折叠与展开时保持同一位置。 */
-.dc-row-value-inner > .dc-structure-type, .dc-row-value-inner > .dc-structure-type-control { margin-left: 0; flex-shrink: 0; max-width: 50%; }
-.dc-row-value-inner .dc-structure-type-select { text-align: left; }
-.dc-structure-type { color: var(--text-mute); font-size: 11px; }
+/* 标签与类型共用左侧轨道；摘要保持独立列，折叠不会改变内容的对齐起点。 */
+.dc-row-label > .dc-structure-type,
+.dc-row-label > .dc-structure-type-control { margin-left: 6px; flex: 0 1 auto; min-width: 0; max-width: 60%; }
+.dc-row-label:has(> .dc-structure-type, > .dc-structure-type-control) > .dc-row-label-text { flex: 0 1 auto; }
+.dc-row-label .dc-structure-type-select { width: 140px; max-width: 100%; min-width: 0; text-align: left; margin-left: 0; }
+.dc-structure-type { color: var(--text-mute); font-size: 11px; font-weight: 400; }
+.dc-row-label > .dc-structure-type-control { justify-content: flex-start; }
+.dc-row-label > .dc-structure-type-control > span { width: 100%; min-width: 0; }
+
+/* 字段树统一使用界面字体；标签、正文、辅助信息通过颜色与字号建立层次。 */
+.dc-inspector { font-family: 'Inter', 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; font-size: 12px; font-weight: 400; }
+.dc-inspector .dc-row-label, .dc-inspector .dc-row-label-text,
+.dc-inspector .vc, .dc-inspector input, .dc-inspector textarea { font-family: inherit; font-size: 12px; font-weight: 400; line-height: 1.5; }
+.dc-inspector .dc-row-label-text { color: var(--text-dim); }
+.dc-inspector .dc-row-structure .dc-row-label-text { color: var(--text); font-weight: 500; }
+.dc-inspector .dc-summary-key { color: var(--text-mute); font-size: 11px; }
+.dc-inspector .dc-structure-type, .dc-inspector .dc-structure-type-select { font-family: inherit; font-size: 11px; font-weight: 400; color: var(--text-dim); }
+.dc-inspector .vc-num, .dc-inspector .numeric-value-input { font-variant-numeric: tabular-nums; }
+
+.dc-summary-list { display: inline-flex; align-items: center; gap: 8px; }

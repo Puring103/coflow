@@ -341,10 +341,10 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('hiddenLeafLabel')
     expect(html).toContain('vc-ref')
     expect(html).toContain('vc-enum')
-    expect(html).toContain('dc-summary-rest">… +3')
+    expect(html).toContain('dc-summary-part')
     expect(html).toContain('mobile')
     expect(html).not.toContain('data-field-path="rates[mobile]"')
-    expect(html).not.toContain('iron')
+    expect(html).toContain('iron')
   })
 
   it('keeps deeply nested values collapsed at the first structure row', () => {

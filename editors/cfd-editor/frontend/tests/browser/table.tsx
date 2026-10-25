@@ -1,4 +1,4 @@
-import { EnumDirectSelect } from '../../src/components/DataCard'
+import { DataCardCompact, EnumDirectSelect } from '../../src/components/DataCard'
 import type { FieldValue } from '../../src/wire'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -111,6 +111,10 @@ function Fixture() {
           }))
         }} />
     </div>
+    <div id="summary-fixture" style={{ width: 700 }}><DataCardCompact value={{ kind: 'object', value: { actual_type: 'SummaryFixture', fields: {
+      Values: { kind: 'array', value: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((variant, index) => ({ kind: 'enum', value: { enum_name: 'Mode', variant, value: BigInt(index) } })) },
+      Groups: { kind: 'array', value: [{ kind: 'array', value: [{ kind: 'string', value: 'Grass' }, { kind: 'string', value: 'Sand' }] }] },
+    } } }} /></div>
     <button id="outside">outside</button>
     <div id="flags"><EnumDirectSelect value={flags} enumType="Permissions" isFlag onCommit={next => setFlags(next as typeof flags)} /><output>{flags.kind === 'enum' ? String(flags.value.value) : 'null'}</output></div>
     <div id="dimension" style={{ width: 300 }}><DimensionCellEditor row={dimension} variant="en"
