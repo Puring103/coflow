@@ -355,6 +355,144 @@ fn failed_batch_keeps_original_workspace_and_reports_first_bad_operation() {
     assert_eq!(fs::read_to_string(&path).expect("unchanged source"), source);
 }
 
+/// 小预算直接覆盖真实批次解析入口，避免回归测试需要分配百万节点。
+fn check_prefix_node_budget(
+    source: &str,
+    edits: &[Edit],
+    max_nodes: u64,
+    expected_failure: Option<usize>,
+) {
+    let directory = tempfile::tempdir().expect("batch node budget");
+    let path = directory.path().join("items.cfd");
+    fs::write(&path, source).expect("seed");
+    let origin = RecordOrigin::File {
+        path: path.clone(),
+        span: None,
+    };
+    let schema = schema();
+    let requests = edits
+        .iter()
+        .map(|edit| WriteCellRequest {
+            origin: &origin,
+            record_id: &edit.record,
+            actual_type: "Item",
+            field_path: &edit.path,
+            new_value: &edit.value,
+            materialized_top_level: edit.materialized.as_ref(),
+            schema: &schema,
+        })
+        .collect::<Vec<_>>();
+    let options = coflow_language::cfd::CfdParseOptions {
+        structural_limits: coflow_language::limits::StructuralLimits::new(
+            256, max_nodes, 10_000_000,
+        ),
+    };
+    let sequential = CfdWriter::new();
+    let sequential_failure = requests.iter().enumerate().find_map(|(index, request)| {
+        sequential
+            .write_field_batch_with_options(std::slice::from_ref(request), options)
+            .err()
+            .map(|failure| (index, failure.diagnostics))
+    });
+    assert_eq!(
+        sequential_failure.as_ref().map(|(index, _)| *index),
+        expected_failure
+    );
+    let batch = CfdWriter::new();
+    let result = batch.write_field_batch_with_options(&requests, options);
+    match sequential_failure {
+        Some((index, diagnostics)) => {
+            let failure = result.expect_err("intermediate node budget must remain enforced");
+            assert_eq!(failure.index, index);
+            assert_eq!(failure.diagnostics, diagnostics);
+            assert!(failure.diagnostics.contains("nodes limit"));
+            assert_eq!(batch.field_batch_parse_count(), 3);
+            assert_eq!(
+                batch.source_overrides().expect("unchanged workspace")[0].source,
+                source
+            );
+            assert!(batch.take_preloaded_sources().expect("no candidate").is_empty());
+        }
+        None => {
+            result.expect("all prefixes fit the structural budget");
+            assert_eq!(batch.field_batch_parse_count(), 2);
+            assert_eq!(
+                batch.source_overrides().expect("batch text")[0].source,
+                sequential.source_overrides().expect("sequential text")[0].source
+            );
+        }
+    }
+    assert_eq!(fs::read_to_string(path).expect("unchanged disk"), source);
+}
+
+#[test]
+fn shrinking_a_later_value_does_not_hide_an_intermediate_node_budget_failure() {
+    let source = "a: Item { number: 1, nodes: [Node {}, Node {}] }\nb: Item { nodes: [Node {}, Node {}] }\n";
+    let empty_node = || {
+        CfdValue::Object(Box::new(
+            CfdObject::try_new("Node", BTreeMap::new()).expect("empty node"),
+        ))
+    };
+    check_prefix_node_budget(
+        source,
+        &[
+            edit("a", vec![field("number")], CfdValue::Int(42)),
+            edit(
+                "a",
+                vec![field("nodes")],
+                CfdValue::Array((0..4).map(|_| empty_node()).collect()),
+            ),
+            edit("b", vec![field("nodes")], CfdValue::Array(Vec::new())),
+        ],
+        20,
+        Some(1),
+    );
+    // 先释放节点预算再扩容是合法顺序，仍只解析初始和最终两份完整源码。
+    check_prefix_node_budget(
+        source,
+        &[
+            edit("a", vec![field("number")], CfdValue::Int(42)),
+            edit("b", vec![field("nodes")], CfdValue::Array(Vec::new())),
+            edit(
+                "a",
+                vec![field("nodes")],
+                CfdValue::Array((0..4).map(|_| empty_node()).collect()),
+            ),
+        ],
+        20,
+        None,
+    );
+}
+
+#[test]
+fn merged_missing_siblings_charge_each_intermediate_field_node() {
+    check_prefix_node_budget(
+        "a: Item { nodes: [Node {}, Node {}] }\n",
+        &[
+            edit("a", vec![field("added")], CfdValue::Int(1)),
+            edit("a", vec![field("other")], CfdValue::Int(2)),
+            edit("a", vec![field("nodes")], CfdValue::Array(Vec::new())),
+        ],
+        11,
+        Some(1),
+    );
+}
+
+#[test]
+fn materialized_default_parent_charges_its_actual_written_subtree() {
+    let mut materialized = edit("a", vec![field("node"), field("number")], CfdValue::Int(7));
+    materialized.materialized = Some(node(7));
+    check_prefix_node_budget(
+        "a: Item {}\nb: Item { nodes: [Node {}, Node {}] }\n",
+        &[
+            materialized,
+            edit("b", vec![field("nodes")], CfdValue::Array(Vec::new())),
+        ],
+        16,
+        Some(0),
+    );
+}
+
 #[test]
 fn batch_publication_detects_external_edits_without_overwriting_them() {
     let directory = tempfile::tempdir().expect("batch conflict");

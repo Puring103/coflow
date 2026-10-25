@@ -9,10 +9,11 @@ use super::schema_nav::{
     type_after_field_segment, type_after_field_segment_for_ref, type_after_index_segment,
 };
 
-pub(super) enum WriteTarget {
+pub(super) enum WriteTarget<'a> {
     Replace {
         span: Span,
         ty: CftValueType,
+        value: &'a AstValue,
     },
     InsertTopLevel {
         previous_value_end: Option<usize>,
@@ -26,12 +27,12 @@ pub(super) enum WriteTarget {
         ty: CftValueType,
     },
 }
-pub(super) fn locate_target(
+pub(super) fn locate_target<'a>(
     schema: &CftSchema,
     actual_type: &str,
-    record: &AstRecord,
+    record: &'a AstRecord,
     path: &[WriteFieldPathSegment],
-) -> Result<WriteTarget, DiagnosticSet> {
+) -> Result<WriteTarget<'a>, DiagnosticSet> {
     let WriteFieldPathSegment::Field(name) = &path[0] else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -69,6 +70,7 @@ pub(super) fn locate_target(
         return Ok(WriteTarget::Replace {
             span: full_value_span(&field.value),
             ty: next_type,
+            value: &field.value,
         });
     }
     locate_target_in_value(schema, &next_type, &field.value, &path[1..], 1)
@@ -90,17 +92,18 @@ fn find_field_in_record<'a>(
     record.fields().find(|field| field.name == name)
 }
 
-fn locate_target_in_value(
+fn locate_target_in_value<'a>(
     schema: &CftSchema,
     current_type: &CftValueType,
-    value: &AstValue,
+    value: &'a AstValue,
     path: &[WriteFieldPathSegment],
     depth: usize,
-) -> Result<WriteTarget, DiagnosticSet> {
+) -> Result<WriteTarget<'a>, DiagnosticSet> {
     if path.is_empty() {
         return Ok(WriteTarget::Replace {
             span: full_value_span(value),
             ty: current_type.clone(),
+            value,
         });
     }
     if let CftValueType::Option(inner_type) = current_type {
@@ -137,14 +140,14 @@ fn locate_target_in_value(
     }
 }
 #[allow(clippy::option_if_let_else)]
-fn locate_field_target(
+fn locate_field_target<'a>(
     schema: &CftSchema,
     current_type: &CftValueType,
-    block: &CfdBlock,
+    block: &'a CfdBlock,
     name: &str,
     path: &[WriteFieldPathSegment],
     depth: usize,
-) -> Result<WriteTarget, DiagnosticSet> {
+) -> Result<WriteTarget<'a>, DiagnosticSet> {
     let Some(next_type) = type_after_field_segment_for_ref(schema, current_type, name) else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -156,6 +159,7 @@ fn locate_field_target(
         Some(field) if path.len() == 1 => Ok(WriteTarget::Replace {
             span: full_value_span(&field.value),
             ty: next_type,
+            value: &field.value,
         }),
         Some(field) => {
             locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
@@ -176,14 +180,14 @@ fn locate_field_target(
         ))),
     }
 }
-fn locate_array_target(
+fn locate_array_target<'a>(
     schema: &CftSchema,
     current_type: &CftValueType,
-    items: &[AstValue],
+    items: &'a [AstValue],
     index: usize,
     path: &[WriteFieldPathSegment],
     depth: usize,
-) -> Result<WriteTarget, DiagnosticSet> {
+) -> Result<WriteTarget<'a>, DiagnosticSet> {
     let Some(next_type) = type_after_index_segment(current_type) else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -197,20 +201,21 @@ fn locate_array_target(
         Ok(WriteTarget::Replace {
             span: full_value_span(item),
             ty: next_type,
+            value: item,
         })
     } else {
         locate_target_in_value(schema, &next_type, item, &path[1..], depth + 1)
     }
 }
 
-fn locate_dict_target(
+fn locate_dict_target<'a>(
     schema: &CftSchema,
     current_type: &CftValueType,
-    block: &CfdBlock,
+    block: &'a CfdBlock,
     key: &str,
     path: &[WriteFieldPathSegment],
     depth: usize,
-) -> Result<WriteTarget, DiagnosticSet> {
+) -> Result<WriteTarget<'a>, DiagnosticSet> {
     let Some((key_type, next_type)) = type_after_dict_key_segment(current_type) else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -231,6 +236,7 @@ fn locate_dict_target(
         Ok(WriteTarget::Replace {
             span: full_value_span(&field.value),
             ty: next_type,
+            value: &field.value,
         })
     } else {
         locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)

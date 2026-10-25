@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
-use coflow_language::cfd::{parse_cfd, CfdAst};
+use coflow_language::cfd::{parse_cfd_with_options, CfdAst, CfdParseOptions};
 
-use super::patch::{apply_patch, field_patch, find_record, FieldPatch};
+use super::patch::{apply_patch, field_node_change, field_patch, find_record, FieldPatch};
 use super::{diag, ensure_parse_ok, CfdWriter};
 use crate::api::{DiagnosticSet, WriteBatchFailure, WriteCellRequest, WriteOutcome};
 use crate::data_model::RecordOrigin;
@@ -21,6 +21,14 @@ impl CfdWriter {
         &self,
         requests: &[WriteCellRequest<'_>],
     ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        self.write_field_batch_with_options(requests, CfdParseOptions::default())
+    }
+
+    pub(super) fn write_field_batch_with_options(
+        &self,
+        requests: &[WriteCellRequest<'_>],
+        options: CfdParseOptions,
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
         let Some(first) = requests.first() else {
             return Ok(Vec::new());
         };
@@ -29,13 +37,13 @@ impl CfdWriter {
             .read_source(path)
             .map_err(|diagnostics| failure(0, diagnostics))?;
         let mut ast = self
-            .parse_field_source(path, &source)
+            .parse_field_source(path, &source, options)
             .map_err(|diagnostics| failure(0, diagnostics))?;
         let mut start = 0;
         while start < requests.len() {
             let (patches, end) = plan_group(path, &source, &ast, requests, start)?;
             let candidate = patches.apply(&source);
-            let next_ast = match self.parse_field_source(path, &candidate) {
+            let next_ast = match self.parse_field_source(path, &candidate, options) {
                 Ok(ast) => ast,
                 Err(diagnostics) => {
                     // 只在候选语法失败时顺序定位首个错误，保留原操作下标和诊断位置。
@@ -47,9 +55,26 @@ impl CfdWriter {
                         requests,
                         start..end,
                         diagnostics,
+                        options,
                     ));
                 }
             };
+            if let Some(index) = first_node_budget_overflow(
+                &ast,
+                &next_ast,
+                &requests[start..end],
+                options.structural_limits.max_nodes,
+            )
+            .map_err(|diagnostics| failure(start, diagnostics))?
+            {
+                // 最终源码可以在后续收缩后重新低于上限，但中间超限仍必须失败。
+                // 只对越界前缀重建源码，让真实解析器给出该步骤的原始诊断位置。
+                let index = start + index;
+                let (prefix, _) = plan_group(path, &source, &ast, &requests[..=index], start)?;
+                let prefix_source = prefix.apply(&source);
+                self.parse_field_source(path, &prefix_source, options)
+                    .map_err(|diagnostics| failure(index, diagnostics))?;
+            }
             source = candidate;
             ast = next_ast;
             start = end;
@@ -63,11 +88,16 @@ impl CfdWriter {
         Ok(vec![WriteOutcome::default(); requests.len()])
     }
 
-    fn parse_field_source(&self, path: &Path, source: &str) -> Result<CfdAst, DiagnosticSet> {
+    fn parse_field_source(
+        &self,
+        path: &Path,
+        source: &str,
+        options: CfdParseOptions,
+    ) -> Result<CfdAst, DiagnosticSet> {
         #[cfg(test)]
         self.field_batch_parses
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let (ast, diagnostics) = parse_cfd(source);
+        let (ast, diagnostics) = parse_cfd_with_options(source, options);
         ensure_parse_ok(path, source, &diagnostics)?;
         Ok(ast)
     }
@@ -80,6 +110,7 @@ impl CfdWriter {
         requests: &[WriteCellRequest<'_>],
         range: std::ops::Range<usize>,
         diagnostics: DiagnosticSet,
+        options: CfdParseOptions,
     ) -> WriteBatchFailure {
         let last = range.end - 1;
         for index in range {
@@ -87,13 +118,46 @@ impl CfdWriter {
                 Ok(source) => source,
                 Err(diagnostics) => return failure(index, diagnostics),
             };
-            ast = match self.parse_field_source(path, &source) {
+            ast = match self.parse_field_source(path, &source, options) {
                 Ok(ast) => ast,
                 Err(diagnostics) => return failure(index, diagnostics),
             };
         }
         failure(last, diagnostics)
     }
+}
+
+fn first_node_budget_overflow(
+    before: &CfdAst,
+    after: &CfdAst,
+    requests: &[WriteCellRequest<'_>],
+    max_nodes: u64,
+) -> Result<Option<usize>, DiagnosticSet> {
+    if requests.len() <= 1 {
+        return Ok(None);
+    }
+    let mut nodes = before.structural_node_count();
+    // 纯字段补丁保持记录身份和顺序；索引只保存借用，避免每个请求遍历整文件。
+    let mut records = HashMap::with_capacity(before.records.len());
+    for (old, new) in before.records.iter().zip(&after.records) {
+        records
+            .entry((old.type_name.as_str(), old.id.as_str()))
+            .or_insert((old, new));
+    }
+    for (index, request) in requests.iter().enumerate() {
+        let Some(&(old, new)) = records.get(&(request.actual_type, request.record_id)) else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "written record is absent from the parsed batch candidate",
+            )));
+        };
+        let (removed, added) = field_node_change(old, new, request)?;
+        nodes = nodes - removed + added;
+        if nodes > max_nodes {
+            return Ok(Some(index));
+        }
+    }
+    Ok(None)
 }
 
 fn request_path<'a>(request: &'a WriteCellRequest<'_>) -> Result<&'a Path, DiagnosticSet> {
