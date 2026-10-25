@@ -56,6 +56,25 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
                 .insert(row.coordinate.actual_type.to_string());
             let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
             stats.max_summary_len = stats.max_summary_len.max(summary_len);
+            let metrics = stats
+                .content_metrics
+                .entry(row.coordinate.actual_type.to_string())
+                .or_default();
+            // 与前端原估宽规则一致，内容达到上限后停止扫描长字符串。
+            if metrics.max_width < 600.0 {
+                let summary = row
+                    .field_summaries
+                    .get(&field.name)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                metrics.max_width = metrics.max_width.max(summary_width(summary));
+            }
+            metrics.has_complex_value |= matches!(
+                field.value,
+                coflow_runtime::CfdValue::Object(_)
+                    | coflow_runtime::CfdValue::Array(_)
+                    | coflow_runtime::CfdValue::Dict(_)
+            );
         }
         records.push(row);
     }
@@ -68,6 +87,7 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
             name,
             type_names: stats.type_names.into_iter().collect(),
             max_summary_len: stats.max_summary_len,
+            content_metrics: stats.content_metrics,
         })
         .collect();
     let type_names = session
@@ -253,4 +273,28 @@ fn snapshot_file_types(session: &EditorSession) -> BTreeMap<String, Vec<FileType
             (file_path.to_string(), options)
         })
         .collect()
+}
+
+/// 14px 字体下的确定性估宽；精确溢出判断仍由浏览器负责。
+fn summary_width(text: &str) -> f64 {
+    let mut width: f64 = 0.0;
+    for ch in text.chars() {
+        let wide = matches!(ch as u32, 0x1100..=0x115F | 0x2E80..=0x9FFF | 0xA960..=0xA97F | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6 | 0x20000..=0x3FFFD);
+        width += if wide { 15.4 } else { 7.7 };
+        if width >= 600.0 {
+            return 600.0;
+        }
+    }
+    width
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::summary_width;
+    #[test]
+    fn width_preserves_unicode_and_caps_long_text() {
+        assert!((summary_width("A中😀") - 30.8).abs() < 0.0001);
+        assert_eq!(summary_width(&"中".repeat(100_000)), 600.0);
+        assert_eq!(summary_width(""), 0.0);
+    }
 }

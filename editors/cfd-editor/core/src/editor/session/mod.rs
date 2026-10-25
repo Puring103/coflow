@@ -121,6 +121,7 @@ struct Inner {
 pub(crate) struct ColumnStats {
     pub(crate) type_names: BTreeSet<String>,
     pub(crate) max_summary_len: usize,
+    pub(crate) content_metrics: BTreeMap<String, crate::editor::types::ColumnContentMetrics>,
 }
 
 #[derive(Debug)]

@@ -1,3 +1,4 @@
+import { columnContentMetrics } from './components/TableView.support'
 import { DEFAULT_TABLE_VIEW_ID, DEFAULT_RECORD_VIEW_ID, DEFAULT_SOURCE_VIEW_ID } from './state/views'
 import { defaultWorkspaceTab, workspaceToWire } from './state/workspaceTabs'
 // Mock data for UI prototype — no Tauri backend required.
@@ -289,6 +290,7 @@ function withColumns(data: Omit<FileRecords, 'columns'>): FileRecords {
       name: column.name,
       type_names: Array.from(column.type_names),
       max_summary_len: column.max_summary_len,
+      content_metrics: columnContentMetrics(data.records, column.name),
     })),
   }
 }

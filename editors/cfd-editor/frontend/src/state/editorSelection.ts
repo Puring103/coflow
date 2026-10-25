@@ -45,9 +45,9 @@ export function editorSelectionIdentity(selection: EditorSelection): string {
 }
 
 export function cellAnchorsIdentity(filePath: string, anchors: readonly CellAnchor[]): string {
-  // 批量目标按结构化元组排序，避免文件名或字段路径中的分隔符造成身份碰撞。
-  const targets = anchors.map(anchor => [coordinateId(anchor.coordinate), fieldPathIdentity(anchor.fieldPath)])
-  targets.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+  // 先序列化再排序，避免比较器反复序列化同一个目标。
+  const targets = anchors.map(anchor => JSON.stringify([coordinateId(anchor.coordinate), fieldPathIdentity(anchor.fieldPath)]))
+  targets.sort((left, right) => left.localeCompare(right))
   return JSON.stringify(['cells', filePath, targets])
 }
 
@@ -198,8 +198,11 @@ export function selectionMatchesValue(
   if (!visibleCoordinates || !visibleFields) {
     return sameCoordinate(selection.coordinate, coordinate) && sameFieldPath(selection.fieldPath, fieldPath)
   }
-  return valueSelectionCells(selection, visibleCoordinates, visibleFields)
-    .some(cell => sameCoordinate(cell.coordinate, coordinate) && sameFieldPath(cell.fieldPath, fieldPath))
+  const range = valueSelectionRange(selection, visibleCoordinates, visibleFields)
+  if (!range || fieldPath.length !== 1 || fieldPath[0].kind !== 'field') return false
+  const row = visibleCoordinates.findIndex(item => sameCoordinate(item, coordinate))
+  const column = visibleFields.indexOf(fieldPath[0].value)
+  return row >= range.rowStart && row <= range.rowEnd && column >= range.columnStart && column <= range.columnEnd
 }
 
 export function rebindSelection(
@@ -270,4 +273,36 @@ export function sameFieldPath(left: readonly FieldPathSegment[], right: readonly
     const other = right[index]
     return segment.kind === other.kind && segment.value === other.value
   })
+}
+
+/** 范围保留视图顺序；仅执行写入时才展开单元格。 */
+export interface CellSelectionRange {
+  rows: readonly RecordCoordinate[]
+  columns: readonly string[]
+  range: CellRange
+}
+export type SelectedCells = readonly CellAnchor[] | CellSelectionRange
+export function* iterateSelectedCells(cells: SelectedCells): Generator<CellAnchor> {
+  if (Array.isArray(cells)) { yield* cells; return }
+  const { rows, columns, range } = cells as CellSelectionRange
+  for (let row = range.rowStart; row <= range.rowEnd; row++) {
+    for (let col = range.columnStart; col <= range.columnEnd; col++) {
+      yield { coordinate: rows[row], fieldPath: [{ kind: 'field', value: columns[col] }] }
+    }
+  }
+}
+export function selectedCellCount(cells: SelectedCells): number {
+  if (Array.isArray(cells)) return cells.length
+  const { range } = cells as CellSelectionRange
+  return (range.rowEnd - range.rowStart + 1) * (range.columnEnd - range.columnStart + 1)
+}
+
+export function selectedCellsIdentity(filePath: string, cells: SelectedCells): string {
+  if (Array.isArray(cells)) return cellAnchorsIdentity(filePath, cells)
+  const { rows, columns, range } = cells as CellSelectionRange
+  // 排序/筛选不改变同一目标集合的编辑器身份；只排序行列，不展开单元格积。
+  return JSON.stringify(['range', filePath,
+    rows.slice(range.rowStart, range.rowEnd + 1).map(coordinateId).sort(),
+    columns.slice(range.columnStart, range.columnEnd + 1).sort(),
+  ])
 }

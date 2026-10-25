@@ -24,6 +24,7 @@
 - [维度编辑](editor-design/dimensions.md)：覆盖来源、文件组织、写入与会话更新。
 - [值创建](editor-design/value-creation.md)：默认值、初值、必填项及内联对象创建。
 - [容错数据加载](editor-design/tolerant-loading.md)：可编辑错误、记录保留与严格消费者。
+- [性能约束](editor-design/performance.md)：选区、索引、后端列统计、挂载与查询缓存。
 - [记录展示](editor-design/record-display.md)：缩略名和记录标识。
 - [Git Diff](editor-design/git-diff.md)：工作区与历史数据比较。
 - [插件接口](editor-design/plugins.md)：注册、事件、数据访问和展示出口。

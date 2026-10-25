@@ -1,0 +1,249 @@
+{
+  "baseline": "ac18f330",
+  "environment": {
+    "cpu": "Intel Core i5-13600KF",
+    "memoryGiB": 32,
+    "os": "Windows",
+    "browser": "Playwright Chromium headless",
+    "viewport": [
+      1280,
+      800
+    ],
+    "tableViewport": [
+      880,
+      480
+    ]
+  },
+  "frontend": {
+    "before": [
+      {
+        "rows": 1000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 183,
+        "mountedRows": 26,
+        "textareas": 104,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 777,
+          "LayoutDuration": 207,
+          "TaskDuration": 1319
+        },
+        "selectAllMs": [
+          55,
+          29,
+          32
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 195,
+        "mountedRows": 26,
+        "textareas": 104,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 1,
+        "scrollMs": {
+          "ScriptDuration": 854,
+          "LayoutDuration": 202,
+          "TaskDuration": 1423
+        },
+        "selectAllMs": [
+          63,
+          46,
+          32
+        ],
+        "errors": []
+      },
+      {
+        "rows": 1000,
+        "cols": 60,
+        "inspector": false,
+        "readyMs": 702,
+        "mountedRows": 26,
+        "textareas": 1508,
+        "frameP50": 150,
+        "frameP95": 200,
+        "framesOver33": 87,
+        "scrollMs": {
+          "ScriptDuration": 7606,
+          "LayoutDuration": 3268,
+          "TaskDuration": 13352
+        },
+        "selectAllMs": [
+          548,
+          82,
+          67
+        ],
+        "errors": []
+      },
+      {
+        "rows": 3000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 641,
+        "mountedRows": 26,
+        "textareas": 1508,
+        "frameP50": 283,
+        "frameP95": 333,
+        "framesOver33": 87,
+        "scrollMs": {
+          "ScriptDuration": 13266,
+          "LayoutDuration": 5595,
+          "TaskDuration": 22990
+        },
+        "selectAllMs": [
+          1783,
+          1219,
+          1254
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 100,
+        "inspector": true,
+        "readyMs": 1366,
+        "mountedRows": 26,
+        "textareas": 2548,
+        "frameP50": 467,
+        "frameP95": 550,
+        "framesOver33": 87,
+        "scrollMs": {
+          "ScriptDuration": 22494,
+          "LayoutDuration": 10703,
+          "TaskDuration": 40006
+        },
+        "selectAllMs": [
+          2924,
+          3442,
+          3533
+        ],
+        "errors": []
+      }
+    ],
+    "after": [
+      {
+        "rows": 1000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 156,
+        "mountedRows": 26,
+        "textareas": 52,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 589,
+          "LayoutDuration": 146,
+          "TaskDuration": 1028
+        },
+        "selectAllMs": [
+          44,
+          41,
+          34
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 195,
+        "mountedRows": 26,
+        "textareas": 52,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 698,
+          "LayoutDuration": 149,
+          "TaskDuration": 1179
+        },
+        "selectAllMs": [
+          47,
+          38,
+          32
+        ],
+        "errors": []
+      },
+      {
+        "rows": 1000,
+        "cols": 60,
+        "inspector": false,
+        "readyMs": 164,
+        "mountedRows": 26,
+        "textareas": 52,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 752,
+          "LayoutDuration": 165,
+          "TaskDuration": 1275
+        },
+        "selectAllMs": [
+          58,
+          31,
+          33
+        ],
+        "errors": []
+      },
+      {
+        "rows": 3000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 192,
+        "mountedRows": 26,
+        "textareas": 52,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 740,
+          "LayoutDuration": 162,
+          "TaskDuration": 1231
+        },
+        "selectAllMs": [
+          72,
+          36,
+          33
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 100,
+        "inspector": true,
+        "readyMs": 399,
+        "mountedRows": 26,
+        "textareas": 52,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 908,
+          "LayoutDuration": 168,
+          "TaskDuration": 1388
+        },
+        "selectAllMs": [
+          112,
+          77,
+          67
+        ],
+        "errors": []
+      }
+    ]
+  },
+  "backend": {
+    "fullBefore": "project: 100 files x 1000 records = 100000 records at C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-perf-31748\n  [breakdown] open      : 0.41 ms\n  [breakdown] schema    : 1.66 ms\n  [breakdown] data      : 28036.31 ms\n  [breakdown] lsp setup : 0.42 ms\nload_project            : 36295.40 ms\nget_file_records cold   : 62.96 ms (1000 rows, 20 columns)\nget_file_records warm   : 61.95 ms\nsync_language_document  : 3422.97 ms\nvalidate_source_text    : 31672.09 ms\nget_graph               : 71.62 ms (1000 nodes, 3952 edges)\n",
+    "fullAfter": "project: 100 files x 1000 records = 100000 records at C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-perf-34988\n  [breakdown] open      : 0.70 ms\n  [breakdown] schema    : 2.33 ms\n  [breakdown] data      : 29938.72 ms\n  [breakdown] lsp setup : 0.50 ms\nload_project            : 36505.21 ms\nget_file_records cold   : 48.34 ms (1000 rows, 20 columns)\nget_file_records warm   : 44.65 ms\nsync_language_document  : 3806.11 ms\nvalidate_source_text    : 38562.51 ms\nget_graph               : 67.94 ms (1000 nodes, 3952 edges)\n",
+    "samplesBefore": "project: 100 files x 1000 records = 100000 records at C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-perf-32016\nload_project            : 30717.45 ms\nget_file_records cold   : 54.30 ms (1000 rows, 20 columns)\nget_file_records warm   : 53.27 ms\nget_file_records samples: 30 p50=52.23 ms p95=53.27 ms\n",
+    "samplesAfter": "project: 100 files x 1000 records = 100000 records at C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-perf-25596\nload_project            : 30559.40 ms\nget_file_records cold   : 55.11 ms (1000 rows, 20 columns)\nget_file_records warm   : 51.68 ms\nget_file_records samples: 30 p50=52.42 ms p95=53.97 ms\n"
+  }
+}

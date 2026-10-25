@@ -1,3 +1,4 @@
+import { recordIndex } from '../state/recordIndex'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -11,6 +12,7 @@ import {
   diagnosticRecordTarget,
   fieldPathField,
   nullValue,
+  isComplexValue,
   recordActualType,
   sameCoordinate,
   type DiagnosticItem,
@@ -111,13 +113,14 @@ export function boundedPasteMatrix(
   return matrix
 }
 
+
 export function pasteCellFor(
   anchor: CellAnchor,
   rows: readonly RecordRow[],
   editable: boolean,
 ): PasteCell {
   const field = selectedTopLevelField(anchor.fieldPath)
-  const row = rows.find(candidate => sameCoordinate(candidate.coordinate, anchor.coordinate))
+  const row = recordIndex(rows).get(coordinateId(anchor.coordinate))
   const cell = field && row ? fieldCell(row, field) : undefined
   return {
     coordinate: anchor.coordinate,
@@ -210,3 +213,16 @@ export function tableCellKey(coordinate: RecordCoordinate, fieldName: string): s
   return `${coordinateId(coordinate)}::${fieldName}`
 }
 
+
+/** 本地差异投影和演示数据没有后端快照，由同一估宽规则补充列统计。 */
+export function columnContentMetrics(rows: readonly RecordRow[], field: string) {
+  const result: Record<string, { max_width: number; has_complex_value: boolean }> = {}
+  for (const row of rows) {
+    const cell = fieldCell(row, field)
+    if (!cell) continue
+    const metrics = result[row.coordinate.actual_type] ??= { max_width: 0, has_complex_value: false }
+    if (metrics.max_width < 600) metrics.max_width = Math.max(metrics.max_width, estimateTextWidth(row.field_summaries[field] ?? '', false, 600))
+    metrics.has_complex_value ||= isComplexValue(cell.value)
+  }
+  return result
+}

@@ -27,10 +27,11 @@ pub use project::{
 };
 pub use records::{
     BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
-    CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot,
-    DimensionFileRecords, DimensionFileRow, EnumVariantOption, FieldAnnotation, FieldCell,
-    FieldDiagnostic, FileRecords, InsertRecordOutcome, RecordColumn, RecordRow,
-    RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
+    ColumnContentMetrics, CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
+    DeletedRecordSnapshot, DimensionFileRecords, DimensionFileRow, EnumVariantOption,
+    FieldAnnotation, FieldCell, FieldDiagnostic, FileRecords, InsertRecordOutcome, RecordColumn,
+    RecordRow, RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome,
+    WriteFieldOutcome,
 };
 pub use records::{CreateFieldSource, CreateRequiredInput};
 pub use settings::{

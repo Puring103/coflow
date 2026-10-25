@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { queryClient } from '../queryClient'
 import { useQuery } from '@tanstack/react-query'
 import type { DimensionInfo } from '../bindings/DimensionInfo'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
@@ -6,7 +8,7 @@ import { dimensionForFile, graphCacheKey } from '../state/appSupport'
 import * as api from '../api'
 import { MOCK_DIMENSION_FILE_RECORDS, MOCK_GRAPH } from '../mock'
 import { editorQueryKeys } from '../queryKeys'
-import { validateQueryRevision } from '../editorQueries'
+import { validateQueryRevision, pruneObsoleteQueries } from '../editorQueries'
 
 export interface EditorDataRoute {
   file: string
@@ -24,6 +26,13 @@ export function useEditorDataQueries(
   const file = route?.file ?? ''
   const revision = project?.revision ?? 0
   const sessionId = project?.session_id ?? 0
+  useEffect(() => {
+    if (!sessionId) return
+    pruneObsoleteQueries(queryClient, sessionId, revision)
+    return queryClient.getQueryCache().subscribe(event => {
+      if (event.type === 'observerRemoved') pruneObsoleteQueries(queryClient, sessionId, revision)
+    })
+  }, [sessionId, revision])
   const dimension = project && file ? dimensionForFile(dimensions, file) : null
   const isDataFile = !!project && !!route && !file.endsWith('.cft') && !dimension
 

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { CellAnchor } from '../state/editorSelection'
-import { projectBatchCells } from '../state/batchRecordProjection'
+import type { BatchCellProjection } from '../state/batchRecordProjection'
 import {
   cellDeclaredType,
   cellEnumType,
@@ -16,20 +16,20 @@ import { DataCardExpanded } from './DataCard'
 import { MixedFieldRow } from './BatchRecordEditor'
 
 interface Props {
-  cells: readonly { anchor: CellAnchor; cell: FieldCell }[]
+  cells: Iterable<{ anchor: CellAnchor; cell: FieldCell }>
+  projection: BatchCellProjection
   readOnly?: boolean
   onWriteBatch?: (writes: readonly BatchWriteFieldInput[]) => Promise<void>
 }
 
-export function BatchCellEditor({ cells, readOnly, onWriteBatch }: Props) {
-  const projection = useMemo(() => projectBatchCells(cells.map(item => item.cell)), [cells])
+export function BatchCellEditor({ cells, projection, readOnly, onWriteBatch }: Props) {
   const [busy, setBusy] = useState(false)
   if (!projection) return null
   const commit = async (value: FieldValue, relativePath: readonly FieldPathSegment[] = []) => {
     if (busy || !onWriteBatch) return
     setBusy(true)
     try {
-      await onWriteBatch(cells.map(({ anchor }) => ({
+      await onWriteBatch(Array.from(cells, ({ anchor }) => ({
         coordinate: anchor.coordinate,
         field_path: [...anchor.fieldPath, ...relativePath],
         new_value: value,
@@ -43,7 +43,7 @@ export function BatchCellEditor({ cells, readOnly, onWriteBatch }: Props) {
   return (
     <div className="batch-record-editor">
       <div className="batch-record-header">
-        <strong>已选择 {cells.length} 个单元格</strong>
+        <strong>已选择 {projection.count} 个单元格</strong>
         <span>{cellDeclaredType(cell) ?? '未知类型'}</span>
       </div>
       {projection.state === 'same' ? (

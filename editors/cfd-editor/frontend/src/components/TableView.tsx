@@ -65,6 +65,7 @@ import {
   PluginContributionMount,
   currentPluginIdentity,
   usePluginPresentation,
+  usePluginRegistry,
 } from '../plugins'
 import type { PluginPresentationContext } from '../plugins/types'
 import {
@@ -72,7 +73,7 @@ import {
   recordSelectionCoordinates,
   selectionMatchesRecord,
   valueSelectionRange,
-  type CellAnchor,
+  type SelectedCells,
   type EditorSelection,
   type RecordSelectionMode,
   type ValueSelectionMode,
@@ -168,7 +169,7 @@ interface Props {
   /** Click on a field cell: select that value. */
   onSelectValue?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode?: ValueSelectionMode) => void
   /** Reports the exact visible rectangle so the inspector shares table range semantics. */
-  onValueSelectionCellsChange?: (cells: readonly CellAnchor[]) => void
+  onValueSelectionCellsChange?: (cells: SelectedCells) => void
   onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
   onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
   /** Click on blank space inside the table view: deselect / close inspector. */
@@ -473,21 +474,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         const kind = columnKinds[column.name] ?? null
         const isPill = kind !== null
         const chrome = (isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME) + BADGE_ROOM
-        let maxContent = 0
-        let hasComplexValue = false
-        // 摘要已由后端随行下发（field_summaries），直接测量即可，无需重新格式化每个单元格。
-        for (const record of snapshot.records) {
-          if (recordActualType(record) !== activeType) continue
-          const cell = fieldCell(record, column.name)
-          if (!cell) continue
-          if (isComplexValue(cell.value)) hasComplexValue = true
-          const summary = record.field_summaries[column.name] ?? ''
-          if (maxContent + chrome < VALUE_MAX) {
-            maxContent = Math.max(maxContent, measure(summary))
-          }
-          // 最大列宽和复杂值最小宽度都已确定，无需继续扫描剩余行。
-          if (hasComplexValue && maxContent + chrome >= VALUE_MAX) break
-        }
+        const metrics = column.content_metrics[activeType]
+        const maxContent = metrics?.max_width ?? 0
+        const hasComplexValue = metrics?.has_complex_value ?? false
         const summaryWidth = maxContent + chrome
         const declaredForHeader = columnDeclaredTypes[column.name]
         const typeChipWidth = declaredForHeader ? measureMono(declaredForHeader) + 16 : 0
@@ -763,6 +752,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     () => displayItems.flatMap(item => item.kind === 'row' ? [item.row] : []),
     [displayItems],
   )
+  const visibleRecordRows = useMemo(() => visibleRows.map(row => row.original), [visibleRows])
   const visibleCoordinates = useMemo(
     () => visibleRows.map(row => row.original.coordinate),
     [visibleRows],
@@ -810,6 +800,35 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     onDropRecordIntoGroup,
     onDropRecordIntoUngrouped,
   })
+  // 横向仅挂载视口附近的标量编辑器；保留单元格几何与复杂值行高。
+  const pluginRegistry = usePluginRegistry()
+  const pluginCellTypes = new Set(pluginRegistry.presentations.filter(item => item.slot === 'cell').flatMap(item => item.types))
+  const [horizontalViewport, setHorizontalViewport] = useState({ left: 0, width: 880 })
+  useEffect(() => {
+    const element = tableScrollRef.current
+    if (!element) return
+    const update = () => setHorizontalViewport(current => {
+      const next = { left: element.scrollLeft, width: element.clientWidth }
+      return current.left === next.left && current.width === next.width ? current : next
+    })
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    element.addEventListener('scroll', update, { passive: true })
+    return () => { observer.disconnect(); element.removeEventListener('scroll', update) }
+  }, [])
+  const mountedColumnIds = new Set<string>(['id'])
+  let columnOffset = 0
+  for (const column of table.getVisibleLeafColumns()) {
+    const width = column.getSize() * tableZoom
+    if (columnOffset + width >= horizontalViewport.left - 160 && columnOffset <= horizontalViewport.left + horizontalViewport.width + 160) mountedColumnIds.add(column.id)
+    columnOffset += width
+  }
+  // 活动单元格保持挂载，横向滚动不丢草稿，键盘导航能直接进入目标编辑器。
+  if (selection?.kind === 'value') {
+    const field = selectedTopLevelField(selection.fieldPath)
+    if (field) mountedColumnIds.add(field)
+  }
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
     getScrollElement: () => tableScrollRef.current,
@@ -938,10 +957,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   useEffect(() => {
     onValueSelectionCellsChange?.(
       selection?.kind === 'value' && selection.filePath === data.file_path
-        ? selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat()
+        ? (selectedValueRange ? { rows: visibleCoordinates, columns: allFieldNames, range: selectedValueRange } : [{ coordinate: selection.coordinate, fieldPath: selection.fieldPath }])
         : [],
     )
-  }, [selection, visibleCoordinates, allFieldNames, data.file_path, onValueSelectionCellsChange])
+  }, [selection, selectedValueRange, visibleCoordinates, allFieldNames, data.file_path, onValueSelectionCellsChange])
 
   useEffect(() => {
     if (!firstRecordFocusRequest) return
@@ -961,7 +980,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   const fillSelection = async (value: FieldValue) => {
     if (selection?.kind !== 'value' || !onWriteFieldBatch) throw new Error('当前视图不支持批量填充')
-    const targets = selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat().map(anchor => pasteCellFor(anchor, visibleRows.map(row => row.original), canEdit))
+    const targets = selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat().map(anchor => pasteCellFor(anchor, visibleRecordRows, canEdit))
     if (targets.some(cell => !cell.writable || cell.annotation?.read_only)) throw new Error('选区包含只读字段，未写入任何数据')
     await onWriteFieldBatch(targets.map(cell => ({ coordinate: cell.coordinate, field_path: cell.fieldPath, new_value: replacePresentationValue(cell.value, value) })))
   }
@@ -1161,7 +1180,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     if (!onWriteFieldBatch) throw new Error('当前来源不支持批量写入')
                     const targets = matrix.flat().map(anchor => pasteCellFor(
                       anchor,
-                      visibleRows.map(row => row.original),
+                      visibleRecordRows,
                       canEdit,
                     ))
                     if (targets.some(target => !target.writable || target.annotation?.read_only || (!target.annotation?.nullable && !['string', 'formatted_string', 'array', 'dict'].includes(target.value.kind)))) {
@@ -1196,7 +1215,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 const clipboardText = await readClipboardText()
                 if (pendingCut.current?.text !== clipboardText) pendingCut.current = null
                 const source = parseCfdClipboard(clipboardText)
-                const records = visibleRows.map(row => row.original)
+                const records = visibleRecordRows
                 let anchors = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
                 const selectedTarget = anchors.length === 1 && anchors[0].length === 1
                   ? pasteCellFor(anchors[0][0], records, canEdit)
@@ -1253,7 +1272,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
               if (isRange) {
                 e.preventDefault()
                 const cells = selectionCellMatrix(selection, visibleCoordinates, allFieldNames).flat()
-                const records = visibleRows.map(row => row.original)
+                const records = visibleRecordRows
                 try {
                   const writes = cells.map(anchor => {
                     const f = selectedTopLevelField(anchor.fieldPath)
@@ -1510,7 +1529,17 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       })
                     }}
                   >
-                    {row.getVisibleCells().map(cell => {
+                    {row.getVisibleCells().map((cell, index, cells) => {
+                      const needsContent = (candidate: typeof cell) => mountedColumnIds.has(candidate.column.id)
+                        || isComplexValue(fieldCell(row.original, candidate.column.id)?.value)
+                        || !!rowPresentation || pluginCellTypes.has(columnDeclaredTypes[candidate.column.id] ?? '')
+                      // 连续屏外列合并成一个占位单元格，保留列宽并降低 DOM 与布局成本。
+                      if (!needsContent(cell)) {
+                        if (index > 0 && !needsContent(cells[index - 1])) return null
+                        let end = index, width = 0
+                        while (end < cells.length && !needsContent(cells[end])) width += cells[end++].column.getSize()
+                        return <td key={`spacer:${cell.id}`} colSpan={end - index} style={{ width }} aria-hidden />
+                      }
                       const fieldPath = cell.column.id === 'id'
                         ? null
                         : [fieldPathField(cell.column.id)]
@@ -1786,7 +1815,7 @@ function EditableCell(props: EditableCellProps) {
   const identity = currentPluginIdentity()
   const presentation = usePluginPresentation('cell', declaredType ?? '')
   const context = useMemo<PluginPresentationContext | null>(() => (
-    identity
+    identity && presentation
       ? {
           identity,
           filePath,
@@ -1797,7 +1826,7 @@ function EditableCell(props: EditableCellProps) {
           value: cloneValue(value),
         }
       : null
-  ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.id, declaredType, value])
+  ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.id, declaredType, value, presentation])
   if (presentation?.slot === 'cell' && context) {
     return (
       <PluginContributionMount

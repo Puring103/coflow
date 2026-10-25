@@ -29,7 +29,7 @@ const row = (key: string, fields: FieldCell[]): RecordRow => ({
   container_index: 0,
   container_size: 1,
   fields,
-  field_index: {},
+  field_index: Object.fromEntries(fields.map((field, index) => [field.name, index])),
   field_summaries: {},
   field_diagnostics: [],
   diagnostic_severity: null,
@@ -70,4 +70,18 @@ describe('batch record projection', () => {
     right.annotation = { ...right.annotation!, ref_target_type: 'Other' }
     expect(projectBatchCells([left, right])).toBeNull()
   })
+})
+
+it('stops at incompatible cells and preserves readonly aggregation for compatible cells', () => {
+  let visits = 0
+  const source = { *[Symbol.iterator]() {
+    visits++; yield cell('a', { kind: 'string', value: 'a' })
+    visits++; yield cell('b', { kind: 'int', value: 1n }, 'int')
+    throw new Error('must not scan after incompatible type')
+  } }
+  expect(projectBatchCells(source)).toBeNull()
+  expect(visits).toBe(2)
+  const locked = cell('b', { kind: 'string', value: 'b' })
+  locked.annotation!.read_only = true
+  expect(projectBatchCells([locked, locked])).toMatchObject({ editable: false, count: 2, state: 'same' })
 })

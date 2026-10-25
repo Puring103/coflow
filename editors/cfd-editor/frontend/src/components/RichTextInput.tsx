@@ -99,9 +99,52 @@ type RichTextInputProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'val
   cell?: boolean
 }
 
-// 可见单元格共享尺寸观察器，按真实排版测量溢出，避免逐格创建观察器。
-const previewMeasurements = new WeakMap<Element, () => void>()
+// 尺寸变化按帧合并，所有读、写分阶段执行，避免逐格强制同步布局。
+type PreviewMeasurement = { preview: HTMLSpanElement; tableCell: HTMLTableCellElement | null; update: (overflow: boolean) => void }
+const previewMeasurements = new Map<Element, Set<PreviewMeasurement>>()
+const pendingPreviews = new Set<PreviewMeasurement>()
+let previewFrame = 0
 let previewObserver: ResizeObserver | undefined
+function schedulePreview(item: PreviewMeasurement) {
+  pendingPreviews.add(item)
+  if (previewFrame) return
+  previewFrame = requestAnimationFrame(() => {
+    previewFrame = 0
+    const items = [...pendingPreviews]
+    pendingPreviews.clear()
+    const heights = items.map(({ preview, tableCell }) => {
+      if (!tableCell || preview.closest('.dc-row')) return null
+      const style = getComputedStyle(tableCell)
+      return `${Math.max(20, tableCell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))}px`
+    })
+    items.forEach(({ preview }, index) => {
+      const height = heights[index]
+      if (height !== null && preview.style.height !== height) preview.style.height = height
+    })
+    const results = items.map(({ preview }) => ({
+      height: `${preview.clientHeight}px`,
+      overflow: preview.scrollWidth > preview.clientWidth + 1 || preview.scrollHeight > preview.clientHeight + 1,
+    }))
+    items.forEach(({ preview, update }, index) => {
+      preview.parentElement?.style.setProperty('--cell-preview-height', results[index].height)
+      update(results[index].overflow)
+    })
+  })
+}
+function observePreview(element: Element, item: PreviewMeasurement) {
+  previewObserver ??= new ResizeObserver(entries => {
+    for (const entry of entries) for (const item of previewMeasurements.get(entry.target) ?? []) schedulePreview(item)
+  })
+  let items = previewMeasurements.get(element)
+  if (!items) { items = new Set(); previewMeasurements.set(element, items); previewObserver.observe(element) }
+  items.add(item)
+}
+function unobservePreview(element: Element, item: PreviewMeasurement) {
+  const items = previewMeasurements.get(element)
+  items?.delete(item)
+  if (!items?.size) { previewMeasurements.delete(element); previewObserver?.unobserve(element) }
+  pendingPreviews.delete(item)
+}
 
 export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFocus, onBlur, cell = false, ...props }: RichTextInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -118,27 +161,20 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
     const preview = previewRef.current
     if (!cell || !preview || focused) return
     const tableCell = preview.closest('td')
-    const measure = () => {
-      // 只扩展预览裁剪区域，不参与表格行高计算；列宽、行高变化都重新测量。
-      if (tableCell && !preview.closest('.dc-row')) {
-        const style = getComputedStyle(tableCell)
-        preview.style.height = `${Math.max(20, tableCell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))}px`
-      }
-      preview.parentElement?.style.setProperty('--cell-preview-height', `${preview.clientHeight}px`)
-      setOverflow(preview.scrollWidth > preview.clientWidth + 1 || preview.scrollHeight > preview.clientHeight + 1)
+    const item = { preview, tableCell, update: setOverflow }
+    observePreview(preview, item)
+    if (tableCell) observePreview(tableCell, item)
+    schedulePreview(item)
+    return () => {
+      unobservePreview(preview, item)
+      if (tableCell) unobservePreview(tableCell, item)
     }
-    previewObserver ??= new ResizeObserver(entries => entries.forEach(entry => previewMeasurements.get(entry.target)?.()))
-    previewMeasurements.set(preview, measure)
-    previewObserver.observe(preview)
-    if (tableCell) { previewMeasurements.set(tableCell, measure); previewObserver.observe(tableCell) }
-    measure()
-    return () => { previewObserver?.unobserve(preview); previewMeasurements.delete(preview); if (tableCell) { previewObserver?.unobserve(tableCell); previewMeasurements.delete(tableCell) } }
   }, [cell, value, focused])
 
   useLayoutEffect(() => {
     const input = inputRef.current
     if (!cell || !input) return
-    // 未编辑的单元格由 CSS 控制高度，不测量布局，也不为每个字符串创建观察器。
+    // 编辑框仅在聚焦时自适应高度，预览尺寸由共享测量队列维护。
     if (!focused) {
       input.style.height = ''
       return

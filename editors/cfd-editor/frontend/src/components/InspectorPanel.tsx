@@ -1,3 +1,4 @@
+import { recordIndex } from '../state/recordIndex'
 import { defaultValueForClear } from '../state/selectionKeyboard'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -29,9 +30,12 @@ import {
   diagnosticsForRecord,
 } from '../state/recordDiagnostics'
 import {
-  cellAnchorsIdentity,
+  selectedCellsIdentity,
   editorSelectionIdentity,
-  type CellAnchor,
+  type SelectedCells,
+  type CellSelectionRange,
+  iterateSelectedCells,
+  selectedCellCount,
   type EditorSelection,
 } from '../state/editorSelection'
 import { useRecordItemKeyboard } from '../hooks/useRecordItemKeyboard'
@@ -52,7 +56,7 @@ interface Props {
   embedded?: boolean
   data: FileRecords | null
   selection: EditorSelection | null
-  valueCells?: readonly CellAnchor[]
+  valueCells?: SelectedCells
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
   width: number
@@ -181,7 +185,7 @@ export function InspectorPanel({
   }, [onWidthChange])
 
   // 大选区按坐标索引记录，避免每个选中单元格都重新线性扫描整张表。
-  const rowsByCoordinate = useMemo(() => new Map(data?.records.map(row => [coordinateId(row.coordinate), row]) ?? []), [data?.records])
+  const rowsByCoordinate = useMemo(() => data ? recordIndex(data.records) : new Map<string, RecordRow>(), [data?.records])
   const record = coordinate ? rowsByCoordinate.get(coordinateId(coordinate)) ?? null : null
   const rootPresentation = usePluginPresentation('inspector', record?.coordinate.actual_type ?? '')
   const pluginIdentity = currentPluginIdentity()
@@ -203,24 +207,41 @@ export function InspectorPanel({
         return row ? [row] : []
       }) : [], [selection, rowsByCoordinate])
   const batchRecords = selectedRecords.length > 1 ? selectedRecords : null
-  const batchCells = useMemo(() => {
-    if (!data || selection?.kind !== 'value' || valueCells.length < 2) return []
-    return valueCells.flatMap(anchor => {
-      const name = anchor.fieldPath.length === 1 && anchor.fieldPath[0].kind === 'field'
-        ? anchor.fieldPath[0].value
-        : null
-      const row = rowsByCoordinate.get(coordinateId(anchor.coordinate))
-      const index = name ? row?.field_index[name] : undefined
-      const cell = index !== undefined ? row?.fields[index] : undefined
-      return cell ? [{ anchor, cell }] : []
-    })
-  }, [data, rowsByCoordinate, selection?.kind, valueCells])
-  const hasBatchCellEditor = useMemo(() => !!projectBatchCells(batchCells.map(item => item.cell)), [batchCells])
-  const editTargetIdentity = selection
-    ? (hasBatchCellEditor && data
-        ? cellAnchorsIdentity(data.file_path, batchCells.map(item => item.anchor))
-        : editorSelectionIdentity(selection))
-    : 'none'
+  const batchCells = useMemo(() => ({
+    *[Symbol.iterator]() {
+      if (!data || selection?.kind !== 'value' || selectedCellCount(valueCells) < 2) return
+      for (const anchor of iterateSelectedCells(valueCells)) {
+        const name = anchor.fieldPath.length === 1 && anchor.fieldPath[0].kind === 'field' ? anchor.fieldPath[0].value : null
+        const row = rowsByCoordinate.get(coordinateId(anchor.coordinate))
+        const index = name ? row?.field_index[name] : undefined
+        const cell = index !== undefined ? row?.fields[index] : undefined
+        if (cell) yield { anchor, cell }
+      }
+    },
+  }), [data, rowsByCoordinate, selection?.kind, valueCells])
+  const batchProjection = useMemo(() => projectBatchCells({
+    *[Symbol.iterator]() {
+      if (Array.isArray(valueCells)) { for (const item of batchCells) yield item.cell; return }
+      if (!data || selection?.kind !== 'value' || selectedCellCount(valueCells) < 2) return
+      const { rows, columns, range } = valueCells as CellSelectionRange
+      // 聚合只读取字段值：每行查找一次，不生成每格坐标、路径和包装对象。
+      for (let index = range.rowStart; index <= range.rowEnd; index++) {
+        const row = rowsByCoordinate.get(coordinateId(rows[index]))
+        if (!row) continue
+        for (let column = range.columnStart; column <= range.columnEnd; column++) {
+          const fieldIndex = row.field_index[columns[column]]
+          const cell = fieldIndex === undefined ? undefined : row.fields[fieldIndex]
+          if (cell) yield cell
+        }
+      }
+    },
+  }), [batchCells, valueCells, data, selection?.kind, rowsByCoordinate])
+  const hasBatchCellEditor = !!batchProjection
+  const editTargetIdentity = useMemo(() => {
+    if (!selection) return 'none'
+    if (!hasBatchCellEditor || !data) return editorSelectionIdentity(selection)
+    return selectedCellsIdentity(data.file_path, valueCells)
+  }, [selection, hasBatchCellEditor, data?.file_path, valueCells])
 
   const diagnosticIndex = useMemo(
     () => buildRecordDiagnosticIndex(
@@ -452,6 +473,7 @@ export function InspectorPanel({
           ) : hasBatchCellEditor ? (
             <BatchCellEditor
               cells={batchCells}
+              projection={batchProjection!}
               readOnly={readOnly}
               onWriteBatch={onWriteFieldBatch}
             />

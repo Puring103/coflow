@@ -1,3 +1,4 @@
+import { columnContentMetrics } from './TableView.support'
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
@@ -596,6 +597,7 @@ function columnsFor(rows: readonly RecordRow[], actualType: string): RecordColum
   return [...names].map(name => ({
     name,
     type_names: [actualType],
+    content_metrics: columnContentMetrics(rows, name),
     max_summary_len: Math.max(0, ...rows.map(row => row.field_summaries[name]?.length ?? 0)),
   }))
 }
