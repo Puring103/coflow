@@ -145,7 +145,7 @@ impl Project {
                 format!("failed to read `{}`: {err}", config_path.display()),
             )
         })?;
-        let config = serde_yaml::from_str(&source).map_err(|err| {
+        let mut config = serde_yaml::from_str(&source).map_err(|err| {
             diagnostics::file_error(
                 &config_path,
                 "PROJECT-CONFIG-PARSE",
@@ -153,6 +153,7 @@ impl Project {
                 format!("failed to parse `{}`: {err}", config_path.display()),
             )
         })?;
+        config_write::normalize_config_paths(&root_dir, &mut config)?;
         Ok(Self {
             config_path,
             root_dir,

@@ -316,22 +316,9 @@ fn map_graph_keys<T>(
 }
 
 fn runtime_file_path(project_root: &Path, stored: &str) -> Result<String, EditorError> {
-    let path = Path::new(stored);
-    // 磁盘设置只接受项目相对路径，禁止把其他机器或旧项目的绝对路径带入会话。
-    let windows_prefix = stored.as_bytes().get(1) == Some(&b':')
-        && stored.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
-    if windows_prefix
-        || stored.starts_with('\\')
-        || path.is_absolute()
-        || path
-            .components()
-            .any(|part| matches!(part, Component::Prefix(_) | Component::RootDir))
-    {
-        return Err(EditorError::other(format!(
-            "编辑器设置中的路径 `{stored}` 必须相对于项目根目录，请修正 editor-setting/editor.json 中的旧路径"
-        )));
-    }
-    Ok(coflow_runtime::project_path(project_root, path))
+    // 旧设置读取时转换，所有磁盘字段在下次保存时统一写为项目相对路径。
+    let relative = stored_file_path(project_root, stored)?;
+    Ok(coflow_runtime::project_path(project_root, Path::new(&relative)))
 }
 
 fn stored_file_path(project_root: &Path, runtime: &str) -> Result<String, EditorError> {
@@ -393,15 +380,13 @@ mod path_tests {
     use super::*;
 
     #[test]
-    fn stored_settings_reject_absolute_paths_before_resolving() {
+    fn stored_settings_convert_absolute_paths_before_resolving() {
         let root = std::env::temp_dir();
         let absolute = root.join("old-project").join("items.cfd");
-        let error = runtime_file_path(&root, &absolute.to_string_lossy())
-            .expect_err("absolute settings path must be rejected");
-        assert!(error.message.contains("必须相对于项目根目录"));
-        for stored in ["E:/old-project/items.cfd", r"E:\old-project\items.cfd", r"\\server\share\items.cfd"] {
-            assert!(runtime_file_path(&root, stored).is_err());
-        }
+        let runtime = runtime_file_path(&root, &absolute.to_string_lossy())
+            .expect("convert absolute settings path");
+        assert_eq!(runtime, "old-project/items.cfd");
+        assert_eq!(stored_file_path(&root, &runtime).expect("encode path"), "old-project/items.cfd");
     }
 
     #[test]
