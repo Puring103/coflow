@@ -139,6 +139,9 @@ function cachedColumnPrep<T>(data: FileRecords, key: string, compute: () => T): 
 }
 
 interface Props {
+  rowHeights?: Record<string, number | undefined>
+  onRowHeightsChange?: (heights: Record<string, number>) => void
+  onExpandCell?: (coordinate: RecordCoordinate, path: FieldPathSegment[] | null, origin: DOMRect) => void
   data: FileRecords
   activeType: string
   readOnly?: boolean
@@ -229,7 +232,22 @@ interface TableContextMenu {
   records: RecordCoordinate[]
 }
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, keyOnlySearch = false, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
+export const TableView = memo(function TableView({ rowHeights, onRowHeightsChange, onExpandCell, data, activeType, readOnly, diagnostics, searchQuery, keyOnlySearch = false, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
+  const [localRowHeights, setLocalRowHeights] = useState<Record<string, number>>({})
+  useEffect(() => { setLocalRowHeights(Object.fromEntries(Object.entries(rowHeights ?? {}).filter((entry): entry is [string, number] => entry[1] !== undefined))) }, [rowHeights])
+  const rowHeightsRef = useRef(localRowHeights)
+  rowHeightsRef.current = localRowHeights
+  const onExpandCellRef = useRef(onExpandCell)
+  onExpandCellRef.current = onExpandCell
+  // 拖动时只更新本地尺寸，结束后再持久化，避免逐帧请求后端。
+  const resizeRecordRow = (id: string, height: number | null, save: boolean) => {
+    const next = { ...rowHeightsRef.current }
+    if (height === null) delete next[id]
+    else next[id] = Math.max(32, Math.round(height))
+    rowHeightsRef.current = next
+    setLocalRowHeights(next)
+    if (save) onRowHeightsChange?.(next)
+  }
   const [contextMenu, setContextMenu] = useState<TableContextMenu | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [shortNameMenu, setShortNameMenu] = useState<{ x: number; y: number; field: string } | null>(null)
@@ -506,8 +524,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   diagIndexRef.current = diagIndex
   const onWriteFieldRef = useRef(onWriteField)
   onWriteFieldRef.current = onWriteField
-  const onRenameRecordRef = useRef(onRenameRecord)
-  onRenameRecordRef.current = onRenameRecord
   const onDiagnosticBadgeClickRef = useRef(onDiagnosticBadgeClick)
   onDiagnosticBadgeClickRef.current = onDiagnosticBadgeClick
   const syntaxEditRef = useRef(syntaxEdit)
@@ -530,16 +546,10 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
         cell: info => {
           const rowSev = diagIndexRef.current.rows.get(coordinateId(info.row.original.coordinate)) ?? null
           const badgeClick = onDiagnosticBadgeClickRef.current
-          const renameFn = onRenameRecordRef.current
           return (
             <span className={`cell-key-wrap${rowSev ? ' has-diag' : ''}`}>
               <Icon name="grip" size={13} className="record-drag-handle" aria-hidden />
-              <EditableKeyCell
-                value={info.getValue()}
-                highlightQuery={highlightQueryRef.current}
-                editable={canRename}
-                onCommit={canRename && renameFn ? next => renameFn(info.row.original.coordinate, next) : undefined}
-              />
+              <span className="cell-key" title="双击打开记录详情">{highlightSearchText(info.getValue(), highlightQueryRef.current)}</span>
               {(rowSev === 'error' || rowSev === 'warning') && (
                 <DiagBadge
                   severity={rowSev}
@@ -662,6 +672,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                       : undefined}
                   />
                 ) : <EditableCell
+                  onExpand={onExpandCellRef.current ? origin => onExpandCellRef.current?.(row.original.coordinate, [fieldPathField(name)], origin) : undefined}
                   filePath={filePath}
                   coordinate={row.original.coordinate}
                   fieldPath={[fieldPathField(name)]}
@@ -1049,6 +1060,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             if (!selection || selection.filePath !== data.file_path) return
             if (e.nativeEvent.isComposing || e.keyCode === 229) return
 
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && onEnterInspector && selectedValueRange
+              && (selectedValueRange.rowStart !== selectedValueRange.rowEnd || selectedValueRange.columnStart !== selectedValueRange.columnEnd)) {
+              e.preventDefault()
+              onEnterInspector()
+              return
+            }
+
             if (e.key === 'Tab' && selection.kind === 'value') {
               const row = visibleCoordinates.findIndex(item => sameCoordinate(item, selection.coordinate))
               const column = allFieldNames.indexOf(selectedTopLevelField(selection.fieldPath) ?? '')
@@ -1070,7 +1088,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 const input = tableScrollRef.current?.querySelector<HTMLTextAreaElement>(
                   `[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] .cell-string-textarea`,
                 )
-                if (input) {
+                const record = visibleRows[visibleRowIndexes.get(coordinateId(selection.coordinate)) ?? -1]
+                if (input && record && !isComplexValue(fieldCell(record.original, field)?.value)) {
                   e.preventDefault()
                   input.focus({ preventScroll: true })
                   if (e.key.length === 1) replaceInputText(input, e.key)
@@ -1136,13 +1155,20 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
             if ((e.key === 'Enter' || e.key === 'F2') && selection.kind === 'value') {
               const field = selectedTopLevelField(selection.fieldPath)
               const dropdown = field ? tableScrollRef.current?.querySelector<HTMLInputElement>(`[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field))}"] input.searchable-select`) : null
-              if (dropdown) { e.preventDefault(); dropdown.focus({ preventScroll: true }); return }
+              const record = visibleRows[visibleRowIndexes.get(coordinateId(selection.coordinate)) ?? -1]
+              if (dropdown && field && record && !isComplexValue(fieldCell(record.original, field)?.value)) { e.preventDefault(); dropdown.focus({ preventScroll: true }); return }
             }
             if (e.key === 'Enter' && onEnterInspector) {
               if (selection.kind === 'value') {
                 const field = selectedTopLevelField(selection.fieldPath)
                 const selectedRow = visibleRows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
                 const selectedCell = field && selectedRow ? fieldCell(selectedRow.original, field) : undefined
+                if (selectedCell && !isComplexValue(selectedCell.value) && selectedCell.value.kind !== 'bool') {
+                  e.preventDefault()
+                  const input = tableScrollRef.current?.querySelector<HTMLElement>(`[data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field!))}"] textarea, [data-table-cell-key="${CSS.escape(tableCellKey(selection.coordinate, field!))}"] input`)
+                  input?.focus({ preventScroll: true })
+                  return
+                }
                 if (selectedCell?.value.kind === 'bool' && canEdit && !cellReadOnly(selectedCell)) {
                   e.preventDefault()
                   try {
@@ -1506,7 +1532,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                     ref={rowVirtualizer.measureElement}
                     className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}${comparison ? ` table-diff-row table-diff-${comparison.change}${comparison.groupStart ? ' table-diff-group-start' : ''}` : ''}`}
                     data-contains-selection={selectionOwnsRow(selection, data.file_path, row.original.coordinate) || undefined}
-                    style={recordGroupColorStyle(item.group?.color)}
+                    style={{ ...recordGroupColorStyle(item.group?.color), height: localRowHeights[coordinateId(row.original.coordinate)] !== undefined ? localRowHeights[coordinateId(row.original.coordinate)] * tableZoom : undefined, '--table-row-preview-height': `${localRowHeights[coordinateId(row.original.coordinate)] ?? 132}px` } as React.CSSProperties}
                     onContextMenu={e => {
                       if (readOnly) return
                       e.preventDefault()
@@ -1572,6 +1598,13 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           data-record-label={!fieldPath ? recordId(row.original) : undefined}
                           style={{ width: cell.column.getSize() }}
                           aria-selected={selected || undefined}
+                          onDoubleClick={event => {
+                            if (event.shiftKey || event.ctrlKey || event.metaKey) return
+                            if ((event.target as HTMLElement).closest('button, input, textarea, select, a, .table-row-resizer, .dc-row-foldout, .dc-row-field, [contenteditable="true"]')) return
+                            if (cell.column.id !== 'id' && !event.currentTarget.classList.contains('complex-cell')) return
+                            event.stopPropagation()
+                            onExpandCellRef.current?.(row.original.coordinate, cell.column.id === 'id' ? null : [fieldPathField(cell.column.id)], event.currentTarget.getBoundingClientRect())
+                          }}
                           onPointerDownCapture={event => {
                             if (event.button !== 0) return
                             // 在拖选控制器更新选择之前记录状态：首次点击只选中，再次点击才编辑。
@@ -1624,6 +1657,23 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                           }}
                         >
                           <TableCellContent cell={cell} />
+                          <div className="table-row-resizer" role="separator" aria-orientation="horizontal" aria-label="调整行高" tabIndex={0}
+                            onMouseDown={event => event.stopPropagation()}
+                            onDoubleClick={event => { event.stopPropagation(); const contentHeight = Math.max(...[...event.currentTarget.closest('tr')!.querySelectorAll<HTMLElement>('.cell-complex-content, .cell-string-preview')].map(element => { if (!element.classList.contains('cell-string-preview')) return element.scrollHeight; const range = document.createRange(); range.selectNodeContents(element); return range.getBoundingClientRect().height }), 20); resizeRecordRow(coordinateId(row.original.coordinate), contentHeight + 12, true) }}
+                            onKeyDown={event => { if (event.key === 'Home') { event.preventDefault(); resizeRecordRow(coordinateId(row.original.coordinate), null, true) } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); resizeRecordRow(coordinateId(row.original.coordinate), (localRowHeights[coordinateId(row.original.coordinate)] ?? 132) + (event.key === 'ArrowDown' ? 20 : -20), true) } }}
+                            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); resizeRecordRow(coordinateId(row.original.coordinate), null, true) }}
+                            title="拖动调整行高；双击适配内容；右键恢复默认"
+                            onPointerDown={event => {
+                              if (event.button !== 0) return
+                              event.preventDefault(); event.stopPropagation()
+                              const handle = event.currentTarget, start = event.clientY
+                              const height = handle.closest('tr')!.getBoundingClientRect().height / tableZoom
+                              const id = coordinateId(row.original.coordinate)
+                              handle.setPointerCapture(event.pointerId)
+                              const move = (pointer: PointerEvent) => resizeRecordRow(id, height + (pointer.clientY - start) / tableZoom, false)
+                              const finish = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', finish); handle.removeEventListener('pointercancel', finish); handle.removeEventListener('lostpointercapture', finish); onRowHeightsChange?.(rowHeightsRef.current) }
+                              handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', finish); handle.addEventListener('pointercancel', finish); handle.addEventListener('lostpointercapture', finish)
+                            }} />
                         </td>
                       )
                     })}
@@ -1791,6 +1841,7 @@ function CellSyntaxEditor({
 }
 
 interface EditableCellProps {
+  onExpand?: (origin: DOMRect) => void
   expandedPaths?: ReadonlySet<string>
   onRowToggle?: (path: string, expanded: boolean) => void
   onEdit?: (path: FieldPathSegment[], next: FieldValue) => void
@@ -1818,6 +1869,16 @@ function TableCellContent({ cell }: { cell: Cell<RecordRow, unknown> }) {
 
 export function EditableCell(props: EditableCellProps) {
   const { filePath, coordinate, fieldPath, value, declaredType } = props
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [overflow, setOverflow] = useState(false)
+  useEffect(() => {
+    const viewport = viewportRef.current, content = contentRef.current
+    if (!viewport || !content) return
+    const observer = new ResizeObserver(() => setOverflow(content.scrollHeight > viewport.clientHeight + 1))
+    observer.observe(viewport); observer.observe(content)
+    return () => observer.disconnect()
+  }, [value])
   const identity = currentPluginIdentity()
   const presentation = usePluginPresentation('cell', declaredType ?? '')
   const context = useMemo<PluginPresentationContext | null>(() => (
@@ -1833,17 +1894,21 @@ export function EditableCell(props: EditableCellProps) {
         }
       : null
   ), [identity?.sessionId, identity?.revision, filePath, coordinate.actual_type, coordinate.id, declaredType, value, presentation])
-  if (presentation?.slot === 'cell' && context) {
-    return (
-      <PluginContributionMount
-        contribution={presentation}
-        context={context}
-        inline
-        className="plugin-cell-presentation"
-      />
-    )
-  }
-  return <EditableCellBuiltIn {...props} />
+  // 内置字段树与插件共用同一预览边界，放大入口不依赖具体渲染器。
+  const content = presentation?.slot === 'cell' && context
+    ? <PluginContributionMount contribution={presentation} context={context} inline className="plugin-cell-presentation" />
+    : <EditableCellBuiltIn {...props} />
+  if (!isComplexValue(presentationValue(value))) return content
+  return <div className={`cell-complex-preview${overflow ? ' overflowing' : ''}`}
+    onDoubleClick={props.onExpand ? event => {
+      if ((event.target as HTMLElement).closest('button, input, textarea, select, a, .dc-row-foldout, .dc-row-field, [contenteditable="true"]')) return
+      event.stopPropagation()
+      props.onExpand?.(event.currentTarget.getBoundingClientRect())
+    } : undefined}>
+    <div ref={viewportRef} className="cell-complex-viewport"><div ref={contentRef} className="cell-complex-content">{content}</div></div>
+    {overflow && <span className="cell-complex-overflow" aria-hidden>…</span>}
+    {props.onExpand && <button type="button" className="cell-expand-button" aria-label="放大编辑单元格" title="放大编辑（也可双击空白处）" onMouseDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); props.onExpand?.(event.currentTarget.closest('.cell-complex-preview')!.getBoundingClientRect()) }}><Icon name="expand" size={11}/></button>}
+  </div>
 }
 
 function EditableCellBuiltIn({
@@ -1913,14 +1978,8 @@ function EditableCellBuiltIn({
     )
   }
 
-
-
-
   return (
-    <div
-      className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
-
-    >
+    <div className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}>
       <DataCardCompact
         value={shownValue}
         fieldPath={fieldPath}
@@ -1946,59 +2005,4 @@ function selectionOwnsRow(
     && (selection.kind === 'value'
       ? sameCoordinate(selection.coordinate, coordinate)
       : selection.coordinates.some(item => sameCoordinate(item, coordinate)))
-}
-
-function EditableKeyCell({
-  value, editable, highlightQuery, onCommit,
-}: {
-  value: string
-  editable: boolean
-  highlightQuery?: string
-  onCommit?: (next: string) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-
-  useEffect(() => {
-    if (!editing) setDraft(value)
-  }, [value, editing])
-
-  const commit = () => {
-    const next = draft.trim()
-    if (next && next !== value && onCommit) onCommit(next)
-  }
-
-  if (editing && editable) {
-    return (
-      <input
-        className="inline-editor key-editor"
-        value={draft}
-        autoFocus
-        onChange={e => setDraft(e.target.value)}
-        onBlur={() => { commit(); setEditing(false) }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') {
-            setDraft(value)
-          }
-        }}
-        onClick={e => e.stopPropagation()}
-        aria-label="重命名记录 ID"
-      />
-    )
-  }
-
-  return (
-    <span
-      className={`cell-key${editable ? ' editable' : ''}`}
-      onClick={editable ? e => {
-        if (e.shiftKey || e.ctrlKey || e.metaKey) return
-        e.stopPropagation()
-        setEditing(true)
-      } : undefined}
-      title={editable ? '单击重命名 ID' : undefined}
-    >
-      {highlightSearchText(value, highlightQuery)}
-    </span>
-  )
 }

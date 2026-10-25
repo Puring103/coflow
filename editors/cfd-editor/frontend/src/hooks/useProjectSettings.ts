@@ -14,6 +14,7 @@ export function emptyProjectSettings(): EditorProjectSettings {
     view_order: {},
     short_name_fields: {},
     default_table_column_widths: {},
+    table_row_heights: {},
     record_groups: {},
     workspace: { tabs: [], active_tab_id: null },
   }

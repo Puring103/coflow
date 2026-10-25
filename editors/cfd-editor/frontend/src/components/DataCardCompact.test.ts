@@ -341,7 +341,7 @@ describe('DataCardCompact complex previews', () => {
     expect(html).toContain('hiddenLeafLabel')
     expect(html).toContain('vc-ref')
     expect(html).toContain('vc-enum')
-    expect(html).toContain('vc-count">5')
+    expect(html).toContain('dc-summary-rest">… +3')
     expect(html).toContain('mobile')
     expect(html).not.toContain('data-field-path="rates[mobile]"')
     expect(html).not.toContain('iron')
@@ -377,12 +377,13 @@ describe('DataCardCompact complex previews', () => {
 
     const html = renderToStaticMarkup(createElement(DataCardCompact, { value }))
 
-    expect(html).toContain('Level1')
+    expect(html).toContain('dc-row-label-text">nested</span>')
+    expect(html).toContain('{…}')
     expect(html).not.toContain('fully-visible')
     expect(html).toContain('dc-inspector-compact')
   })
 
-  it('uses inspector labels and concrete types for object array items', () => {
+  it('uses field labels and scalar summaries for object array items', () => {
     const value: FieldValue = {
       kind: 'array',
       value: [{
@@ -398,9 +399,9 @@ describe('DataCardCompact complex previews', () => {
 
     expect(html).not.toContain('drops')
     expect(html).toContain('>1<')
-    expect(html).toContain('Reward')
-    expect(html).not.toContain('20')
-    expect(html).not.toContain('amount')
+    expect(html).not.toContain('dc-structure-type')
+    expect(html).toContain('vc-num">20</span>')
+    expect(html).toContain('dc-row-label-text">amount</span>')
   })
 
   it('renders every reference in a scalar array', () => {
@@ -490,15 +491,15 @@ describe('DataCardCompact complex previews', () => {
       }),
     }))
 
-    expect(html).toContain('class="vc-count">1</span>')
+    expect(html).not.toContain('class="vc-count">1</span>')
     expect(html).toContain('dc-group-body')
     expect(html).toContain('dc-group-item')
     expect(html).toContain('data-field-path="MatterVariations[0]"')
-    expect(html).toContain('dc-structure-type">RegionMatterVariationConfig</span>')
+    expect(html).toContain('vc-str">Water</span>')
     expect(html).toContain('dc-row-actions')
     expect(html).toContain('aria-label="添加元素"')
     expect(html).toContain('title="删除"')
-    expect(html).not.toContain('>Matter</span>')
+    expect(html).toContain('dc-row-label-text">Matter</span>')
     expect(html).not.toContain('#1')
     expect(html).not.toContain('元素 1')
     expect(html).not.toContain('>[0]<')
@@ -527,9 +528,9 @@ describe('DataCardCompact complex previews', () => {
     }))
 
     expect(html).toContain('dc-group-item')
-    expect(html).toContain('dc-row-label-text">1</span>')
-    expect(html).toContain('dc-row-label-text">2</span>')
-    expect(html).toContain('dc-structure-type">Entry</span>')
+    expect(html).toContain('dc-item-position" title="第 1 项">1</span>')
+    expect(html).toContain('dc-item-position" title="第 2 项">2</span>')
+    expect(html).toContain('dc-row-label-text">Value</span>')
     expect(html).toContain('data-field-path="Entries[0]"')
     expect(html).toContain('data-field-path="Entries[1]"')
     expect(html).not.toContain('#1')
@@ -562,7 +563,7 @@ describe('DataCardCompact complex previews', () => {
     expect(html).not.toContain('#1')
   })
 
-  it('keeps empty collection state and its add action in the collection header', () => {
+  it('keeps empty collection state and its add action when flattening the root collection', () => {
     const html = renderToStaticMarkup(createElement(ObjectDraftHost, {
       lookups: {} as never,
       generationKey: 'test',
@@ -580,10 +581,10 @@ describe('DataCardCompact complex previews', () => {
       }),
     }))
 
-    expect(html).toContain('class="vc-count">0</span>')
+    expect(html).toContain('空数组')
     expect(html).toContain('BioRemains')
     expect(html).toContain('aria-label="添加元素"')
-    expect(html).not.toContain('空数组')
+    expect(html).not.toContain('dc-row-structure')
     expect(html).not.toContain('dc-row-empty')
   })
 

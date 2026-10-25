@@ -76,6 +76,9 @@ mod tests {
             .entry("Item".to_string())
             .or_default()
             .insert("name".to_string(), 240.0);
+        settings.table_row_heights.insert("data/items.cfd".to_string(), BTreeMap::from([(
+            "Item".to_string(), BTreeMap::from([("__default_table".to_string(), BTreeMap::from([("Item::a".to_string(), 240.0)]))])
+        )]));
         settings
             .record_groups
             .entry("data/items.cfd".to_string())
@@ -126,6 +129,7 @@ mod tests {
         assert_eq!(loaded.graph_positions, settings.graph_positions);
         assert_eq!(loaded.graph_compact_modes, settings.graph_compact_modes);
         assert_eq!(loaded.view_order, settings.view_order);
+        assert_eq!(loaded.table_row_heights, settings.table_row_heights);
         assert_eq!(
             loaded.default_table_column_widths,
             settings.default_table_column_widths
@@ -143,6 +147,7 @@ mod tests {
             "view_order",
             "graph_compact_modes",
             "default_table_column_widths",
+            "table_row_heights",
             "column_widths",
         ] {
             assert!(

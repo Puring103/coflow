@@ -171,6 +171,20 @@ pub(crate) async fn set_default_table_column_widths(
 }
 
 #[tauri::command]
+pub(crate) async fn set_table_row_heights(
+    host: State<'_, EditorHost>,
+    session_id: u32,
+    file_path: String,
+    actual_type: String,
+    view_id: String,
+    heights: BTreeMap<String, f64>,
+) -> Result<EditorProjectSettings, EditorError> {
+    run_host_command(host, move |host| {
+        host.sessions().set_table_row_heights(session_id, file_path, actual_type, view_id, heights)
+    }).await
+}
+
+#[tauri::command]
 pub(crate) async fn set_short_name_field(
     session_id: u32,
     actual_type: String,

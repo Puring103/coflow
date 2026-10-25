@@ -11,6 +11,7 @@ import {
   type MouseEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { Icon } from './Icon'
 
 export interface SearchableOption {
   value: string
@@ -303,7 +304,7 @@ export function SearchableSelect({
 
   return (
     <span className={reference ? "searchable-reference-wrap" : undefined}>
-      {reference && <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={!onPreview} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); onPreview?.() }}>&amp;</button>}
+      {reference && <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={!onPreview} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); onPreview?.() }}><Icon name="reference" size={12} /></button>}
       <input
         ref={inputRef}
         className={`${className ?? ''} searchable-select${reference ? ' searchable-select-reference' : ''}${open ? ' searchable-select-open' : ''}`.trim()}

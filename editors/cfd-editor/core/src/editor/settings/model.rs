@@ -99,6 +99,8 @@ pub(crate) struct LocalSettingsFile {
     #[serde(default)]
     pub(crate) view_column_widths: ViewColumnWidths,
     #[serde(default)]
+    pub(crate) table_row_heights: ViewColumnWidths,
+    #[serde(default)]
     pub(crate) workspace: EditorWorkspaceState,
 }
 
@@ -212,6 +214,7 @@ impl LocalSettingsFile {
                     (!widths.is_empty()).then_some((path.clone(), widths))
                 })
                 .collect(),
+            table_row_heights: settings.table_row_heights.clone(),
             workspace: settings.workspace.clone(),
         };
         file.map_file_paths(|path| stored_file_path(project_root, path))?;
@@ -228,6 +231,7 @@ impl LocalSettingsFile {
         settings.view_order = self.view_order;
         settings.default_table_column_widths = self.default_table_column_widths;
         settings.workspace = self.workspace;
+        settings.table_row_heights = self.table_row_heights;
         for (path, by_type) in self.view_column_widths {
             if let Some(views_by_type) = settings.views.get_mut(&path) {
                 for (ty, widths_by_id) in by_type {
@@ -254,6 +258,7 @@ impl LocalSettingsFile {
             std::mem::take(&mut self.default_table_column_widths),
             &mut map,
         )?;
+        self.table_row_heights = map_outer_keys(std::mem::take(&mut self.table_row_heights), &mut map)?;
         self.view_column_widths =
             map_outer_keys(std::mem::take(&mut self.view_column_widths), &mut map)?;
         self.graph_compact_modes =

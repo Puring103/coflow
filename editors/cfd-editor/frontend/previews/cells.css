@@ -7,19 +7,8 @@ body { overflow: auto; }
 .cell-design-toolbar { display: flex; gap: 20px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px; }
 .cell-design-toolbar > span:first-child { color: var(--text); font-weight: 500; }
 .cell-design-toolbar > div { margin-left: auto; display: flex; gap: 8px; }
-.cell-design-table { width: 100%; table-layout: fixed; border: 1px solid var(--border); border-collapse: collapse; }
-.cell-design-table .scenario-column { width: 210px; }
-.cell-design-table .guide-column { width: 260px; }
-.cell-design-table th { text-align: left; background: var(--bg-2); color: var(--text-dim); padding: 12px 18px; font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border); }
-.cell-design-table td { padding: 18px; vertical-align: top; border-bottom: 1px solid var(--border); white-space: normal; }
-.cell-design-table td.complex-cell { padding: 10px 12px; }
-.cell-design-table .cell-design-scenario { padding: 22px 18px; }
-.cell-design-scenario strong { display: block; color: var(--text); font-size: 13px; font-weight: 500; margin: 8px 0; }
-.cell-design-scenario code { color: var(--text-mute); font-size: 11px; overflow-wrap: anywhere; }
-.cell-design-index { color: var(--text-mute); font-size: 11px; font-variant-numeric: tabular-nums; }
-.cell-design-table .cell-design-guide { font-size: 12px; color: var(--text-dim); line-height: 1.9; padding: 24px 20px; }
-.cell-design-table tr[data-sample="text"] { height: 132px; }
-.cell-design-table td:not(.complex-cell) .cell-string-input { height: 20px; }
+.cell-design-live-table { height: min(1200px, 76vh); min-height: 480px; display: flex; border: 1px solid var(--border); }
+.cell-design-live-table .table-view { width: 100%; }
 .cell-design-footer { display: flex; justify-content: space-between; color: var(--text-mute); font-size: 11px; padding-top: 18px; }
 .cell-design-page .reference-panel { overflow: auto; }
-@media (max-width: 1000px) { .cell-design-page { padding: 24px; } .cell-design-table .guide-column { width: 190px; } .cell-design-table .scenario-column { width: 170px; } .cell-design-toolbar { flex-wrap: wrap; } }
+@media (max-width: 1000px) { .cell-design-page { padding: 24px; } .cell-design-toolbar { flex-wrap: wrap; } }

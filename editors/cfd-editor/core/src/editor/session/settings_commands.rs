@@ -121,6 +121,26 @@ impl SessionStore {
         Ok(settings)
     }
 
+    /// 行高只写入用户目录，不修改团队共享视图；记录身份独立于表格排序。
+    pub fn set_table_row_heights(
+        &self,
+        id: u32,
+        file_path: String,
+        actual_type: String,
+        view_id: String,
+        heights: BTreeMap<String, f64>,
+    ) -> Result<EditorProjectSettings, EditorError> {
+        let project_root = self.project_root_for(id)?;
+        let mut settings = read_project_settings(&project_root)?;
+        let heights = heights.into_iter()
+            .filter(|(_, height)| height.is_finite() && *height >= 32.0)
+            .collect();
+        settings.table_row_heights.entry(file_path).or_default()
+            .entry(actual_type).or_default().insert(view_id, heights);
+        write_local_settings(&project_root, &settings)?;
+        Ok(settings)
+    }
+
     /// Overwrite the full custom-view list for a (filePath, actualType). The
     /// frontend mutates the list in memory and submits the whole thing.
     pub fn set_views(

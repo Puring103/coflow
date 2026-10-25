@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+import { flushDataEdits } from '../state/editSession'
 import { recordIndex } from '../state/recordIndex'
 import { defaultValueForClear } from '../state/selectionKeyboard'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
@@ -52,6 +54,8 @@ import { parseCfdClipboard, pasteCellAtRecordPath, planPaste } from '../state/cl
 import { isNativeEditorTarget, parseWireFieldPath } from '../utils/dom'
 
 interface Props {
+  modal?: boolean
+  origin?: DOMRect | null
   open: boolean
   embedded?: boolean
   data: FileRecords | null
@@ -111,6 +115,8 @@ const MAX_W = 720
 export function InspectorPanel({
   open,
   embedded = false,
+  modal = false,
+  origin,
   data,
   selection,
   valueCells = [],
@@ -131,6 +137,50 @@ export function InspectorPanel({
   onExitKeyboardNavigation,
   visibleFields,
 }: Props) {
+  const modalRef = useRef<HTMLElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+  const backdropRef = useRef<HTMLDivElement>(null)
+  const closingRef = useRef(false)
+  const closeModal = async () => {
+    if (closingRef.current) return
+    closingRef.current = true
+    // 等待真实写入结果，校验或保存失败时保留弹窗和草稿。
+    if (!await flushDataEdits()) { closingRef.current = false; return }
+    const element = modalRef.current
+    if (element && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // 从当前视觉帧接续关闭，快速点击也不会跳回展开后的尺寸。
+      const visual = getComputedStyle(element)
+      const startFrame = { transform: visual.transform, opacity: visual.opacity }
+      element.getAnimations().forEach(animation => animation.cancel())
+      const rect = element.getBoundingClientRect()
+      // 保留关闭末帧直到 React 卸载，避免动画结束恢复原尺寸造成闪烁。
+      backdropRef.current?.animate([{ backgroundColor: '#0005' }, { backgroundColor: '#0000' }], { duration: 140, fill: 'forwards' })
+      await element.animate([
+        startFrame,
+        { transform: origin ? `translate(${origin.x - rect.x}px, ${origin.y - rect.y}px) scale(${origin.width / rect.width}, ${origin.height / rect.height})` : 'scale(.97)', opacity: 0 },
+      ], { duration: 140, easing: 'ease-in', fill: 'forwards' }).finished.catch(() => {})
+    }
+    onClose()
+    returnFocusRef.current?.focus({ preventScroll: true })
+    closingRef.current = false
+  }
+  useEffect(() => {
+    if (!modal || !open) return
+    returnFocusRef.current = document.activeElement as HTMLElement | null
+    const element = modalRef.current
+    if (!element) return
+    element.focus({ preventScroll: true })
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const rect = element.getBoundingClientRect()
+      element.animate([
+        { transform: origin ? `translate(${origin.x - rect.x}px, ${origin.y - rect.y}px) scale(${origin.width / rect.width}, ${origin.height / rect.height})` : 'scale(.97)', opacity: .45 },
+        { transform: 'none', opacity: 1 },
+      ], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    }
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [open, modal, origin])
   const [dragging, setDragging] = useState(false)
   // Session-only toggle: in a custom view, reveal all fields (incl. hidden).
   // Not persisted; resets whenever the visible-field set changes (view switch).
@@ -375,6 +425,7 @@ export function InspectorPanel({
 
   const onBodyKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') {
+      if (modal) { event.preventDefault(); event.stopPropagation(); void closeModal(); return }
       event.preventDefault()
       event.stopPropagation()
       onExitKeyboardNavigation?.()
@@ -385,13 +436,26 @@ export function InspectorPanel({
 
   if (!open) return null
 
-  return (
+  const panel = (
     <aside
-      className={`inspector-panel${dragging ? ' dragging' : ''}`}
+      ref={modal ? modalRef : undefined}
+      tabIndex={modal ? -1 : undefined}
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal || undefined}
+      onKeyDown={modal ? event => {
+        if (event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); void closeModal() }
+        if (event.key === 'Tab') {
+          const items = [...(modalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]') ?? [])].filter(item => item.getClientRects().length)
+          const first = items[0], last = items[items.length - 1]
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === modalRef.current)) { event.preventDefault(); last?.focus() }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+        }
+      } : undefined}
+      className={`inspector-panel${dragging ? ' dragging' : ''}${modal ? ' inspector-modal' : ''}`}
       style={{ width }}
       aria-label={inspectingValue ? '单元格详情面板' : '记录详情面板'}
     >
-      {!embedded && <div
+      {!embedded && !modal && <div
         className="inspector-splitter"
         onMouseDown={onSplitterDown}
         role="separator"
@@ -403,8 +467,8 @@ export function InspectorPanel({
           if (e.key === 'ArrowRight') onWidthChange(Math.max(MIN_W, width - 24))
         }}
       />}
-      {!embedded && <div className="inspector-head">
-        {<span className="inspector-title">{inspectingValue ? '单元格详情' : '记录详情'}</span>}
+      {!embedded && <div className={`inspector-head${modal ? ' inspector-head-minimal' : ''}`}>
+        {!modal && <span className="inspector-title">{inspectingValue ? selectedTopField : coordinate?.id}</span>}
         {visibleFields && !inspectingValue && !selectedTopField && hiddenFieldCount > 0 && (
           <button
             className={`btn btn-icon inspector-showall-btn${showAllFields ? ' active' : ''}`}
@@ -419,9 +483,9 @@ export function InspectorPanel({
         {(
           <button
             className="btn btn-icon"
-            onClick={onClose}
-            title="清除选择"
-            aria-label="清除详情选择"
+            onClick={modal ? () => { void closeModal() } : onClose}
+            title={modal ? '关闭编辑弹窗' : '清除选择'}
+            aria-label={modal ? '关闭编辑弹窗' : '清除详情选择'}
           >
             <Icon name="close" size={13} />
           </button>
@@ -604,6 +668,10 @@ export function InspectorPanel({
       )}
     </aside>
   )
+  return modal ? createPortal(<div ref={backdropRef} className="inspector-modal-backdrop" onClick={event => {
+    // 只响应遮罩自身；详情内部及其他 portal 菜单的点击不关闭窗口。
+    if (event.target === event.currentTarget) void closeModal()
+  }}>{panel}</div>, document.body) : panel
 }
 
 function topLevelExpandablePaths(fields: RecordRow['fields']): Set<string> {

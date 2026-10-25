@@ -5,7 +5,7 @@ interface IconProps {
     | 'plus' | 'close' | 'search' | 'help'
     | 'chevron-right' | 'chevron-down' | 'chevron-up'
     | 'error' | 'warning' | 'info' | 'check'
-    | 'jump' | 'open' | 'dot' | 'edit'
+    | 'jump' | 'open' | 'expand' | 'reference' | 'dot' | 'edit'
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
     | 'download' | 'refresh' | 'build' | 'copy' | 'paste'
     | 'sparkles' | 'gear' | 'settings' | 'data' | 'localization' | 'dimension' | 'grip'
@@ -16,6 +16,8 @@ interface IconProps {
 }
 
 const PATHS: Record<IconProps['name'], string> = {
+  // 引用统一使用同一条矢量 & 轮廓，避免摘要和输入框继承不同字体。
+  'reference': 'M17.5 20 9 11.5C6.5 9 6 7.5 6 6a4 4 0 0 1 8 0c0 2-1 3-4 5l-3 2a4.5 4.5 0 0 0 5 7c3-2 5-5 6-8M16 12h4',
   'undo': 'M9 4L4 9l5 5M4 9h10a6 6 0 010 12',
   'redo': 'M15 4l5 5-5 5M20 9H10a6 6 0 000 12',
   // Lucide KeyRound：圆头钥匙。
@@ -46,6 +48,8 @@ const PATHS: Record<IconProps['name'], string> = {
   'info':          'M12 16v-4M12 8h.01M3 12a9 9 0 1018 0 9 9 0 00-18 0z',
   'check':         'M5 12l5 5L20 7',
   'jump':          'M7 17L17 7M17 7H8M17 7v9',
+  // 四角向外展开，区别于文件夹的打开操作。
+  'expand': 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M3 3l6 6M21 3l-6 6M3 21l6-6M21 21l-6-6',
   'open':          'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
   'dot':           'M12 12m-3 0a3 3 0 106 0 3 3 0 10-6 0',
   'edit':          'M4 20h4L18.5 9.5a2.1 2.1 0 00-3-3L5 17v3zM13.5 7.5l3 3',

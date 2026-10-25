@@ -62,7 +62,7 @@ test('long text is truncated until focus and expands downwards without changing 
   assert.ok(Math.abs(expanded.y - cell.y) <= 2)
   await page.locator('#outside').click()
   await settle()
-  assert.equal((await field.boundingBox()).height, before.height)
+  assert.ok((await field.boundingBox()).height <= (await field.locator('xpath=ancestor::td').boundingBox()).height)
 })
 
 test('clicking selected string cell padding enters editing', async () => {
@@ -176,9 +176,9 @@ test('workspace selection and inspector updates preserve direct text focus', asy
   await page.goto(server.resolvedUrls.local[0])
   const field = page.locator('.data-table .cell-string-textarea').first()
   await field.waitFor()
-  // 未选中内容时面板已占位；编辑及清除选择不改变表格边界。
+  // 普通选择不再打开常驻面板，原位编辑保持表格边界稳定。
   const inspector = page.locator('.inspector-panel')
-  await inspector.waitFor()
+  assert.equal(await inspector.count(), 0)
   const bounds = await page.locator('.table-scroll').boundingBox()
   await field.dblclick()
   await settle()
@@ -189,7 +189,7 @@ test('workspace selection and inspector updates preserve direct text focus', asy
   await settle()
   assert.equal(await field.inputValue(), '工作区输入验证')
   assert.equal(await field.evaluate(el => el === document.activeElement), true)
-  await page.getByRole('button', { name: '清除详情选择' }).click()
+  await page.locator('.table-scroll').focus()
   await settle()
   assert.deepEqual(await page.locator('.table-scroll').boundingBox(), bounds)
   assert.equal(await page.getByRole('button', { name: '折叠面板', exact: true }).count(), 0)
@@ -213,6 +213,7 @@ test('view tabs show names, drag to reorder, and discard uses a modal dialog', a
   await editor.getByRole('button', { name: '取消', exact: true }).click()
   const confirm = page.getByRole('dialog', { name: '放弃更改', exact: true })
   assert.equal(await confirm.evaluate(el => el.matches(':modal')), true)
+  await page.locator('.view-discard-dialog').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)))
   const dialogBounds = await confirm.boundingBox()
   const viewport = page.viewportSize()
   assert.ok(Math.abs(dialogBounds.x + dialogBounds.width / 2 - viewport.width / 2) < 2)
@@ -402,8 +403,8 @@ test('custom views delete from their context menu while built-in views remain pr
   await page.getByRole('menuitem', { name: '删除视图', exact: true }).click()
   await tabs.getByRole('tab', { name: '基础属性', exact: true }).waitFor({ state: 'detached' })
   const toolbar = await page.locator('.global-search-bar').boundingBox()
-  const inspector = await page.locator('.inspector-panel').boundingBox()
-  assert.equal(toolbar.y, inspector.y)
+  assert.ok(toolbar)
+  assert.equal(await page.locator('.inspector-panel').count(), 0)
 })
 
 test('dragging an existing list reference edge onto empty canvas removes the relation', async () => {
@@ -587,4 +588,53 @@ test('multiline truncation fades text without painting a background strip', asyn
   assert.ok(styles.height >= 40)
   assert.ok(styles.mask.includes('linear-gradient'))
   assert.equal(await overlay.evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)')
+})
+
+
+test('selecting long text expands its preview before entering editing', async () => {
+  const field = input(2)
+  const cell = field.locator('xpath=ancestor::td')
+  const row = field.locator('xpath=ancestor::tr')
+  const height = (await row.boundingBox()).height
+  await cell.click({ position: { x: 3, y: 3 } })
+  await settle()
+  assert.equal(await field.evaluate(element => element === document.activeElement), false)
+  const preview = cell.locator('.cell-string-preview')
+  assert.ok((await preview.boundingBox()).height > height)
+  assert.equal(await preview.evaluate(element => getComputedStyle(element).maskImage), 'none')
+  assert.equal((await row.boundingBox()).height, height)
+  await input(1).click()
+  await settle()
+  assert.ok((await preview.boundingBox()).height <= height)
+  assert.deepEqual(errors, [])
+})
+
+
+test('expanded text owns its full surface and covers the original row resizer', async () => {
+  const field = input(2)
+  const cell = field.locator('xpath=ancestor::td')
+  const rowHeight = (await field.locator('xpath=ancestor::tr').boundingBox()).height
+  await cell.click({ position: { x: 3, y: 3 } })
+  await settle()
+  const bounds = await cell.boundingBox()
+  const preview = await cell.locator('.cell-string-preview').boundingBox()
+  assert.ok(Math.abs(preview.x - bounds.x) <= 2)
+  assert.ok(Math.abs(preview.width - bounds.width) <= 2)
+  const points = [bounds.y + bounds.height - 1, Math.min(preview.y + preview.height - 8, bounds.y + bounds.height + 30)]
+  for (const y of points) {
+    await page.mouse.move(bounds.x + 25, y)
+    const hit = await page.evaluate(({x,y}) => {
+      const element = document.elementFromPoint(x,y)
+      return { id: element?.closest('td')?.getAttribute('data-coordinate-id'), resize: !!element?.closest('.table-row-resizer') }
+    }, {x: bounds.x + 25, y})
+    assert.equal(hit.id, 'Item::row_2')
+    assert.equal(hit.resize, false)
+  }
+  await page.mouse.click(bounds.x + 25, points[1])
+  await settle()
+  assert.equal(await field.evaluate(element => element === document.activeElement), true)
+  assert.equal(await page.locator('#selection').textContent(), 'value:row_2')
+  assert.equal((await field.locator('xpath=ancestor::tr').boundingBox()).height, rowHeight)
+  assert.equal(await cell.locator('.cell-expand-button').count(), 0)
+  assert.deepEqual(errors, [])
 })

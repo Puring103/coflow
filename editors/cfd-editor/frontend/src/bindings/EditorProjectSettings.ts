@@ -30,4 +30,8 @@ views: { [key in string]?: { [key in string]?: Array<ViewConfig> } },
  * (filePath, actualType, columnName). Custom table views carry their
  * own widths inside their [`ViewConfig`].
  */
-default_table_column_widths: { [key in string]?: { [key in string]?: { [key in string]?: number } } }, record_groups: { [key in string]?: { [key in string]?: Array<EditorRecordGroup> } }, workspace: EditorWorkspaceState, };
+default_table_column_widths: { [key in string]?: { [key in string]?: { [key in string]?: number } } },
+/**
+ * 个人行高按文件、类型、视图和记录身份保存，排序不改变绑定关系。
+ */
+table_row_heights: { [key in string]?: { [key in string]?: { [key in string]?: { [key in string]?: number } } } }, record_groups: { [key in string]?: { [key in string]?: Array<EditorRecordGroup> } }, workspace: EditorWorkspaceState, };

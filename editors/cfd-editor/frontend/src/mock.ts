@@ -161,6 +161,7 @@ export const MOCK_EDITOR_SETTINGS: EditorProjectSettings = {
   short_name_fields: {},
     views: {},
     default_table_column_widths: {},
+    table_row_heights: {},
     workspace: { tabs: [], active_tab_id: null },
     record_groups: {
     'data/item.cfd': {

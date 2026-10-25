@@ -209,9 +209,8 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
   onRowToggle?: (path: string, expanded: boolean) => void
   diffChangedPaths?: ReadonlySet<string>
 }) {
-  // 表格和维度单元格共用同一棵紧凑字段树；紧凑上下文只调整摘要，不改变编辑语义。
+  // 表格、维度与详情共用字段树，紧凑模式只改变排版密度。
   return isComplexValue(value) ? (
-    <CompactCellCtx.Provider value={true}>
     <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
       <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
         <HighlightQueryCtx.Provider value={highlightQuery}>
@@ -222,7 +221,6 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
         </HighlightQueryCtx.Provider>
       </ControlledExpansionCtx.Provider>
     </DiffPathCtx.Provider>
-    </CompactCellCtx.Provider>
   ) : <ValueChip value={value} refTargetType={refTargetType} highlightQuery={highlightQuery} />
 }
 
@@ -267,7 +265,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
             event.preventDefault()
             event.stopPropagation()
             if (refTargetType) navigation?.openReference(refTargetType, refKey)
-          }}>&amp;</button>
+          }}><Icon name="reference" size={12} /></button>
           <span className="vc-ref-key">{highlightSearchText(shortName ?? refKey, highlightQuery)}</span>
         </span>
       )
@@ -311,7 +309,37 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
  *  the set changes. Used when a diagnostic jump lands on a nested field so
  *  the row is actually visible after scrollIntoView. Cleared by whoever set
  *  it once the highlight has been consumed. */
-const CompactCellCtx = createContext(false)
+
+// 摘要只展开当前结构的一层，深层值保留类型结构提示；标量复用现有显示组件。
+function structuralSummaryValue(value: FieldValue, annotation?: FieldAnnotation | null): ReactNode {
+  const shown = presentationValue(value)
+  if (shown.kind === 'object') return Object.keys(shown.value.fields).length ? '{…}' : '空对象'
+  if (shown.kind === 'array') return shown.value.length ? `[${shown.value.length} 项]` : '空列表'
+  if (shown.kind === 'dict') return shown.value.length ? `{${shown.value.length} 项}` : '空字典'
+  if (shown.kind === 'option_none') return '未设置'
+  if (shown.kind === 'string' && !shown.value) return '空字符串'
+  return <DataCardCompact value={shown} refTargetType={annotationRefTargetType(annotation)} />
+}
+
+function structureSummaryParts(value: FieldValue, annotation?: FieldAnnotation | null, firstValueOnly = false): ReactNode[] {
+  const shown = presentationValue(value)
+  const parts: ReactNode[] = []
+  let total = 0
+  if (shown.kind === 'object') {
+    const fields = objectFieldCells(shown, annotation)
+    total = fields.length
+    fields.slice(0, 2).forEach((field, index) => parts.push(<span className="dc-summary-part" key={field.name}>{!(firstValueOnly && index === 0) && <span className="dc-summary-key">{field.annotation?.label ?? field.name}:</span>} {structuralSummaryValue(field.value, field.annotation)}</span>))
+  } else if (shown.kind === 'array') {
+    total = shown.value.length
+    shown.value.slice(0, 2).forEach((item, index) => parts.push(<span className="dc-summary-part" key={index}>{structuralSummaryValue(item, annotationChild(annotation, index) ?? annotationItem(annotation))}</span>))
+  } else if (shown.kind === 'dict') {
+    total = shown.value.length
+    shown.value.slice(0, 2).forEach(([key, item]) => parts.push(<span className="dc-summary-part" key={dictKeyPathText(key)}><span className="dc-summary-key">{dictKeyText(key)}:</span> {structuralSummaryValue(item, annotationChild(annotation, dictKeyPathText(key)) ?? annotationItem(annotation))}</span>))
+  }
+  if (!total) return [structuralSummaryValue(shown, annotation)]
+  if (total > 2) parts.push(<span className="dc-summary-rest" key="remaining">… +{total - 2}</span>)
+  return parts
+}
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
 const NodeRelationsCtx = createContext<{
@@ -545,10 +573,6 @@ export function DataCardExpanded({
         const enumIsFlag = cellEnumIsFlag(fc)
         const nullable = cellNullable(fc)
         const shownValue = presentationValue(fc.value)
-        const nullCollectionShape = shownValue.kind === 'option_none'
-          ? collectionShapeForDeclaredType(declaredType)
-          : null
-        const displayedValue = nullCollectionShape ?? shownValue
         return (
           <FieldRow
             key={fc.name}
@@ -569,10 +593,10 @@ export function DataCardExpanded({
             fieldPath={[fieldPathField(fc.name)]}
             pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
             onRowToggle={onRowToggle}
-            flattenObjectChildren={flattenSingleComplexField
+            flattenComplexChildren={flattenSingleComplexField
               && !fc.missing
               && fields.length === 1
-              && displayedValue.kind === 'object'}
+              && isComplexValue(shownValue)}
           />
         )
       })}
@@ -691,7 +715,7 @@ function FieldRow({
   trailing,
   dragProps,
   collectionItem,
-  flattenObjectChildren = false,
+  flattenComplexChildren = false,
 }: {
   label: string
   fieldName?: string
@@ -714,7 +738,7 @@ function FieldRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
-  flattenObjectChildren?: boolean
+  flattenComplexChildren?: boolean
 }) {
   const effectiveEnumIsFlag = enumIsFlag ?? annotationEnumIsFlag(valueAnnotation)
   const shownValue = presentationValue(value)
@@ -785,16 +809,16 @@ function FieldRow({
     )
   }
 
-  if (flattenObjectChildren && shownValue.kind === 'object') {
+  if (flattenComplexChildren && isComplex) {
     const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
     return (
       <>
-        {polymorphicTypes.length >= 2 && (
+        {shownValue.kind === 'object' && (polymorphicTypes.length > 0 || (!!declaredType && declaredType !== shownValue.value.actual_type)) && (
           <PolymorphicTypeRow
             value={shownValue}
             polymorphicTypes={polymorphicTypes}
             depth={depth}
-            onCommit={onEdit
+            onCommit={onEdit && polymorphicTypes.length >= 2
               ? next => onEdit(fieldPath, replacePresentationValue(value, next))
               : undefined}
           />
@@ -809,6 +833,14 @@ function FieldRow({
           onRowToggle={onRowToggle}
           valueAnnotation={valueAnnotation}
         />
+        {/* 根集合直接展示内容，新增与可空操作独立保留，不再增加一行类型标题。 */}
+        {(onCollectionEdit || mergedTrailing) && (shownValue.kind === 'array' || shownValue.kind === 'dict') && (
+          <div className="dc-root-actions">
+            {onCollectionEdit && <CollectionAddControl container={shownValue} depth={depth} fieldPath={fieldPath}
+              onCollectionEdit={edit => onCollectionEdit(fieldPath, edit)} itemAnnotation={annotationItem(valueAnnotation)} keyAnnotation={annotationKey(valueAnnotation)} />}
+            {mergedTrailing}
+          </div>
+        )}
       </>
     )
   }
@@ -1191,9 +1223,10 @@ function ScalarFieldRow({
   }
 
   const displayedValue = scrubPreview ?? value
+  const listItem = collectionItem && fieldPath[fieldPath.length - 1]?.kind === 'index'
 
   return (
-    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row dc-row-field${collectionItem ? ' dc-row-item' : ''}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-list-item={listItem || undefined} data-value-kind={value.kind} data-bool-value={value.kind === 'bool' ? String(value.value) : undefined} data-keyboard-editable={canEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div
         className={`dc-row-label${numericScrubEnabled ? ' dc-numeric-scrub-label' : ''}`}
         onPointerDown={numericScrubEnabled ? beginNumericScrub : undefined}
@@ -1610,10 +1643,6 @@ export function RefDirectSelect({
     return () => { alive = false }
   }, [targetType, lookups])
 
-  if (targetType && targets === null && variant === 'input') {
-    return <input className={inputClass} style={{ '--ref-color': color } as CSSProperties} value={currentKey} disabled placeholder="加载中..." />
-  }
-
   function commit(key: string) {
     if (key === NULL_SENTINEL) {
       if (value.kind !== 'option_none') onCommit(nullValue())
@@ -1646,20 +1675,19 @@ export function RefDirectSelect({
 
       />
     )
-    return variant === 'input'
-      ? select
-      : <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>{select}</span>
+    return <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>{select}</span>
   }
 
   const input = (
     <span className="searchable-reference-wrap">
-    <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={value.kind !== 'ref' || !targetType || !navigation} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); if (targetType) navigation?.openReference(targetType, currentKey) }}>&amp;</button>
+    <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={value.kind !== 'ref' || !targetType || !navigation} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); if (targetType) navigation?.openReference(targetType, currentKey) }}><Icon name="reference" size={12} /></button>
     <input
       className={inputClass}
       style={{ '--ref-color': color } as CSSProperties}
       defaultValue={currentKey}
       autoFocus={autoFocus}
-      placeholder="key"
+      disabled={!!targetType && targets === null && variant === 'input'}
+      placeholder={targetType && targets === null ? '加载中...' : 'key'}
       aria-label="选择引用"
       aria-invalid={!!loadError}
       onBlur={event => {
@@ -1673,9 +1701,7 @@ export function RefDirectSelect({
     />
     </span>
   )
-  return variant === 'input'
-    ? input
-    : <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
+  return <span className="dc-pill-wrap dc-pill-wrap-ref" style={{ '--ref-color': color } as CSSProperties}>
       {input}
       {loadError && <LookupErrorBadge message={loadError} lookupKey={`ref:${targetType}`} />}
     </span>
@@ -1807,7 +1833,11 @@ function ExpandableRow({
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
   collectionItem?: boolean
 }) {
-  const compactCell = useContext(CompactCellCtx)
+  const listItem = collectionItem && fieldPath[fieldPath.length - 1]?.kind === 'index'
+  // 列表首字段保持正常的标签/值轨道，引用胶囊不能被搬进标题。
+  const firstField = listItem && value.kind === 'object' ? objectFieldCells(value, valueAnnotation)[0] : undefined
+  const itemLabel = firstField ? firstField.annotation?.label ?? firstField.name : ''
+  const objectSummary = structureSummaryParts(value, valueAnnotation, !!firstField)
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
   const nodeRelations = useContext(NodeRelationsCtx)
@@ -1841,7 +1871,12 @@ function ExpandableRow({
   const summarizeValue = useContext(ValueSummaryContext)
   const concreteType = value.kind === 'object' ? value.value.actual_type : null
   const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
+  const hasConcreteType = value.kind === 'object' && (polymorphicTypes.length > 0 || (!!declaredType && declaredType !== concreteType))
   const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
+  // 多态类型是字段语义的一部分：折叠时跟随标签，展开时占据摘要原来的位置。
+  const concreteTypeControl = hasConcreteType && (canSwitchConcreteType && value.kind === 'object'
+    ? <ExpandableObjectTypeSelect value={value} polymorphicTypes={polymorphicTypes} onCommit={next => onEdit(fieldPath, next)} />
+    : <span className="dc-structure-type">{concreteType}</span>)
   const pluginRecord = useContext(PluginRecordCtx)
   const summaryType = declaredType ?? concreteType ?? ''
   const summaryPresentation = usePluginPresentation('summary', summaryType)
@@ -1880,7 +1915,7 @@ function ExpandableRow({
       className={`dc-group${collectionItem ? ' dc-group-item' : ''}${value.kind === 'array' || value.kind === 'dict' ? ' dc-group-collection' : ' dc-group-object'}`}
       style={inspectorDepthStyle(depth)}
     >
-      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} title={rowTitle} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={event => {
+      <div className={`dc-row dc-row-structure dc-row-foldout${structureClass}${selected ? ' keyboard-selected' : ''}${diag.sev ? ` dc-row-diag dc-row-diag-${diag.sev}${diag.exact ? ' dc-row-diag-exact' : ' dc-row-diag-summary'}` : ''}${diffClass}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} style={inspectorDepthStyle(depth)} data-depth={depth} data-field-name={depth === 0 ? fieldName : undefined} data-field-path={pathKey} data-field-path-wire={JSON.stringify(fieldPath)} data-value-kind={value.kind} data-keyboard-editable={!!onEdit || undefined} data-list-item={listItem || undefined} title={[rowTitle, listItem ? `第 ${label} 项` : null].filter(Boolean).join('\n') || undefined} onMouseDown={() => rowSelection?.onSelectValue?.(fieldPath)} onClick={toggle} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={event => {
         if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
         event.stopPropagation()
@@ -1891,29 +1926,16 @@ function ExpandableRow({
           <span className="dc-fold-arrow">
             {!fixedExpanded && <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />}
           </span>
-          <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{label}</span>
+          <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{listItem ? itemLabel : label}</span>
+          {!expanded && concreteTypeControl}
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            {!expanded && summarizeValue ? <span className="dc-business-summary" title={summarizeValue(value)}>{summarizeValue(value)}</span> : canSwitchConcreteType && value.kind === 'object' ? (
-              <ExpandableObjectTypeSelect
-                value={value}
-                polymorphicTypes={polymorphicTypes}
-                onCommit={next => onEdit(fieldPath, next)}
-              />
-            ) : concreteType && <span className="dc-structure-type">{concreteType}</span>}
-            {!expanded && summarizeValue ? null : !expanded && summaryPresentation?.slot === 'summary' && summaryContext ? (
-              <span className="vc-summary">
-                <PluginSummaryText
-                  presentation={summaryPresentation}
-                  context={summaryContext}
-                  fallback={count !== null ? count : ''}
-                />
-              </span>
-            ) : count !== null && <>
-              {compactCell && !expanded && <span className="dc-collection-preview" title={compactCollectionPreview(value)}>{compactCollectionPreview(value)}</span>}
-              <span className="vc-count">{count}{compactCell ? ' 项' : ''}</span>
-            </>}
+            {expanded ? concreteTypeControl : summarizeValue ? (
+              <span className="dc-business-summary" title={summarizeValue(value)}>{summarizeValue(value)}</span>
+            ) : summaryPresentation?.slot === 'summary' && summaryContext ? (
+              <span className="vc-summary"><PluginSummaryText presentation={summaryPresentation} context={summaryContext} fallback={count ?? ''} /></span>
+            ) : <span className="dc-business-summary">{objectSummary}</span>}
           </div>
         </div>
         <div className="dc-row-actions" onClick={event => event.stopPropagation()}>
@@ -1927,6 +1949,7 @@ function ExpandableRow({
               keyAnnotation={annotationKey(valueAnnotation)}
             />
           )}
+          {listItem && <span className="dc-item-position" title={`第 ${label} 项`}>{label}</span>}
           {trailing}
           <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
         </div>
