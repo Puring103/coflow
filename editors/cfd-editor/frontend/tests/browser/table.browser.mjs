@@ -638,3 +638,29 @@ test('expanded text owns its full surface and covers the original row resizer', 
   assert.equal(await cell.locator('.cell-expand-button').count(), 0)
   assert.deepEqual(errors, [])
 })
+
+// 用正式组件验证列宽驱动的摘要，测试不依赖设计预览页面。
+test('summary item count follows available width and simple lists show their elements', async () => {
+  const fixture = page.locator('#summary-fixture')
+  const summary = fixture.locator('[data-field-name="Values"] .dc-business-summary')
+  const resize = async width => {
+    await fixture.evaluate((element, width) => { element.style.width = `${width}px` }, width)
+    await page.waitForTimeout(80)
+  }
+  await resize(1100)
+  assert.equal(await summary.locator('.dc-summary-part:visible').count(), 5)
+  assert.equal(await summary.locator('.dc-summary-rest').isVisible(), false)
+  await resize(300)
+  const narrowCount = await summary.locator('.dc-summary-part:visible').count()
+  assert.ok(narrowCount > 0 && narrowCount < 5)
+  assert.equal(await summary.locator('.dc-summary-rest').innerText(), `+${5 - narrowCount}`)
+  await resize(170)
+  assert.equal(await summary.locator('.dc-summary-part:visible').count(), 0)
+  assert.equal(await summary.locator('.dc-summary-rest').innerText(), '+5')
+  await resize(1100)
+  assert.equal(await summary.locator('.dc-summary-part:visible').count(), 5)
+  const lists = fixture.locator('[data-field-name="Groups"] .dc-business-summary')
+  assert.match(await lists.innerText(), /Grass\s+Sand/)
+  assert.equal(await fixture.locator('.dc-structure-type, .dc-structure-type-control').count(), 0)
+  assert.deepEqual(errors, [])
+})

@@ -2,6 +2,7 @@ import { LookupErrorBadge } from './LookupErrorBadge'
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useContext,
   createContext,
@@ -314,31 +315,72 @@ const DiagCtx = createContext<DiagCtxValue | null>(null)
 function structuralSummaryValue(value: FieldValue, annotation?: FieldAnnotation | null): ReactNode {
   const shown = presentationValue(value)
   if (shown.kind === 'object') return Object.keys(shown.value.fields).length ? '{…}' : '空对象'
-  if (shown.kind === 'array') return shown.value.length ? `[${shown.value.length} 项]` : '空列表'
+  if (shown.kind === 'array') {
+    if (!shown.value.length) return '空列表'
+    // 简单列表直接呈现元素，复杂列表保留结构提示，避免摘要递归展开整棵树。
+    if (shown.value.every(item => !isComplexValue(presentationValue(item)))) return <span className="dc-summary-list">{shown.value.map((item, index) => <span key={index}>{structuralSummaryValue(item, annotationChild(annotation, index) ?? annotationItem(annotation))}</span>)}</span>
+    return `[${shown.value.length} 项]`
+  }
   if (shown.kind === 'dict') return shown.value.length ? `{${shown.value.length} 项}` : '空字典'
   if (shown.kind === 'option_none') return '未设置'
   if (shown.kind === 'string' && !shown.value) return '空字符串'
   return <DataCardCompact value={shown} refTargetType={annotationRefTargetType(annotation)} />
 }
 
-function structureSummaryParts(value: FieldValue, annotation?: FieldAnnotation | null, firstValueOnly = false): ReactNode[] {
+function StructureSummary({ value, annotation, firstValueOnly = false }: { value: FieldValue; annotation?: FieldAnnotation | null; firstValueOnly?: boolean }) {
+  const rootRef = useRef<HTMLSpanElement>(null)
   const shown = presentationValue(value)
   const parts: ReactNode[] = []
   let total = 0
   if (shown.kind === 'object') {
     const fields = objectFieldCells(shown, annotation)
     total = fields.length
-    fields.slice(0, 2).forEach((field, index) => parts.push(<span className="dc-summary-part" key={field.name}>{!(firstValueOnly && index === 0) && <span className="dc-summary-key">{field.annotation?.label ?? field.name}:</span>} {structuralSummaryValue(field.value, field.annotation)}</span>))
+    fields.forEach((field, index) => parts.push(<span className="dc-summary-part" key={field.name}>{!(firstValueOnly && index === 0) && <span className="dc-summary-key">{field.annotation?.label ?? field.name}:</span>} {structuralSummaryValue(field.value, field.annotation)}</span>))
   } else if (shown.kind === 'array') {
     total = shown.value.length
-    shown.value.slice(0, 2).forEach((item, index) => parts.push(<span className="dc-summary-part" key={index}>{structuralSummaryValue(item, annotationChild(annotation, index) ?? annotationItem(annotation))}</span>))
+    shown.value.forEach((item, index) => parts.push(<span className="dc-summary-part" key={index}>{structuralSummaryValue(item, annotationChild(annotation, index) ?? annotationItem(annotation))}</span>))
   } else if (shown.kind === 'dict') {
     total = shown.value.length
-    shown.value.slice(0, 2).forEach(([key, item]) => parts.push(<span className="dc-summary-part" key={dictKeyPathText(key)}><span className="dc-summary-key">{dictKeyText(key)}:</span> {structuralSummaryValue(item, annotationChild(annotation, dictKeyPathText(key)) ?? annotationItem(annotation))}</span>))
+    shown.value.forEach(([key, item]) => parts.push(<span className="dc-summary-part" key={dictKeyPathText(key)}><span className="dc-summary-key">{dictKeyText(key)}:</span> {structuralSummaryValue(item, annotationChild(annotation, dictKeyPathText(key)) ?? annotationItem(annotation))}</span>))
   }
-  if (!total) return [structuralSummaryValue(shown, annotation)]
-  if (total > 2) parts.push(<span className="dc-summary-rest" key="remaining">… +{total - 2}</span>)
-  return parts
+  // 按实际宽度保留完整片段，预留余项计数的空间；缩放或列宽变化后重新计算。
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root || !total) return
+    const measure = () => {
+      const items = [...root.querySelectorAll<HTMLElement>(':scope > .dc-summary-part')]
+      const rest = root.querySelector<HTMLElement>(':scope > .dc-summary-rest')!
+      items.forEach(item => { item.hidden = false })
+      const widths = items.map(item => item.getBoundingClientRect().width)
+      const gap = parseFloat(getComputedStyle(root).columnGap) || 0
+      const prefix = [0]
+      widths.forEach(width => prefix.push(prefix[prefix.length - 1] + width))
+      let visible = items.length
+      while (visible >= 0) {
+        const remaining = total - visible
+        rest.hidden = remaining === 0
+        rest.textContent = `+${remaining}`
+        const used = prefix[visible]
+          + gap * Math.max(0, visible - 1)
+          + (remaining ? rest.getBoundingClientRect().width + (visible ? gap : 0) : 0)
+        if (used <= root.clientWidth || visible === 0) break
+        visible--
+      }
+      items.forEach((item, index) => { item.hidden = index >= visible })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    // 引用显示名可能异步加载；内容变化后也必须重算，避免旧宽度裁掉胶囊。
+    const mutation = new MutationObserver(measure)
+    root.querySelectorAll('.dc-summary-part').forEach(part => mutation.observe(part, { childList: true, subtree: true, characterData: true }))
+    document.fonts.addEventListener('loadingdone', measure)
+    return () => { observer.disconnect(); mutation.disconnect(); document.fonts.removeEventListener('loadingdone', measure) }
+  }, [value, annotation, firstValueOnly, total])
+  return <span className="dc-business-summary" ref={rootRef}>
+    {total ? parts : structuralSummaryValue(shown, annotation)}
+    {total > 0 && <span className="dc-summary-rest" hidden={total <= parts.length}>+{Math.max(0, total - parts.length)}</span>}
+  </span>
 }
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
@@ -813,7 +855,7 @@ function FieldRow({
     const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
     return (
       <>
-        {shownValue.kind === 'object' && (polymorphicTypes.length > 0 || (!!declaredType && declaredType !== shownValue.value.actual_type)) && (
+        {shownValue.kind === 'object' && polymorphicTypes.length > 0 && (
           <PolymorphicTypeRow
             value={shownValue}
             polymorphicTypes={polymorphicTypes}
@@ -1837,7 +1879,6 @@ function ExpandableRow({
   // 列表首字段保持正常的标签/值轨道，引用胶囊不能被搬进标题。
   const firstField = listItem && value.kind === 'object' ? objectFieldCells(value, valueAnnotation)[0] : undefined
   const itemLabel = firstField ? firstField.annotation?.label ?? firstField.name : ''
-  const objectSummary = structureSummaryParts(value, valueAnnotation, !!firstField)
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
   const nodeRelations = useContext(NodeRelationsCtx)
@@ -1871,9 +1912,9 @@ function ExpandableRow({
   const summarizeValue = useContext(ValueSummaryContext)
   const concreteType = value.kind === 'object' ? value.value.actual_type : null
   const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
-  const hasConcreteType = value.kind === 'object' && (polymorphicTypes.length > 0 || (!!declaredType && declaredType !== concreteType))
+  const hasConcreteType = value.kind === 'object' && polymorphicTypes.length > 0
   const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
-  // 多态类型是字段语义的一部分：始终位于右侧值区域，折叠时排列在摘要之前。
+  // 多态类型是字段语义的一部分：始终跟随左侧标签，展开与折叠不改变类型控件的位置。
   const concreteTypeControl = hasConcreteType && (canSwitchConcreteType && value.kind === 'object'
     ? <ExpandableObjectTypeSelect value={value} polymorphicTypes={polymorphicTypes} onCommit={next => onEdit(fieldPath, next)} />
     : <span className="dc-structure-type">{concreteType}</span>)
@@ -1927,15 +1968,15 @@ function ExpandableRow({
             {!fixedExpanded && <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />}
           </span>
           <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{listItem ? itemLabel : label}</span>
+          {concreteTypeControl}
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            {concreteTypeControl}
             {expanded ? null : summarizeValue ? (
               <span className="dc-business-summary" title={summarizeValue(value)}>{summarizeValue(value)}</span>
             ) : summaryPresentation?.slot === 'summary' && summaryContext ? (
               <span className="vc-summary"><PluginSummaryText presentation={summaryPresentation} context={summaryContext} fallback={count ?? ''} /></span>
-            ) : <span className="dc-business-summary">{objectSummary}</span>}
+            ) : <StructureSummary value={value} annotation={valueAnnotation} firstValueOnly={!!firstField} />}
           </div>
         </div>
         <div className="dc-row-actions" onClick={event => event.stopPropagation()}>
