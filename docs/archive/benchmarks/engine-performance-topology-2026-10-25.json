@@ -1,0 +1,1177 @@
+{
+  "date": "2026-10-25",
+  "core_revision": "e458a8f3e8f6acf0bc746c6d5565b611486bc7e2",
+  "environment": {
+    "date": "2026-10-25",
+    "baseline": "7e9d4fdebabda2c440ed80d1b1f39651801f1387",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "cpu": {
+      "Name": "13th Gen Intel(R) Core(TM) i5-13600KF",
+      "NumberOfCores": 14,
+      "NumberOfLogicalProcessors": 20
+    },
+    "os": {
+      "Caption": "Microsoft Windows 11 家庭版",
+      "Version": "10.0.26200",
+      "TotalVisibleMemorySize": 33389444
+    },
+    "profile": "release",
+    "editor_started": false,
+    "benchmark_processes_serial": true
+  },
+  "allocator": "mimalloc 0.1.52 on Windows",
+  "profile": "release",
+  "warmups": 1,
+  "samples_per_case": 3,
+  "sample_scope": "Exploratory topology audit; medians only; no P95 claim; build and measurement executed serially",
+  "model": [
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 1000,
+      "edges": 1000,
+      "changed_records": 100,
+      "warmups": 1,
+      "samples_ms": [
+        0.1303,
+        0.1211,
+        0.11510000000000001
+      ],
+      "median_ms": 0.1211,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 1000,
+      "edges": 1000,
+      "changed_records": 100,
+      "warmups": 1,
+      "samples_ms": [
+        0.14889999999999998,
+        0.1775,
+        0.1435
+      ],
+      "median_ms": 0.14889999999999998,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 2000,
+      "edges": 2000,
+      "changed_records": 200,
+      "warmups": 1,
+      "samples_ms": [
+        0.2959,
+        0.2512,
+        0.2339
+      ],
+      "median_ms": 0.2512,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 2000,
+      "edges": 2000,
+      "changed_records": 200,
+      "warmups": 1,
+      "samples_ms": [
+        0.3702,
+        0.36019999999999996,
+        0.3655
+      ],
+      "median_ms": 0.3655,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 4000,
+      "edges": 4000,
+      "changed_records": 400,
+      "warmups": 1,
+      "samples_ms": [
+        0.6164000000000001,
+        0.5511,
+        0.5385
+      ],
+      "median_ms": 0.5511,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 4000,
+      "edges": 4000,
+      "changed_records": 400,
+      "warmups": 1,
+      "samples_ms": [
+        1.0624,
+        1.0343,
+        1.0271
+      ],
+      "median_ms": 1.0343,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 8000,
+      "edges": 8000,
+      "changed_records": 800,
+      "warmups": 1,
+      "samples_ms": [
+        1.148,
+        1.2271,
+        1.1807
+      ],
+      "median_ms": 1.1807,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 8000,
+      "edges": 8000,
+      "changed_records": 800,
+      "warmups": 1,
+      "samples_ms": [
+        3.3173999999999997,
+        3.5343,
+        3.2889
+      ],
+      "median_ms": 3.3173999999999997,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    }
+  ],
+  "check": [
+    {
+      "probe": "check_reference_fanout",
+      "warmups": 1,
+      "samples": 3,
+      "timing": "mutation only; fresh full reload and value verification outside timing",
+      "allocator": "mimalloc"
+    },
+    {
+      "records": 1000,
+      "edges": 1000,
+      "topology": "ring",
+      "source_bytes": 42000,
+      "samples_ms": [
+        14.4526,
+        12.6944,
+        12.4848
+      ],
+      "median_ms": 12.6944,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 1000,
+      "edges": 1000,
+      "topology": "hub",
+      "source_bytes": 42000,
+      "samples_ms": [
+        28.1309,
+        27.758499999999998,
+        28.9342
+      ],
+      "median_ms": 28.1309,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 2000,
+      "edges": 2000,
+      "topology": "ring",
+      "source_bytes": 84000,
+      "samples_ms": [
+        16.9226,
+        12.9694,
+        12.1707
+      ],
+      "median_ms": 12.9694,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 2000,
+      "edges": 2000,
+      "topology": "hub",
+      "source_bytes": 84000,
+      "samples_ms": [
+        74.4648,
+        73.37190000000001,
+        74.7457
+      ],
+      "median_ms": 74.4648,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 2000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 2000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 2000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 4000,
+      "edges": 4000,
+      "topology": "ring",
+      "source_bytes": 168000,
+      "samples_ms": [
+        21.3173,
+        16.6663,
+        17.144099999999998
+      ],
+      "median_ms": 17.144099999999998,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 4000,
+      "edges": 4000,
+      "topology": "hub",
+      "source_bytes": 168000,
+      "samples_ms": [
+        237.79639999999998,
+        236.69740000000002,
+        239.16740000000001
+      ],
+      "median_ms": 237.79639999999998,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 8000,
+      "edges": 8000,
+      "topology": "ring",
+      "source_bytes": 336000,
+      "samples_ms": [
+        26.6067,
+        28.205399999999997,
+        25.953
+      ],
+      "median_ms": 26.6067,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 8000,
+      "edges": 8000,
+      "topology": "hub",
+      "source_bytes": 336000,
+      "samples_ms": [
+        1386.5744,
+        1361.649,
+        1367.0814
+      ],
+      "median_ms": 1367.0814,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 8000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 8000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 8000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    }
+  ],
+  "source_sha256": {
+    "crates/coflow-runtime/examples/engine_model_topology_perf.rs": "E289890D628F1C71D32F928304FE990F57AE8C85C60D6C07446F75D490084B7C",
+    "crates/coflow-runtime/examples/engine_check_topology_perf.rs": "E5EB04ED0E1C153EAB15E35BA5F5184706D64BFD9AD1A4FC4698C50BF2CE9E6C"
+  },
+  "measured_binary_sha256": {
+    "target/release/examples/audit_model_probe.exe": "D4C4761868C0D77C2292EFE65A88E6EF72BBAD834572D9C1423606B4C7685484",
+    "target/release/examples/audit_check_probe.exe": "5D38F73DF6BEC249B84BB92170CC71336B398F0BAB7BB819EFCC1DD6727E9CDD"
+  },
+  "notes": [
+    "The measured binaries were built from temporary example names; persistent example source contents are identical.",
+    "Hub checks execute N roots while ring checks execute one root. Elapsed differences are not a direct attribution to dependency-index time.",
+    "Model checks compare complete model equality and incoming/outgoing edge order against an independent full rebuild outside timing.",
+    "Runtime checks compare all value/reference fields and absence of diagnostics against a fresh disk reload outside timing."
+  ],
+  "budget_fix_validation": {
+    "revision": "daccc61a09bc73919888f47f1140e9364c694eed",
+    "checks": {
+      "cargo_check_workspace": "passed",
+      "cargo_test_workspace": "passed",
+      "tests_passed": 718
+    },
+    "regression": {
+      "initial_arrays": 450000,
+      "enlarged_array": 600000,
+      "reduced_array": 300000,
+      "limit_nodes": 1000000,
+      "grow_then_shrink": "failed at operation 0, no publication",
+      "shrink_then_grow": "succeeded",
+      "independent_successful_group_full_parses": 2
+    },
+    "performance_note": "Exploratory serial A/B runs with 3 batch samples; substantial variation also occurs on unchanged loading. Do not infer a speedup or stable P95.",
+    "runs": {
+      "fixed_direct": [
+        {
+          "mode": "pipeline",
+          "samples": 1,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 100000,
+          "files": 100,
+          "fields": 20,
+          "source_bytes": 54267780,
+          "mutation_field": "name",
+          "update_samples": 3
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.2261
+          ],
+          "median_ms": 0.2261,
+          "min_ms": 0.2261,
+          "max_ms": 0.2261,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.5932999999999999
+          ],
+          "median_ms": 0.5932999999999999,
+          "min_ms": 0.5932999999999999,
+          "max_ms": 0.5932999999999999,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            11972.1892
+          ],
+          "median_ms": 11972.1892,
+          "min_ms": 11972.1892,
+          "max_ms": 11972.1892,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.1393
+          ],
+          "median_ms": 0.1393,
+          "min_ms": 0.1393,
+          "max_ms": 0.1393,
+          "p95_ms": null
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            100.3357
+          ],
+          "median_ms": 100.3357,
+          "min_ms": 100.3357,
+          "max_ms": 100.3357,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples_ms": [
+            437.2224,
+            419.11310000000003,
+            422.80060000000003
+          ],
+          "median_ms": 422.80060000000003,
+          "min_ms": 419.11310000000003,
+          "max_ms": 437.2224,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples_ms": [
+            7272.5388,
+            7450.8313,
+            7536.0204
+          ],
+          "median_ms": 7450.8313,
+          "min_ms": 7272.5388,
+          "max_ms": 7536.0204,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "fixed_child_initial": [
+        {
+          "mode": "pipeline",
+          "samples": 1,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 100000,
+          "files": 100,
+          "fields": 20,
+          "source_bytes": 54267780,
+          "mutation_field": "name",
+          "update_samples": 3
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.153
+          ],
+          "median_ms": 0.153,
+          "min_ms": 0.153,
+          "max_ms": 0.153,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.5346
+          ],
+          "median_ms": 0.5346,
+          "min_ms": 0.5346,
+          "max_ms": 0.5346,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            7753.2562
+          ],
+          "median_ms": 7753.2562,
+          "min_ms": 7753.2562,
+          "max_ms": 7753.2562,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.2271
+          ],
+          "median_ms": 0.2271,
+          "min_ms": 0.2271,
+          "max_ms": 0.2271,
+          "p95_ms": null
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            61.5601
+          ],
+          "median_ms": 61.5601,
+          "min_ms": 61.5601,
+          "max_ms": 61.5601,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples_ms": [
+            168.1939,
+            159.1227,
+            185.389
+          ],
+          "median_ms": 168.1939,
+          "min_ms": 159.1227,
+          "max_ms": 185.389,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples_ms": [
+            7875.6172,
+            7910.0536999999995,
+            7911.937199999999
+          ],
+          "median_ms": 7910.0536999999995,
+          "min_ms": 7875.6172,
+          "max_ms": 7911.937199999999,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "baseline_child": [
+        {
+          "mode": "pipeline",
+          "samples": 1,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 100000,
+          "files": 100,
+          "fields": 20,
+          "source_bytes": 54267780,
+          "mutation_field": "name",
+          "update_samples": 3
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            1.9572999999999998
+          ],
+          "median_ms": 1.9572999999999998,
+          "min_ms": 1.9572999999999998,
+          "max_ms": 1.9572999999999998,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            3.0687
+          ],
+          "median_ms": 3.0687,
+          "min_ms": 3.0687,
+          "max_ms": 3.0687,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            9739.7582
+          ],
+          "median_ms": 9739.7582,
+          "min_ms": 9739.7582,
+          "max_ms": 9739.7582,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.23709999999999998
+          ],
+          "median_ms": 0.23709999999999998,
+          "min_ms": 0.23709999999999998,
+          "max_ms": 0.23709999999999998,
+          "p95_ms": null
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            46.4289
+          ],
+          "median_ms": 46.4289,
+          "min_ms": 46.4289,
+          "max_ms": 46.4289,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples_ms": [
+            183.6387,
+            169.3248,
+            204.25289999999998
+          ],
+          "median_ms": 183.6387,
+          "min_ms": 169.3248,
+          "max_ms": 204.25289999999998,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples_ms": [
+            5353.918000000001,
+            5558.99,
+            4575.2807999999995
+          ],
+          "median_ms": 5353.918000000001,
+          "min_ms": 4575.2807999999995,
+          "max_ms": 5558.99,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ],
+      "fixed_child_paired": [
+        {
+          "mode": "pipeline",
+          "samples": 1,
+          "warmups": 1,
+          "allocator": "mimalloc",
+          "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+        },
+        {
+          "records": 100000,
+          "files": 100,
+          "fields": 20,
+          "source_bytes": 54267780,
+          "mutation_field": "name",
+          "update_samples": 3
+        },
+        {
+          "metric": "project_open",
+          "samples_ms": [
+            0.272
+          ],
+          "median_ms": 0.272,
+          "min_ms": 0.272,
+          "max_ms": 0.272,
+          "p95_ms": null
+        },
+        {
+          "metric": "schema_compile",
+          "samples_ms": [
+            0.665
+          ],
+          "median_ms": 0.665,
+          "min_ms": 0.665,
+          "max_ms": 0.665,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open",
+          "samples_ms": [
+            6779.917100000001
+          ],
+          "median_ms": 6779.917100000001,
+          "min_ms": 6779.917100000001,
+          "max_ms": 6779.917100000001,
+          "p95_ms": null
+        },
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "validate_same_text",
+          "samples_ms": [
+            0.07150000000000001
+          ],
+          "median_ms": 0.07150000000000001,
+          "min_ms": 0.07150000000000001,
+          "max_ms": 0.07150000000000001,
+          "p95_ms": null
+        },
+        {
+          "metric": "validate_one_field",
+          "samples_ms": [
+            60.356100000000005
+          ],
+          "median_ms": 60.356100000000005,
+          "min_ms": 60.356100000000005,
+          "max_ms": 60.356100000000005,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples_ms": [
+            189.9065,
+            152.24380000000002,
+            145.6241
+          ],
+          "median_ms": 152.24380000000002,
+          "min_ms": 145.6241,
+          "max_ms": 189.9065,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples_ms": [
+            4049.7148,
+            4321.0203,
+            4717.8041
+          ],
+          "median_ms": 4321.0203,
+          "min_ms": 4049.7148,
+          "max_ms": 4717.8041,
+          "p95_ms": null
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 100000,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+        }
+      ]
+    },
+    "binary_sha256": {
+      "baseline": "93D7224C182D729C14EEC38D55D1CA0E52EDA0205E1CE1B9555ED135A8CE0CCD",
+      "fixed": "9D17E256D23515A6389D50D1D35202DF2AF76E0EB8AA51077FFA35E12673FD47"
+    }
+  }
+}
