@@ -52,6 +52,7 @@ function settingsWith(views: ViewConfig[]): EditorProjectSettings {
     views: { [FILE]: { [TYPE]: views } },
     view_order: {},
     short_name_fields: {},
+    table_row_heights: {},
     default_table_column_widths: { [FILE]: { [TYPE]: { name: 200 } } },
     record_groups: {},
     workspace: { tabs: [], active_tab_id: null },

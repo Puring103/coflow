@@ -560,6 +560,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
 
   // Right-side inspector panel: table cells select one value, while the Key
   // column and graph nodes select the whole record.
+  const [inspectorDialogOpen, setInspectorDialogOpen] = useState(false)
+  const [inspectorOrigin, setInspectorOrigin] = useState<DOMRect | null>(null)
   const [inspectorSelection, setInspectorSelection] = useState<EditorSelection | null>(null)
   const inspectorCoord = useMemo(() => inspectorSelection
     ? { file: inspectorSelection.filePath, coordinate: inspectorSelection.coordinate }
@@ -581,8 +583,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     })
   }, [])
   const closeInspector = useCallback(() => {
-    finishActiveDataEdit()
-    setInspectorSelection(null)
+    setInspectorDialogOpen(false)
+    setInspectorOrigin(null)
   }, [])
 
   const navigateWorkspaceTab = useCallback((
@@ -1372,10 +1374,29 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           coordinate.actual_type,
           replaceGroupedCoordinate(groups, coordinate, result.coordinate),
         )
+        const byView = projectSettings?.table_row_heights[filePath]?.[coordinate.actual_type] ?? {}
+        const previousKey = coordinateId(coordinate), nextKey = coordinateId(result.coordinate)
+        const migrated = Object.fromEntries(Object.entries(byView).map(([view, heights]) => {
+          const next = { ...heights }
+          if (next[previousKey] !== undefined) { next[nextKey] = next[previousKey]; delete next[previousKey] }
+          return [view, next]
+        }))
+        setProjectSettings(current => current ? { ...current, table_row_heights: {
+          ...current.table_row_heights, [filePath]: { ...current.table_row_heights[filePath], [coordinate.actual_type]: migrated },
+        } } : current)
+        const identity = generation.currentIdentity()
+        if (api.isTauri && identity) {
+          rowHeightSaveQueue.current = rowHeightSaveQueue.current.then(async () => {
+            if (generation.currentSession() !== identity.sessionId) return
+            for (const [view, heights] of Object.entries(migrated)) {
+              await api.setTableRowHeights(identity.sessionId, filePath, coordinate.actual_type, view, heights as Record<string, number>)
+            }
+          }).catch(error => { if (generation.currentSession() === identity.sessionId) setErrorMsg(`保存行高失败：${errorMessage(error)}`) })
+        }
       }
       return result
     },
-    [mutations, projectSettings, saveRecordGroups],
+    [mutations, projectSettings, saveRecordGroups, generation, setProjectSettings],
   )
 
   const insertRecord = useCallback(
@@ -2182,6 +2203,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     target?.focus({ preventScroll: true })
   }, [])
   const focusInspector = useCallback(() => {
+    setInspectorOrigin(null)
+    setInspectorDialogOpen(true)
     requestAnimationFrame(() => {
       document.querySelector<HTMLElement>('.inspector-panel:not(.collapsed) .inspector-body')
         ?.focus({ preventScroll: true })
@@ -2304,17 +2327,47 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     setFileActionDialog({ kind: 'delete', path })
   }, [])
   const tableOnEnterInspector = useCallback(() => {
+    setInspectorOrigin(null)
+    setInspectorDialogOpen(true)
     setInspectorFocusRequest(request => request + 1)
   }, [])
   const inspectorOnExitKeyboardNavigation = useCallback(() => {
     if (currentRoute?.view === 'table') setTableFocusRequest(request => request + 1)
     else focusActiveView()
   }, [currentRoute?.view, focusActiveView])
+  useEffect(() => { setInspectorDialogOpen(false); setInspectorOrigin(null) }, [activeFile])
   const tableColumnWidths = useMemo(() => (
     resolvedView?.kind === 'table'
       ? definedColumnWidths(resolvedView.columnWidths)
       : undefined
   ), [resolvedView])
+  const tableRowHeights = useMemo(() => currentRoute && activeType && resolvedView
+    ? projectSettings?.table_row_heights[currentRoute.file]?.[activeType]?.[resolvedView.id]
+    : undefined, [projectSettings?.table_row_heights, currentRoute?.file, activeType, resolvedView?.id])
+  const rowHeightSaveQueue = useRef(Promise.resolve())
+  const tableOnRowHeightsChange = useCallback((heights: Record<string, number>) => {
+    if (!currentRoute || !activeType || !resolvedView) return
+    const file = currentRoute.file, type = activeType, view = resolvedView.id
+    setProjectSettings(current => current ? { ...current, table_row_heights: {
+      ...current.table_row_heights, [file]: { ...current.table_row_heights[file], [type]: {
+        ...current.table_row_heights[file]?.[type], [view]: heights,
+      } },
+    } } : current)
+    const identity = generation.currentIdentity()
+    if (!api.isTauri || !identity) return
+    // 连续拖动串行持久化，防止旧请求覆盖最终行高。
+    rowHeightSaveQueue.current = rowHeightSaveQueue.current.then(async () => {
+      if (generation.currentSession() !== identity.sessionId) return
+      await api.setTableRowHeights(identity.sessionId, file, type, view, heights)
+    }).catch(error => { if (generation.currentSession() === identity.sessionId) setErrorMsg(`保存行高失败：${errorMessage(error)}`) })
+  }, [currentRoute?.file, activeType, resolvedView?.id, generation, setProjectSettings])
+  const tableOnExpandCell = useCallback((coordinate: RecordCoordinate, path: FieldPathSegment[] | null, origin: DOMRect) => {
+    if (!currentRoute) return
+    if (deferDataNavigation(() => tableOnExpandCell(coordinate, path, origin))) return
+    setInspectorSelection(path ? valueSelection(currentRoute.file, coordinate, path) : recordSelection(currentRoute.file, coordinate))
+    setInspectorOrigin(origin)
+    setInspectorDialogOpen(true)
+  }, [currentRoute?.file])
   const tableOnColumnWidthsChange = useCallback((widths: Record<string, number>) => {
     if (!api.isTauri || currentRoute?.view !== 'table' || !activeType || !resolvedView) return
     const identity = generation.currentIdentity()
@@ -3026,6 +3079,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                     onDeleteRecords={tableOnDeleteRecords}
                     onMoveRecord={tableOnMoveRecord}
                     onDiagnosticBadgeClick={tableOnBadgeClick}
+                    rowHeights={tableRowHeights}
+                    onRowHeightsChange={tableOnRowHeightsChange}
+                    onExpandCell={tableOnExpandCell}
                     columnWidths={tableColumnWidths}
                     onColumnWidthsChange={tableOnColumnWidthsChange}
                     visibleColumns={resolvedView?.kind === 'table' ? resolvedView.columns : undefined}
@@ -3143,7 +3199,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               </div>
               </div>
         <InspectorPanel
-          open={!!activeFile && !gitDiffActive && !activePluginPage
+          modal
+          origin={inspectorOrigin}
+          open={inspectorDialogOpen && !!inspectorSelection && !!activeFile && !gitDiffActive && !activePluginPage
             && (activeViewKind === 'table' || activeViewKind === 'graph')
             && !activeDimensionTarget}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}

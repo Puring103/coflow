@@ -264,7 +264,19 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
 
   return (
     <span className={`rich-text-input${cell ? ' cell-string-input' : ''}${focused ? ' focused' : ''}`}>
-      {cell && <span ref={previewRef} className={`cell-string-preview${!value ? ' empty-preview' : ''}`} aria-hidden>{value || props.placeholder || '\u00a0'}</span>}
+      {cell && <span ref={previewRef} className={`cell-string-preview${!value ? ' empty-preview' : ''}`} aria-hidden
+        onPointerDown={event => {
+          const input = inputRef.current
+          const preview = previewRef.current
+          if (!input || !preview || event.button !== 0) return
+          // 展开预览仍属于原单元格，按点击字形进入同一个输入节点。
+          const range = document.caretRangeFromPoint(event.clientX, event.clientY)
+          const offset = range && preview.contains(range.startContainer) ? range.startOffset : value.length
+          event.preventDefault()
+          entryCaret.current = offset
+          input.focus({ preventScroll: true })
+          input.setSelectionRange(offset, offset)
+        }}>{value || props.placeholder || '\u00a0'}</span>}
       {cell && !focused && overflow && <span className="cell-string-overflow" aria-hidden>…</span>}
       <textarea
         {...props}

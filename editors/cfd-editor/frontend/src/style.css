@@ -2443,12 +2443,8 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   min-width: 168px;
   padding: 4px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-  animation: ctx-in 80ms ease-out;
+  animation: editor-menu-in var(--motion-fast) ease-out;
   transform-origin: top left;
-}
-@keyframes ctx-in {
-  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 .ctx-sep {
   height: 1px;
@@ -2862,29 +2858,28 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   flex-shrink: 0;
 }
 .vc-enum-dot { display: none; }
-/* Ref chip — clickable link feel, accent color dot + key + dim type label */
-.vc-ref {
+/* 引用摘要和编辑控件共用颜色、边框与高度；正文内部不再叠加第二层底色。 */
+.vc-ref, .dc-pill-wrap-ref {
+  --reference-fill: color-mix(in srgb, var(--ref-color, var(--accent)) 8%, var(--bg-1));
+  --reference-border: color-mix(in srgb, var(--ref-color, var(--accent)) 30%, var(--border));
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--fs-ui);
-  position: relative;
-  padding: 1px 8px 1px 10px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ref-color, var(--accent)) 25%, transparent);
-  cursor: default;
-  transition: background 80ms, border-color 80ms;
+  gap: 0;
+  height: 24px;
+  min-width: 0;
   max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--reference-border);
+  border-radius: 4px;
+  background-color: var(--reference-fill);
+  color: var(--text);
+  font: 12px/20px 'Inter', 'Segoe UI', system-ui, sans-serif;
   overflow: hidden;
+  vertical-align: middle;
 }
-.vc-ref:hover {
-  background: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, transparent);
-  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 45%, transparent);
-}
+.vc-ref:hover, .dc-pill-wrap-ref:hover { border-color: var(--ref-color, var(--accent)); }
 .vc-ref-navigable { cursor: pointer; }
-.vc-ref > svg { display: none; }
-.vc-ref-key { font-weight: 500; color: var(--text-key); overflow: hidden; text-overflow: ellipsis; }
+.vc-ref-key { padding: 0 6px 0 2px; font: inherit; color: inherit; overflow: hidden; text-overflow: ellipsis; }
 .vc-ref-type {
   color: var(--text-mute);
   font-size: var(--fs-xs);
@@ -3075,7 +3070,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 }
 .dc-inspector-compact .dc-row {
   grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 0;
-  min-height: 27px;
+  min-height: 28px;
   border-bottom-color: color-mix(in srgb, var(--border) 25%, transparent);
 }
 /* 叶子字段与集合序号共享标签轨道，值在同一竖线上排列。 */
@@ -3085,7 +3080,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 .dc-inspector-compact .dc-row-label {
   gap: 3px;
   min-width: 0;
-  padding: 3px 8px 3px calc(8px + min(var(--dc-indent, 0px), 48px));
+  padding: 1px 8px 1px calc(var(--cell-label-inset, 8px) + min(var(--dc-indent, 0px), 48px));
   border-right: 0;
   font-size: inherit;
   font-weight: 400;
@@ -3099,7 +3094,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 }
 .dc-inspector-compact .dc-row-value {
   gap: 4px;
-  padding: 3px 8px;
+  padding: 1px 8px;
 }
 .dc-inspector-compact .dc-row-value-inner {
   min-height: 16px;
@@ -3109,19 +3104,18 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   display: none;
 }
 .dc-inspector-compact .dc-row-structure {
-  min-height: 23px;
+  min-height: 28px;
   background: transparent;
 }
 .dc-inspector-compact .dc-row-structure > .dc-row-label, .dc-inspector-compact .dc-row-structure > .dc-row-value {
-  padding-top: 2px;
-  padding-bottom: 2px;
+  padding-top: 1px;
+  padding-bottom: 1px;
 }
 .dc-inspector-compact .dc-fold-arrow {
   width: 9px;
 }
-.dc-inspector-compact .vc, .dc-inspector-compact .vc-enum, .dc-inspector-compact .vc-ref {
-  font-size: inherit;
-}
+.dc-inspector-compact .vc, .dc-inspector-compact .vc-enum { font-size: inherit; }
+.dc-inspector-compact .dc-pill-wrap:not(.dc-pill-wrap-ref), .dc-inspector-compact .dc-pill-select { height: 24px; }
 
 /* Structure headers span the full row. Only leaf fields use the two-column
  * label/value grid, so nested groups no longer produce empty value cells. */
@@ -3882,25 +3876,6 @@ select.dc-pill-select:hover, select.dc-pill-select:focus, .dc-row:hover select.d
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
-/* Ref pill — accent color. Element+two-class selectors keep specificity
- * above the base rules so the shorthand border/background here wins.
- * The background is deliberately fully opaque (mixed against --bg-2 rather
- * than transparent) — Chromium picks the select's computed background as
- * the native option-popup color, and a transparent stop makes the popup
- * flash white when the pointer leaves the wrap. */
-select.dc-pill-select.dc-pill-select-ref, input.dc-pill-select.dc-pill-select-ref {
-  border: 1px solid color-mix(in srgb, var(--ref-color, var(--accent)) 18%, transparent);
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 6%, var(--bg-2));
-}
-select.dc-pill-select.dc-pill-select-ref:hover, input.dc-pill-select.dc-pill-select-ref:hover, .dc-row:hover select.dc-pill-select.dc-pill-select-ref, td:hover select.dc-pill-select.dc-pill-select-ref, .dc-node-card:hover select.dc-pill-select.dc-pill-select-ref {
-  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 45%, transparent);
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-1));
-}
-select.dc-pill-select.dc-pill-select-ref:focus, input.dc-pill-select.dc-pill-select-ref:focus {
-  border-color: var(--ref-color, var(--accent));
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 12%, var(--bg-1));
-}
-
 /* Enum pill — --enum-color themed. Background is opaque for the same
  * reason as the ref pill above (native popup color inheritance). */
 select.dc-pill-select.dc-pill-select-enum, input.dc-pill-select.dc-pill-select-enum {
@@ -3923,44 +3898,16 @@ select.dc-pill-select.dc-pill-select-enum:hover, input.dc-pill-select.dc-pill-se
   background-color: transparent;
   overflow: hidden;
 }
-/* 引用符号按钮与目标选择器共享胶囊边框。 */
-.dc-pill-wrap-ref {
-  position: relative;
-  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 40%, var(--border));
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-2));
-}
-.dc-pill-wrap-ref:hover, .dc-row:hover .dc-pill-wrap-ref, td:hover .dc-pill-wrap-ref, .dc-node-card:hover .dc-pill-wrap-ref {
-  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 42%, var(--border-strong));
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 9%, var(--bg-1));
-}
-.dc-pill-wrap-ref:focus-within {
-  border-color: var(--ref-color, var(--accent));
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 11%, var(--bg-1));
-}
-
-/* Select nested in the ref wrapper keeps the pill border on its wrapper. */
-select.dc-pill-select.dc-pill-select-inwrap, input.dc-pill-select.dc-pill-select-inwrap {
-  border: none;
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 10%, var(--bg-2));
-  padding-left: 20px;
-  height: 100%;
-}
-select.dc-pill-select.dc-pill-select-inwrap:hover, input.dc-pill-select.dc-pill-select-inwrap:hover, .dc-pill-wrap-ref:hover select.dc-pill-select.dc-pill-select-inwrap, .dc-row:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap, td:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap, .dc-node-card:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap {
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 16%, var(--bg-1));
-  border: none;
-}
-select.dc-pill-select.dc-pill-select-inwrap:focus, input.dc-pill-select.dc-pill-select-inwrap:focus {
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, var(--bg-1));
-  border: none;
-}
-
-input.dc-input-ref-select {
-  border-color: color-mix(in srgb, var(--ref-color, var(--accent)) 55%, var(--border));
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 12%, var(--bg-1));
-}
-input.dc-input-ref-select:focus {
-  border-color: var(--ref-color, var(--accent));
-  background-color: color-mix(in srgb, var(--ref-color, var(--accent)) 18%, var(--bg-1));
+/* 引用外框负责所有状态，内部输入只排版，保证与摘要胶囊颜色一致。 */
+.dc-pill-wrap.dc-pill-wrap-ref { height: 24px; border-color: var(--reference-border); background-color: var(--reference-fill); }
+.dc-pill-wrap.dc-pill-wrap-ref:hover, .dc-pill-wrap.dc-pill-wrap-ref:focus-within { border-color: var(--ref-color, var(--accent)); }
+.dc-pill-wrap-ref input.searchable-select,
+.dc-pill-wrap-ref input.dc-input-ref-select,
+.dc-pill-wrap-ref input.searchable-select:is(:hover, :focus),
+.dc-pill-wrap-ref input.dc-input-ref-select:is(:hover, :focus) {
+  height: 100%; margin: 0; padding: 0 6px 0 2px; border: 0; border-radius: 0;
+  background-color: transparent; background-image: none; box-shadow: none;
+  font: inherit; color: inherit;
 }
 
 select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-select-enum:focus {
@@ -4971,11 +4918,11 @@ input.searchable-select.searchable-select-reference,
 .data-table .cell-string-input { height: 20px; }
 .data-table td:not(.complex-cell):has(.cell-string-input.focused) { overflow: visible; position: relative; z-index: 12; }
 .data-table td:not(.complex-cell) .cell-string-input.focused .cell-string-textarea { position: absolute; top: 0; left: 0; z-index: 12; background: var(--bg-1); padding: 5px 10px; box-shadow: none; outline: none; max-height: 320px; overflow-y: auto; }
-.searchable-reference-wrap { position: relative; display: flex; align-items: center; min-width: 0; flex: 1; }
+.searchable-reference-wrap { position: relative; display: flex; align-items: center; min-width: 0; height: 100%; flex: 1; font: inherit; }
 /* 引用符号负责打开记录，正文负责选择目标；两者共用一个胶囊。 */
 .searchable-reference-wrap > input.searchable-select,
-[data-theme] .searchable-reference-wrap > input.searchable-select { width: 100%; min-width: 0; padding: 0 5px; background-image: none; }
-.reference-open { flex: 0 0 22px; align-self: stretch; padding: 0; border: 0; background: transparent; color: var(--ref-color, var(--accent)); font: inherit; font-weight: 600; cursor: pointer; }
+[data-theme] .searchable-reference-wrap > input.searchable-select { width: 100%; min-width: 0; padding: 0 6px 0 2px; background-image: none; }
+.reference-open { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; align-self: stretch; padding: 0; border: 0; background: transparent; color: var(--ref-color, var(--accent)); cursor: pointer; }
 .reference-open:hover:not(:disabled) { background: var(--bg-3); }
 .reference-open:disabled { cursor: default; opacity: .5; }
 .view-drag-preview { position: fixed; z-index: 1000; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--accent); border-radius: 5px; background: var(--bg-1); box-shadow: 0 5px 16px #0003; transform: rotate(-2deg); }
@@ -5050,13 +4997,160 @@ input.searchable-select.searchable-select-reference,
 .data-table td:not(.complex-cell) .numeric-value-input { text-align: right; }
 .numeric-value-input textarea { text-align: inherit; }
 /* 选择控件保留可辨识的颜色，默认移除厚重底色，悬停与聚焦再强调操作区域。 */
-.dc-inspector-compact .dc-pill-wrap { background-color: transparent; border-color: transparent; }
-.dc-inspector-compact .dc-pill-wrap:hover,
-.dc-inspector-compact .dc-pill-wrap:focus-within { background-color: var(--bg-3); }
+.dc-inspector-compact .dc-pill-wrap:not(.dc-pill-wrap-ref) { background-color: transparent; border-color: transparent; }
+.dc-inspector-compact .dc-pill-wrap:not(.dc-pill-wrap-ref):hover,
+.dc-inspector-compact .dc-pill-wrap:not(.dc-pill-wrap-ref):focus-within { background-color: var(--bg-3); }
 
 .cell-string-preview.empty-preview, .dc-empty-collection { color: var(--text-mute); font-style: italic; }
 .dc-empty-collection { display: block; padding: 5px 8px; font-size: 12px; }
 [data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select { background-color: transparent; border-color: transparent; }
 [data-theme] .dc-inspector-compact .searchable-reference-wrap > input.searchable-select { background-color: transparent; }
-[data-theme] .dc-inspector-compact .searchable-reference-wrap:hover > input.searchable-select,
-[data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select:focus { background-color: var(--bg-3); }
+[data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select:not(.dc-pill-select-ref):focus { background-color: var(--bg-3); }
+
+/* 单元格只提供有限预览，整行共享用户高度；完整编辑复用按需打开的详情内容。 */
+.data-table td { position: relative; }
+.cell-complex-preview { position: relative; min-height: 28px; }
+.cell-complex-viewport { max-height: calc(var(--table-row-preview-height, 132px) - 12px); overflow: hidden; }
+.cell-complex-content { min-width: 0; }
+/* 固定预留左上角操作入口，不占用首行的折叠箭头和字段名。 */
+.cell-complex-content .dc-inspector-compact { --cell-label-inset: 24px; }
+.cell-complex-overflow { position: absolute; bottom: 0; left: 0; right: 0; height: 24px; text-align: center; color: var(--text-mute); background: transparent; pointer-events: none; }
+.cell-expand-button { position: absolute; top: 1px; left: 1px; z-index: 6; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg-2); color: var(--text); cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+.cell-complex-preview:hover .cell-expand-button, .cell-complex-preview:focus-within .cell-expand-button, .cell-expand-button:focus-visible { opacity: 1; }
+.cell-expand-button:hover { color: var(--accent); border-color: var(--accent); }
+.table-row-resizer { position: absolute; bottom: -2px; left: 0; right: 0; height: 5px; z-index: 4; cursor: row-resize; touch-action: none; }
+.table-row-resizer:hover, .table-row-resizer:focus-visible { background: var(--accent); outline: none; }
+.inspector-modal-backdrop { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px; background: #0005; }
+.inspector-panel.inspector-modal { width: min(960px, calc(100vw - 48px)) !important; height: min(780px, calc(100vh - 48px)); border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-1); box-shadow: 0 24px 80px #0005; transform-origin: top left; outline: none; }
+.inspector-modal .inspector-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.inspector-modal .inspector-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-modal .cell-string-preview { max-height: 80px; }
+
+.cell-complex-preview.overflowing .cell-complex-viewport { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+
+/* 选中即展开预览，编辑期间维持展开；浮层不改变整行高度和其他列的位置。 */
+.data-table td.complex-cell:is(.selected-cell, :focus-within) { overflow: visible; z-index: 13; }
+.data-table td.complex-cell:is(.selected-cell, :focus-within) .cell-complex-preview.overflowing > .cell-complex-viewport {
+  overflow: visible; mask-image: none;
+}
+.data-table td.complex-cell:is(.selected-cell, :focus-within) .cell-complex-preview.overflowing > .cell-complex-viewport > .cell-complex-content {
+  position: relative; z-index: 5; max-height: min(480px, 65vh); overflow-y: auto;
+  /* 展开表面与单元格四边对齐，选中边界只画在这一层。 */
+  top: -5px; margin: 0 -10px; padding: 5px 10px;
+  background: var(--bg-1); outline: 1px solid var(--accent); box-shadow: 0 6px 18px #0003;
+  mask-image: none;
+}
+/* 原单元格的选区框不能横穿展开正文，内部字段树不再承担浮层边界。 */
+.data-table td.complex-cell:is(.selected-cell, :focus-within):has(.cell-complex-preview.overflowing)::after { display: none; }
+.data-table td.complex-cell:is(.selected-cell, :focus-within) .cell-complex-overflow { display: none; }
+.data-table td:not(.complex-cell).selected-cell { overflow: visible; z-index: 12; }
+/* 文本预览与输入使用 td 作为同一个定位边界，展开面本身接收点击，不能穿透到下一行。 */
+.data-table td:not(.complex-cell).selected-cell .cell-string-input { position: static; }
+.data-table td:not(.complex-cell).selected-cell .cell-string-input:not(.focused) > .cell-string-preview {
+  position: absolute; inset: 0 0 auto; z-index: 12; height: auto !important;
+  min-height: 100%; max-height: min(480px, 65vh); padding: 5px 10px; box-sizing: border-box; overflow-y: auto;
+  pointer-events: auto; cursor: text;
+  background: var(--bg-1); outline: 1px solid var(--accent); mask-image: none;
+  box-shadow: 0 6px 18px #0003;
+}
+.data-table td:not(.complex-cell).selected-cell .cell-string-overflow { display: none; }
+/* 展开正文覆盖原底边上的拖动柄；输入与选中不使用位移动效。 */
+.data-table td:not(.complex-cell).selected-cell:has(.cell-string-input)::after { display: none; }
+
+/* 动效按用途分工：菜单快速显现、独立窗口轻量抬起、提示柔和进入。 */
+:root { --motion-fast: 110ms; --motion-normal: 180ms; --motion-ease: cubic-bezier(.2,.8,.2,1); }
+.context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div {
+  animation: editor-menu-in var(--motion-fast) ease-out;
+}
+.create-record-backdrop, .help-overlay, .reference-panel-overlay { animation: editor-fade-in var(--motion-fast) ease-out; }
+.create-record-dialog, .help-box, .reference-panel, .view-discard-dialog[open], .project-search-dialog[open] {
+  animation: editor-window-in var(--motion-normal) var(--motion-ease);
+}
+.project-action-toast { animation: editor-notice-in 200ms var(--motion-ease); }
+.btn, .ctx-item, .view-picker-tab, .tree-item, .reference-open {
+  transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+/* 拖动与表格编辑即时跟随指针，不给几何尺寸或正文添加过渡。 */
+.app .layout-navigation { transition-timing-function: var(--motion-ease); }
+.app .diag-panel { transition-timing-function: var(--motion-ease); }
+@keyframes editor-menu-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes editor-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes editor-window-in { from { opacity: 0; transform: translateY(4px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes editor-notice-in { from { opacity: 0; translate: 0 5px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div,
+  .create-record-backdrop, .help-overlay, .reference-panel-overlay, .create-record-dialog, .help-box,
+  .reference-panel, .view-discard-dialog[open], .project-search-dialog[open], .project-action-toast { animation: none; }
+  .btn, .ctx-item, .view-picker-tab, .tree-item, .reference-open, .cell-expand-button { transition: none; }
+}
+
+/* 编辑与预览保持一致的最大展开范围，原底边拖动柄留在展开表面下面。 */
+.data-table td:not(.complex-cell).selected-cell .cell-string-input.focused .cell-string-textarea {
+  min-height: 100%; max-height: min(480px, 65vh); box-sizing: border-box;
+}
+
+/* 原格内仍由同一个 textarea 接收点击，超出原格的正文由预览承接，避免双层控件抢占命中。 */
+.data-table td:not(.complex-cell).selected-cell .cell-string-input:not(.focused) > .cell-string-textarea {
+  position: absolute; inset: 0; z-index: 13; width: 100%; height: 100%; padding: 5px 10px;
+}
+
+/* 放大编辑直接呈现字段树，顶栏只保留操作。 */
+.inspector-head.inspector-head-minimal { min-height: 32px; height: 32px; justify-content: flex-end; padding: 4px 10px; border-bottom: 0; background: transparent; }
+.dc-root-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 28px; padding: 2px 8px; }
+.dc-root-actions:empty { display: none; }
+.dc-root-actions .dc-collection-add { visibility: visible; opacity: 1; }
+
+/* 统一属性树节奏：折叠、选中、展开只增加内容，不切换现有行的密度。 */
+.dc-inspector-compact .dc-row { min-height: 28px; }
+.dc-inspector-compact .dc-row > .dc-row-label,
+.dc-inspector-compact .dc-row > .dc-row-value { padding-top: 1px; padding-bottom: 1px; }
+.dc-inspector .dc-group-body { padding-top: 0; padding-bottom: 0; }
+.dc-row-structure[data-list-item="true"] .dc-row-label-text { font: inherit; color: var(--text); font-weight: 500; }
+.dc-row-structure .dc-row-value-inner { justify-content: flex-start; }
+.dc-item-position { min-width: 18px; text-align: right; color: var(--text-mute); font-size: 10px; font-weight: 400; opacity: .5; }
+.dc-row-field[data-list-item="true"] > .dc-row-label { display: none; }
+.dc-row-field[data-list-item="true"] > .dc-row-value { grid-column: 1 / 3; padding-left: calc(18px + min(var(--dc-indent, 0px), 48px)); }
+.dc-inspector-compact .dc-row-structure[data-list-item="true"] { grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 24px; }
+.dc-inspector-compact .dc-row-structure[data-list-item="true"] > .dc-row-actions { display: flex; padding: 1px 2px; }
+.dc-inspector-compact .dc-row-structure[data-list-item="true"] > .dc-row-actions > :not(.dc-item-position) { display: none; }
+
+/* 选中态由整行绘制一次，分组和输入轨道均不叠加底色。 */
+.dc-inspector .dc-row.keyboard-selected { background: color-mix(in srgb, var(--accent) 8%, var(--bg-1)); box-shadow: inset 2px 0 var(--accent); }
+.dc-inspector .dc-row.keyboard-selected > .dc-row-label,
+.dc-inspector .dc-row.keyboard-selected > .dc-row-value,
+.dc-inspector .dc-row.keyboard-selected > .dc-row-actions { background: transparent; align-self: stretch; }
+
+/* 放大窗口延续 Inspect 的两列属性布局，用外围留白区分窗口而非拉大行距。 */
+.inspector-panel.inspector-modal { width: min(1040px, calc(100vw - 48px)) !important; height: min(800px, calc(100vh - 48px)); border-radius: 8px; }
+.inspector-modal .inspector-body { padding: 0 16px 16px; }
+.inspector-modal .dc-inspector { border: 0; }
+.inspector-modal .dc-inspector .dc-row { min-height: 32px; grid-template-columns: minmax(140px, 36%) minmax(0, 1fr) 40px; border-bottom-color: color-mix(in srgb, var(--border) 40%, transparent); }
+.inspector-modal .dc-row > .dc-row-label,
+.inspector-modal .dc-row > .dc-row-value { padding-top: 3px; padding-bottom: 3px; border-right: 0; font-size: 12px; }
+.inspector-modal .dc-row > .dc-row-label { font-weight: 400; }
+.inspector-modal .dc-inspector .dc-row-actions { min-width: 0; padding: 3px 6px; }
+.inspector-modal .dc-group-item { border-top: 0; }
+.inspector-modal .dc-group-item > .dc-group-body { padding: 0; }
+.inspector-modal .dc-group-item > .dc-group-body::before { top: 0; bottom: 0; opacity: .35; }
+.inspector-modal .dc-row-structure:not(.keyboard-selected), .inspector-modal .dc-row-item:not(.keyboard-selected) { background: transparent; }
+.inspector-modal .dc-row:hover:not(.keyboard-selected) { background: color-mix(in srgb, var(--text) 2%, transparent); }
+.inspector-modal .dc-input-flat { padding-top: 1px; padding-bottom: 1px; }
+@media (max-width: 700px) {
+  .inspector-modal .inspector-body { padding: 0 10px 12px; }
+  .inspector-modal .dc-inspector .dc-row { grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) 28px; }
+}
+
+/* 摘要只排版结构片段；引用沿用全局组件的颜色、尺寸和图标。 */
+.dc-summary-part { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; vertical-align: middle; }
+.dc-summary-key { color: var(--text-dim); font-weight: 400; flex: none; }
+.dc-summary-rest { color: var(--text-mute); flex: none; font-size: 11px; }
+.dc-row-structure .dc-business-summary { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-dim); overflow: hidden; white-space: nowrap; }
+.dc-summary-part .vc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 多态类型与标签保持一行；静态类型不占摘要空间，只读字段仍展示实际类型。 */
+.dc-row-label > .dc-structure-type, .dc-row-label > .dc-structure-type-control { margin-left: 6px; flex: 0 1 auto; min-width: 0; }
+.dc-row-label:has(> .dc-structure-type, > .dc-structure-type-control) > .dc-row-label-text { flex: 0 1 auto; }
+.dc-row-label .dc-structure-type-select { width: 140px; max-width: 100%; min-width: 60px; text-align: left; }
+.dc-row-value-inner > .dc-structure-type, .dc-row-value-inner > .dc-structure-type-control { margin-left: 0; }
+.dc-row-value-inner .dc-structure-type-select { text-align: left; }
+.dc-structure-type { color: var(--text-mute); font-size: 11px; }

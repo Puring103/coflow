@@ -109,3 +109,7 @@ export async function setWorkspace(
 ): Promise<EditorProjectSettings> {
   return invokeCommand<EditorProjectSettings>('set_workspace', { sessionId, workspace })
 }
+
+export async function setTableRowHeights(sessionId: number, filePath: string, actualType: string, viewId: string, heights: Record<string, number>): Promise<EditorProjectSettings> {
+  return invokeCommand('set_table_row_heights', { sessionId, filePath, actualType, viewId, heights })
+}
