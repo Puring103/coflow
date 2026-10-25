@@ -169,13 +169,31 @@ import {
 } from './state/appSupport'
 import './style.css'
 
-const GraphView = lazy(() => import('./components/GraphView').then(module => ({ default: module.GraphView })))
-const SourceEditorView = lazy(() => import('./components/SourceEditorView').then(module => ({ default: module.SourceEditorView })))
-const TableView = lazy(() => import('./components/TableView').then(module => ({ default: module.TableView })))
-const RecordView = lazy(() => import('./components/RecordView').then(module => ({ default: module.RecordView })))
-const DimensionTableView = lazy(() => import('./components/DimensionTableView').then(module => ({ default: module.DimensionTableView })))
-const GitDiffMode = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffMode })))
+// 预加载与 React.lazy 共享同一 Promise，切换视图时复用已经加载的模块。
+function cachedViewModule<T>(loader: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | undefined
+  return () => pending ??= loader()
+}
+const viewModules = {
+  graph: cachedViewModule(() => import('./components/GraphView').then(module => ({ default: module.GraphView }))),
+  source: cachedViewModule(() => import('./components/SourceEditorView').then(module => ({ default: module.SourceEditorView }))),
+  table: cachedViewModule(() => import('./components/TableView').then(module => ({ default: module.TableView }))),
+  record: cachedViewModule(() => import('./components/RecordView').then(module => ({ default: module.RecordView }))),
+  dimension: cachedViewModule(() => import('./components/DimensionTableView').then(module => ({ default: module.DimensionTableView }))),
+  diff: cachedViewModule(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffMode }))),
+}
+function preloadView(kind: string) {
+  if (kind in viewModules) void viewModules[kind as keyof typeof viewModules]().catch(() => { /* 实际视图接管加载失败。 */ })
+}
+const GraphView = lazy(viewModules.graph)
+const SourceEditorView = lazy(viewModules.source)
+const TableView = lazy(viewModules.table)
+const RecordView = lazy(viewModules.record)
+const DimensionTableView = lazy(viewModules.dimension)
+const GitDiffMode = lazy(viewModules.diff)
 const GitDiffSidebar = lazy(() => import('./components/GitDiffMode').then(module => ({ default: module.GitDiffSidebar })))
+
+const ViewLoading = () => <div className="content-empty" role="status"><div className="content-empty-title">加载视图中…</div></div>
 
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
@@ -187,6 +205,11 @@ interface AppProps {
 
 export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps = {}) {
   const [project, setProject] = useState<ProjectBootstrap | null>(null)
+  useEffect(() => {
+    if (!project) return
+    // 三个基础视图并行预加载，不等待模块完成，项目界面和文件读取可以继续。
+    for (const kind of ['record', 'table', 'source']) preloadView(kind)
+  }, [project])
   const {
     settings: pluginSettings,
     ready: pluginsReady,
@@ -480,8 +503,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const viewContainerRef = useRef<HTMLDivElement>(null)
   const lookupDiagnostics = useSyncExternalStore(lookups.subscribe, lookups.getFailures, lookups.getFailures)
   const [navigationCollapsed, setNavigationCollapsed] = useState(false)
-  // 面板常驻并保留用户的折叠状态；选择内容不改变主视图区宽度。
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const [inspectorFocusRequest, setInspectorFocusRequest] = useState(0)
   const [tableFocusRequest, setTableFocusRequest] = useState(0)
   const [firstRecordFocusRequest, setFirstRecordFocusRequest] = useState(0)
@@ -545,19 +566,17 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     coordinate?: RecordCoordinate,
   ): void => {
     if (deferSourceNavigation(() => navigateWorkspaceTab(tab, coordinate))) return
+    preloadView(tab.dimensionTarget ? 'dimension' : tab.viewKind)
     finishActiveDataEdit()
     setGitDiffActive(false)
     setActivePluginPageKey(null)
     setActiveWorkspaceTabId(tab.id)
     setActiveType(tab.typeName)
-    if (tab.filePath.endsWith('.cft')) {
-      // 模块加载与磁盘读取并行，首次打开不必等 CodeMirror 下载完成才发起读取。
+    if (tab.viewKind === 'source' && api.isTauri) {
       const identity = generation.currentIdentity()
-      if (api.isTauri && identity) {
-        void fetchSourceText(queryClient, identity.sessionId, identity.revision, tab.filePath, () => (
-          api.readSourceText(identity.sessionId, tab.filePath)
-        )).catch(() => { /* 源码视图接管读取失败的展示与重试。 */ })
-      }
+      if (identity) void fetchSourceText(queryClient, identity.sessionId, identity.revision, tab.filePath, () => api.readSourceText(identity.sessionId, tab.filePath)).catch(() => { /* 源码视图展示读取错误。 */ })
+    }
+    if (tab.filePath.endsWith('.cft')) {
       router.push({
         view: 'source',
         file: tab.filePath,
@@ -2124,7 +2143,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     target?.focus({ preventScroll: true })
   }, [])
   const focusInspector = useCallback(() => {
-    setInspectorCollapsed(false)
     requestAnimationFrame(() => {
       document.querySelector<HTMLElement>('.inspector-panel:not(.collapsed) .inspector-body')
         ?.focus({ preventScroll: true })
@@ -2247,7 +2265,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     setFileActionDialog({ kind: 'delete', path })
   }, [])
   const tableOnEnterInspector = useCallback(() => {
-    setInspectorCollapsed(false)
     setInspectorFocusRequest(request => request + 1)
   }, [])
   const inspectorOnExitKeyboardNavigation = useCallback(() => {
@@ -2366,6 +2383,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   }, [activeFileData?.file_path, activeFileData?.type_names, currentRoute, activeType])
 
   function switchView(tab: ViewTab): void {
+    preloadView(tab.kind)
     if (deferSourceNavigation(() => switchView(tab))) return
     if (!currentRoute) return
     if (tab.kind === 'table') {
@@ -2504,16 +2522,15 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   }
 
   const renderViewPicker = () => <ViewPicker tabs={viewTabs} activeId={currentRoute?.viewId}
-    plugins={pluginViews} activePluginKey={activePluginView?.key} onSelect={switchView} onSelectPlugin={switchPluginView}
+    plugins={pluginViews} activePluginKey={activePluginView?.key} onSelect={switchView} onPreview={tab => preloadView(tab.kind)} onSelectPlugin={switchPluginView}
     onCreate={activeType && !isSingletonType ? openViewEditor : undefined}
     onDelete={resolvedView && !resolvedView.isDefault ? () => void deleteView(resolvedView.id) : undefined}
-    onPin={() => {
-      if (activeFile && currentRoute) saveViewOrder(activeFile, activeType, [currentRoute.viewId, ...viewTabs.filter(tab => tab.id !== currentRoute.viewId).map(tab => tab.id)])
+    onReorder={ids => {
+      if (activeFile) saveViewOrder(activeFile, activeType, ids)
     }} />
 
   return (
     <ShortNameContext.Provider value={{ fields: projectSettings?.short_name_fields ?? {}, setField: shortNameSaving ? undefined : saveShortNameField }}>
-    <Suspense fallback={<div className="content-empty"><div className="content-empty-title">加载视图中…</div></div>}>
     <ObjectDraftHost
       lookups={lookups}
       generationKey={`${lookupGenerationKey}:${shortNameRevision}`}
@@ -2601,7 +2618,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
 
       <div className="main-layout">
         {/* 导航入口和资源面板共享宽度，收起时保留图标入口。 */}
-        <div className="layout-navigation">
+        <div className={`layout-navigation${splitterDragging ? ' resizing' : ''}`}>
         <ActivityBar
           activePane={activePane}
           registry={pluginRegistry}
@@ -2711,7 +2728,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             </div>
           )}
           {activePane === 'changes' && (
-            <GitDiffSidebar
+            <Suspense fallback={<ViewLoading />}><GitDiffSidebar
               nodes={project?.file_tree ?? []}
               dimensions={projectDimensions}
               fileTypes={project?.file_types ?? {}}
@@ -2726,7 +2743,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 setActivePluginPageKey(null)
               }}
               onRefresh={() => void loadProjectDiff()}
-            />
+            /></Suspense>
           )}
           {activePluginSidebar && pluginSidebarContext && (
             <PluginContributionMount
@@ -2808,6 +2825,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               <div className="view-toolbar">{renderViewPicker()}</div>
             ) : null
           )}
+          <Suspense fallback={<ViewLoading />}>
           {gitDiffActive ? (
             <div className="view-container">
               <GitDiffMode
@@ -2831,14 +2849,14 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 fallback={<div className="content-empty"><div className="content-empty-title">插件页面加载失败</div></div>}
               />
             </div>
-          ) : currentRoute && activeSchemaFile && project ? (
+          ) : currentRoute && (activeSchemaFile || activeViewKind === 'source') && project ? (
             <div className="view-container" ref={viewContainerRef}>
               <SourceEditorView
                 key={`${project.session_id}:${currentRoute.file}`}
                 sessionId={project.session_id}
                 revision={project.revision}
                 filePath={currentRoute.file}
-                readOnly={recoveryRequired}
+                readOnly={activeSchemaFile ? recoveryRequired : readOnly}
                 onSaved={refreshFromBootstrap}
                 focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
               />
@@ -2921,6 +2939,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 )}
               </div>}
 
+              <div className="structured-view-content">
               <div className="view-container" ref={viewContainerRef}>
                 {activeViewKind === 'plugin' && activePluginView && pluginViewContext && (
                   <PluginContributionMount
@@ -3079,17 +3098,35 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                     <div className="empty-hint">加载图谱中…</div>
                   )
                 )}
-                {activeViewKind === 'source' && project && currentRoute && (
-                  <SourceEditorView
-                    key={`${project.session_id}:${currentRoute.file}`}
-                    sessionId={project.session_id}
-                    revision={project.revision}
-                    filePath={currentRoute.file}
-                    readOnly={readOnly}
-                    onSaved={refreshFromBootstrap}
-                    focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
-                  />
-                )}
+
+              </div>
+        <InspectorPanel
+          open={!!activeFile && !gitDiffActive && !activePluginPage
+            && (activeViewKind === 'table' || activeViewKind === 'graph')
+            && !activeDimensionTarget}
+          data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
+          selection={inspectorSelection}
+          valueCells={inspectorValueCells}
+          readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
+          diagnostics={project?.diagnostics}
+          width={inspectorW}
+          onWidthChange={setInspectorW}
+          onClose={closeInspector}
+          onWriteField={writeField}
+          onWriteFields={writeFields}
+          onWriteFieldBatch={tableOnWriteFieldBatch}
+          onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
+          onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
+          onCollectionEdit={editCollection}
+          onRenameRecord={renameRecord}
+          onDiagnosticBadgeClick={(coordinate, fieldPath) => {
+            if (!inspectorCoord) return
+            focusDiagnosticForAnchor(inspectorCoord.file, coordinate.id, coordinate.actual_type, fieldPath)
+          }}
+          focusRequest={inspectorFocusRequest}
+          onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
+          visibleFields={activeViewKind === 'graph' ? undefined : visibleFields}
+        />
               </div>
             </>
           ) : dataQueries.fileQuery.isFetching || dataQueries.dimensionQuery.isFetching ? (
@@ -3116,36 +3153,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               )}
             </div>
           )}
+          </Suspense>
         </div>
-        <InspectorPanel
-          open={!!activeFile && !gitDiffActive && !activePluginPage
-            && (activeViewKind === 'table' || activeViewKind === 'graph')
-            && !activeDimensionTarget}
-          collapsed={inspectorCollapsed}
-          onToggleCollapse={() => setInspectorCollapsed(v => !v)}
-          data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
-          selection={inspectorSelection}
-          valueCells={inspectorValueCells}
-          readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
-          diagnostics={project?.diagnostics}
-          width={inspectorW}
-          onWidthChange={setInspectorW}
-          onClose={closeInspector}
-          onWriteField={writeField}
-          onWriteFields={writeFields}
-          onWriteFieldBatch={tableOnWriteFieldBatch}
-          onRenderCellText={(_filePath, coordinate, path) => tableOnRenderCellText(coordinate, path)}
-          onParseCellText={(_filePath, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
-          onCollectionEdit={editCollection}
-          onRenameRecord={renameRecord}
-          onDiagnosticBadgeClick={(coordinate, fieldPath) => {
-            if (!inspectorCoord) return
-            focusDiagnosticForAnchor(inspectorCoord.file, coordinate.id, coordinate.actual_type, fieldPath)
-          }}
-          focusRequest={inspectorFocusRequest}
-          onExitKeyboardNavigation={inspectorOnExitKeyboardNavigation}
-          visibleFields={activeViewKind === 'graph' ? undefined : visibleFields}
-        />
+
         </div>
         {project && (
           <DiagnosticsPanel
@@ -3253,7 +3263,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
     </ObjectDraftHost>
-    </Suspense>
     </ShortNameContext.Provider>
   )
 }

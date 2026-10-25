@@ -110,15 +110,20 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
   useLayoutEffect(() => {
     const input = inputRef.current
     if (!cell || !input) return
+    // 未编辑的单元格由 CSS 控制高度，不测量布局，也不为每个字符串创建观察器。
+    if (!focused) {
+      input.style.height = ''
+      return
+    }
     const resize = () => {
       input.style.height = '0px'
-      input.style.height = focused ? `${input.scrollHeight}px` : ''
+      input.style.height = `${input.scrollHeight}px`
     }
     resize()
     // 只监听宽度，避免自身高度变化触发 ResizeObserver 循环。
     let width = input.getBoundingClientRect().width
-    const observer = new ResizeObserver(() => {
-      const nextWidth = input.getBoundingClientRect().width
+    const observer = new ResizeObserver(entries => {
+      const nextWidth = entries[0]?.contentRect.width ?? width
       if (nextWidth === width) return
       width = nextWidth
       resize()

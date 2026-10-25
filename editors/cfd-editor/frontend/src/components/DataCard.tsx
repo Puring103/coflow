@@ -394,7 +394,11 @@ function buildDiagCtx(
   return { byPath, prefixes, onBadgeClick }
 }
 
+// 宿主可提供业务摘要；共享字段树仍负责展开、类型校验和编辑。
+const ValueSummaryContext = createContext<((value: FieldValue) => string) | undefined>(undefined)
+
 export interface ExpandedProps {
+  summarizeValue?: (value: FieldValue) => string
   fields: FieldCell[]
   actualType?: string
   filePath?: string
@@ -426,6 +430,7 @@ export interface ExpandedProps {
 }
 
 export function DataCardExpanded({
+  summarizeValue,
   fields,
   actualType,
   filePath,
@@ -579,7 +584,7 @@ export function DataCardExpanded({
   const withPluginContext = pluginRecord
     ? <PluginRecordCtx.Provider value={pluginRecord}>{wrapped}</PluginRecordCtx.Provider>
     : wrapped
-  return ctx ? <DiagCtx.Provider value={ctx}>{withPluginContext}</DiagCtx.Provider> : withPluginContext
+  return <ValueSummaryContext.Provider value={summarizeValue}>{ctx ? <DiagCtx.Provider value={ctx}>{withPluginContext}</DiagCtx.Provider> : withPluginContext}</ValueSummaryContext.Provider>
 }
 
 function PolymorphicTypeRow({ value, polymorphicTypes, depth, onCommit }: {
@@ -1299,33 +1304,13 @@ export function DirectEditor({
     return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'option_none' }} onCommit={onCommit} onExit={rowSelection?.onEditingFinished} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'string' || value.kind === 'formatted_string') {
-    return <StringDirectEditor value={value} onCommit={onCommit} />
+    return <StringValueInput value={value} onCommit={onCommit} />
   }
   if (value.kind === 'int' || value.kind === 'float') {
     return <TextDirectInput value={value} onCommit={onCommit} color={fieldTypeColor(declaredType ?? value.kind)} />
   }
 
   return <ValueChip value={value} />
-}
-
-// 字符串模式是显式源码选择；切换保留作者输入的正文，不根据花括号推断模板。
-function StringDirectEditor({ value, onCommit }: {
-  value: FieldValue & { kind: 'string' | 'formatted_string' }
-  onCommit: (next: FieldValue) => void
-}) {
-  return <span className="dc-string-editor">
-    <select className="dc-string-mode" aria-label="字符串模式" title={value.kind === 'string' ? '普通文本' : '格式化模板'} value={value.kind}
-      onChange={event => {
-        const text = plainFieldValueText(value)
-        onCommit(event.target.value === 'string'
-          ? { kind: 'string', value: text }
-          : { kind: 'formatted_string', value: { source: `f${JSON.stringify(text)}`, rendered: text } })
-      }}>
-      <option value="string">T</option>
-      <option value="formatted_string">ƒ</option>
-    </select>
-    <StringValueInput value={value} onCommit={onCommit} />
-  </span>
 }
 
 function TextDirectInput({
@@ -1900,6 +1885,7 @@ function ExpandableRow({
     : value.kind === 'array' || value.kind === 'dict'
       ? ' dc-row-collection'
       : ' dc-row-object'
+  const summarizeValue = useContext(ValueSummaryContext)
   const concreteType = value.kind === 'object' ? value.value.actual_type : null
   const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
   const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
@@ -1951,14 +1937,14 @@ function ExpandableRow({
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            {canSwitchConcreteType && value.kind === 'object' ? (
+            {!expanded && summarizeValue ? <span className="dc-business-summary" title={summarizeValue(value)}>{summarizeValue(value)}</span> : canSwitchConcreteType && value.kind === 'object' ? (
               <ExpandableObjectTypeSelect
                 value={value}
                 polymorphicTypes={polymorphicTypes}
                 onCommit={next => onEdit(fieldPath, next)}
               />
             ) : concreteType && <span className="dc-structure-type">{concreteType}</span>}
-            {!expanded && summaryPresentation?.slot === 'summary' && summaryContext ? (
+            {!expanded && summarizeValue ? null : !expanded && summaryPresentation?.slot === 'summary' && summaryContext ? (
               <span className="vc-summary">
                 <PluginSummaryText
                   presentation={summaryPresentation}

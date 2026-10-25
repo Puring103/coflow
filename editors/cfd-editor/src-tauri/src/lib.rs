@@ -50,6 +50,8 @@ pub use plugins::{
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // 桌面剪贴板通过原生接口访问，不触发 WebView 的站点授权弹窗。
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {

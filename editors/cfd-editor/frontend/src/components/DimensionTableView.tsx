@@ -1,4 +1,7 @@
+import { readClipboardText, writeClipboardText } from '../api/clipboard'
+import { finishOffscreenDataEdit } from '../state/editSession'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DimensionFileRecords, DimensionFileRow } from '../api'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
 import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
@@ -314,7 +317,25 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const clipboardBusyRef = useRef(false)
 
   const columnCount = data.variants.length + 2
-  const visibleRows = items.flatMap(item => item.kind === 'row' ? [item.row] : [])
+  const visibleRows = useMemo(() => items.flatMap(item => item.kind === 'row' ? [item.row] : []), [items])
+  const rowIndexes = useMemo(() => new Map(visibleRows.map((row, index) => [row, index])), [visibleRows])
+  const displayIndexes = useMemo(() => new Map(items.flatMap((item, index) => item.kind === 'row' ? [[item.row, index] as const] : [])), [items])
+  // 维度表也只挂载可见行，分组标题与动态展开的字符串共用高度测量。
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => rootRef.current,
+    estimateSize: () => 40,
+    getItemKey: index => {
+      const item = items[index]
+      return item.kind === 'row' ? dimensionRowId(item.row) : item.kind === 'group' ? `group:${item.view.key}` : 'ungrouped'
+    },
+    overscan: 8,
+  })
+  const virtualRows = virtualizer.getVirtualItems()
+  const padBefore = virtualRows[0]?.start ?? 0
+  const padAfter = Math.max(0, virtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end ?? 0))
+  const revealFrame = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(revealFrame.current), [])
   const showRowField = new Set(data.rows.map(row => row.field)).size > 1
   const showRowType = new Set(data.rows.map(row => row.coordinate.actual_type)).size > 1
 
@@ -335,9 +356,21 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
       setAnchor(next)
       setRangeEnd(null)
     }
-    if (reveal) requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(
-      `[data-dimension-row="${next.row}"][data-dimension-column="${next.column}"]`,
-    )?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
+    cancelAnimationFrame(revealFrame.current)
+    if (!reveal) return
+    const displayIndex = visibleRows[next.row] && displayIndexes.get(visibleRows[next.row])
+    let attempts = 0
+    const revealCell = () => {
+      const cell = rootRef.current?.querySelector<HTMLElement>(
+        `[data-dimension-row="${next.row}"][data-dimension-column="${next.column}"]`,
+      )
+      if (cell) cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      else if (displayIndex !== undefined && attempts++ < 4) {
+        if (attempts === 1) virtualizer.scrollToIndex(displayIndex, { align: 'auto' })
+        revealFrame.current = requestAnimationFrame(revealCell)
+      }
+    }
+    revealFrame.current = requestAnimationFrame(revealCell)
   }
 
   // Collect all selected (row, variantIndex) pairs — only editable columns (col >= 2)
@@ -358,6 +391,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   return (
     <div
       className="dimension-table-scroll"
+      onScrollCapture={event => { if (event.target === event.currentTarget) finishOffscreenDataEdit(event.currentTarget) }}
       ref={rootRef}
       tabIndex={0}
       onKeyDown={async event => {
@@ -405,7 +439,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
               }
               matrix.push(parts)
             }
-            await navigator.clipboard.writeText(serializeCfdMatrix(matrix))
+            await writeClipboardText(serializeCfdMatrix(matrix))
           } finally {
             clipboardBusyRef.current = false
           }
@@ -418,7 +452,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
           if (!onParseCellText || clipboardBusyRef.current) return
           clipboardBusyRef.current = true
           try {
-            const text = await navigator.clipboard.readText()
+            const text = await readClipboardText()
             const rows = parseCfdClipboard(text)
             const broadcast = rows.length === 1 && rows[0].length === 1
             // Determine target cells: start from anchor, extend by paste size if single-cell selection
@@ -527,8 +561,11 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
           </tr>
         </thead>
         <tbody>
-          {items.map(item => item.kind === 'group' ? (
-            <tr key={`group:${item.view.key}`} className="dimension-group-row">
+          {padBefore > 0 && <tr aria-hidden><td colSpan={columnCount} style={{ height: padBefore, padding: 0, border: 0 }} /></tr>}
+          {virtualRows.map(virtualRow => {
+            const item = items[virtualRow.index]
+            return item.kind === 'group' ? (
+            <tr key={`group:${item.view.key}`} data-index={virtualRow.index} ref={virtualizer.measureElement} className="dimension-group-row">
               <th colSpan={columnCount}>
                 <RecordGroupHeader
                   name={item.view.group.name}
@@ -543,14 +580,16 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
               </th>
             </tr>
           ) : item.kind === 'ungrouped' ? (
-            <tr key="ungrouped" className="dimension-group-row">
+            <tr key="ungrouped" data-index={virtualRow.index} ref={virtualizer.measureElement} className="dimension-group-row">
               <th colSpan={columnCount}><RecordUngroupedHeader count={item.rows.length} /></th>
             </tr>
           ) : (() => {
-            const rowIndex = visibleRows.indexOf(item.row)
+            const rowIndex = rowIndexes.get(item.row)!
             return (
               <tr
                 key={dimensionRowId(item.row)}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
                 className={item.group?.color ? 'has-group-color' : undefined}
                 style={recordGroupColorStyle(item.group?.color)}
               >
@@ -585,7 +624,9 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 })}
               </tr>
             )
-          })())}
+          })()
+          })}
+          {padAfter > 0 && <tr aria-hidden><td colSpan={columnCount} style={{ height: padAfter, padding: 0, border: 0 }} /></tr>}
         </tbody>
       </table>
       {data.rows.length === 0 && <div className="empty-hint">没有可显示的记录</div>}

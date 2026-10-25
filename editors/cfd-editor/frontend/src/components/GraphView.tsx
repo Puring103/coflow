@@ -133,7 +133,7 @@ function CompactNodeLabel({ text }: { text: string }) {
   return <div ref={ref} className="gn-compact-key" style={{ fontSize: size }}>{text}</div>
 }
 
-// 图节点头部与 Inspector 的头部结构不同：上方是 ID/缩略名，下方是类型小字。
+// 图卡片优先展示业务名称，将技术标识独立放在次级行，避免挤占标题。
 function GraphNodeHeader({
   recordId,
   shortName,
@@ -154,7 +154,8 @@ function GraphNodeHeader({
     >
       <div className="gn-color-bar" />
       <div className="gn-graph-heading">
-        <span className="gn-key" title={recordId}>{shortNameLabel(recordId, shortName)}</span>
+        <span className="gn-key" title={shortName || recordId}>{shortName || recordId}</span>
+        {shortName && shortName !== recordId && <span className="gn-graph-id" title={recordId}>{recordId}</span>}
         <span className="gn-type">{actualType}</span>
       </div>
       {(diagSeverity === 'error' || diagSeverity === 'warning') && (

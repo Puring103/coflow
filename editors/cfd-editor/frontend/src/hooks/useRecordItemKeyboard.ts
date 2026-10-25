@@ -1,3 +1,4 @@
+import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { useCallback, type RefObject } from 'react'
 import { errorMessage, type FieldPathSegment, type FieldValue } from '../wire'
 import {
@@ -78,7 +79,7 @@ export function useRecordItemKeyboard(options: Options) {
         event.preventDefault()
         try {
           const text = await options.onRenderCellText(path)
-          await navigator.clipboard.writeText(text)
+          await writeClipboardText(text)
           options.onNotice?.(null)
         } catch (error) {
           options.onNotice?.(`复制失败：${errorMessage(error)}`)
@@ -89,7 +90,7 @@ export function useRecordItemKeyboard(options: Options) {
       if ((event.ctrlKey || event.metaKey) && lower === 'v' && editable && canPaste) {
         event.preventDefault()
         try {
-          const text = await navigator.clipboard.readText()
+          const text = await readClipboardText()
           if (options.onPaste) {
             await options.onPaste(path, text, event.shiftKey ? 'append' : 'replace')
           } else {
