@@ -19,4 +19,4 @@ npm --prefix editors/cfd-editor/frontend exec -- tsc -p editors/cfd-editor/front
 node --test editors/cfd-editor/frontend/tests/browser/cells.browser.mjs
 ```
 
-预览直接使用正式编辑器的结构摘要和样式。摘要只在折叠时显示，多态实际类型在折叠时位于标签旁、展开时位于值区域；只读字段保留类型文字，可编辑字段支持切换类型。
+预览直接使用正式编辑器的结构摘要和样式。摘要只在折叠时显示，多态实际类型始终位于右侧值区域，有摘要时排列在摘要最前面；只读字段保留类型文字，可编辑字段支持切换类型。

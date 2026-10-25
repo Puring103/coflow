@@ -1873,7 +1873,7 @@ function ExpandableRow({
   const polymorphicTypes = annotationPolymorphicTypes(valueAnnotation)
   const hasConcreteType = value.kind === 'object' && (polymorphicTypes.length > 0 || (!!declaredType && declaredType !== concreteType))
   const canSwitchConcreteType = !!onEdit && value.kind === 'object' && polymorphicTypes.length >= 2
-  // 多态类型是字段语义的一部分：折叠时跟随标签，展开时占据摘要原来的位置。
+  // 多态类型是字段语义的一部分：始终位于右侧值区域，折叠时排列在摘要之前。
   const concreteTypeControl = hasConcreteType && (canSwitchConcreteType && value.kind === 'object'
     ? <ExpandableObjectTypeSelect value={value} polymorphicTypes={polymorphicTypes} onCommit={next => onEdit(fieldPath, next)} />
     : <span className="dc-structure-type">{concreteType}</span>)
@@ -1927,11 +1927,11 @@ function ExpandableRow({
             {!fixedExpanded && <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />}
           </span>
           <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{listItem ? itemLabel : label}</span>
-          {!expanded && concreteTypeControl}
         </div>
         <div className="dc-row-value">
           <div className="dc-row-value-inner">
-            {expanded ? concreteTypeControl : summarizeValue ? (
+            {concreteTypeControl}
+            {expanded ? null : summarizeValue ? (
               <span className="dc-business-summary" title={summarizeValue(value)}>{summarizeValue(value)}</span>
             ) : summaryPresentation?.slot === 'summary' && summaryContext ? (
               <span className="vc-summary"><PluginSummaryText presentation={summaryPresentation} context={summaryContext} fallback={count ?? ''} /></span>

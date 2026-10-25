@@ -5147,10 +5147,7 @@ input.searchable-select.searchable-select-reference,
 .dc-row-structure .dc-business-summary { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-dim); overflow: hidden; white-space: nowrap; }
 .dc-summary-part .vc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 多态类型与标签保持一行；静态类型不占摘要空间，只读字段仍展示实际类型。 */
-.dc-row-label > .dc-structure-type, .dc-row-label > .dc-structure-type-control { margin-left: 6px; flex: 0 1 auto; min-width: 0; }
-.dc-row-label:has(> .dc-structure-type, > .dc-structure-type-control) > .dc-row-label-text { flex: 0 1 auto; }
-.dc-row-label .dc-structure-type-select { width: 140px; max-width: 100%; min-width: 60px; text-align: left; }
-.dc-row-value-inner > .dc-structure-type, .dc-row-value-inner > .dc-structure-type-control { margin-left: 0; }
+/* 多态类型固定在右侧摘要之前，折叠与展开时保持同一位置。 */
+.dc-row-value-inner > .dc-structure-type, .dc-row-value-inner > .dc-structure-type-control { margin-left: 0; flex-shrink: 0; max-width: 50%; }
 .dc-row-value-inner .dc-structure-type-select { text-align: left; }
 .dc-structure-type { color: var(--text-mute); font-size: 11px; }
