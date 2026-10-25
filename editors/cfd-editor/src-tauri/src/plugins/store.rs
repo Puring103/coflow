@@ -14,7 +14,7 @@ use tauri::{AppHandle, Manager};
 const PROJECT_PLUGIN_DIR: &str = "editor-setting";
 const PROJECT_PLUGIN_FILE: &str = "plugins.json";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct ProjectPluginsFile {
     #[serde(default = "project_plugin_file_version")]
     version: u32,
@@ -57,8 +57,10 @@ pub(crate) fn read_project_plugins(project_root: &Path) -> Result<ProjectPlugins
     let contents = std::fs::read_to_string(&path).map_err(|error| {
         EditorError::other(format!("failed to read {}: {error}", path.display()))
     })?;
-    serde_json::from_str(&contents)
-        .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))
+    let mut plugins: ProjectPluginsFile = serde_json::from_str(&contents)
+        .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))?;
+    normalize_plugin_paths(project_root, &mut plugins)?;
+    Ok(plugins)
 }
 
 pub(crate) fn write_project_plugins(
@@ -72,11 +74,27 @@ pub(crate) fn write_project_plugins(
     std::fs::create_dir_all(parent).map_err(|error| {
         EditorError::other(format!("failed to create {}: {error}", parent.display()))
     })?;
-    let contents = serde_json::to_string_pretty(plugins).map_err(|error| {
+    let mut plugins = plugins.clone();
+    normalize_plugin_paths(project_root, &mut plugins)?;
+    let contents = serde_json::to_string_pretty(&plugins).map_err(|error| {
         EditorError::other(format!("failed to encode project plugins: {error}"))
     })?;
     std::fs::write(&path, contents)
         .map_err(|error| EditorError::other(format!("failed to write {}: {error}", path.display())))
+}
+
+// 旧插件配置的绝对路径在读取时转换，下次保存统一写回相对路径。
+fn normalize_plugin_paths(
+    project_root: &Path,
+    plugins: &mut ProjectPluginsFile,
+) -> Result<(), EditorError> {
+    for entry in &mut plugins.plugins {
+        let path = Path::new(&entry.manifest);
+        if path.is_absolute() {
+            entry.manifest = coflow_runtime::path_to_slash(&relative_project_path(project_root, path)?);
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn relative_project_path(
@@ -303,7 +321,7 @@ mod frontend_plugin_tests {
     use super::super::manifest::{load_frontend_plugin_bundle, PluginScope};
     use super::{
         install_project_frontend_plugin_bundle, project_frontend_plugins, read_project_plugins,
-        resolve_project_manifest,
+        resolve_project_manifest, project_plugins_path, write_project_plugins,
     };
 
     fn temp_plugin_dir(name: &str) -> std::path::PathBuf {
@@ -452,6 +470,28 @@ mod frontend_plugin_tests {
         let error = resolve_project_manifest(&root, absolute.to_string_lossy().as_ref())
             .expect_err("reject absolute manifest path");
         assert!(error.message.contains("relative path"));
+        fs::remove_dir_all(root).expect("remove project root");
+    }
+
+    #[test]
+    fn project_plugin_config_converts_old_absolute_paths_on_read() {
+        let root = temp_plugin_dir("migrate-absolute");
+        fs::create_dir_all(root.join("editor-setting")).expect("settings directory");
+        fs::create_dir_all(root.join("external")).expect("plugin directory");
+        let manifest = root.join("external/plugin.json");
+        fs::write(&manifest, "{}").expect("manifest");
+        let path = project_plugins_path(&root);
+        let original = serde_json::json!({
+            "version": 1,
+            "plugins": [{"id": "example", "manifest": manifest}]
+        }).to_string();
+        fs::write(&path, &original).expect("old config");
+        let config = read_project_plugins(&root).expect("read old config");
+        assert_eq!(config.plugins[0].manifest, "external/plugin.json");
+        assert_eq!(fs::read_to_string(&path).expect("original config"), original);
+        write_project_plugins(&root, &config).expect("save config");
+        let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(path).expect("saved config")).expect("json");
+        assert_eq!(saved["plugins"][0]["manifest"], "external/plugin.json");
         fs::remove_dir_all(root).expect("remove project root");
     }
 

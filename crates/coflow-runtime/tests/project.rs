@@ -217,3 +217,28 @@ fn creates_nested_file_and_recursively_deletes_configured_directory() {
     let reopened = Project::open_schema_only(Some(&config)).expect("reopen without data root");
     assert!(reopened.data_paths().is_empty());
 }
+
+#[test]
+fn absolute_config_paths_are_converted_on_read_and_saved_relatively() {
+    let dir = project_with_config("");
+    let root = coflow_runtime::canonicalize_path(dir.path()).expect("root");
+    let absolute = |suffix: &str| root.join(suffix).to_string_lossy().replace('\\', "/");
+    let source = format!(
+        "schema: '{}'\ndata: '{}'\ncodegen: {{ language: csharp, dir: '{}' }}\ndimensions:\n  language:\n    dir: '{}'\n",
+        absolute("schema.cft"), absolute("data"), absolute("generated"), absolute("dimensions/language")
+    );
+    let config = root.join("coflow.yaml");
+    fs::write(&config, &source).expect("absolute config");
+    let project = Project::open_schema_only(Some(&config)).expect("read config");
+    let encoded = serde_yaml::to_string(project.config()).expect("encode config");
+    assert!(!encoded.contains(&absolute("")));
+    assert_eq!(project.config().schema.paths()[0], std::path::Path::new("schema.cft"));
+    assert_eq!(project.config().data[0].path(), std::path::Path::new("data"));
+    assert_eq!(project.config().codegen[0].dir, std::path::Path::new("generated"));
+    assert_eq!(project.config().dimensions["language"].dir.as_deref(), Some(std::path::Path::new("dimensions/language")));
+    assert_eq!(fs::read_to_string(&config).expect("unchanged config"), source);
+    fs::write(root.join("extra.cfd"), "").expect("extra input");
+    add_project_input(&config, ProjectInputKind::Data, &root.join("extra.cfd")).expect("save config");
+    let saved = fs::read_to_string(config).expect("saved config");
+    assert!(!saved.contains(&absolute("")));
+}

@@ -290,20 +290,7 @@ fn publish_config(config_path: &Path, project: &Project) -> Result<(), Diagnosti
     })?;
     // 所有配置路径统一相对项目根保存，项目外目录使用 ..，避免绑定本机绝对路径。
     let mut config = project.config.clone();
-    for path in &mut config.schema.paths {
-        *path = portable_config_path(project.root_dir(), path)?;
-    }
-    for source in &mut config.data {
-        *source = SourceConfig::from_path(portable_config_path(project.root_dir(), source.path())?);
-    }
-    for output in &mut config.codegen {
-        output.dir = portable_config_path(project.root_dir(), &output.dir)?;
-    }
-    for dimension in config.dimensions.values_mut() {
-        if let Some(path) = &mut dimension.dir {
-            *path = portable_config_path(project.root_dir(), path)?;
-        }
-    }
+    normalize_config_paths(project.root_dir(), &mut config)?;
     let output = serde_yaml::to_string(&config).map_err(|error| {
         file_error(
             config_path,
@@ -333,7 +320,33 @@ fn publish_config(config_path: &Path, project: &Project) -> Result<(), Diagnosti
     Ok(())
 }
 
+/// 配置读取与写入共用相对路径转换，内存配置也不保留本机绝对路径。
+pub(super) fn normalize_config_paths(
+    project_root: &Path,
+    config: &mut super::ProjectConfig,
+) -> Result<(), DiagnosticSet> {
+    for path in &mut config.schema.paths {
+        *path = portable_config_path(project_root, path)?;
+    }
+    for source in &mut config.data {
+        *source = SourceConfig::from_path(portable_config_path(project_root, source.path())?);
+    }
+    for output in &mut config.codegen {
+        output.dir = portable_config_path(project_root, &output.dir)?;
+    }
+    for dimension in config.dimensions.values_mut() {
+        if let Some(path) = &mut dimension.dir {
+            *path = portable_config_path(project_root, path)?;
+        }
+    }
+    Ok(())
+}
+
 fn portable_config_path(project_root: &Path, selected: &Path) -> Result<PathBuf, DiagnosticSet> {
+    // 已有相对路径保留原始写法，空路径继续交由配置校验处理。
+    if !selected.is_absolute() {
+        return Ok(selected.to_path_buf());
+    }
     let root = super::normalize_path(project_root);
     let selected = super::resolve_project_relative(&root, selected);
     let root_parts = root.components().collect::<Vec<_>>();
