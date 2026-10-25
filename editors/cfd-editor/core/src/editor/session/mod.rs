@@ -87,9 +87,9 @@ impl EditorSession {
         self.engine.queries()
     }
 
-    pub(crate) fn commit_internal_write(&mut self, paths: &[String]) {
+    pub(crate) fn commit_internal_write(&mut self, files: &[coflow_runtime::PublishedFile]) {
         self.revisions
-            .commit_internal_write(&self.project_root, paths);
+            .commit_internal_write(files);
     }
 
     pub(crate) fn type_display_name(&self, file_path: &str, type_name: &str) -> String {

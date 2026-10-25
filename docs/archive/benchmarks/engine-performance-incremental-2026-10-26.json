@@ -1,0 +1,1503 @@
+{
+  "date": "2026-10-26",
+  "platform": "Windows release mimalloc",
+  "baseline_notes": "Pipeline paired baseline is the saved budget-fixed baseline, not the immediately preceding round. Topology and nested paired baselines are the saved round2 binaries. All recorded samples retained; sample counts do not support stable P95.",
+  "binaries": [
+    {
+      "path": "target/engine-perf/budget-fixed-engine.exe",
+      "sha256": "9D17E256D23515A6389D50D1D35202DF2AF76E0EB8AA51077FFA35E12673FD47"
+    },
+    {
+      "path": "target/release/examples/engine_perf.exe",
+      "sha256": "5326027357157275180818DD58642C49686AD7C5ECA9A8F422B30F0E9BE17F96"
+    },
+    {
+      "path": "target/engine-perf/round2-engine_check_topology_perf.exe",
+      "sha256": "59C9B1136FB0D8CBD2EC9BB653A8BC9D31821517AC9C86DCE67C36065F474FC7"
+    },
+    {
+      "path": "target/engine-perf/round2-engine_model_topology_perf.exe",
+      "sha256": "7C7490FAFBBCDFF56B46858793453D445097CA32FEE44F2C0E3AA32F1A77E601"
+    },
+    {
+      "path": "target/engine-perf/round2-engine_nested_edit_perf.exe",
+      "sha256": "3B96737FA22EFF8619F7FB39368909D20E0ACAA30A26E1C29103EF54BD7F6C77"
+    },
+    {
+      "path": "target/release/examples/engine_check_topology_perf.exe",
+      "sha256": "9A7B59CC2B7E4F4B5366C230AFB68DE96EB7CA38E5F55A0D3E3D7A4F082A7201"
+    },
+    {
+      "path": "target/release/examples/engine_model_topology_perf.exe",
+      "sha256": "1822973132810D39C24500EADCF081AFED3D6900763E755076D702AC03DAF096"
+    },
+    {
+      "path": "target/release/examples/engine_nested_edit_perf.exe",
+      "sha256": "2CF177E3B3771A3B85FF3D7F3A0349F84F361F21CA23387311CCE93680B623A9"
+    }
+  ],
+  "runs": {
+    "round3-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 3,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 5
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.18230000000000002,
+          0.1479,
+          0.1656
+        ],
+        "median_ms": 0.1656,
+        "min_ms": 0.1479,
+        "max_ms": 0.18230000000000002,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.9633,
+          0.9292,
+          0.5203
+        ],
+        "median_ms": 0.9292,
+        "min_ms": 0.5203,
+        "max_ms": 0.9633,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          6734.860900000001,
+          8358.711,
+          8988.0312
+        ],
+        "median_ms": 8358.711,
+        "min_ms": 6734.860900000001,
+        "max_ms": 8988.0312,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.1684,
+          0.1673,
+          0.1467,
+          0.14200000000000002,
+          0.43370000000000003
+        ],
+        "median_ms": 0.1673,
+        "min_ms": 0.14200000000000002,
+        "max_ms": 0.43370000000000003,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          85.0799,
+          86.5665,
+          85.3994,
+          92.7993,
+          87.8593
+        ],
+        "median_ms": 86.5665,
+        "min_ms": 85.0799,
+        "max_ms": 92.7993,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          99.119,
+          86.9066,
+          85.1021,
+          85.7488,
+          88.3448
+        ],
+        "median_ms": 86.9066,
+        "min_ms": 85.1021,
+        "max_ms": 99.119,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          181.5003,
+          185.6844,
+          188.2118,
+          174.3524,
+          173.91670000000002
+        ],
+        "median_ms": 181.5003,
+        "min_ms": 173.91670000000002,
+        "max_ms": 188.2118,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          7325.7965,
+          7133.9430999999995,
+          7410.8808,
+          7081.6314,
+          4253.4366
+        ],
+        "median_ms": 7133.9430999999995,
+        "min_ms": 4253.4366,
+        "max_ms": 7410.8808,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round3-pipeline-baseline-paired": [
+      {
+        "mode": "pipeline",
+        "samples": 1,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.3995
+        ],
+        "median_ms": 0.3995,
+        "min_ms": 0.3995,
+        "max_ms": 0.3995,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.7148
+        ],
+        "median_ms": 0.7148,
+        "min_ms": 0.7148,
+        "max_ms": 0.7148,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          11040.1642
+        ],
+        "median_ms": 11040.1642,
+        "min_ms": 11040.1642,
+        "max_ms": 11040.1642,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.1624,
+          0.1449,
+          0.1389
+        ],
+        "median_ms": 0.1449,
+        "min_ms": 0.1389,
+        "max_ms": 0.1624,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          98.616,
+          103.049,
+          100.14710000000001
+        ],
+        "median_ms": 100.14710000000001,
+        "min_ms": 98.616,
+        "max_ms": 103.049,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          108.0338,
+          98.408,
+          97.1661
+        ],
+        "median_ms": 98.408,
+        "min_ms": 97.1661,
+        "max_ms": 108.0338,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          432.1635,
+          420.7595,
+          429.2559
+        ],
+        "median_ms": 429.2559,
+        "min_ms": 420.7595,
+        "max_ms": 432.1635,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          7366.2745,
+          7430.436000000001,
+          7382.7783
+        ],
+        "median_ms": 7382.7783,
+        "min_ms": 7366.2745,
+        "max_ms": 7430.436000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round3-pipeline-current-paired": [
+      {
+        "mode": "pipeline",
+        "samples": 1,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.1623
+        ],
+        "median_ms": 0.1623,
+        "min_ms": 0.1623,
+        "max_ms": 0.1623,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5899
+        ],
+        "median_ms": 0.5899,
+        "min_ms": 0.5899,
+        "max_ms": 0.5899,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          11306.4891
+        ],
+        "median_ms": 11306.4891,
+        "min_ms": 11306.4891,
+        "max_ms": 11306.4891,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.13349999999999998,
+          0.1283,
+          0.12430000000000001
+        ],
+        "median_ms": 0.1283,
+        "min_ms": 0.12430000000000001,
+        "max_ms": 0.13349999999999998,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          83.6704,
+          89.4521,
+          89.4528
+        ],
+        "median_ms": 89.4521,
+        "min_ms": 83.6704,
+        "max_ms": 89.4528,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          96.2469,
+          85.2063,
+          88.1242
+        ],
+        "median_ms": 88.1242,
+        "min_ms": 85.2063,
+        "max_ms": 96.2469,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          174.0138,
+          177.0131,
+          176.38139999999999
+        ],
+        "median_ms": 176.38139999999999,
+        "min_ms": 174.0138,
+        "max_ms": 177.0131,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          6926.7573,
+          6959.4007,
+          6984.1492
+        ],
+        "median_ms": 6959.4007,
+        "min_ms": 6926.7573,
+        "max_ms": 6984.1492,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round3-before-check": [
+      {
+        "probe": "check_reference_fanout",
+        "warmups": 1,
+        "samples": 5,
+        "timing": "mutation only; fresh full reload and value verification outside timing",
+        "allocator": "mimalloc"
+      },
+      {
+        "records": 8000,
+        "edges": 8000,
+        "topology": "ring",
+        "source_bytes": 336000,
+        "samples_ms": [
+          28.85,
+          26.1712,
+          23.9206,
+          27.2573,
+          24.9541
+        ],
+        "median_ms": 26.1712,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      },
+      {
+        "records": 8000,
+        "edges": 8000,
+        "topology": "hub",
+        "source_bytes": 336000,
+        "samples_ms": [
+          54.4585,
+          61.8355,
+          55.6168,
+          60.0103,
+          61.3084
+        ],
+        "median_ms": 60.0103,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      },
+      {
+        "records": 100000,
+        "edges": 100000,
+        "topology": "ring",
+        "source_bytes": 4200000,
+        "samples_ms": [
+          220.79770000000002,
+          214.2142,
+          211.2019,
+          211.6737,
+          294.08729999999997
+        ],
+        "median_ms": 214.2142,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      },
+      {
+        "records": 100000,
+        "edges": 100000,
+        "topology": "hub",
+        "source_bytes": 4200000,
+        "samples_ms": [
+          1163.5798,
+          1186.8133,
+          1181.1257,
+          1179.6478,
+          1200.2304
+        ],
+        "median_ms": 1181.1257,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      }
+    ],
+    "round3-after-check": [
+      {
+        "probe": "check_reference_fanout",
+        "warmups": 1,
+        "samples": 5,
+        "timing": "mutation only; fresh full reload and value verification outside timing",
+        "allocator": "mimalloc"
+      },
+      {
+        "records": 8000,
+        "edges": 8000,
+        "topology": "ring",
+        "source_bytes": 336000,
+        "samples_ms": [
+          27.2889,
+          28.1224,
+          32.2183,
+          28.0357,
+          29.5722
+        ],
+        "median_ms": 28.1224,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      },
+      {
+        "records": 8000,
+        "edges": 8000,
+        "topology": "hub",
+        "source_bytes": 336000,
+        "samples_ms": [
+          61.3856,
+          62.1916,
+          62.1271,
+          57.769,
+          59.6411
+        ],
+        "median_ms": 61.3856,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 8000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 7999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 8000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      },
+      {
+        "records": 100000,
+        "edges": 100000,
+        "topology": "ring",
+        "source_bytes": 4200000,
+        "samples_ms": [
+          213.41209999999998,
+          213.6382,
+          213.3305,
+          213.8311,
+          366.87219999999996
+        ],
+        "median_ms": 213.6382,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 1,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      },
+      {
+        "records": 100000,
+        "edges": 100000,
+        "topology": "hub",
+        "source_bytes": 4200000,
+        "samples_ms": [
+          1180.3148999999999,
+          1187.2571,
+          1081.3371,
+          720.4764,
+          697.1216999999999
+        ],
+        "median_ms": 1081.3371,
+        "stats": [
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          },
+          {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 100000,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 1,
+            "check_roots_executed": 100000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        ],
+        "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+      }
+    ],
+    "round3-before-model": [
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.1163,
+          0.1069,
+          0.10579999999999999
+        ],
+        "median_ms": 0.1069,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.10160000000000001,
+          0.09670000000000001,
+          0.0956
+        ],
+        "median_ms": 0.09670000000000001,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.2748,
+          0.2535,
+          0.2457
+        ],
+        "median_ms": 0.2535,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.2323,
+          0.2106,
+          0.2041
+        ],
+        "median_ms": 0.2106,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          1.0169000000000001,
+          0.9858,
+          1.0127000000000002
+        ],
+        "median_ms": 1.0127000000000002,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.6495,
+          0.5264,
+          0.4732
+        ],
+        "median_ms": 0.5264,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          1.3516,
+          2.0869,
+          1.7196
+        ],
+        "median_ms": 1.7196,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          2.0343,
+          1.5901999999999998,
+          2.7091
+        ],
+        "median_ms": 2.0343,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      }
+    ],
+    "round3-after-model": [
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.15660000000000002,
+          0.1154,
+          0.1193
+        ],
+        "median_ms": 0.1193,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.0982,
+          0.0917,
+          0.09050000000000001
+        ],
+        "median_ms": 0.0917,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.5103,
+          0.39540000000000003,
+          0.2628
+        ],
+        "median_ms": 0.39540000000000003,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.2516,
+          0.2358,
+          0.2403
+        ],
+        "median_ms": 0.2403,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.6671999999999999,
+          0.5658,
+          0.7038
+        ],
+        "median_ms": 0.6671999999999999,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.8082,
+          0.7431,
+          0.7263999999999999
+        ],
+        "median_ms": 0.7431,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          1.5372999999999999,
+          1.4067999999999998,
+          1.4482
+        ],
+        "median_ms": 1.4482,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          1.2063,
+          1.0531,
+          1.1662000000000001
+        ],
+        "median_ms": 1.1662000000000001,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      }
+    ],
+    "round3-before-nested": [
+      {
+        "array_elements": 100000,
+        "batch": 1000,
+        "samples_ms": [
+          66.9299,
+          64.85889999999999,
+          63.344899999999996
+        ],
+        "median_ms": 64.85889999999999,
+        "verification": "all elements and independent full reload"
+      }
+    ],
+    "round3-after-nested": [
+      {
+        "array_elements": 100000,
+        "batch": 1000,
+        "samples_ms": [
+          54.315799999999996,
+          56.8178,
+          57.5419
+        ],
+        "median_ms": 56.8178,
+        "verification": "all elements and independent full reload"
+      }
+    ]
+  }
+}

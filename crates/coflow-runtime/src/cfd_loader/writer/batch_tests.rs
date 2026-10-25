@@ -84,7 +84,7 @@ fn compare_with_sequential(source: &str, edits: &[Edit], expected_parses: Option
             actual_type: "Item",
             field_path: &edit.path,
             new_value: &edit.value,
-            materialized_top_level: edit.materialized.as_ref(),
+            materialized_top_level: edit.materialized.as_ref().map(crate::api::FieldMaterialization::Value),
             schema: &schema,
         })
         .collect::<Vec<_>>();
@@ -378,7 +378,7 @@ fn check_prefix_node_budget(
             actual_type: "Item",
             field_path: &edit.path,
             new_value: &edit.value,
-            materialized_top_level: edit.materialized.as_ref(),
+            materialized_top_level: edit.materialized.as_ref().map(crate::api::FieldMaterialization::Value),
             schema: &schema,
         })
         .collect::<Vec<_>>();
@@ -651,4 +651,29 @@ fn preloaded_source_keeps_unrelated_lowering_diagnostics() {
     assert!(!loaded.diagnostics.is_empty());
     assert_eq!(loaded.diagnostics, expected.diagnostics);
     assert_eq!(loaded.records, expected.records);
+}
+
+#[test]
+fn deferred_parent_materialization_matches_eager_writer_text() {
+    let schema = schema();
+    for source in ["a: Item {}", "a: Item { node: Node {} }", "a: Item { node: Node { number: 1 } }"] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("items.cfd");
+        fs::write(&path, source).unwrap();
+        let origin = RecordOrigin::File { path, span: None };
+        let object = CfdObject::try_new("Item", BTreeMap::from([("node".into(), node(1))])).unwrap();
+        let path = [field("node"), field("number")];
+        let mut eager = node(1);
+        crate::value_path::replace(&mut eager, &path[1..], CfdValue::Int(9)).unwrap();
+        let mut outputs = Vec::new();
+        for materialization in [crate::api::FieldMaterialization::Record(&object), crate::api::FieldMaterialization::Value(&eager)] {
+            let writer = CfdWriter::new();
+            writer.write_field(&WriteCellRequest {
+                origin: &origin, record_id: "a", actual_type: "Item", field_path: &path,
+                new_value: &CfdValue::Int(9), materialized_top_level: Some(materialization), schema: &schema,
+            }).unwrap();
+            outputs.push(writer.source_overrides().unwrap().remove(0).source);
+        }
+        assert_eq!(outputs[0], outputs[1]);
+    }
 }

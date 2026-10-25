@@ -17,11 +17,11 @@ pub(crate) enum EvalItems {
     },
     DictKeys(EvalEntries),
     DictValues(EvalEntries),
-    Records(Vec<CfdRecordHandle>),
+    Records(std::sync::Arc<[CfdRecordHandle]>),
 }
 
 impl EvalItems {
-    pub(crate) const fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         match self {
             Self::ModelArray { len, .. } => *len,
             Self::DictKeys(entries) | Self::DictValues(entries) => entries.len(),
@@ -110,7 +110,7 @@ impl EvalEntries {
         }
     }
 
-    pub(crate) const fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.len
     }
 

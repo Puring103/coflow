@@ -6,6 +6,13 @@ use std::collections::BTreeMap;
 /// Canonical data-model path segment used by writers and host wire adapters.
 pub type WriteFieldPathSegment = CfdPathSegment;
 
+/// 缺省父值仅在源码无法定位嵌套路径时实体化。
+#[derive(Debug, Clone, Copy)]
+pub enum FieldMaterialization<'a> {
+    Value(&'a CfdValue),
+    Record(&'a crate::data_model::CfdObject),
+}
+
 /// Request describing a single field write.
 #[derive(Debug, Clone)]
 pub struct WriteCellRequest<'a> {
@@ -16,7 +23,7 @@ pub struct WriteCellRequest<'a> {
     /// Source-neutral new value, serialized to the source format by the writer.
     pub new_value: &'a CfdValue,
     /// 完整顶层候选值，仅在嵌套路径的顶层字段尚未写入源文件时使用。
-    pub materialized_top_level: Option<&'a CfdValue>,
+    pub materialized_top_level: Option<FieldMaterialization<'a>>,
     /// Optional pre-resolved schema type for the record. Writers that produce
     /// typed source representations (e.g. CFD) use this for serialization.
     pub schema: &'a CftSchema,

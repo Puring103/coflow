@@ -180,12 +180,15 @@ where
         .flat_map(|applied| applied.outcome.diagnostics.flat_diagnostics())
         .collect::<Vec<_>>();
     diagnostics.extend(new_session.diagnostics.flat_diagnostics());
-    if let Err(diagnostics) = writer.publish() {
-        if let Some(last) = executable.last() {
-            failed.push(failed_op(&last.planned, diagnostics));
+    let published_files = match writer.publish() {
+        Ok(files) => files,
+        Err(diagnostics) => {
+            if let Some(last) = executable.last() {
+                failed.push(failed_op(&last.planned, diagnostics));
+            }
+            return report_without_publish(session, false, failed);
         }
-        return report_without_publish(session, false, failed);
-    }
+    };
     *session = new_session;
     failed.sort_by_key(|failure| failure.index);
     let check_ok = write_ok
@@ -200,6 +203,7 @@ where
         failed,
         affected_files,
         written_files,
+        published_files,
         diagnostics,
     }
 }
@@ -290,6 +294,7 @@ fn stage_without_generation(
         failed,
         affected_files: Vec::new(),
         written_files: Vec::new(),
+        published_files: Vec::new(),
         diagnostics,
     }
 }
@@ -340,6 +345,7 @@ fn report_without_publish(
         failed,
         affected_files: Vec::new(),
         written_files: Vec::new(),
+        published_files: Vec::new(),
         diagnostics: session.diagnostics.flat_diagnostics(),
     }
 }

@@ -272,7 +272,7 @@ mod tests {
         entry
             .state
             .write()
-            .commit_internal_write(&["data/first.cfd".into()]);
+            .commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"first: Item { value: 99 }\n"))]);
         assert!(SessionStore::commit_data_reload_candidate(id, &entry, candidate).is_none());
         store
             .reload_session_paths(id, std::slice::from_ref(&path))

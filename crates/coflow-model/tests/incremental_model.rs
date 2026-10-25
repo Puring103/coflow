@@ -36,6 +36,42 @@ fn origin(line: usize) -> RecordOrigin {
 }
 
 #[test]
+fn mixed_borrowed_batches_preserve_handles_origins_and_incremental_results() {
+    let schema = compile_schema("table Item { value: int; }");
+    let mut inputs = (0..1030).map(|index| {
+        LoadedRecordDraft::new(format!("i{index}"), "Item", [("value", LoadedValueDraft::from(index as i64))])
+            .with_origin(origin(index))
+    }).collect::<Vec<_>>();
+    let mixed = |records: &[LoadedRecordDraft], previous: Option<&CfdDataModel>| {
+        let mut mixed = CfdDataModel::builder(&schema);
+        mixed.add_borrowed_records(&[]);
+        mixed.add_borrowed_records(&records[..511]);
+        mixed.add_loaded_record(records[511].clone());
+        mixed.add_borrowed_record(&records[512]);
+        mixed.add_borrowed_records(&records[513..1024]);
+        mixed.add_borrowed_records(&[]);
+        mixed.add_borrowed_records(&records[1024..]);
+        match previous {
+            Some(previous) => mixed.try_build_partial_incremental(previous, &[id(previous, "Item", "i511"), id(previous, "Item", "i1024")]).unwrap().unwrap().model,
+            None => mixed.build().unwrap(),
+        }
+    };
+    let previous = mixed(&inputs, None);
+    assert_eq!(previous, builder(&schema, &inputs, &[]).build().unwrap());
+    inputs[511].fields.insert("value".into(), 9000_i64.into());
+    inputs[1024].fields.insert("value".into(), 9001_i64.into());
+    for record in &mut inputs[513..] { record.origin = origin(2000); }
+    let updated = mixed(&inputs, Some(&previous));
+    let full = builder(&schema, &inputs, &[]).build().unwrap();
+    assert_eq!(updated, full);
+    for ((left_id, left), (right_id, right)) in updated.records().zip(full.records()) {
+        assert_eq!(left_id, right_id);
+        assert_eq!(left.origin, right.origin);
+    }
+    assert_eq!(previous.record(id(&previous, "Item", "i511")).unwrap().field("value"), Some(&CfdValue::Int(511)));
+}
+
+#[test]
 fn local_update_reuses_values_and_preserves_previous_snapshot() {
     let schema = compile_schema("table Item { value: int; }");
     let mut inputs = (0..8)
@@ -517,4 +553,65 @@ fn signed_zero_invalidates_storage_and_templates_without_changing_numeric_equali
         .unwrap()
         .is_none());
     assert!(builder(&schema, &inputs, &[]).build().is_err());
+}
+
+#[test]
+fn batched_hub_retarget_matches_full_build_and_preserves_old_incoming_order() {
+    let schema = compile_schema("table Item { value: int; target: &Item; }");
+    let mut inputs = (0..100).map(|index| LoadedRecordDraft::new(format!("i{index}"), "Item", [
+        ("value", LoadedValueDraft::Int(0)), ("target", LoadedValueDraft::record_ref("i0")),
+    ])).collect::<Vec<_>>();
+    let previous = builder(&schema, &inputs, &[]).build().unwrap();
+    let saved = previous.clone();
+    let changed = (0..60).rev().map(|index| id(&previous, "Item", &format!("i{index}"))).collect::<Vec<_>>();
+    for (index, input) in inputs.iter_mut().take(60).enumerate() {
+        input.fields.insert("value".into(), LoadedValueDraft::Int(1));
+        if index % 2 == 0 { input.fields.insert("target".into(), LoadedValueDraft::record_ref("i99")); }
+    }
+    let output = builder(&schema, &inputs, &[]).try_build_partial_incremental(&previous, &changed).unwrap().unwrap();
+    let expected = builder(&schema, &inputs, &[]).build().unwrap();
+    assert_eq!(output.model, expected);
+    for (handle, _) in expected.records() {
+        assert_eq!(output.model.ref_edges_to_target(handle).collect::<Vec<_>>(), expected.ref_edges_to_target(handle).collect::<Vec<_>>());
+    }
+    assert_eq!(previous, saved);
+    assert_eq!(previous.ref_edges_to_target(id(&previous, "Item", "i0")).count(), 100);
+}
+
+#[test]
+fn record_set_cache_is_shared_only_while_membership_is_stable() {
+    let schema = compile_schema("abstract table Base { value: int; } table First : Base {} table Second : Base {}");
+    let mut inputs = vec![LoadedRecordDraft::new("z", "Second", [("value", 1_i64.into())]), LoadedRecordDraft::new("a", "First", [("value", 2_i64.into())])];
+    let old = builder(&schema, &inputs, &[]).build().unwrap();
+    let members = old.shared_assignable_records(&schema, "Base");
+    assert_eq!(members.iter().map(|id| old.record(*id).unwrap().id()).collect::<Vec<_>>(), vec!["a", "z"]);
+    assert!(Arc::ptr_eq(&members, &old.shared_assignable_records(&schema, "Base")));
+    inputs[0].fields.insert("value".into(), 3_i64.into());
+    let new = builder(&schema, &inputs, &[]).try_build_partial_incremental(&old, &[id(&old, "Second", "z")]).unwrap().unwrap().model;
+    assert!(Arc::ptr_eq(&members, &new.shared_assignable_records(&schema, "Base")));
+    inputs.push(LoadedRecordDraft::new("b", "First", [("value", 4_i64.into())]));
+    let structural = builder(&schema, &inputs, &[]).build().unwrap();
+    let next = structural.shared_assignable_records(&schema, "Base");
+    assert_eq!(next.len(), 3);
+    assert_eq!(members.len(), 2);
+    assert_eq!(next.iter().map(|id| structural.record(*id).unwrap().id()).collect::<Vec<_>>(), vec!["a", "b", "z"]);
+}
+
+#[test]
+fn borrowed_dimension_inputs_match_owned_full_and_incremental_builds() {
+    let schema = compile_schema("table Source { @localized name: string; }");
+    let inputs = vec![LoadedRecordDraft::new("a", "Source", [("name", "Base".into())])];
+    let mut overlays = vec![overlay("First", origin(0))];
+    let build_borrowed = |overlays: &[DimensionValueDraft], previous: Option<&CfdDataModel>| {
+        let mut candidate = builder(&schema, &inputs, &[]);
+        candidate.add_borrowed_dimension_value_drafts(overlays);
+        if let Some(previous) = previous {
+            candidate.try_build_partial_incremental(previous, &[id(previous, "Source", "a")]).unwrap().unwrap().model
+        } else { candidate.build().unwrap() }
+    };
+    let previous = build_borrowed(&overlays, None);
+    assert_eq!(previous, builder(&schema, &inputs, &overlays).build().unwrap());
+    overlays[0] = overlay("Second", origin(3));
+    let next = build_borrowed(&overlays, Some(&previous));
+    assert_eq!(next, builder(&schema, &inputs, &overlays).build().unwrap());
 }

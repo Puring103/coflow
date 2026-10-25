@@ -6,6 +6,7 @@ mod names;
 mod plans;
 mod queries;
 mod value_type;
+mod traversal;
 
 pub use check_builtins::CftCheckBuiltin;
 pub use compiler::{build_schema, build_schema_with_limits};
@@ -101,6 +102,7 @@ pub struct CftSchema {
     dimensions: BTreeMap<DimensionName, CftDimension>,
     type_by_id_as_enum: BTreeMap<EnumName, TypeName>,
     check_index: CheckIndex,
+    traversal: Arc<std::sync::OnceLock<traversal::ValueTraversalPlan>>,
     value_dependencies: ValueDependencyPlan,
 }
 
@@ -184,6 +186,7 @@ impl CftSchema {
             dimensions,
             type_by_id_as_enum,
             check_index,
+            traversal: Arc::new(std::sync::OnceLock::new()),
             value_dependencies,
         })
     }

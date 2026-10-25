@@ -35,6 +35,7 @@
 - [质量要求](development/quality.md)：代码、诊断、测试、文档及检查职责。
 - [引擎核心性能优化方案](development/engine-performance-plan.zh-CN.md)：十万条记录与高频编辑的优化目标、已实施结构、增量安全边界和验收方式。
 - [引擎数据结构与算法复审](development/engine-performance-review.zh-CN.md)：集中引用实测、剩余复制与算法成本、正确性边界和后续优化顺序。
+- [引擎优化安全性与结构复核](development/engine-performance-safety-review.zh-CN.md)：功能边界、宿主一致性风险、模块依赖与底层优化顺序。
 - [发布流程](releasing.md)：版本、安装器、发布资产与更新签名。
 - [macOS 签名](releasing-macos-signing.md)：证书、公证和发布环境配置。
 - [VS Code 扩展](../editors/vscode-coflow/README.md)：语言服务接入和扩展开发。

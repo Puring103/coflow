@@ -164,7 +164,7 @@ pub(super) fn prepare_one(
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
             let value = coerce_mutation_value(session, &expected.ty, value, pending_records)?;
             let materialized_top_level =
-                materialized_top_level_value(session, &write_record, &path, &value)?;
+                materialized_top_level_value(session, &write_record, &path)?;
             Ok(PreparedMutationOp::SetField {
                 record,
                 write_record,
@@ -321,23 +321,24 @@ fn materialized_top_level_value(
     session: &ProjectSession,
     coordinate: &RecordCoordinate,
     path: &[CfdPathSegment],
-    value: &CfdValue,
-) -> Result<Option<CfdValue>, DiagnosticSet> {
+) -> Result<Option<std::sync::Arc<crate::data_model::CfdObject>>, DiagnosticSet> {
     if path.len() <= 1 {
         return Ok(None);
     }
-    let root_path = CfdPath {
-        segments: path[..1].to_vec(),
-    };
-    let record = session
-        .record_view(&coordinate.actual_type, &coordinate.id)
+    let root_path = CfdPath { segments: path[..1].to_vec() };
+    let record = session.record_view(&coordinate.actual_type, &coordinate.id)
         .map(|view| view.record)
         .ok_or_else(|| one_path_error("record was not found while materializing a field"))?;
-    let mut root = record.value_at_path(&root_path).cloned().ok_or_else(|| {
+    let root = record.value_at_path(&root_path).ok_or_else(|| {
         one_path_error("top-level field was not found while materializing a field")
     })?;
-    set_nested_value(&mut root, &path[1..], value.clone())?;
-    Ok(Some(root))
+    // 准备阶段只验证路径并共享原值树；显式数组元素修改不复制整个数组。
+    validate_nested_path(root, &path[1..])?;
+    Ok(Some(std::sync::Arc::clone(&record.object)))
+}
+
+fn validate_nested_path(current: &CfdValue, path: &[CfdPathSegment]) -> Result<(), DiagnosticSet> {
+    crate::value_path::validate(current, path).map_err(|error| one_path_error(error.message()))
 }
 
 pub(super) struct PendingInsertSetRequest<'a> {
@@ -560,37 +561,8 @@ fn set_pending_insert_value(
     set_nested_value(current, &path[1..], value)
 }
 
-pub(super) fn set_nested_value(
-    current: &mut CfdValue,
-    path: &[CfdPathSegment],
-    value: CfdValue,
-) -> Result<(), DiagnosticSet> {
-    let Some((segment, rest)) = path.split_first() else {
-        *current = value;
-        return Ok(());
-    };
-    match current {
-        CfdValue::OptionSome(inner) => return set_nested_value(inner, path, value),
-        CfdValue::OptionNone => {
-            return Err(one_path_error(
-                "cannot write a nested path through an empty option",
-            ));
-        }
-        _ => {}
-    }
-    let next = match (current, segment) {
-        (CfdValue::Object(object), CfdPathSegment::Field(field)) => {
-            object.fields.get_mut(field.as_str())
-        }
-        (CfdValue::Array(items), CfdPathSegment::Index(index)) => items.get_mut(*index),
-        (CfdValue::Dict(entries), CfdPathSegment::DictKey(key)) => entries
-            .iter_mut()
-            .find(|(entry_key, _)| crate::dict_key_path_text(entry_key) == *key)
-            .map(|(_, entry_value)| entry_value),
-        _ => None,
-    }
-    .ok_or_else(|| one_path_error("pending insert nested path was not materialized"))?;
-    set_nested_value(next, rest, value)
+pub(super) fn set_nested_value(current: &mut CfdValue, path: &[CfdPathSegment], value: CfdValue) -> Result<(), DiagnosticSet> {
+    crate::value_path::replace(current, path, value).map_err(|error| one_path_error(error.message()))
 }
 
 fn prepare_insert_fields(
@@ -842,4 +814,22 @@ fn required_record_file<'a>(
             ),
         )
     })
+}
+
+#[cfg(test)]
+mod deferred_path_tests {
+    use super::*;
+
+    #[test]
+    fn borrowed_validation_matches_materialized_path_errors() {
+        let values = [CfdValue::OptionNone, CfdValue::OptionSome(Box::new(CfdValue::Array(vec![CfdValue::Int(1)]))), CfdValue::Array(vec![CfdValue::Int(2)])];
+        let paths = [vec![], vec![CfdPathSegment::Index(0)], vec![CfdPathSegment::Index(1)], vec![CfdPathSegment::Index(0), CfdPathSegment::Field("missing".into())]];
+        for value in values {
+            for path in &paths {
+                let borrowed = validate_nested_path(&value, path);
+                let materialized = set_nested_value(&mut value.clone(), path, CfdValue::Int(9));
+                assert_eq!(format!("{borrowed:?}"), format!("{materialized:?}"));
+            }
+        }
+    }
 }

@@ -1,0 +1,3203 @@
+{
+  "date": "2026-10-26",
+  "platform": "Windows, Rust release/mimalloc, Vite production, headless Chromium",
+  "notes": {
+    "frontend_baseline": "Workspace source snapshot restoring pre-round algorithms while preserving concurrent UI changes; 2 Vite overrides. Baseline snapshot SHA256 recorded.",
+    "stages": "round4-before/after-frontend: initial index changes; final-before/after: stable virtual keys; accepted and reverse: final code with row reuse and combined navigation pass. Keep intermediate samples for traceability.",
+    "pipeline_interference": "First baseline startup overlapped a browser regression run; reverse pipeline runs have no concurrent agent-launched CPU work.",
+    "timing": "UI edit latency includes Playwright and two animation frames, excludes backend IO; engine timing includes internal drops, excludes returned output drop. Small sample sets do not establish stable edit P95.",
+    "validation": "730 Rust tests, 359 frontend unit tests, 33 browser interactions; full reload equivalence and edited-value verification passed.",
+    "backend_stages": "Initial round4 and ABBA runs precede the consuming-iterator cleanup restoring early release of owned inputs. Final-owned runs use the final source. Earlier binary hash preserved as pre-lifetime."
+  },
+  "sha256": {
+    "target/engine-perf/round4-before-engine.exe": "5326027357157275180818dd58642c49686ad7c5eca9a8f422b30f0e9be17f96",
+    "target/release/examples/engine_perf.exe": "4c5123ce2a443fb3c11ec0b18903255e358b2e8054563c3a51d144028ce844bb",
+    "target/engine-perf/round4-before-model.exe": "1822973132810d39c24500eadcf081afed3d6900763e755076d702ac03daf096",
+    "target/release/examples/engine_model_topology_perf.exe": "6417f200b507ce5add9b48bde1ad9a3b92a78e330ac7cf55cfe1a83c0b06bb29",
+    "target/engine-perf/round4-frontend-baseline.json": "a72ba974adbaabff02bcf526d541c27998af5df25c897d6699a876d11e44b85c",
+    "editors/cfd-editor/frontend/src/components/TableView.tsx": "b0872f67d0df5316ee16ffb5be2cc7ef8c665213f3cf7f2ca70fdba5b2553c9c",
+    "editors/cfd-editor/frontend/src/components/DimensionTableView.tsx": "b807724f482c7ea47a28fdefbcc0943dfbb42afc5ec01c90770141838810aa67",
+    "editors/cfd-editor/frontend/src/state/flatRowModel.ts": "da733d70d40c9be04a9356961eeb7686c85e313cf93b442c7d0a0b12abb3ae92",
+    "editors/cfd-editor/frontend/src/state/editorSelection.ts": "0995f3b1476b48efd93dc3a9295cd01d1faadec9d30be9de8c3e385214c65a73",
+    "editors/cfd-editor/frontend/tests/browser/performance.mjs": "5ee08f8cf9d3e8e591d8389eae44ee1fa645daa22ac55bb9aeebe70209a844d7",
+    "target/engine-perf/round4-pre-lifetime-engine.exe": "c1670b1b02cdc0fe0d9c8fd81a508eababc3456dffa04e10f7a55c4462be7b18",
+    "crates/coflow-model/src/build/inputs.rs": "a0372ea66667d8943d45776af33841db7c23f0b866f040d490698aeb21c1dcd8",
+    "crates/coflow-model/src/build/mod.rs": "51a62ec969df3217767137307f1ff0a80d2277ef6841d56d77f3a16b8ae5f63f",
+    "crates/coflow-runtime/src/load.rs": "75ddd66eb9b4789d2cb6c9042e075893d17fc6f52a6c66efb28a33e7147563b6"
+  },
+  "runs": {
+    "round4-before-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 5
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.3319,
+          0.22949999999999998
+        ],
+        "median_ms": 0.3319,
+        "min_ms": 0.22949999999999998,
+        "max_ms": 0.3319,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.7705000000000001,
+          0.43
+        ],
+        "median_ms": 0.7705000000000001,
+        "min_ms": 0.43,
+        "max_ms": 0.7705000000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          6275.9828,
+          6309.8481
+        ],
+        "median_ms": 6309.8481,
+        "min_ms": 6275.9828,
+        "max_ms": 6309.8481,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.0629,
+          0.0584,
+          0.0593,
+          0.0573,
+          0.0582
+        ],
+        "median_ms": 0.0584,
+        "min_ms": 0.0573,
+        "max_ms": 0.0629,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          41.516799999999996,
+          37.467,
+          40.6404,
+          39.929199999999994,
+          43.3269
+        ],
+        "median_ms": 40.6404,
+        "min_ms": 37.467,
+        "max_ms": 43.3269,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          54.303700000000006,
+          50.5779,
+          47.0453,
+          49.3634,
+          50.0051
+        ],
+        "median_ms": 50.0051,
+        "min_ms": 47.0453,
+        "max_ms": 54.303700000000006,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          104.2572,
+          94.2406,
+          92.371,
+          91.5544,
+          93.9088
+        ],
+        "median_ms": 93.9088,
+        "min_ms": 91.5544,
+        "max_ms": 104.2572,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          3917.6562000000004,
+          4068.4208000000003,
+          3735.4048,
+          3817.9885000000004,
+          3884.2807000000003
+        ],
+        "median_ms": 3884.2807000000003,
+        "min_ms": 3735.4048,
+        "max_ms": 4068.4208000000003,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-after-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 5
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.2319,
+          0.1615
+        ],
+        "median_ms": 0.2319,
+        "min_ms": 0.1615,
+        "max_ms": 0.2319,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.8765999999999999,
+          0.5952000000000001
+        ],
+        "median_ms": 0.8765999999999999,
+        "min_ms": 0.5952000000000001,
+        "max_ms": 0.8765999999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          6222.631899999999,
+          6263.9341
+        ],
+        "median_ms": 6263.9341,
+        "min_ms": 6222.631899999999,
+        "max_ms": 6263.9341,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.0862,
+          0.0646,
+          0.0732,
+          0.06609999999999999,
+          0.0633
+        ],
+        "median_ms": 0.06609999999999999,
+        "min_ms": 0.0633,
+        "max_ms": 0.0862,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          38.4583,
+          36.0875,
+          37.21,
+          39.859899999999996,
+          35.388799999999996
+        ],
+        "median_ms": 37.21,
+        "min_ms": 35.388799999999996,
+        "max_ms": 39.859899999999996,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          53.1141,
+          47.6388,
+          46.7309,
+          44.9367,
+          48.0269
+        ],
+        "median_ms": 47.6388,
+        "min_ms": 44.9367,
+        "max_ms": 53.1141,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          97.9576,
+          95.4615,
+          93.6182,
+          93.7324,
+          89.1413
+        ],
+        "median_ms": 93.7324,
+        "min_ms": 89.1413,
+        "max_ms": 97.9576,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          3618.9176,
+          3742.8347999999996,
+          3742.8773,
+          3733.6789000000003,
+          3707.1329
+        ],
+        "median_ms": 3733.6789000000003,
+        "min_ms": 3618.9176,
+        "max_ms": 3742.8773,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-before-model": [
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.12229999999999999,
+          0.10880000000000001,
+          0.1003
+        ],
+        "median_ms": 0.10880000000000001,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.0916,
+          0.0902,
+          0.08990000000000001
+        ],
+        "median_ms": 0.0902,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.22719999999999999,
+          0.2167,
+          0.2101
+        ],
+        "median_ms": 0.2167,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.1835,
+          0.1839,
+          0.1829
+        ],
+        "median_ms": 0.1835,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.6158,
+          0.6246999999999999,
+          0.6353
+        ],
+        "median_ms": 0.6246999999999999,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.3869,
+          0.40440000000000004,
+          0.391
+        ],
+        "median_ms": 0.391,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          0.9992,
+          1.0703,
+          1.116
+        ],
+        "median_ms": 1.0703,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          0.8829,
+          0.8906,
+          0.8996
+        ],
+        "median_ms": 0.8906,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      }
+    ],
+    "round4-after-model": [
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.112,
+          0.10450000000000001,
+          0.1014
+        ],
+        "median_ms": 0.10450000000000001,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 1000,
+        "edges": 1000,
+        "changed_records": 100,
+        "warmups": 1,
+        "samples_ms": [
+          0.0945,
+          0.09330000000000001,
+          0.09280000000000001
+        ],
+        "median_ms": 0.09330000000000001,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.22699999999999998,
+          0.2454,
+          0.2021
+        ],
+        "median_ms": 0.22699999999999998,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 2000,
+        "edges": 2000,
+        "changed_records": 200,
+        "warmups": 1,
+        "samples_ms": [
+          0.1889,
+          0.1792,
+          0.17789999999999997
+        ],
+        "median_ms": 0.1792,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.5077,
+          0.4749,
+          0.6209
+        ],
+        "median_ms": 0.5077,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 4000,
+        "edges": 4000,
+        "changed_records": 400,
+        "warmups": 1,
+        "samples_ms": [
+          0.4262,
+          0.4361,
+          0.39740000000000003
+        ],
+        "median_ms": 0.4262,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "ring",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          1.0379,
+          1.0491000000000001,
+          1.0108000000000001
+        ],
+        "median_ms": 1.0379,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      },
+      {
+        "metric": "model_reference_fanin",
+        "topology": "hub",
+        "records": 8000,
+        "edges": 8000,
+        "changed_records": 800,
+        "warmups": 1,
+        "samples_ms": [
+          0.8496,
+          0.8986999999999999,
+          0.8503999999999999
+        ],
+        "median_ms": 0.8503999999999999,
+        "full_comparison": true,
+        "retained_old_snapshot": true,
+        "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+      }
+    ],
+    "round4-before-frontend": [
+      {
+        "baseline": true,
+        "overridesUsed": 2
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 196,
+        "mountedRows": 24,
+        "textareas": 48,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 714,
+          "LayoutDuration": 150,
+          "TaskDuration": 1224
+        },
+        "selectAllMs": [
+          46,
+          36,
+          31
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 582,
+        "mountedRows": 24,
+        "textareas": 48,
+        "frameP50": 17,
+        "frameP95": 33,
+        "framesOver33": 5,
+        "scrollMs": {
+          "ScriptDuration": 1705,
+          "LayoutDuration": 158,
+          "TaskDuration": 2188
+        },
+        "selectAllMs": [
+          147,
+          60,
+          65
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 301,
+        "mountedRows": 24,
+        "textareas": 48,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 858,
+          "LayoutDuration": 163,
+          "TaskDuration": 1424
+        },
+        "selectAllMs": [
+          111,
+          62,
+          33
+        ],
+        "errors": []
+      }
+    ],
+    "round4-after-frontend": [
+      {
+        "baseline": false,
+        "overridesUsed": 0
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 188,
+        "mountedRows": 24,
+        "textareas": 48,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 703,
+          "LayoutDuration": 148,
+          "TaskDuration": 1225
+        },
+        "selectAllMs": [
+          50,
+          33,
+          32
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 541,
+        "mountedRows": 24,
+        "textareas": 48,
+        "frameP50": 33,
+        "frameP95": 33,
+        "framesOver33": 11,
+        "scrollMs": {
+          "ScriptDuration": 1796,
+          "LayoutDuration": 153,
+          "TaskDuration": 2266
+        },
+        "selectAllMs": [
+          162,
+          27,
+          32
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 293,
+        "mountedRows": 24,
+        "textareas": 48,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 828,
+          "LayoutDuration": 164,
+          "TaskDuration": 1364
+        },
+        "selectAllMs": [
+          104,
+          40,
+          31
+        ],
+        "errors": []
+      }
+    ],
+    "round4-final-before-frontend": [
+      {
+        "baseline": true,
+        "overridesUsed": 2
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 187,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 710,
+          "LayoutDuration": 141,
+          "TaskDuration": 1212
+        },
+        "selectAllMs": [
+          58,
+          35,
+          32
+        ],
+        "editMs": [
+          88,
+          74,
+          72,
+          75,
+          77
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 583,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 33,
+        "frameP95": 33,
+        "framesOver33": 12,
+        "scrollMs": {
+          "ScriptDuration": 1751,
+          "LayoutDuration": 152,
+          "TaskDuration": 2213
+        },
+        "selectAllMs": [
+          154,
+          54,
+          31
+        ],
+        "editMs": [
+          624,
+          554,
+          571,
+          894,
+          554
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 303,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 795,
+          "LayoutDuration": 159,
+          "TaskDuration": 1343
+        },
+        "selectAllMs": [
+          96,
+          60,
+          64
+        ],
+        "editMs": [
+          129,
+          124,
+          121,
+          141,
+          156
+        ],
+        "errors": []
+      }
+    ],
+    "round4-final-after-frontend": [
+      {
+        "baseline": false,
+        "overridesUsed": 0
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 184,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 653,
+          "LayoutDuration": 146,
+          "TaskDuration": 1163
+        },
+        "selectAllMs": [
+          45,
+          36,
+          32
+        ],
+        "editMs": [
+          86,
+          75,
+          76,
+          59,
+          60
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 534,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 33,
+        "framesOver33": 1,
+        "scrollMs": {
+          "ScriptDuration": 1158,
+          "LayoutDuration": 148,
+          "TaskDuration": 1611
+        },
+        "selectAllMs": [
+          69,
+          29,
+          31
+        ],
+        "editMs": [
+          305,
+          375,
+          426,
+          775,
+          440
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 303,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 744,
+          "LayoutDuration": 159,
+          "TaskDuration": 1269
+        },
+        "selectAllMs": [
+          93,
+          46,
+          33
+        ],
+        "editMs": [
+          144,
+          139,
+          105,
+          140,
+          158
+        ],
+        "errors": []
+      }
+    ],
+    "round4-accepted-before-frontend": [
+      {
+        "baseline": true,
+        "overridesUsed": 2
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 194,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 696,
+          "LayoutDuration": 146,
+          "TaskDuration": 1215
+        },
+        "selectAllMs": [
+          56,
+          30,
+          33
+        ],
+        "editMs": [
+          100,
+          73,
+          72,
+          74,
+          74
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 584,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 33,
+        "framesOver33": 9,
+        "scrollMs": {
+          "ScriptDuration": 1618,
+          "LayoutDuration": 150,
+          "TaskDuration": 2076
+        },
+        "selectAllMs": [
+          118,
+          30,
+          65
+        ],
+        "editMs": [
+          533,
+          541,
+          597,
+          919,
+          512
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 302,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 838,
+          "LayoutDuration": 169,
+          "TaskDuration": 1410
+        },
+        "selectAllMs": [
+          110,
+          64,
+          50
+        ],
+        "editMs": [
+          141,
+          120,
+          140,
+          215,
+          240
+        ],
+        "errors": []
+      }
+    ],
+    "round4-accepted-after-frontend": [
+      {
+        "baseline": false,
+        "overridesUsed": 0
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 189,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 33,
+        "framesOver33": 3,
+        "scrollMs": {
+          "ScriptDuration": 962,
+          "LayoutDuration": 189,
+          "TaskDuration": 1571
+        },
+        "selectAllMs": [
+          109,
+          29,
+          31
+        ],
+        "editMs": [
+          83,
+          70,
+          65,
+          65,
+          57
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 575,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 33,
+        "framesOver33": 1,
+        "scrollMs": {
+          "ScriptDuration": 1090,
+          "LayoutDuration": 154,
+          "TaskDuration": 1557
+        },
+        "selectAllMs": [
+          57,
+          29,
+          31
+        ],
+        "editMs": [
+          204,
+          174,
+          332,
+          316,
+          315
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 323,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 756,
+          "LayoutDuration": 162,
+          "TaskDuration": 1262
+        },
+        "selectAllMs": [
+          94,
+          69,
+          56
+        ],
+        "editMs": [
+          109,
+          108,
+          120,
+          105,
+          163
+        ],
+        "errors": []
+      }
+    ],
+    "round4-reverse-before-frontend": [
+      {
+        "baseline": true,
+        "overridesUsed": 2
+      },
+      {
+        "rows": 1000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 144,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 571,
+          "LayoutDuration": 142,
+          "TaskDuration": 1049
+        },
+        "selectAllMs": [
+          47,
+          35,
+          32
+        ],
+        "editMs": [
+          56,
+          58,
+          43,
+          41,
+          42
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 181,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 701,
+          "LayoutDuration": 140,
+          "TaskDuration": 1209
+        },
+        "selectAllMs": [
+          48,
+          27,
+          31
+        ],
+        "editMs": [
+          86,
+          73,
+          73,
+          75,
+          73
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 581,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 33,
+        "framesOver33": 7,
+        "scrollMs": {
+          "ScriptDuration": 1648,
+          "LayoutDuration": 150,
+          "TaskDuration": 2115
+        },
+        "selectAllMs": [
+          76,
+          58,
+          62
+        ],
+        "editMs": [
+          606,
+          562,
+          547,
+          881,
+          530
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 304,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 816,
+          "LayoutDuration": 159,
+          "TaskDuration": 1391
+        },
+        "selectAllMs": [
+          102,
+          57,
+          65
+        ],
+        "editMs": [
+          128,
+          121,
+          125,
+          141,
+          175
+        ],
+        "errors": []
+      }
+    ],
+    "round4-reverse-after-frontend": [
+      {
+        "baseline": false,
+        "overridesUsed": 0
+      },
+      {
+        "rows": 1000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 139,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 621,
+          "LayoutDuration": 153,
+          "TaskDuration": 1109
+        },
+        "selectAllMs": [
+          45,
+          38,
+          33
+        ],
+        "editMs": [
+          56,
+          60,
+          44,
+          42,
+          42
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 190,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 681,
+          "LayoutDuration": 148,
+          "TaskDuration": 1201
+        },
+        "selectAllMs": [
+          57,
+          20,
+          33
+        ],
+        "editMs": [
+          64,
+          59,
+          58,
+          59,
+          67
+        ],
+        "errors": []
+      },
+      {
+        "rows": 100000,
+        "cols": 6,
+        "inspector": false,
+        "readyMs": 571,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 1016,
+          "LayoutDuration": 148,
+          "TaskDuration": 1477
+        },
+        "selectAllMs": [
+          45,
+          35,
+          31
+        ],
+        "editMs": [
+          171,
+          175,
+          241,
+          256,
+          275
+        ],
+        "errors": []
+      },
+      {
+        "rows": 10000,
+        "cols": 60,
+        "inspector": true,
+        "readyMs": 299,
+        "mountedRows": 27,
+        "textareas": 108,
+        "frameP50": 17,
+        "frameP95": 17,
+        "framesOver33": 0,
+        "scrollMs": {
+          "ScriptDuration": 729,
+          "LayoutDuration": 154,
+          "TaskDuration": 1253
+        },
+        "selectAllMs": [
+          102,
+          62,
+          32
+        ],
+        "editMs": [
+          114,
+          107,
+          89,
+          86,
+          107
+        ],
+        "errors": []
+      }
+    ],
+    "round4-reverse-before-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.26659999999999995,
+          0.1854
+        ],
+        "median_ms": 0.26659999999999995,
+        "min_ms": 0.1854,
+        "max_ms": 0.26659999999999995,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5252,
+          0.4287
+        ],
+        "median_ms": 0.5252,
+        "min_ms": 0.4287,
+        "max_ms": 0.5252,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          6437.9193,
+          6286.3249000000005
+        ],
+        "median_ms": 6437.9193,
+        "min_ms": 6286.3249000000005,
+        "max_ms": 6437.9193,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.0721,
+          0.0613,
+          0.10679999999999999
+        ],
+        "median_ms": 0.0721,
+        "min_ms": 0.0613,
+        "max_ms": 0.10679999999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          36.6683,
+          39.8772,
+          35.7786
+        ],
+        "median_ms": 36.6683,
+        "min_ms": 35.7786,
+        "max_ms": 39.8772,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          50.136,
+          44.212300000000006,
+          45.6098
+        ],
+        "median_ms": 45.6098,
+        "min_ms": 44.212300000000006,
+        "max_ms": 50.136,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          94.9564,
+          93.5912,
+          91.6193
+        ],
+        "median_ms": 93.5912,
+        "min_ms": 91.6193,
+        "max_ms": 94.9564,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          3782.5394,
+          3875.2592999999997,
+          3778.2591
+        ],
+        "median_ms": 3782.5394,
+        "min_ms": 3778.2591,
+        "max_ms": 3875.2592999999997,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 100000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-reverse-after-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.1719,
+          0.1462
+        ],
+        "median_ms": 0.1719,
+        "min_ms": 0.1462,
+        "max_ms": 0.1719,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.6947,
+          0.5424
+        ],
+        "median_ms": 0.6947,
+        "min_ms": 0.5424,
+        "max_ms": 0.6947,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          10826.849100000001,
+          10700.076599999999
+        ],
+        "median_ms": 10826.849100000001,
+        "min_ms": 10700.076599999999,
+        "max_ms": 10826.849100000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.1395,
+          0.1307,
+          0.1374
+        ],
+        "median_ms": 0.1374,
+        "min_ms": 0.1307,
+        "max_ms": 0.1395,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          75.1148,
+          77.5677,
+          77.3104
+        ],
+        "median_ms": 77.3104,
+        "min_ms": 75.1148,
+        "max_ms": 77.5677,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          90.11919999999999,
+          80.9753,
+          79.3175
+        ],
+        "median_ms": 80.9753,
+        "min_ms": 79.3175,
+        "max_ms": 90.11919999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          166.1268,
+          166.00500000000002,
+          147.39350000000002
+        ],
+        "median_ms": 166.00500000000002,
+        "min_ms": 147.39350000000002,
+        "max_ms": 166.1268,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          6684.0136999999995,
+          6731.7598,
+          6836.5878999999995
+        ],
+        "median_ms": 6731.7598,
+        "min_ms": 6684.0136999999995,
+        "max_ms": 6836.5878999999995,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 100,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 99000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-abba-after1": [
+      {
+        "mode": "pipeline",
+        "samples": 3,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "source_bytes": 5397780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.146,
+          0.13970000000000002,
+          0.1376
+        ],
+        "median_ms": 0.13970000000000002,
+        "min_ms": 0.1376,
+        "max_ms": 0.146,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5215000000000001,
+          0.4441,
+          0.44430000000000003
+        ],
+        "median_ms": 0.44430000000000003,
+        "min_ms": 0.4441,
+        "max_ms": 0.5215000000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          530.8804,
+          525.7715,
+          521.8251
+        ],
+        "median_ms": 525.7715,
+        "min_ms": 521.8251,
+        "max_ms": 530.8804,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 10,
+          "sources_reloaded": 0,
+          "draft_records_collected": 10000,
+          "records_validated": 10000,
+          "records_materialized": 10000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 20000,
+          "check_roots_executed": 40001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.07880000000000001,
+          0.0634,
+          0.0624
+        ],
+        "median_ms": 0.0634,
+        "min_ms": 0.0624,
+        "max_ms": 0.07880000000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          18.730900000000002,
+          19.8863,
+          19.0933
+        ],
+        "median_ms": 19.0933,
+        "min_ms": 18.730900000000002,
+        "max_ms": 19.8863,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          41.838100000000004,
+          37.8137,
+          34.2958
+        ],
+        "median_ms": 37.8137,
+        "min_ms": 34.2958,
+        "max_ms": 41.838100000000004,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 9999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          82.2778,
+          78.1286,
+          75.90769999999999
+        ],
+        "median_ms": 78.1286,
+        "min_ms": 75.90769999999999,
+        "max_ms": 82.2778,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          413.63620000000003,
+          347.64430000000004,
+          341.9951
+        ],
+        "median_ms": 347.64430000000004,
+        "min_ms": 341.9951,
+        "max_ms": 413.63620000000003,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 10,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-abba-after2": [
+      {
+        "mode": "pipeline",
+        "samples": 3,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "source_bytes": 5397780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.2681,
+          0.1388,
+          0.13779999999999998
+        ],
+        "median_ms": 0.1388,
+        "min_ms": 0.13779999999999998,
+        "max_ms": 0.2681,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5318,
+          0.45849999999999996,
+          0.4398
+        ],
+        "median_ms": 0.45849999999999996,
+        "min_ms": 0.4398,
+        "max_ms": 0.5318,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          580.2361999999999,
+          537.4674,
+          569.4112
+        ],
+        "median_ms": 569.4112,
+        "min_ms": 537.4674,
+        "max_ms": 580.2361999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 10,
+          "sources_reloaded": 0,
+          "draft_records_collected": 10000,
+          "records_validated": 10000,
+          "records_materialized": 10000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 20000,
+          "check_roots_executed": 40001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.07440000000000001,
+          0.0698,
+          0.0621
+        ],
+        "median_ms": 0.0698,
+        "min_ms": 0.0621,
+        "max_ms": 0.07440000000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          18.5889,
+          19.154,
+          19.654600000000002
+        ],
+        "median_ms": 19.154,
+        "min_ms": 18.5889,
+        "max_ms": 19.654600000000002,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          37.0811,
+          32.5634,
+          32.8819
+        ],
+        "median_ms": 32.8819,
+        "min_ms": 32.5634,
+        "max_ms": 37.0811,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 9999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          81.45139999999999,
+          77.3745,
+          79.4062
+        ],
+        "median_ms": 79.4062,
+        "min_ms": 77.3745,
+        "max_ms": 81.45139999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          362.4665,
+          336.4205,
+          370.6714
+        ],
+        "median_ms": 362.4665,
+        "min_ms": 336.4205,
+        "max_ms": 370.6714,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 10,
+          "draft_records_collected": 0,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-abba-before1": [
+      {
+        "mode": "pipeline",
+        "samples": 3,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "source_bytes": 5397780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.148,
+          0.13620000000000002,
+          0.1274
+        ],
+        "median_ms": 0.13620000000000002,
+        "min_ms": 0.1274,
+        "max_ms": 0.148,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5308,
+          0.4687,
+          0.4275
+        ],
+        "median_ms": 0.4687,
+        "min_ms": 0.4275,
+        "max_ms": 0.5308,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          530.0716,
+          521.3573,
+          525.1116999999999
+        ],
+        "median_ms": 525.1116999999999,
+        "min_ms": 521.3573,
+        "max_ms": 530.0716,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 10,
+          "sources_reloaded": 0,
+          "draft_records_collected": 10000,
+          "records_validated": 10000,
+          "records_materialized": 10000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 20000,
+          "check_roots_executed": 40001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.0773,
+          0.0646,
+          0.061500000000000006
+        ],
+        "median_ms": 0.0646,
+        "min_ms": 0.061500000000000006,
+        "max_ms": 0.0773,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          19.603700000000003,
+          18.7818,
+          19.645599999999998
+        ],
+        "median_ms": 19.603700000000003,
+        "min_ms": 18.7818,
+        "max_ms": 19.645599999999998,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          36.8029,
+          34.5229,
+          32.8647
+        ],
+        "median_ms": 34.5229,
+        "min_ms": 32.8647,
+        "max_ms": 36.8029,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 10000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 9999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          84.4239,
+          78.9103,
+          79.9942
+        ],
+        "median_ms": 79.9942,
+        "min_ms": 78.9103,
+        "max_ms": 84.4239,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 10000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          391.4828,
+          348.748,
+          356.2191
+        ],
+        "median_ms": 356.2191,
+        "min_ms": 348.748,
+        "max_ms": 391.4828,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 10,
+          "draft_records_collected": 10000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-abba-before2": [
+      {
+        "mode": "pipeline",
+        "samples": 3,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "source_bytes": 5397780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.3617,
+          0.34,
+          0.1651
+        ],
+        "median_ms": 0.34,
+        "min_ms": 0.1651,
+        "max_ms": 0.3617,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5098,
+          0.47300000000000003,
+          0.4369
+        ],
+        "median_ms": 0.47300000000000003,
+        "min_ms": 0.4369,
+        "max_ms": 0.5098,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          529.5606,
+          528.062,
+          521.1399
+        ],
+        "median_ms": 528.062,
+        "min_ms": 521.1399,
+        "max_ms": 529.5606,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 10,
+          "sources_reloaded": 0,
+          "draft_records_collected": 10000,
+          "records_validated": 10000,
+          "records_materialized": 10000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 20000,
+          "check_roots_executed": 40001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.0837,
+          0.0617,
+          0.0575
+        ],
+        "median_ms": 0.0617,
+        "min_ms": 0.0575,
+        "max_ms": 0.0837,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          17.630300000000002,
+          18.1432,
+          18.5169
+        ],
+        "median_ms": 18.1432,
+        "min_ms": 17.630300000000002,
+        "max_ms": 18.5169,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          36.9559,
+          34.9277,
+          32.80629999999999
+        ],
+        "median_ms": 34.9277,
+        "min_ms": 32.80629999999999,
+        "max_ms": 36.9559,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 10000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 9999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_grouped",
+        "samples_ms": [
+          80.89,
+          76.4704,
+          77.9093
+        ],
+        "median_ms": 77.9093,
+        "min_ms": 76.4704,
+        "max_ms": 80.89,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 10000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "mutate_1000_interleaved",
+        "samples_ms": [
+          372.9272,
+          350.3021,
+          366.0863
+        ],
+        "median_ms": 366.0863,
+        "min_ms": 350.3021,
+        "max_ms": 372.9272,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1000_interleaved_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 10,
+          "draft_records_collected": 10000,
+          "records_validated": 1000,
+          "records_materialized": 1000,
+          "records_reused": 9000,
+          "ref_edges_rebuilt": 2000,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-large-abba-after1": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.1494,
+          0.12769999999999998
+        ],
+        "median_ms": 0.1494,
+        "min_ms": 0.12769999999999998,
+        "max_ms": 0.1494,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5098,
+          0.6182
+        ],
+        "median_ms": 0.6182,
+        "min_ms": 0.5098,
+        "max_ms": 0.6182,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          10611.9169,
+          10716.8159
+        ],
+        "median_ms": 10716.8159,
+        "min_ms": 10611.9169,
+        "max_ms": 10716.8159,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.1494,
+          0.1308,
+          0.1546
+        ],
+        "median_ms": 0.1494,
+        "min_ms": 0.1308,
+        "max_ms": 0.1546,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          78.0765,
+          79.3248,
+          78.1856
+        ],
+        "median_ms": 78.1856,
+        "min_ms": 78.0765,
+        "max_ms": 79.3248,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          70.5576,
+          82.0934,
+          51.361
+        ],
+        "median_ms": 70.5576,
+        "min_ms": 51.361,
+        "max_ms": 82.0934,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-large-abba-after2": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.2748,
+          0.1737
+        ],
+        "median_ms": 0.2748,
+        "min_ms": 0.1737,
+        "max_ms": 0.2748,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          1.003,
+          0.7272
+        ],
+        "median_ms": 1.003,
+        "min_ms": 0.7272,
+        "max_ms": 1.003,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          6229.942300000001,
+          6299.262
+        ],
+        "median_ms": 6299.262,
+        "min_ms": 6229.942300000001,
+        "max_ms": 6299.262,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.06160000000000001,
+          0.0589,
+          0.06160000000000001
+        ],
+        "median_ms": 0.06160000000000001,
+        "min_ms": 0.0589,
+        "max_ms": 0.06160000000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          37.0769,
+          35.3056,
+          38.3547
+        ],
+        "median_ms": 37.0769,
+        "min_ms": 35.3056,
+        "max_ms": 38.3547,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          51.9359,
+          44.2628,
+          43.976
+        ],
+        "median_ms": 44.2628,
+        "min_ms": 43.976,
+        "max_ms": 51.9359,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-large-abba-before1": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.14550000000000002,
+          0.1487
+        ],
+        "median_ms": 0.1487,
+        "min_ms": 0.14550000000000002,
+        "max_ms": 0.1487,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5215000000000001,
+          0.4718
+        ],
+        "median_ms": 0.5215000000000001,
+        "min_ms": 0.4718,
+        "max_ms": 0.5215000000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          11144.1686,
+          11019.166500000001
+        ],
+        "median_ms": 11144.1686,
+        "min_ms": 11019.166500000001,
+        "max_ms": 11144.1686,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.154,
+          0.1412,
+          0.1442
+        ],
+        "median_ms": 0.1442,
+        "min_ms": 0.1412,
+        "max_ms": 0.154,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          88.9301,
+          87.1642,
+          81.9445
+        ],
+        "median_ms": 87.1642,
+        "min_ms": 81.9445,
+        "max_ms": 88.9301,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          79.57169999999999,
+          88.3056,
+          94.70660000000001
+        ],
+        "median_ms": 88.3056,
+        "min_ms": 79.57169999999999,
+        "max_ms": 94.70660000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-large-abba-before2": [
+      {
+        "mode": "pipeline",
+        "samples": 2,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.1629,
+          0.14980000000000002
+        ],
+        "median_ms": 0.1629,
+        "min_ms": 0.14980000000000002,
+        "max_ms": 0.1629,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5363,
+          0.4827
+        ],
+        "median_ms": 0.5363,
+        "min_ms": 0.4827,
+        "max_ms": 0.5363,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          11124.9231,
+          9913.3848
+        ],
+        "median_ms": 11124.9231,
+        "min_ms": 9913.3848,
+        "max_ms": 11124.9231,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.0629,
+          0.0584,
+          0.0618
+        ],
+        "median_ms": 0.0618,
+        "min_ms": 0.0584,
+        "max_ms": 0.0629,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          39.8204,
+          40.4035,
+          40.4367
+        ],
+        "median_ms": 40.4035,
+        "min_ms": 39.8204,
+        "max_ms": 40.4367,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          51.4517,
+          48.0606,
+          46.751099999999994
+        ],
+        "median_ms": 48.0606,
+        "min_ms": 46.751099999999994,
+        "max_ms": 51.4517,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-owned-before-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 1,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.2762
+        ],
+        "median_ms": 0.2762,
+        "min_ms": 0.2762,
+        "max_ms": 0.2762,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.6359
+        ],
+        "median_ms": 0.6359,
+        "min_ms": 0.6359,
+        "max_ms": 0.6359,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          11116.2388
+        ],
+        "median_ms": 11116.2388,
+        "min_ms": 11116.2388,
+        "max_ms": 11116.2388,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.133,
+          0.12449999999999999,
+          0.121
+        ],
+        "median_ms": 0.12449999999999999,
+        "min_ms": 0.121,
+        "max_ms": 0.133,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          79.6195,
+          81.06869999999999,
+          78.6372
+        ],
+        "median_ms": 79.6195,
+        "min_ms": 78.6372,
+        "max_ms": 81.06869999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          82.501,
+          78.8365,
+          83.80279999999999
+        ],
+        "median_ms": 82.501,
+        "min_ms": 78.8365,
+        "max_ms": 83.80279999999999,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ],
+    "round4-owned-after-pipeline": [
+      {
+        "mode": "pipeline",
+        "samples": 1,
+        "warmups": 1,
+        "allocator": "mimalloc",
+        "timing": "closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"
+      },
+      {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "source_bytes": 54267780,
+        "mutation_field": "name",
+        "update_samples": 3
+      },
+      {
+        "metric": "project_open",
+        "samples_ms": [
+          0.2564
+        ],
+        "median_ms": 0.2564,
+        "min_ms": 0.2564,
+        "max_ms": 0.2564,
+        "p95_ms": null
+      },
+      {
+        "metric": "schema_compile",
+        "samples_ms": [
+          0.5042
+        ],
+        "median_ms": 0.5042,
+        "min_ms": 0.5042,
+        "max_ms": 0.5042,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open",
+        "samples_ms": [
+          11114.176000000001
+        ],
+        "median_ms": 11114.176000000001,
+        "min_ms": 11114.176000000001,
+        "max_ms": 11114.176000000001,
+        "p95_ms": null
+      },
+      {
+        "metric": "data_open_stats",
+        "stats": {
+          "sources_resolved": 100,
+          "sources_reloaded": 0,
+          "draft_records_collected": 100000,
+          "records_validated": 100000,
+          "records_materialized": 100000,
+          "records_reused": 0,
+          "ref_edges_rebuilt": 200000,
+          "check_roots_executed": 400001,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "metric": "validate_same_text",
+        "samples_ms": [
+          0.1589,
+          0.1376,
+          0.1248
+        ],
+        "median_ms": 0.1376,
+        "min_ms": 0.1248,
+        "max_ms": 0.1589,
+        "p95_ms": null
+      },
+      {
+        "metric": "validate_one_field",
+        "samples_ms": [
+          79.9987,
+          80.2535,
+          82.184
+        ],
+        "median_ms": 80.2535,
+        "min_ms": 79.9987,
+        "max_ms": 82.184,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped",
+        "samples_ms": [
+          94.0675,
+          80.97659999999999,
+          82.1504
+        ],
+        "median_ms": 82.1504,
+        "min_ms": 80.97659999999999,
+        "max_ms": 94.0675,
+        "p95_ms": null
+      },
+      {
+        "metric": "mutate_1_grouped_stats",
+        "stats": {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 0,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 2,
+          "check_roots_executed": 4,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      },
+      {
+        "verification": "fresh_reload_matches_all_values_and_no_diagnostics"
+      }
+    ]
+  },
+  "sha256_before_owned_cleanup": {
+    "target/engine-perf/round4-before-engine.exe": "5326027357157275180818dd58642c49686ad7c5eca9a8f422b30f0e9be17f96",
+    "target/release/examples/engine_perf.exe": "c1670b1b02cdc0fe0d9c8fd81a508eababc3456dffa04e10f7a55c4462be7b18",
+    "target/engine-perf/round4-before-model.exe": "1822973132810d39c24500eadcf081afed3d6900763e755076d702ac03daf096",
+    "target/release/examples/engine_model_topology_perf.exe": "336a9b7649dd6486447511ad9d3671cb3d27920b0c4ce3bd82c07a88f271589e",
+    "target/engine-perf/round4-frontend-baseline.json": "a72ba974adbaabff02bcf526d541c27998af5df25c897d6699a876d11e44b85c",
+    "editors/cfd-editor/frontend/src/components/TableView.tsx": "8bc2bba9ba264b4946113f355a0f64614aeeda24a9fe608eac19db32f0516494",
+    "editors/cfd-editor/frontend/src/components/DimensionTableView.tsx": "b807724f482c7ea47a28fdefbcc0943dfbb42afc5ec01c90770141838810aa67",
+    "editors/cfd-editor/frontend/src/state/flatRowModel.ts": "da733d70d40c9be04a9356961eeb7686c85e313cf93b442c7d0a0b12abb3ae92",
+    "editors/cfd-editor/frontend/src/state/editorSelection.ts": "0995f3b1476b48efd93dc3a9295cd01d1faadec9d30be9de8c3e385214c65a73",
+    "editors/cfd-editor/frontend/tests/browser/performance.mjs": "5ee08f8cf9d3e8e591d8389eae44ee1fa645daa22ac55bb9aeebe70209a844d7",
+    "target/engine-perf/round4-pre-lifetime-engine.exe": "c1670b1b02cdc0fe0d9c8fd81a508eababc3456dffa04e10f7a55c4462be7b18"
+  }
+}

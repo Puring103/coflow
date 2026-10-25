@@ -2,6 +2,7 @@ mod context;
 mod defaults;
 mod draft;
 mod incremental;
+mod inputs;
 mod resolve;
 mod validate;
 
@@ -26,12 +27,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
 use validate::Validator;
+use inputs::RecordInputs;
 
 #[derive(Debug)]
 pub struct CfdModelBuilder<'a> {
     schema: &'a CftSchema,
-    records: Vec<RecordInput<'a>>,
-    dimension_values: Vec<DimensionValueDraft>,
+    records: RecordInputs<'a>,
+    dimension_values: Vec<DraftInput<'a, DimensionValueDraft>>,
     dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     structural_limits: StructuralLimits,
 }
@@ -39,13 +41,14 @@ pub struct CfdModelBuilder<'a> {
 /// 拥有态放在 Box 内，使借用缓存时的输入表每项只占指针大小量级。
 /// Cow<LoadedRecordDraft> 会让每个借用项也承担整条拥有态记录的内联布局。
 #[derive(Debug)]
-pub(crate) enum RecordInput<'a> {
-    Borrowed(&'a LoadedRecordDraft),
-    Owned(Box<LoadedRecordDraft>),
+pub(crate) enum DraftInput<'a, T> {
+    Borrowed(&'a T),
+    Owned(Box<T>),
 }
+pub(crate) type RecordInput<'a> = DraftInput<'a, LoadedRecordDraft>;
 
-impl Deref for RecordInput<'_> {
-    type Target = LoadedRecordDraft;
+impl<T> Deref for DraftInput<'_, T> {
+    type Target = T;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -78,7 +81,7 @@ impl<'a> CfdModelBuilder<'a> {
     pub fn new(schema: &'a CftSchema) -> Self {
         Self {
             schema,
-            records: Vec::new(),
+            records: RecordInputs::default(),
             dimension_values: Vec::new(),
             dimension_variants: BTreeMap::new(),
             structural_limits: StructuralLimits::default(),
@@ -117,6 +120,12 @@ impl<'a> CfdModelBuilder<'a> {
         self
     }
 
+    /// 按不可变源批次借用，不为每条记录另建输入指针；批次顺序就是记录顺序。
+    pub fn add_borrowed_records(&mut self, records: &'a [LoadedRecordDraft]) -> &mut Self {
+        self.records.push_batch(records);
+        self
+    }
+
     pub fn add_dimension_variant(
         &mut self,
         dimension: DimensionName,
@@ -130,7 +139,7 @@ impl<'a> CfdModelBuilder<'a> {
     }
 
     pub fn add_dimension_value_draft(&mut self, value: DimensionValueDraft) -> &mut Self {
-        self.dimension_values.push(value);
+        self.dimension_values.push(DraftInput::Owned(Box::new(value)));
         self
     }
 
@@ -138,7 +147,13 @@ impl<'a> CfdModelBuilder<'a> {
         &mut self,
         values: impl IntoIterator<Item = DimensionValueDraft>,
     ) -> &mut Self {
-        self.dimension_values.extend(values);
+        self.dimension_values.extend(values.into_iter().map(|value| DraftInput::Owned(Box::new(value))));
+        self
+    }
+
+    /// 维度草稿与普通记录一样借用源缓存，局部修改不深复制所有覆盖值树。
+    pub fn add_borrowed_dimension_value_drafts(&mut self, values: impl IntoIterator<Item=&'a DimensionValueDraft>) -> &mut Self {
+        self.dimension_values.extend(values.into_iter().map(DraftInput::Borrowed));
         self
     }
 
@@ -198,8 +213,8 @@ impl<'a> CfdModelBuilder<'a> {
 
 pub(crate) struct ModelCompiler<'a> {
     schema: BuildSchema<'a>,
-    input: Vec<RecordInput<'a>>,
-    dimension_values: Vec<DimensionValueDraft>,
+    input: RecordInputs<'a>,
+    dimension_values: Vec<DraftInput<'a, DimensionValueDraft>>,
     dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     diagnostics: Vec<CfdDiagnostic>,
     editable_diagnostics: Vec<CfdDiagnostic>,
@@ -210,8 +225,8 @@ pub(crate) struct ModelCompiler<'a> {
 impl<'a> ModelCompiler<'a> {
     pub(crate) fn new(
         schema_source: &'a CftSchema,
-        input: Vec<RecordInput<'a>>,
-        dimension_values: Vec<DimensionValueDraft>,
+        input: RecordInputs<'a>,
+        dimension_values: Vec<DraftInput<'a, DimensionValueDraft>>,
         dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
         structural_limits: StructuralLimits,
     ) -> Self {
@@ -306,8 +321,9 @@ impl<'a> ModelCompiler<'a> {
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
                 tables: indexes.tables.into(),
+                record_sets: Arc::new(self.schema.cft().all_types().map(|ty| (ty.name.clone(), std::sync::OnceLock::new())).collect()),
                 record_by_domain_id: indexes.record_by_domain_id.into(),
-                records: records.into_iter().map(Arc::new).collect::<Vec<_>>().into(),
+                records: records.into_iter().map(Arc::new).collect::<coflow_storage::PagedVec<_>>().into(),
                 refs: ref_indexes.into(),
                 dimension_variants: BTreeMap::new().into(),
                 projection: None,
@@ -378,7 +394,7 @@ impl<'a> ModelCompiler<'a> {
             let Some(fields) = resolver.resolve_record_fields(record_id, None) else {
                 continue;
             };
-            let Ok(id) = RecordId::new(draft.id.clone()) else {
+            let Ok(id) = RecordId::new(&draft.id) else {
                 continue;
             };
             records.push(CfdRecord {
@@ -402,7 +418,7 @@ impl<'a> ModelCompiler<'a> {
         &mut self,
         records: &[CfdRecord],
         record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
-    ) -> Vec<ValidatedDimensionValue> {
+    ) -> Vec<ValidatedDimensionValue<'a>> {
         let mut seen = BTreeSet::new();
         let mut values = Vec::new();
         for input in std::mem::take(&mut self.dimension_values) {
@@ -418,11 +434,11 @@ impl<'a> ModelCompiler<'a> {
     #[allow(clippy::too_many_lines)]
     fn validate_dimension_value(
         &mut self,
-        input: DimensionValueDraft,
+        input: DraftInput<'a, DimensionValueDraft>,
         records: &[CfdRecord],
         record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
         seen: &mut BTreeSet<(CfdRecordHandle, FieldName, VariantName)>,
-    ) -> Option<ValidatedDimensionValue> {
+    ) -> Option<ValidatedDimensionValue<'a>> {
         let path = CfdPath::root().field(input.field.as_str());
         let Some(inheritance_root) = self.schema.inheritance_root(input.source_type.as_str())
         else {
@@ -551,7 +567,7 @@ impl<'a> ModelCompiler<'a> {
         &mut self,
         drafts: &[RecordDraft],
         record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
-        validated: &[ValidatedDimensionValue],
+        validated: &[ValidatedDimensionValue<'_>],
     ) -> (Vec<ResolvedDimensionValue>, Vec<EffectiveDimensionValue>) {
         let mut explicit_values = Vec::new();
         let mut effective_values = Vec::new();
@@ -565,7 +581,7 @@ impl<'a> ModelCompiler<'a> {
                         input.dimension.clone(),
                         input.variant.clone(),
                     ),
-                    input,
+                    &**input,
                 )
             })
             .collect::<DimensionInputs<'_>>();
@@ -676,7 +692,7 @@ fn merge_reads(
     }
 }
 
-type ValidatedDimensionValue = (CfdRecordHandle, DimensionValueDraft, ValueDraft, CfdPath);
+type ValidatedDimensionValue<'a> = (CfdRecordHandle, DraftInput<'a, DimensionValueDraft>, ValueDraft, CfdPath);
 type ResolvedDimensionValue = (CfdRecordHandle, DimensionValueDraft, Arc<CfdValue>);
 type EffectiveDimensionValue = (
     CfdRecordHandle,
@@ -707,7 +723,7 @@ fn attach_dimension_context(
                 continue;
             };
             let override_origin = match label.path.segments.first() {
-                Some(crate::CfdPathSegment::Field(name)) => FieldName::new(name.clone())
+                Some(crate::CfdPathSegment::Field(name)) => FieldName::new(&name)
                     .ok()
                     .and_then(|field| {
                         inputs.get(&(record, field, dimension.clone(), variant.clone()))

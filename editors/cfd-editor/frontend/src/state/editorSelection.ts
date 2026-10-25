@@ -145,12 +145,20 @@ export function valueSelectionRange(
   selection: EditorSelection | null,
   rows: readonly RecordCoordinate[],
   columns: readonly string[],
+  indexes?: { rows: ReadonlyMap<string, number>; columns: ReadonlyMap<string, number> },
 ): CellRange | null {
   if (selection?.kind !== 'value') return null
-  const anchorRow = rows.findIndex(row => sameCoordinate(row, selection.rangeAnchor.coordinate))
-  const focusRow = rows.findIndex(row => sameCoordinate(row, selection.coordinate))
-  const anchorColumn = columns.indexOf(topLevelField(selection.rangeAnchor.fieldPath) ?? '')
-  const focusColumn = columns.indexOf(topLevelField(selection.fieldPath) ?? '')
+  // 表格已持有当前排序/过滤后的索引，拖选与键盘导航直接复用，不反复扫描全部行。
+  const rowIndex = (coordinate: RecordCoordinate) => indexes
+    ? indexes.rows.get(coordinateId(coordinate)) ?? -1
+    : rows.findIndex(row => sameCoordinate(row, coordinate))
+  const columnIndex = (field: string) => indexes
+    ? indexes.columns.get(field) ?? -1
+    : columns.indexOf(field)
+  const anchorRow = rowIndex(selection.rangeAnchor.coordinate)
+  const focusRow = rowIndex(selection.coordinate)
+  const anchorColumn = columnIndex(topLevelField(selection.rangeAnchor.fieldPath) ?? '')
+  const focusColumn = columnIndex(topLevelField(selection.fieldPath) ?? '')
   if (anchorRow < 0 || focusRow < 0 || anchorColumn < 0 || focusColumn < 0) return null
   return {
     rowStart: Math.min(anchorRow, focusRow),

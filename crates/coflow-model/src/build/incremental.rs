@@ -2,7 +2,7 @@ use super::draft::{RecordDraftSource, ValueDraft};
 use super::resolve::ValueResolver;
 use super::validate::Validator;
 use super::{
-    BuildSchema, CfdModelBuildOutput, CfdModelBuildStats, CfdModelBuilder, RecordDraft, RecordInput,
+    BuildSchema, CfdModelBuildOutput, CfdModelBuildStats, CfdModelBuilder, RecordDraft, RecordInputs,
 };
 use crate::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDimensionFieldValues, CfdDimensionValue,
@@ -31,20 +31,25 @@ impl TemplateDependencies {
     }
 
     fn replace(&mut self, host: CfdRecordHandle, targets: BTreeSet<CfdRecordHandle>) {
-        if let Some(previous) = self.by_reader.remove(&host) {
-            for target in previous.iter() {
-                if let Some(readers) = self.readers.get_mut(target) {
-                    Arc::make_mut(readers).remove(&host);
-                    if readers.is_empty() {
-                        self.readers.remove(target);
-                    }
+        let previous = self.by_reader.get(&host).cloned().unwrap_or_default();
+        // 模板读集通常稳定；仅维护差集，避免反复拆除、重建高扇入关系。
+        if previous.as_ref() == &targets {
+            return;
+        }
+        for target in previous.difference(&targets) {
+            if let Some(readers) = self.readers.get_mut(target) {
+                Arc::make_mut(readers).remove(&host);
+                if readers.is_empty() {
+                    self.readers.remove(target);
                 }
             }
         }
-        for target in &targets {
+        for target in targets.difference(&previous) {
             Arc::make_mut(self.readers.entry(*target).or_default()).insert(host);
         }
-        if !targets.is_empty() {
+        if targets.is_empty() {
+            self.by_reader.remove(&host);
+        } else {
             self.by_reader.insert(host, Arc::new(targets));
         }
     }
@@ -75,8 +80,8 @@ struct LazyDimension<'a> {
 /// 只暂存本轮真正访问过的已验证草稿，不在模型里永久保留第三份完整数据树。
 struct LazyDrafts<'a, 'input> {
     schema: BuildSchema<'a>,
-    inputs: &'a [RecordInput<'input>],
-    records: Vec<OnceCell<Option<Box<RecordDraft>>>>,
+    inputs: &'a RecordInputs<'input>,
+    records: Vec<OnceCell<Box<[OnceCell<Option<Box<RecordDraft>>>]>>>,
     dimensions: BTreeMap<DimensionKey, LazyDimension<'a>>,
     diagnostics: RefCell<Vec<CfdDiagnostic>>,
     validated: Cell<usize>,
@@ -85,8 +90,13 @@ struct LazyDrafts<'a, 'input> {
 
 impl RecordDraftSource for LazyDrafts<'_, '_> {
     fn get(&self, index: usize) -> Option<&RecordDraft> {
+        if index >= self.inputs.len() {
+            return None;
+        }
         self.records
-            .get(index)?
+            .get(index / 512)?
+            .get_or_init(|| (0..512).map(|_| OnceCell::new()).collect())
+            .get(index % 512)?
             .get_or_init(|| {
                 let input = self.inputs.get(index)?;
                 let mut diagnostics = Vec::new();
@@ -229,7 +239,7 @@ pub(super) fn rebuild(
     let drafts = LazyDrafts {
         schema,
         inputs: &builder.records,
-        records: (0..builder.records.len())
+        records: (0..builder.records.len().div_ceil(512))
             .map(|_| OnceCell::new())
             .collect(),
         dimensions,
@@ -343,14 +353,14 @@ pub(super) fn rebuild(
             records[id.index()] = Arc::new(header);
         }
     }
-    for (input, record) in builder.records.iter().zip(records.iter_mut()) {
-        if record.origin != input.origin {
+    for (index, input) in builder.records.iter().enumerate() {
+        if records[index].origin != input.origin {
             // 文件前部长度变化只更新来源头部，object 与 dimension_fields 都保持共享。
-            Arc::make_mut(record).origin = input.origin.clone();
+            Arc::make_mut(&mut records[index]).origin = input.origin.clone();
         }
     }
     for ((host, field, _, variant), entry) in &drafts.dimensions {
-        let record = &mut records[host.index()];
+        let record = &records[host.index()];
         let origin_changed = record
             .dimension_fields
             .get(field)
@@ -358,7 +368,7 @@ pub(super) fn rebuild(
             .is_some_and(|value| value.origin != entry.input.origin);
         if origin_changed {
             // 维度来源同样与值分离，位置刷新只复制相关字段的索引和共享值指针。
-            let record = Arc::make_mut(record);
+            let record = Arc::make_mut(&mut records[host.index()]);
             if let Some(value) = Arc::make_mut(&mut record.dimension_fields)
                 .get_mut(field)
                 .and_then(|values| values.variants.get_mut(variant))
@@ -386,11 +396,16 @@ pub(super) fn rebuild(
             }
         }
     }
-    let mut dependencies = previous.template_dependencies.as_ref().clone();
+    let mut dependencies = Arc::clone(&previous.template_dependencies);
     for id in &affected {
-        dependencies.replace(*id, reads.get(id).cloned().unwrap_or_default());
+        let old = dependencies.by_reader.get(id).map(|set| set.as_ref());
+        let new = reads.get(id);
+        if old == new || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty) {
+            continue;
+        }
+        Arc::make_mut(&mut dependencies).replace(*id, new.cloned().unwrap_or_default());
     }
-    model.template_dependencies = Arc::new(dependencies);
+    model.template_dependencies = dependencies;
     let mut refs = previous.refs.as_ref().clone();
     let rebuilt_ref_edges = refs.replace_hosts(
         changed_records

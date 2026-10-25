@@ -157,8 +157,8 @@ fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdT
     }
     for block in &ast.dimensions {
         if let (Ok(dimension), Ok(variant)) = (
-            DimensionName::new(block.dimension.clone()),
-            VariantName::new(block.variant.clone()),
+            DimensionName::new(&block.dimension),
+            VariantName::new(&block.variant),
         ) {
             builder.add_dimension_variant(dimension, variant);
         }
@@ -210,12 +210,9 @@ impl CfdLoader {
         }
     }
 
-    pub(crate) fn load_partial(
-        ctx: CfdLoadContext<'_>,
-        source: &CfdSource,
-    ) -> Result<LoadedCfdSource, DiagnosticSet> {
+    pub(crate) fn read_source<'a>(source: &CfdSource, source_text: Option<&'a str>) -> Result<Cow<'a, str>, DiagnosticSet> {
         let file = source.location.path();
-        let contents = match ctx.source_text {
+        let contents = match source_text {
             Some(source) => Cow::Borrowed(source),
             None => Cow::Owned(fs::read_to_string(file).map_err(|err| {
                 DiagnosticSet::one(Diagnostic::error(
@@ -225,6 +222,15 @@ impl CfdLoader {
                 ))
             })?),
         };
+        Ok(contents)
+    }
+
+    pub(crate) fn load_partial(
+        ctx: CfdLoadContext<'_>,
+        source: &CfdSource,
+    ) -> Result<LoadedCfdSource, DiagnosticSet> {
+        let file = source.location.path();
+        let contents = Self::read_source(source, ctx.source_text)?;
         let (ast, parse_errors) = parse_cfd_with_options(
             &contents,
             CfdParseOptions {
@@ -282,8 +288,8 @@ impl CfdLoader {
             .dimensions
             .iter()
             .filter_map(|block| {
-                let dimension = DimensionName::new(block.dimension.clone()).ok()?;
-                let variant = VariantName::new(block.variant.clone()).ok()?;
+                let dimension = DimensionName::new(&block.dimension).ok()?;
+                let variant = VariantName::new(&block.variant).ok()?;
                 schema.resolve_dimension(dimension.as_str())?;
                 Some((dimension, variant))
             })

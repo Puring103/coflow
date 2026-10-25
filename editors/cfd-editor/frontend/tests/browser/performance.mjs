@@ -4,14 +4,19 @@ import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const baselineRef = process.env.PERF_BASELINE_REF ?? 'ac18f330'
-const baseline = process.argv.includes('--baseline')
+const baseline = process.argv.includes('--baseline') || !!process.env.PERF_BASELINE_SOURCES
 const outDir = join(tmpdir(), `coflow-perf-${baseline ? 'baseline' : 'current'}`)
 // 基线使用已提交版本源码；两边共享数据、视窗、生产构建和采样流程。
 const overrides = new Map()
-if (baseline) {
+if (process.env.PERF_BASELINE_SOURCES) {
+  // 工作区对照使用保存的源码快照，不覆盖用户正在编辑的文件。
+  for (const [path, source] of Object.entries(JSON.parse(readFileSync(process.env.PERF_BASELINE_SOURCES, 'utf8')))) {
+    overrides.set(resolve(root, path).replaceAll('\\', '/').toLowerCase(), source)
+  }
+} else if (baseline) {
   const paths = execFileSync('git', ['diff', '--name-only', baselineRef, '--', 'editors/cfd-editor/frontend/src'], { cwd: join(root, '../../..'), encoding: 'utf8' }).trim().split('\n')
   for (const path of paths.filter(Boolean)) {
     overrides.set(resolve(root, '../../..', path).replaceAll('\\', '/').toLowerCase(), execFileSync('git', ['show', `${baselineRef}:${path}`], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
@@ -25,7 +30,8 @@ const server = await preview({ root, logLevel: 'error', build: { outDir }, previ
 const browser = await chromium.launch({ headless: true })
 const results = []
 try {
-  for (const [rows, cols, inspector] of (process.argv.includes('--profile') ? [[10000,100,true]] : [[1000,6,false],[10000,6,false],[1000,60,false],[3000,60,true],[10000,100,true]])) {
+  const scenarios = process.env.PERF_SCENARIOS ? JSON.parse(process.env.PERF_SCENARIOS) : (process.argv.includes('--profile') ? [[10000,100,true]] : [[1000,6,false],[10000,6,false],[1000,60,false],[3000,60,true],[10000,100,true]])
+  for (const [rows, cols, inspector] of scenarios) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
     const errors = []
     page.on('pageerror', error => { errors.push(error.message); console.error(error.message) })
@@ -57,8 +63,22 @@ try {
       selectAllMs.push(Math.round(performance.now()-start))
     }
     if (process.argv.includes('--profile')) { const { profile } = await cdp.send('Profiler.stop'); writeFileSync(join(tmpdir(), 'coflow-selection.cpuprofile'), JSON.stringify(profile)); console.log(profile.nodes.filter(n => n.hitCount > 0).sort((a,b)=>b.hitCount-a.hitCount).slice(0,25).map(n=>({ name:n.callFrame.functionName, line:n.callFrame.lineNumber, hits:n.hitCount, url:n.callFrame.url }))) }
+    // 包含真实组件的草稿提交与快照更新；宿主写盘时间由独立引擎基准测量。
+    const editMs = []
+    for (let i = 0; i < 5; i++) {
+      await page.locator('.table-scroll').evaluate(el => { el.scrollTop = 0; el.scrollLeft = 0 })
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+      const editor = page.locator('[data-field="name"] textarea').first()
+      await editor.dblclick()
+      const start = performance.now()
+      await editor.fill(`edited-${i}`)
+      await editor.press('Tab')
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+      if (await page.locator('[data-field="name"] textarea').first().inputValue() !== `edited-${i}`) throw new Error('Edited value was lost')
+      editMs.push(Math.round(performance.now() - start))
+    }
     frames.sort((a,b)=>a-b)
-    const result = { rows, cols, inspector, readyMs, mountedRows: await page.locator('tr[data-coordinate-id]').count(), textareas: await page.locator('.cell-string-textarea').count(), frameP50: Math.round(frames[Math.floor(frames.length*.5)]), frameP95: Math.round(frames[Math.floor(frames.length*.95)]), framesOver33: frames.filter(t=>t>33.4).length, scrollMs: Object.fromEntries(['ScriptDuration','LayoutDuration','TaskDuration'].map(key=>[key,Math.round((after[key]-before[key])*1000)])), selectAllMs, errors }
+    const result = { rows, cols, inspector, readyMs, mountedRows: await page.locator('tr[data-coordinate-id]').count(), textareas: await page.locator('.cell-string-textarea').count(), frameP50: Math.round(frames[Math.floor(frames.length*.5)]), frameP95: Math.round(frames[Math.floor(frames.length*.95)]), framesOver33: frames.filter(t=>t>33.4).length, scrollMs: Object.fromEntries(['ScriptDuration','LayoutDuration','TaskDuration'].map(key=>[key,Math.round((after[key]-before[key])*1000)])), selectAllMs, editMs, errors }
     results.push(result); console.log(JSON.stringify(result)); await page.close()
   }
 } finally { await browser.close(); await new Promise(r => server.httpServer.close(r)); writeFileSync(join(tmpdir(), `coflow-performance-${baseline ? 'baseline' : 'current'}.json`), JSON.stringify(results,null,2)) }

@@ -45,7 +45,7 @@ pub(crate) fn stage_mutation_op(
             plan,
             record,
             value,
-            materialized_top_level.as_ref(),
+            materialized_top_level.as_deref().map(crate::api::FieldMaterialization::Record),
         ),
         (
             PreparedMutationOp::WriteDimensionValue {
@@ -195,7 +195,7 @@ pub(crate) fn stage_field_mutation_batch(
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
             new_value: value,
-            materialized_top_level: materialized_top_level.as_ref(),
+            materialized_top_level: materialized_top_level.as_deref().map(crate::api::FieldMaterialization::Record),
             schema: session.schema(),
         });
     }
@@ -239,7 +239,7 @@ fn stage_write_field(
     plan: &WriteFieldPlan,
     host_record: &RecordCoordinate,
     new_value: &CfdValue,
-    materialized_top_level: Option<&CfdValue>,
+    materialized_top_level: Option<crate::api::FieldMaterialization<'_>>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
     let request = WriteCellRequest {

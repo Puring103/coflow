@@ -4,6 +4,8 @@
 
 | 资料 | 类型 | 当前对应文档 |
 | --- | --- | --- |
+| [编辑热路径与界面帧间隔](benchmarks/engine-editing-2026-10-26.md) | 批次输入、行对象复用、虚拟列表缓存与生产构建前后对照 | [引擎优化方案](../development/engine-performance-plan.zh-CN.md) |
+| [局部更新、检查与加载测量](benchmarks/engine-performance-incremental-2026-10-26.md) | 分页共享、重复刷新、批量更新与完整原始对照 | [引擎优化方案](../development/engine-performance-plan.zh-CN.md) |
 | [数据加载器重构](plans/data-loader-redesign.zh-CN.md) | 历史实施方案 | [C# 生成与加载](../language-design/02-api-runtime-design.zh-CN.md) |
 | [编辑器值创建](plans/editor-value-creation-design.zh-CN.md) | 历史设计与实施计划 | [值创建](../editor-design/value-creation.md) |
 | [编辑器布局草图](previews/editor-layout-draft.html)、[版本一](previews/editor-layout-draft-v1.html) | 历史静态预览 | [视图与工作区](../editor-design/views.md) |

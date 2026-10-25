@@ -76,6 +76,7 @@ pub(super) fn field_patch(
         )));
     };
     let root_path;
+    let deferred_value;
     // 有效模型保证路径合法；源码定位失败说明某个默认父值尚未实体化。
     // 此时写入修改后的完整顶层值，任意深度的缺省父对象都使用同一规则。
     let (target, new_value) = match locate_target(
@@ -91,6 +92,19 @@ pub(super) fn field_patch(
             };
             root_path = [WriteFieldPathSegment::Field(top_field.clone())];
             let target = locate_target(request.schema, request.actual_type, record, &root_path)?;
+            let materialized = match materialized {
+                crate::api::FieldMaterialization::Value(value) => value,
+                crate::api::FieldMaterialization::Record(object) => {
+                    // 只有缺省父路径才复制并修改顶层值，保持原有实体化语义。
+                    deferred_value = {
+                        let mut value = object.field(top_field).ok_or(error)?.clone();
+                        crate::value_path::replace(&mut value, &request.field_path[1..], request.new_value.clone())
+                            .map_err(|error| DiagnosticSet::one(crate::api::Diagnostic::error("MUTATION-PATH", "MUTATION", error.message())))?;
+                        value
+                    };
+                    &deferred_value
+                }
+            };
             (target, materialized)
         }
         Err(error) => return Err(error),

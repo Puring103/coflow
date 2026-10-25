@@ -334,8 +334,10 @@ pub(crate) fn contains_value_in_dict(
             "containsValue requires dict",
         ));
     };
+    // 维度投影持有变体列表，整次查找复用一个视图，避免每个元素复制全部变体。
+    let values = EvalItems::DictValues(entries.clone());
     for index in 0..entries.len() {
-        let Some(value) = EvalItems::DictValues(entries.clone())
+        let Some(value) = values
             .located_at(
                 index,
                 value_type.as_ref(),

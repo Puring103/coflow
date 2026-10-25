@@ -85,7 +85,7 @@ pub(crate) fn finalize_mutation(
     }
     session.diagnostics = Diagnostics::from_queries(session.queries(), &session.project_root);
     if report.generation_changed {
-        session.commit_internal_write(&report.written_files);
+        session.commit_internal_write(&report.published_files);
         session.ref_target_cache.clear();
     }
     Ok(report)

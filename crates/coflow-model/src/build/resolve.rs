@@ -140,7 +140,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         self.diagnostics.len()
     }
 
-    pub(super) fn set_dimension_values(&mut self, values: &[super::ValidatedDimensionValue]) {
+    pub(super) fn set_dimension_values(&mut self, values: &[super::ValidatedDimensionValue<'_>]) {
         self.dimension_values = values
             .iter()
             .map(|(record, input, draft, _)| {
@@ -298,7 +298,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
                         }
                     }
                 }
-                match RecordId::new(key.clone()) {
+                match RecordId::new(&key) {
                     Ok(key) => Some(CfdValue::Ref(key)),
                     Err(error) => {
                         self.diagnostics.push(

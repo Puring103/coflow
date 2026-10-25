@@ -32,8 +32,10 @@ pub(crate) struct DimensionProjection {
 #[derive(Debug, Clone)]
 pub struct CfdDataModel {
     pub(crate) tables: Arc<BTreeMap<TypeName, CfdTable>>,
+    // 成员稳定的代次共享惰性集合；字段变化不重新分配 records(Type) 的句柄数组。
+    pub(crate) record_sets: Arc<BTreeMap<TypeName, std::sync::OnceLock<Arc<[CfdRecordHandle]>>>>,
     pub(crate) record_by_domain_id: Arc<BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>>,
-    pub(crate) records: Arc<Vec<Arc<CfdRecord>>>,
+    pub(crate) records: Arc<coflow_storage::PagedVec<Arc<CfdRecord>>>,
     pub(crate) refs: Arc<RefIndexes>,
     pub(crate) dimension_variants: Arc<BTreeMap<DimensionName, BTreeSet<VariantName>>>,
     pub(crate) projection: Option<DimensionProjection>,
@@ -88,11 +90,21 @@ impl CfdDataModel {
         schema: &CftSchema,
         expected_type: &str,
     ) -> Vec<CfdRecordHandle> {
-        self.tables
-            .iter()
+        self.shared_assignable_records(schema, expected_type).to_vec()
+    }
+
+    /// 返回按 (actual_type, record_id) 排序的共享成员快照。
+    #[must_use]
+    pub fn shared_assignable_records(&self, schema: &CftSchema, expected_type: &str) -> Arc<[CfdRecordHandle]> {
+        let collect = || self.tables.iter()
             .filter(|(actual_type, _)| schema.is_assignable(actual_type, expected_type))
-            .flat_map(|(_, table)| table.primary_index.values().copied())
-            .collect()
+            .flat_map(|(_, table)| table.primary_index.values().copied()).collect();
+        if self.schema_compilation == schema.compilation_id() {
+            if let Some(members) = self.record_sets.get(expected_type) {
+                return Arc::clone(members.get_or_init(collect));
+            }
+        }
+        collect()
     }
 
     #[must_use]

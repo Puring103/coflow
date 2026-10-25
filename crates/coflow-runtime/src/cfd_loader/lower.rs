@@ -47,8 +47,8 @@ pub(super) fn lower_dimensions(
     let mut diagnostics = Vec::new();
     for block in &ast.dimensions {
         let (Ok(dimension), Ok(variant)) = (
-            DimensionName::new(block.dimension.clone()),
-            VariantName::new(block.variant.clone()),
+            DimensionName::new(&block.dimension),
+            VariantName::new(&block.variant),
         ) else {
             diagnostics.extend(
                 error(
@@ -85,9 +85,9 @@ pub(super) fn lower_dimensions(
                     continue;
                 };
                 let (Ok(source_type), Ok(source_id), Ok(name)) = (
-                    TypeName::new(lowered.actual_type.clone()),
-                    RecordId::new(lowered.id.clone()),
-                    FieldName::new(field.name.clone()),
+                    TypeName::new(&lowered.actual_type),
+                    RecordId::new(&lowered.id),
+                    FieldName::new(&field.name),
                 ) else {
                     continue;
                 };
@@ -163,10 +163,7 @@ fn lower_object_fields(
             Span::default(),
         )
     })?;
-    let fields_by_name = schema_type
-        .all_fields()
-        .map(|field| (field.name.as_str(), field))
-        .collect::<BTreeMap<_, _>>();
+    // 字段布局已经在 schema 编译时建立；每个对象直接复用，不再重建临时树。
     let mut values = BTreeMap::new();
     let mut seen = BTreeSet::new();
     let mut diagnostics = Vec::new();
@@ -182,7 +179,7 @@ fn lower_object_fields(
             );
             continue;
         }
-        if !seen.insert(field.name.clone()) {
+        if !seen.insert(field.name.as_str()) {
             diagnostics.extend(
                 error(
                     CfdTextErrorCode::DuplicateField,
@@ -193,7 +190,7 @@ fn lower_object_fields(
             );
             continue;
         }
-        let Some(meta) = fields_by_name.get(field.name.as_str()) else {
+        let Some(meta) = schema_type.field(&field.name) else {
             diagnostics.extend(
                 error(
                     CfdTextErrorCode::UnknownField,

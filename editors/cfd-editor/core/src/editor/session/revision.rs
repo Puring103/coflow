@@ -49,25 +49,15 @@ impl RevisionCoordinator {
         })
     }
 
-    pub(super) fn commit_internal_write(
-        &mut self,
-        project_root: &Path,
-        paths: impl IntoIterator<Item = impl AsRef<Path>>,
-    ) {
-        let mut revisions = Vec::new();
-        for path in paths {
-            let path = resolve_path(project_root, path.as_ref());
-            let revision = match content_revision(&path) {
-                Ok(revision) => ExpectedFileRevision::Present(revision),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    ExpectedFileRevision::Missing
-                }
-                Err(_) => continue,
-            };
-            revisions.push((path, revision));
-        }
+    pub(super) fn commit_internal_write(&mut self, files: &[coflow_runtime::PublishedFile]) {
+        // 以实际发布字节建立期望；发布后的外部修改必须保持可见。
         self.current = self.current.saturating_add(1);
-        self.expected_files.extend(revisions);
+        self.expected_files.extend(files.iter().map(|file| {
+            let revision = file.digest.map_or(ExpectedFileRevision::Missing, |digest| {
+                ExpectedFileRevision::Present(ContentRevision(digest))
+            });
+            (coflow_runtime::normalize_path(&file.path), revision)
+        }));
     }
 
     pub(super) fn has_external_change(&self, project_root: &Path, paths: &[PathBuf]) -> bool {
@@ -140,7 +130,7 @@ mod tests {
         fs::write(&path, "internal").expect("write internal content");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator.commit_internal_write(&root, [Path::new("data.cfd")]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"internal"))]);
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&root)));
         assert!(!coordinator.has_external_change(&root, &[root.clone(), path.clone()]));
@@ -158,7 +148,7 @@ mod tests {
         let root = std::env::temp_dir();
         let path = root.join(format!("coflow-editor-ticket-{}", std::process::id()));
         fs::write(&path, "newer").expect("write revision fixture");
-        coordinator.commit_internal_write(&root, [path.as_path()]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"newer"))]);
 
         assert!(coordinator.commit_reload(ticket).is_none());
         fs::remove_file(path).expect("remove revision fixture");
@@ -176,7 +166,7 @@ mod tests {
         fs::write(&path, "table Item {}\n").expect("write internal source");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator.commit_internal_write(&root, [path.as_path()]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"table Item {}\n"))]);
         let ticket = coordinator.begin_reload();
         let reloaded = coordinator.commit_reload(ticket).expect("commit reload");
 
@@ -197,11 +187,27 @@ mod tests {
         fs::remove_file(&path).expect("remove generated file");
 
         let mut coordinator = RevisionCoordinator::initial();
-        coordinator.commit_internal_write(&root, [path.as_path()]);
+        coordinator.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), None)]);
         assert!(!coordinator.has_external_change(&root, std::slice::from_ref(&path)));
 
         fs::write(&path, "external").expect("recreate generated file");
         assert!(coordinator.has_external_change(&root, std::slice::from_ref(&path)));
         fs::remove_dir_all(root).expect("remove temp directory");
+    }
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+    #[test]
+    fn external_write_between_publish_and_registration_is_detected() {
+        let root = tempfile::tempdir().expect("temporary project");
+        let path = root.path().join("data.cfd");
+        std::fs::write(&path, b"internal").expect("publish");
+        let receipt = coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"internal"));
+        std::fs::write(&path, b"external").expect("external write");
+        let mut revisions = RevisionCoordinator::initial();
+        revisions.commit_internal_write(&[receipt]);
+        assert!(revisions.has_external_change(root.path(), &[path]));
     }
 }

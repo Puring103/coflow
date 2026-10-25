@@ -52,7 +52,7 @@ pub(crate) fn build_indexes(
             );
             continue;
         }
-        let Ok(id) = RecordId::new(draft.id.clone()) else {
+        let Ok(id) = RecordId::new(&draft.id) else {
             continue;
         };
 
