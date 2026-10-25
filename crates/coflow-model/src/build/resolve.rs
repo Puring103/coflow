@@ -298,7 +298,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
                         }
                     }
                 }
-                match RecordId::new(&key) {
+                match RecordId::new(key) {
                     Ok(key) => Some(CfdValue::Ref(key)),
                     Err(error) => {
                         self.diagnostics.push(

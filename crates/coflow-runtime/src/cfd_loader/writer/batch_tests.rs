@@ -1,6 +1,7 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::sync::atomic::Ordering;
 
@@ -84,7 +85,10 @@ fn compare_with_sequential(source: &str, edits: &[Edit], expected_parses: Option
             actual_type: "Item",
             field_path: &edit.path,
             new_value: &edit.value,
-            materialized_top_level: edit.materialized.as_ref().map(crate::api::FieldMaterialization::Value),
+            materialized_top_level: edit
+                .materialized
+                .as_ref()
+                .map(crate::api::FieldMaterialization::Value),
             schema: &schema,
         })
         .collect::<Vec<_>>();
@@ -151,7 +155,7 @@ fn independent_complex_record_updates_parse_the_file_only_twice() {
     let mut edits = Vec::new();
     for index in 0..128 {
         let record = format!("item{index}");
-        source.push_str(&format!("  {record} {{ node: Node {{ number: 1 }} }}\r\n"));
+        write!(source, "  {record} {{ node: Node {{ number: 1 }} }}\r\n").expect("write to String");
         edits.push(edit(&record, vec![field("node")], node(index)));
     }
     source.push_str("}\r\n# 文件后注释\r\n");
@@ -378,7 +382,10 @@ fn check_prefix_node_budget(
             actual_type: "Item",
             field_path: &edit.path,
             new_value: &edit.value,
-            materialized_top_level: edit.materialized.as_ref().map(crate::api::FieldMaterialization::Value),
+            materialized_top_level: edit
+                .materialized
+                .as_ref()
+                .map(crate::api::FieldMaterialization::Value),
             schema: &schema,
         })
         .collect::<Vec<_>>();
@@ -400,34 +407,35 @@ fn check_prefix_node_budget(
     );
     let batch = CfdWriter::new();
     let result = batch.write_field_batch_with_options(&requests, options);
-    match sequential_failure {
-        Some((index, diagnostics)) => {
-            let failure = result.expect_err("intermediate node budget must remain enforced");
-            assert_eq!(failure.index, index);
-            assert_eq!(failure.diagnostics, diagnostics);
-            assert!(failure.diagnostics.contains("nodes limit"));
-            assert_eq!(batch.field_batch_parse_count(), 3);
-            assert_eq!(
-                batch.source_overrides().expect("unchanged workspace")[0].source,
-                source
-            );
-            assert!(batch.take_preloaded_sources().expect("no candidate").is_empty());
-        }
-        None => {
-            result.expect("all prefixes fit the structural budget");
-            assert_eq!(batch.field_batch_parse_count(), 2);
-            assert_eq!(
-                batch.source_overrides().expect("batch text")[0].source,
-                sequential.source_overrides().expect("sequential text")[0].source
-            );
-        }
+    if let Some((index, diagnostics)) = sequential_failure {
+        let failure = result.expect_err("intermediate node budget must remain enforced");
+        assert_eq!(failure.index, index);
+        assert_eq!(failure.diagnostics, diagnostics);
+        assert!(failure.diagnostics.contains("nodes limit"));
+        assert_eq!(batch.field_batch_parse_count(), 3);
+        assert_eq!(
+            batch.source_overrides().expect("unchanged workspace")[0].source,
+            source
+        );
+        assert!(batch
+            .take_preloaded_sources()
+            .expect("no candidate")
+            .is_empty());
+    } else {
+        result.expect("all prefixes fit the structural budget");
+        assert_eq!(batch.field_batch_parse_count(), 2);
+        assert_eq!(
+            batch.source_overrides().expect("batch text")[0].source,
+            sequential.source_overrides().expect("sequential text")[0].source
+        );
     }
     assert_eq!(fs::read_to_string(path).expect("unchanged disk"), source);
 }
 
 #[test]
 fn shrinking_a_later_value_does_not_hide_an_intermediate_node_budget_failure() {
-    let source = "a: Item { number: 1, nodes: [Node {}, Node {}] }\nb: Item { nodes: [Node {}, Node {}] }\n";
+    let source =
+        "a: Item { number: 1, nodes: [Node {}, Node {}] }\nb: Item { nodes: [Node {}, Node {}] }\n";
     let empty_node = || {
         CfdValue::Object(Box::new(
             CfdObject::try_new("Node", BTreeMap::new()).expect("empty node"),
@@ -656,22 +664,37 @@ fn preloaded_source_keeps_unrelated_lowering_diagnostics() {
 #[test]
 fn deferred_parent_materialization_matches_eager_writer_text() {
     let schema = schema();
-    for source in ["a: Item {}", "a: Item { node: Node {} }", "a: Item { node: Node { number: 1 } }"] {
+    for source in [
+        "a: Item {}",
+        "a: Item { node: Node {} }",
+        "a: Item { node: Node { number: 1 } }",
+    ] {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("items.cfd");
         fs::write(&path, source).unwrap();
         let origin = RecordOrigin::File { path, span: None };
-        let object = CfdObject::try_new("Item", BTreeMap::from([("node".into(), node(1))])).unwrap();
+        let object =
+            CfdObject::try_new("Item", BTreeMap::from([("node".into(), node(1))])).unwrap();
         let path = [field("node"), field("number")];
         let mut eager = node(1);
         crate::value_path::replace(&mut eager, &path[1..], CfdValue::Int(9)).unwrap();
         let mut outputs = Vec::new();
-        for materialization in [crate::api::FieldMaterialization::Record(&object), crate::api::FieldMaterialization::Value(&eager)] {
+        for materialization in [
+            crate::api::FieldMaterialization::Record(&object),
+            crate::api::FieldMaterialization::Value(&eager),
+        ] {
             let writer = CfdWriter::new();
-            writer.write_field(&WriteCellRequest {
-                origin: &origin, record_id: "a", actual_type: "Item", field_path: &path,
-                new_value: &CfdValue::Int(9), materialized_top_level: Some(materialization), schema: &schema,
-            }).unwrap();
+            writer
+                .write_field(&WriteCellRequest {
+                    origin: &origin,
+                    record_id: "a",
+                    actual_type: "Item",
+                    field_path: &path,
+                    new_value: &CfdValue::Int(9),
+                    materialized_top_level: Some(materialization),
+                    schema: &schema,
+                })
+                .unwrap();
             outputs.push(writer.source_overrides().unwrap().remove(0).source);
         }
         assert_eq!(outputs[0], outputs[1]);

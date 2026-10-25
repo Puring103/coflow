@@ -78,7 +78,10 @@ mod tests {
                 structural_limits: StructuralLimits::new(256, nodes, 10_000_000),
             };
             let (_, diagnostics) = parse_cfd_with_options(source, options);
-            assert!(diagnostics.is_empty(), "exact boundary {nodes}: {diagnostics:?}");
+            assert!(
+                diagnostics.is_empty(),
+                "exact boundary {nodes}: {diagnostics:?}"
+            );
             if nodes > 0 {
                 let (_, diagnostics) = parse_cfd_with_options(
                     source,
@@ -87,7 +90,9 @@ mod tests {
                     },
                 );
                 assert!(
-                    diagnostics.iter().any(|diagnostic| diagnostic.message.contains("nodes limit")),
+                    diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.message.contains("nodes limit")),
                     "one node below {nodes}: {diagnostics:?}"
                 );
             }

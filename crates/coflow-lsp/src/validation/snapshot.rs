@@ -210,13 +210,12 @@ fn add_cfd_documents(
     let mut documents = BTreeMap::new();
     for source in &sources {
         // 以实际内容校验缓存；同长度/同时间戳的外部写入也不能误复用旧语法树。
-        let parsed = if let Some(previous) = cache
+        let previous = cache
             .documents
             .get(&source.path)
-            .filter(|previous| previous.source == source.text && previous.uri == source.uri)
-        {
-            Arc::clone(previous)
-        } else {
+            .filter(|previous| previous.uri == source.uri && previous.source.eq(&source.text))
+            .cloned();
+        let parsed = previous.unwrap_or_else(|| {
             let (ast, errors) = parse_cfd(&source.text);
             let definitions = CfdFileDefinitions::new(&source.uri, &source.text, &ast);
             let parsed = Arc::new(CfdDocumentSnapshot {
@@ -236,7 +235,7 @@ fn add_cfd_documents(
                 .definitions
                 .insert_document(&source.path, &parsed.definitions);
             parsed
-        };
+        });
         if let Some(document) = input.open_documents.get(&source.path) {
             snapshot
                 .diagnostics
@@ -257,6 +256,8 @@ fn add_cfd_documents(
     }
     cache.documents = documents;
     snapshot.cfd_documents.clone_from(&cache.documents);
+    let definitions = failures.is_empty().then(|| cache.definitions.clone());
+    drop(cache);
     for failure in &failures {
         snapshot.active_uris.insert(failure.uri.clone());
         snapshot
@@ -265,7 +266,7 @@ fn add_cfd_documents(
             .or_default()
             .push(lsp_error_diagnostic("CFD-LSP", &failure.message));
     }
-    failures.is_empty().then(|| cache.definitions.clone())
+    definitions
 }
 
 fn add_open_documents(

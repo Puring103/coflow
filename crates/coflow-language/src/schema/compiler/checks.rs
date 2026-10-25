@@ -436,7 +436,7 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 self.dependencies.insert(
                     CheckDependency::Field(CheckField {
                         owner: field.declaring_type.clone(),
-                        field: crate::FieldName::from_validated(name.to_string()),
+                        field: crate::FieldName::from_validated(name),
                     }),
                     CheckDependencyLocality::Local,
                 );

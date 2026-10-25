@@ -469,12 +469,12 @@ impl ValueResolver<'_, '_> {
             );
             return None;
         };
-        let enum_name = EnumName::from_validated(enum_name.to_string());
+        let enum_name = EnumName::from_validated(enum_name);
         Some((
             CftValueType::Enum(enum_name.clone()),
             CftConstValue::Enum {
                 enum_name,
-                variant: EnumVariantName::from_validated(variant_name.to_string()),
+                variant: EnumVariantName::from_validated(variant_name),
                 value,
             },
         ))

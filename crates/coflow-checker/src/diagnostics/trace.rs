@@ -302,7 +302,7 @@ mod tests {
         }
         assert!(matches!(
             TraceDisplay::capture(&EvalValue::Model(&model_text, None)),
-            TraceDisplay::Model(value) if std::ptr::eq(value, &model_text)
+            TraceDisplay::Model(value) if std::ptr::eq(value, &raw const model_text)
         ));
     }
 }

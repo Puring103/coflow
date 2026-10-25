@@ -65,8 +65,7 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
                 let summary = row
                     .field_summaries
                     .get(&field.name)
-                    .map(String::as_str)
-                    .unwrap_or("");
+                    .map_or("", String::as_str);
                 metrics.max_width = metrics.max_width.max(summary_width(summary));
             }
             metrics.has_complex_value |= matches!(

@@ -50,8 +50,7 @@ impl CfdWriter {
                     // 成功批次不支付逐操作解析成本。
                     return Err(self.locate_batch_failure(
                         path,
-                        source,
-                        ast,
+                        (source, ast),
                         requests,
                         start..end,
                         diagnostics,
@@ -88,6 +87,10 @@ impl CfdWriter {
         Ok(vec![WriteOutcome::default(); requests.len()])
     }
 
+    #[cfg_attr(
+        not(test),
+        expect(clippy::unused_self, reason = "测试构建通过实例计数真实批次解析次数。")
+    )]
     fn parse_field_source(
         &self,
         path: &Path,
@@ -105,13 +108,13 @@ impl CfdWriter {
     fn locate_batch_failure(
         &self,
         path: &Path,
-        mut source: String,
-        mut ast: CfdAst,
+        candidate: (String, CfdAst),
         requests: &[WriteCellRequest<'_>],
         range: std::ops::Range<usize>,
         diagnostics: DiagnosticSet,
         options: CfdParseOptions,
     ) -> WriteBatchFailure {
+        let (mut source, mut ast) = candidate;
         let last = range.end - 1;
         for index in range {
             source = match apply_patch(&source, &ast, &requests[index]) {
@@ -163,7 +166,7 @@ fn first_node_budget_overflow(
 fn request_path<'a>(request: &'a WriteCellRequest<'_>) -> Result<&'a Path, DiagnosticSet> {
     match request.origin {
         RecordOrigin::File { path, .. } => Ok(path),
-        _ => Err(DiagnosticSet::one(diag(
+        RecordOrigin::None => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             "cfd writer requires a File origin",
         ))),

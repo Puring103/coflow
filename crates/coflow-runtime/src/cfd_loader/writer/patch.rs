@@ -98,8 +98,18 @@ pub(super) fn field_patch(
                     // 只有缺省父路径才复制并修改顶层值，保持原有实体化语义。
                     deferred_value = {
                         let mut value = object.field(top_field).ok_or(error)?.clone();
-                        crate::value_path::replace(&mut value, &request.field_path[1..], request.new_value.clone())
-                            .map_err(|error| DiagnosticSet::one(crate::api::Diagnostic::error("MUTATION-PATH", "MUTATION", error.message())))?;
+                        crate::value_path::replace(
+                            &mut value,
+                            &request.field_path[1..],
+                            request.new_value.clone(),
+                        )
+                        .map_err(|error| {
+                            DiagnosticSet::one(crate::api::Diagnostic::error(
+                                "MUTATION-PATH",
+                                "MUTATION",
+                                error.message(),
+                            ))
+                        })?;
                         value
                     };
                     &deferred_value
@@ -263,6 +273,7 @@ fn insert_field_patch(
 }
 
 fn has_independent_syntax(value: &CfdValue, rendered: &str) -> bool {
+    const PREFIX: &str = "patch: Patch { value: ";
     fn contains_source(value: &CfdValue) -> bool {
         match value {
             CfdValue::FormattedString(_) => true,
@@ -278,7 +289,6 @@ fn has_independent_syntax(value: &CfdValue, rendered: &str) -> bool {
     }
     // 模板携带原始源码。只有封闭的单个值才能合批，防止后续补丁意外修复
     // 本应在当前操作报告的未闭合字符串、注释或额外字段。
-    const PREFIX: &str = "patch: Patch { value: ";
     let wrapped = format!("{PREFIX}{rendered} }}");
     let (ast, diagnostics) = coflow_language::cfd::parse_cfd(&wrapped);
     diagnostics.is_empty()

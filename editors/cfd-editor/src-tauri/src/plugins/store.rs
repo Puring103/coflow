@@ -57,8 +57,9 @@ pub(crate) fn read_project_plugins(project_root: &Path) -> Result<ProjectPlugins
     let contents = std::fs::read_to_string(&path).map_err(|error| {
         EditorError::other(format!("failed to read {}: {error}", path.display()))
     })?;
-    let mut plugins: ProjectPluginsFile = serde_json::from_str(&contents)
-        .map_err(|error| EditorError::other(format!("failed to parse {}: {error}", path.display())))?;
+    let mut plugins: ProjectPluginsFile = serde_json::from_str(&contents).map_err(|error| {
+        EditorError::other(format!("failed to parse {}: {error}", path.display()))
+    })?;
     normalize_plugin_paths(project_root, &mut plugins)?;
     Ok(plugins)
 }
@@ -91,7 +92,8 @@ fn normalize_plugin_paths(
     for entry in &mut plugins.plugins {
         let path = Path::new(&entry.manifest);
         if path.is_absolute() {
-            entry.manifest = coflow_runtime::path_to_slash(&relative_project_path(project_root, path)?);
+            entry.manifest =
+                coflow_runtime::path_to_slash(&relative_project_path(project_root, path)?);
         }
     }
     Ok(())
@@ -320,8 +322,8 @@ mod frontend_plugin_tests {
 
     use super::super::manifest::{load_frontend_plugin_bundle, PluginScope};
     use super::{
-        install_project_frontend_plugin_bundle, project_frontend_plugins, read_project_plugins,
-        resolve_project_manifest, project_plugins_path, write_project_plugins,
+        install_project_frontend_plugin_bundle, project_frontend_plugins, project_plugins_path,
+        read_project_plugins, resolve_project_manifest, write_project_plugins,
     };
 
     fn temp_plugin_dir(name: &str) -> std::path::PathBuf {
@@ -484,13 +486,18 @@ mod frontend_plugin_tests {
         let original = serde_json::json!({
             "version": 1,
             "plugins": [{"id": "example", "manifest": manifest}]
-        }).to_string();
+        })
+        .to_string();
         fs::write(&path, &original).expect("old config");
         let config = read_project_plugins(&root).expect("read old config");
         assert_eq!(config.plugins[0].manifest, "external/plugin.json");
-        assert_eq!(fs::read_to_string(&path).expect("original config"), original);
+        assert_eq!(
+            fs::read_to_string(&path).expect("original config"),
+            original
+        );
         write_project_plugins(&root, &config).expect("save config");
-        let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(path).expect("saved config")).expect("json");
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path).expect("saved config")).expect("json");
         assert_eq!(saved["plugins"][0]["manifest"], "external/plugin.json");
         fs::remove_dir_all(root).expect("remove project root");
     }

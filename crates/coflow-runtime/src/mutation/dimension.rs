@@ -144,7 +144,7 @@ fn resolve_dimension_target<'schema>(
             ),
         ));
     }
-    let selected_variant = VariantName::new(variant.to_string())
+    let selected_variant = VariantName::new(variant)
         .map_err(|error| one_mutation_error("MUTATION-DIMENSION", error.to_string()))?;
     Ok(DimensionMutationTarget {
         record,

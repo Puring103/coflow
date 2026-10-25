@@ -280,7 +280,9 @@ fn ensure_parse_ok(
     Ok(())
 }
 
-fn publish_workspace(workspace: &mut WriteWorkspace) -> Result<Vec<crate::PublishedFile>, DiagnosticSet> {
+fn publish_workspace(
+    workspace: &mut WriteWorkspace,
+) -> Result<Vec<crate::PublishedFile>, DiagnosticSet> {
     let mut staged = Vec::with_capacity(workspace.files.len());
     for (path, file) in &workspace.files {
         staged.push(if file.deleted {
@@ -313,9 +315,16 @@ fn publish_workspace(workspace: &mut WriteWorkspace) -> Result<Vec<crate::Publis
     for source in &mut staged {
         source.finish();
     }
-    let published = workspace.files.iter().map(|(path, file)| {
-        crate::PublishedFile::from_content(path.clone(), (!file.deleted).then_some(file.current.as_bytes()))
-    }).collect();
+    let published = workspace
+        .files
+        .iter()
+        .map(|(path, file)| {
+            crate::PublishedFile::from_content(
+                path.clone(),
+                (!file.deleted).then_some(file.current.as_bytes()),
+            )
+        })
+        .collect();
     workspace.files.clear();
     Ok(published)
 }

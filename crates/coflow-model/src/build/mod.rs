@@ -22,12 +22,12 @@ use crate::semantics::{
 };
 use coflow_language::cft::{CftSchema, DimensionName, FieldName, RecordId, TypeName, VariantName};
 use coflow_language::limits::StructuralLimits;
+use inputs::RecordInputs;
 use resolve::ValueResolver;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
 use validate::Validator;
-use inputs::RecordInputs;
 
 #[derive(Debug)]
 pub struct CfdModelBuilder<'a> {
@@ -139,7 +139,8 @@ impl<'a> CfdModelBuilder<'a> {
     }
 
     pub fn add_dimension_value_draft(&mut self, value: DimensionValueDraft) -> &mut Self {
-        self.dimension_values.push(DraftInput::Owned(Box::new(value)));
+        self.dimension_values
+            .push(DraftInput::Owned(Box::new(value)));
         self
     }
 
@@ -147,13 +148,21 @@ impl<'a> CfdModelBuilder<'a> {
         &mut self,
         values: impl IntoIterator<Item = DimensionValueDraft>,
     ) -> &mut Self {
-        self.dimension_values.extend(values.into_iter().map(|value| DraftInput::Owned(Box::new(value))));
+        self.dimension_values.extend(
+            values
+                .into_iter()
+                .map(|value| DraftInput::Owned(Box::new(value))),
+        );
         self
     }
 
     /// 维度草稿与普通记录一样借用源缓存，局部修改不深复制所有覆盖值树。
-    pub fn add_borrowed_dimension_value_drafts(&mut self, values: impl IntoIterator<Item=&'a DimensionValueDraft>) -> &mut Self {
-        self.dimension_values.extend(values.into_iter().map(DraftInput::Borrowed));
+    pub fn add_borrowed_dimension_value_drafts(
+        &mut self,
+        values: impl IntoIterator<Item = &'a DimensionValueDraft>,
+    ) -> &mut Self {
+        self.dimension_values
+            .extend(values.into_iter().map(DraftInput::Borrowed));
         self
     }
 
@@ -201,12 +210,13 @@ impl<'a> CfdModelBuilder<'a> {
 
     /// 尝试复用同一 schema、同一记录身份与顺序的健康模型。
     /// `changed` 必须包含所有基础值或维度覆盖发生变化的宿主；来源位置自动刷新。
-    /// 不满足增量条件或需要重新归并完整诊断时返回 `Ok(None)`，调用方执行全量构建。
+    /// 不满足增量条件或需要重新归并完整诊断时返回 `None`，调用方执行全量构建。
+    #[must_use]
     pub fn try_build_partial_incremental(
         self,
         previous: &CfdDataModel,
         changed: &[CfdRecordHandle],
-    ) -> Result<Option<CfdModelBuildOutput>, CfdDiagnostics> {
+    ) -> Option<CfdModelBuildOutput> {
         incremental::rebuild(self, previous, changed)
     }
 }
@@ -317,18 +327,21 @@ impl<'a> ModelCompiler<'a> {
         );
         let record_count = records.len();
         let ref_count = ref_indexes.edges().count();
-        let incremental_ready = self.editable_diagnostics.is_empty();
         Ok(CfdModelBuildOutput {
             model: CfdDataModel {
                 tables: indexes.tables.into(),
-                record_sets: Arc::new(self.schema.cft().all_types().map(|ty| (ty.name.clone(), std::sync::OnceLock::new())).collect()),
+                record_sets: Arc::new(CfdDataModel::empty_record_sets(self.schema.cft())),
                 record_by_domain_id: indexes.record_by_domain_id.into(),
-                records: records.into_iter().map(Arc::new).collect::<coflow_storage::PagedVec<_>>().into(),
+                records: records
+                    .into_iter()
+                    .map(Arc::new)
+                    .collect::<coflow_storage::PagedVec<_>>()
+                    .into(),
                 refs: ref_indexes.into(),
                 dimension_variants: BTreeMap::new().into(),
                 projection: None,
                 template_dependencies: Arc::new(TemplateDependencies::new(self.template_reads)),
-                incremental_ready,
+                incremental_ready: self.editable_diagnostics.is_empty(),
                 structural_limits: self.structural_limits,
                 schema_compilation: self.schema.cft().compilation_id(),
             },
@@ -692,7 +705,12 @@ fn merge_reads(
     }
 }
 
-type ValidatedDimensionValue<'a> = (CfdRecordHandle, DraftInput<'a, DimensionValueDraft>, ValueDraft, CfdPath);
+type ValidatedDimensionValue<'a> = (
+    CfdRecordHandle,
+    DraftInput<'a, DimensionValueDraft>,
+    ValueDraft,
+    CfdPath,
+);
 type ResolvedDimensionValue = (CfdRecordHandle, DimensionValueDraft, Arc<CfdValue>);
 type EffectiveDimensionValue = (
     CfdRecordHandle,
@@ -723,7 +741,7 @@ fn attach_dimension_context(
                 continue;
             };
             let override_origin = match label.path.segments.first() {
-                Some(crate::CfdPathSegment::Field(name)) => FieldName::new(&name)
+                Some(crate::CfdPathSegment::Field(name)) => FieldName::new(name)
                     .ok()
                     .and_then(|field| {
                         inputs.get(&(record, field, dimension.clone(), variant.clone()))

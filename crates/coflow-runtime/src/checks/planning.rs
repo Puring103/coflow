@@ -416,13 +416,21 @@ fn insert_data_tasks(
     let Some(root) = model.record(record) else {
         return;
     };
-    let mut pending = schema.data_check_fields(root.actual_type())
-        .filter(|field| changes.is_none_or(|changes| changes.affects_owned_field(field.name.as_str(), None)))
-        .filter_map(|field| root.field(field.name.as_str()).map(|value| (value, CfdPath::root().field(field.name.as_str()), None)))
+    let mut pending = schema
+        .data_check_fields(root.actual_type())
+        .filter(|field| {
+            changes.is_none_or(|changes| changes.affects_owned_field(field.name.as_str(), None))
+        })
+        .filter_map(|field| {
+            root.field(field.name.as_str())
+                .map(|value| (value, CfdPath::root().field(field.name.as_str()), None))
+        })
         .collect::<Vec<_>>();
     for meta in schema.data_check_fields(root.actual_type()) {
         let field = &meta.name;
-        let Some(values) = root.dimension_fields.get(field) else { continue };
+        let Some(values) = root.dimension_fields.get(field) else {
+            continue;
+        };
         for (variant, value) in &values.effective_variants {
             if changes.is_some_and(|changes| {
                 !changes.affects_owned_field(field.as_str(), Some(variant.as_str()))
@@ -457,7 +465,11 @@ fn insert_data_tasks(
                 }
                 for field in schema.data_check_fields(object.actual_type()) {
                     if let Some(value) = object.field(field.name.as_str()) {
-                        pending.push((value, path.clone().field(field.name.as_str()), dimension.clone()));
+                        pending.push((
+                            value,
+                            path.clone().field(field.name.as_str()),
+                            dimension.clone(),
+                        ));
                     }
                 }
             }

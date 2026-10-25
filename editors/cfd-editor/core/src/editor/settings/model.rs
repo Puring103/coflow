@@ -258,7 +258,8 @@ impl LocalSettingsFile {
             std::mem::take(&mut self.default_table_column_widths),
             &mut map,
         )?;
-        self.table_row_heights = map_outer_keys(std::mem::take(&mut self.table_row_heights), &mut map)?;
+        self.table_row_heights =
+            map_outer_keys(std::mem::take(&mut self.table_row_heights), &mut map)?;
         self.view_column_widths =
             map_outer_keys(std::mem::take(&mut self.view_column_widths), &mut map)?;
         self.graph_compact_modes =
@@ -323,7 +324,10 @@ fn map_graph_keys<T>(
 fn runtime_file_path(project_root: &Path, stored: &str) -> Result<String, EditorError> {
     // 旧设置读取时转换，所有磁盘字段在下次保存时统一写为项目相对路径。
     let relative = stored_file_path(project_root, stored)?;
-    Ok(coflow_runtime::project_path(project_root, Path::new(&relative)))
+    Ok(coflow_runtime::project_path(
+        project_root,
+        Path::new(&relative),
+    ))
 }
 
 fn stored_file_path(project_root: &Path, runtime: &str) -> Result<String, EditorError> {
@@ -391,13 +395,19 @@ mod path_tests {
         let runtime = runtime_file_path(&root, &absolute.to_string_lossy())
             .expect("convert absolute settings path");
         assert_eq!(runtime, "old-project/items.cfd");
-        assert_eq!(stored_file_path(&root, &runtime).expect("encode path"), "old-project/items.cfd");
+        assert_eq!(
+            stored_file_path(&root, &runtime).expect("encode path"),
+            "old-project/items.cfd"
+        );
     }
 
     #[test]
     fn sibling_data_paths_remain_project_relative_on_disk() {
         let root = std::env::temp_dir().join("coflow-settings-project");
         let runtime = runtime_file_path(&root, "../data/items.cfd").expect("resolve sibling path");
-        assert_eq!(stored_file_path(&root, &runtime).expect("encode sibling path"), "../data/items.cfd");
+        assert_eq!(
+            stored_file_path(&root, &runtime).expect("encode sibling path"),
+            "../data/items.cfd"
+        );
     }
 }

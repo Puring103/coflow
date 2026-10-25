@@ -132,11 +132,17 @@ impl SessionStore {
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
         let mut settings = read_project_settings(&project_root)?;
-        let heights = heights.into_iter()
+        let heights = heights
+            .into_iter()
             .filter(|(_, height)| height.is_finite() && *height >= 32.0)
             .collect();
-        settings.table_row_heights.entry(file_path).or_default()
-            .entry(actual_type).or_default().insert(view_id, heights);
+        settings
+            .table_row_heights
+            .entry(file_path)
+            .or_default()
+            .entry(actual_type)
+            .or_default()
+            .insert(view_id, heights);
         write_local_settings(&project_root, &settings)?;
         Ok(settings)
     }

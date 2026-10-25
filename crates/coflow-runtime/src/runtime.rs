@@ -544,6 +544,9 @@ pub struct ProjectRefreshContext {
 
 impl ProjectRefreshContext {
     /// 刷新磁盘上的 CFD 变化。调用方在发布候选前仍需核对宿主 revision。
+    ///
+    /// # Errors
+    /// 当项目来源解析或模型构建无法产生可用会话时，返回对应诊断。
     pub fn refresh_data_sources(
         self,
         changed_paths: &[std::path::PathBuf],

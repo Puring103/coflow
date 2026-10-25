@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 use coflow_language::cfd::{parse_cfd, CfdValue};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
@@ -76,9 +77,10 @@ fn recovery_ignores_delimiters_inside_strings_and_comments() {
 fn repeated_recovery_preserves_diagnostics_and_following_unicode_source_spans() {
     let mut source = String::new();
     for index in 0..1_000 {
-        source.push_str(&format!(
+        write!(source,
             "bad{index}: Sample {{ value: , text: \"括号 }} ] 不改变层级\" }}\r\n# {{ [ ignored\r\n"
-        ));
+        )
+        .expect("write to String");
     }
     let expected_start = source.len();
     source.push_str("survivor: Sample { value: 3 }\r\n");

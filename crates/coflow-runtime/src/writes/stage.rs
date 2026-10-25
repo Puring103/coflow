@@ -45,7 +45,9 @@ pub(crate) fn stage_mutation_op(
             plan,
             record,
             value,
-            materialized_top_level.as_deref().map(crate::api::FieldMaterialization::Record),
+            materialized_top_level
+                .as_deref()
+                .map(crate::api::FieldMaterialization::Record),
         ),
         (
             PreparedMutationOp::WriteDimensionValue {
@@ -195,7 +197,9 @@ pub(crate) fn stage_field_mutation_batch(
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
             new_value: value,
-            materialized_top_level: materialized_top_level.as_deref().map(crate::api::FieldMaterialization::Record),
+            materialized_top_level: materialized_top_level
+                .as_deref()
+                .map(crate::api::FieldMaterialization::Record),
             schema: session.schema(),
         });
     }
@@ -353,7 +357,7 @@ fn stage_rename_record_id(
         affected_files.insert(action.display_path().to_string());
     }
     let old_id = plan.old_coordinate.id.clone();
-    let new_dimension_key = RecordId::new(new_id.to_string())
+    let new_dimension_key = RecordId::new(new_id)
         .map_err(|_| plan_mismatch("new record id became invalid before dimension staging"))?;
     rewrite_dimension_records(
         session,

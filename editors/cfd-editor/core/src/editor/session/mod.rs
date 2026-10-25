@@ -88,8 +88,7 @@ impl EditorSession {
     }
 
     pub(crate) fn commit_internal_write(&mut self, files: &[coflow_runtime::PublishedFile]) {
-        self.revisions
-            .commit_internal_write(files);
+        self.revisions.commit_internal_write(files);
     }
 
     pub(crate) fn type_display_name(&self, file_path: &str, type_name: &str) -> String {

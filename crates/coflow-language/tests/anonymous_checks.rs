@@ -17,7 +17,7 @@ fn anonymous_checks_in_different_modules_have_distinct_valid_identities() {
         .collect();
     assert_eq!(ids.len(), 3);
     for info in schema.all_check_statements() {
-        let decoded = coflow_language::cft::CheckName::new(info.rule_name.to_string()).unwrap();
+        let decoded = coflow_language::cft::CheckName::new(&info.rule_name).unwrap();
         assert_eq!(decoded, info.rule_name);
     }
 }

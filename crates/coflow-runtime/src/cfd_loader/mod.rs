@@ -210,7 +210,10 @@ impl CfdLoader {
         }
     }
 
-    pub(crate) fn read_source<'a>(source: &CfdSource, source_text: Option<&'a str>) -> Result<Cow<'a, str>, DiagnosticSet> {
+    pub(crate) fn read_source<'a>(
+        source: &CfdSource,
+        source_text: Option<&'a str>,
+    ) -> Result<Cow<'a, str>, DiagnosticSet> {
         let file = source.location.path();
         let contents = match source_text {
             Some(source) => Cow::Borrowed(source),
@@ -256,13 +259,13 @@ impl CfdLoader {
         let (overlays, overlay_errors) = lower::lower_dimensions(schema, ast);
         lower_errors.extend(overlay_errors);
         // 行首索引只构建一次，避免逐条记录从文件头重新扫描（二次复杂度）。
-        let line_index = LineIndex::new(&contents);
+        let line_index = LineIndex::new(contents);
         let dimensions = overlays
             .into_iter()
             .map(|(mut value, span)| {
                 value.origin = RecordOrigin::File {
                     path: file.to_path_buf(),
-                    span: Some(text_span(&line_index, &contents, span)),
+                    span: Some(text_span(&line_index, contents, span)),
                 };
                 value
             })
@@ -270,7 +273,7 @@ impl CfdLoader {
         let records = lowered
             .into_iter()
             .map(|record| {
-                let span = text_span(&line_index, &contents, record.span);
+                let span = text_span(&line_index, contents, record.span);
                 record.record.with_origin(RecordOrigin::File {
                     path: file.to_path_buf(),
                     span: Some(span),
@@ -279,7 +282,7 @@ impl CfdLoader {
             .collect();
         let diagnostics = cfd_error_to_diagnostics(
             file,
-            &contents,
+            contents,
             CfdTextDiagnostics {
                 diagnostics: lower_errors,
             },

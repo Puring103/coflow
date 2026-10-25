@@ -250,6 +250,7 @@ mod tests {
                 &json!({"textDocument": {"uri": uri}}),
             )
             .expect("draft tokens");
+        drop(language);
         assert_eq!(
             tokens
                 .get("x-coflow-syntax-valid")
@@ -272,7 +273,10 @@ mod tests {
         entry
             .state
             .write()
-            .commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(b"first: Item { value: 99 }\n"))]);
+            .commit_internal_write(&[coflow_runtime::PublishedFile::from_content(
+                path.clone(),
+                Some(b"first: Item { value: 99 }\n"),
+            )]);
         assert!(SessionStore::commit_data_reload_candidate(id, &entry, candidate).is_none());
         store
             .reload_session_paths(id, std::slice::from_ref(&path))
@@ -307,6 +311,7 @@ mod tests {
         assert!(!state.file_type_names.contains_key("data/third.cfd"));
         assert!(!state.file_type_counts.contains_key("data/third.cfd"));
         assert!(Arc::ptr_eq(&language, &state.language));
+        drop(state);
     }
 
     #[test]
@@ -325,6 +330,7 @@ mod tests {
             .shape_cache
             .get(state.queries(), "Item", "added")
             .is_some());
+        drop(state);
     }
 
     #[test]

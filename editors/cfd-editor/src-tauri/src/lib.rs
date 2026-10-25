@@ -24,10 +24,11 @@ use commands::{
     get_project_settings, get_ref_targets, highlight_source_snapshot, init_project, insert_record,
     load_project, make_default_object, move_record, open_source_file, parse_cell_text,
     read_source_text, reload_session, rename_record_id, render_cell_text, search_records,
-    set_default_table_column_widths, set_table_row_heights, set_graph_compact_mode, set_graph_positions,
-    set_record_groups, set_short_name_field, set_view_column_widths, set_view_order, set_views,
-    set_workspace, swap_records, sync_language_document, transfer_record, validate_source_text,
-    write_dimension_value, write_field, write_fields, write_source_text,
+    set_default_table_column_widths, set_graph_compact_mode, set_graph_positions,
+    set_record_groups, set_short_name_field, set_table_row_heights, set_view_column_widths,
+    set_view_order, set_views, set_workspace, swap_records, sync_language_document,
+    transfer_record, validate_source_text, write_dimension_value, write_field, write_fields,
+    write_source_text,
 };
 use events::TauriEditorEventSink;
 use plugins::{

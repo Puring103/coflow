@@ -17,12 +17,15 @@ impl<T> Default for PagedVec<T> {
     }
 }
 impl<T> PagedVec<T> {
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.len
     }
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&T> {
         self.pages.get(index / PAGE_SIZE)?.get(index % PAGE_SIZE)
     }
@@ -44,7 +47,7 @@ impl<T: Clone> PagedVec<T> {
             .flat_map(|page| Arc::make_mut(page).iter_mut())
     }
     pub fn push(&mut self, value: T) {
-        if self.len % PAGE_SIZE == 0 {
+        if self.len.is_multiple_of(PAGE_SIZE) {
             self.pages.push(Arc::new(Vec::with_capacity(PAGE_SIZE)));
         }
         Arc::make_mut(&mut self.pages[self.len / PAGE_SIZE]).push(value);
@@ -53,7 +56,7 @@ impl<T: Clone> PagedVec<T> {
     pub fn resize_with(&mut self, new_len: usize, mut create: impl FnMut() -> T) {
         if new_len < self.len {
             self.pages.truncate(new_len.div_ceil(PAGE_SIZE));
-            if new_len % PAGE_SIZE != 0 {
+            if !new_len.is_multiple_of(PAGE_SIZE) {
                 if let Some(last) = self.pages.last_mut() {
                     Arc::make_mut(last).truncate(new_len % PAGE_SIZE);
                 }

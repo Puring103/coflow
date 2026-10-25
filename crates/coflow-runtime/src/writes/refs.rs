@@ -145,7 +145,7 @@ pub(super) fn reference_update_actions(
     target_id: CfdRecordHandle,
     new_id: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
-    let new_id = RecordId::new(new_id.to_string()).map_err(|error| {
+    let new_id = RecordId::new(new_id).map_err(|error| {
         transaction_invariant(format!(
             "new record key became invalid before rewrite: {error}"
         ))
@@ -228,7 +228,7 @@ pub(super) fn reference_update_actions(
                     source_field: field.name.clone(),
                     dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
-                    source_id: RecordId::new(host_record.id().to_string()).map_err(|error| {
+                    source_id: RecordId::new(host_record.id()).map_err(|error| {
                         transaction_invariant(format!(
                             "validated model record key became invalid before reference rewrite: {error}"
                         ))
