@@ -234,7 +234,7 @@ impl SourceId {
 ///
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RecordIndex {
-    by_id: Arc<Vec<Option<Arc<RecordRef>>>>,
+    by_id: Arc<coflow_storage::PagedVec<Option<Arc<RecordRef>>>>,
     by_coordinate: Arc<BTreeMap<RecordCoordinate, CfdRecordHandle>>,
     files: Arc<BTreeMap<String, Vec<CfdRecordHandle>>>,
     rejected: Vec<RejectedRecordRef>,
@@ -287,7 +287,7 @@ impl RecordIndex {
     }
 
     #[must_use]
-    pub(crate) fn by_id(&self) -> &[Option<Arc<RecordRef>>] {
+    pub(crate) fn by_id(&self) -> &coflow_storage::PagedVec<Option<Arc<RecordRef>>> {
         &self.by_id
     }
 

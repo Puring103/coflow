@@ -14,6 +14,7 @@ default = []
 ts-export = ["dep:ts-rs"]
 
 [dependencies]
+coflow-storage = { path = "../coflow-storage" }
 coflow-diagnostics = { path = "../coflow-diagnostics" }
 coflow-language = { path = "../coflow-language" }
 serde = { version = "1", features = ["derive", "rc"] }

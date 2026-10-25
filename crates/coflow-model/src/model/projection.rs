@@ -74,7 +74,7 @@ impl CfdDataModel {
         }
         let mut projected = builder.build()?;
         // 始终重新求值所选来源表达式，同时保留原始单维查询及显式覆盖元数据。
-        for record in Arc::make_mut(&mut projected.records) {
+        for record in Arc::make_mut(&mut projected.records).iter_mut() {
             let record = Arc::make_mut(record);
             if let Some(original) = source
                 .record_by_type_id(record.actual_type(), record.id())

@@ -19,6 +19,7 @@ ts-export = [
 ]
 
 [dependencies]
+coflow-storage = { path = "../coflow-storage" }
 coflow-format = { path = "../coflow-format" }
 schemars = "0.8.22"
 sha2 = "0.10"

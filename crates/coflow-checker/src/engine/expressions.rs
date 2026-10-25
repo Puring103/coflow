@@ -29,7 +29,7 @@ pub(super) fn eval_expr<'model>(
             evaluator.reads.record_sets.insert(type_name.clone());
             let records = evaluator
                 .model
-                .assignable_records(evaluator.schema, type_name);
+                .shared_assignable_records(evaluator.schema, type_name);
             evaluator.charge_work_at(
                 EvaluationKind::Expression,
                 u64::try_from(records.len()).unwrap_or(u64::MAX),

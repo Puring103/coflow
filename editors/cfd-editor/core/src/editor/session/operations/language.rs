@@ -493,7 +493,7 @@ impl SessionStore {
             .map_err(|error| {
                 EditorError::write(format!("failed to write {}: {error}", path.display()))
             })?;
-        session.commit_internal_write(&[file_path.to_string()]);
+        session.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(path.clone(), Some(source.as_bytes()))]);
         drop(session);
         self.reload_session_paths(id, std::slice::from_ref(&path))
             .map_err(|mut error| {

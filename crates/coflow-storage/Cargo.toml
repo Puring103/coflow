@@ -1,0 +1,9 @@
+[package]
+name = "coflow-storage"
+version = "0.12.0"
+edition = "2021"
+description = "Internal shared paged storage for Coflow generations."
+license = "Apache-2.0"
+publish = false
+[lints]
+workspace = true

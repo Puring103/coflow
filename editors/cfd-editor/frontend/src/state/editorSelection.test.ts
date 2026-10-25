@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
-import { fieldPathField } from '../wire'
+import { coordinateId, fieldPathField } from '../wire'
 import {
   cellAnchorsIdentity,
   iterateSelectedCells,
@@ -17,11 +17,26 @@ import {
   updateRecordSelection,
   updateValueSelection,
   valueSelectionCells,
+  valueSelectionRange,
 } from './editorSelection'
 
 const coordinate: RecordCoordinate = { actual_type: 'Npc', id: 'guard' }
 
 describe('editor selection', () => {
+  it('matches indexed ranges to scans after sorting, filtering, and missing fields', () => {
+    const allRows = Array.from({ length: 1000 }, (_, index) => ({ actual_type: 'Npc', id: `npc${index}` }))
+    const selection = updateValueSelection(valueSelection('data.cfd', allRows[900], [fieldPathField('name')]), 'data.cfd', allRows[200], [fieldPathField('value')], 'range')
+    for (const rows of [allRows, [...allRows].reverse(), allRows.slice(300)]) {
+      for (const columns of [['name', 'value'], ['value', 'name'], ['name']]) {
+        const indexes = {
+          rows: new Map(rows.map((coordinate, index) => [coordinateId(coordinate), index])),
+          columns: new Map(columns.map((column, index) => [column, index])),
+        }
+        expect(valueSelectionRange(selection, rows, columns, indexes)).toEqual(valueSelectionRange(selection, rows, columns))
+      }
+    }
+  })
+
   it('keeps record selection distinct from a value in that record', () => {
     const selection = recordSelection('data/npc.cfd', coordinate)
 

@@ -1,0 +1,680 @@
+{
+  "date": "2026-10-25",
+  "configuration": "Windows Release / mimalloc; one warmup, three samples; current working-tree engine changes",
+  "baseline_reference": "engine-performance-topology-2026-10-25.json (historical, not paired timing)",
+  "model": [
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 1000,
+      "edges": 1000,
+      "changed_records": 100,
+      "warmups": 1,
+      "samples_ms": [
+        0.1124,
+        0.1055,
+        0.1119
+      ],
+      "median_ms": 0.1119,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 1000,
+      "edges": 1000,
+      "changed_records": 100,
+      "warmups": 1,
+      "samples_ms": [
+        0.0987,
+        0.097,
+        0.0989
+      ],
+      "median_ms": 0.0987,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 2000,
+      "edges": 2000,
+      "changed_records": 200,
+      "warmups": 1,
+      "samples_ms": [
+        0.245,
+        0.2259,
+        0.2231
+      ],
+      "median_ms": 0.2259,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 2000,
+      "edges": 2000,
+      "changed_records": 200,
+      "warmups": 1,
+      "samples_ms": [
+        0.2206,
+        0.20320000000000002,
+        0.1994
+      ],
+      "median_ms": 0.20320000000000002,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 4000,
+      "edges": 4000,
+      "changed_records": 400,
+      "warmups": 1,
+      "samples_ms": [
+        0.5905,
+        0.513,
+        0.4764
+      ],
+      "median_ms": 0.513,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 4000,
+      "edges": 4000,
+      "changed_records": 400,
+      "warmups": 1,
+      "samples_ms": [
+        0.47390000000000004,
+        0.5485000000000001,
+        0.5173000000000001
+      ],
+      "median_ms": 0.5173000000000001,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "ring",
+      "records": 8000,
+      "edges": 8000,
+      "changed_records": 800,
+      "warmups": 1,
+      "samples_ms": [
+        1.2329999999999999,
+        1.1167,
+        1.1607
+      ],
+      "median_ms": 1.1607,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    },
+    {
+      "metric": "model_reference_fanin",
+      "topology": "hub",
+      "records": 8000,
+      "edges": 8000,
+      "changed_records": 800,
+      "warmups": 1,
+      "samples_ms": [
+        1.0328,
+        1.1104,
+        0.9875
+      ],
+      "median_ms": 1.0328,
+      "full_comparison": true,
+      "retained_old_snapshot": true,
+      "timing": "borrowed builder setup + incremental build; output drop and full comparison excluded"
+    }
+  ],
+  "check": [
+    {
+      "probe": "check_reference_fanout",
+      "warmups": 1,
+      "samples": 3,
+      "timing": "mutation only; fresh full reload and value verification outside timing",
+      "allocator": "mimalloc"
+    },
+    {
+      "records": 1000,
+      "edges": 1000,
+      "topology": "ring",
+      "source_bytes": 42000,
+      "samples_ms": [
+        21.0353,
+        18.2615,
+        21.7088
+      ],
+      "median_ms": 21.0353,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 1000,
+      "edges": 1000,
+      "topology": "hub",
+      "source_bytes": 42000,
+      "samples_ms": [
+        14.9018,
+        19.9391,
+        21.2163
+      ],
+      "median_ms": 19.9391,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 1000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 2000,
+      "edges": 2000,
+      "topology": "ring",
+      "source_bytes": 84000,
+      "samples_ms": [
+        16.414,
+        15.018,
+        17.1596
+      ],
+      "median_ms": 16.414,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 2000,
+      "edges": 2000,
+      "topology": "hub",
+      "source_bytes": 84000,
+      "samples_ms": [
+        19.9483,
+        26.0216,
+        24.5837
+      ],
+      "median_ms": 24.5837,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 2000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 2000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 2000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 1999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 2000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 4000,
+      "edges": 4000,
+      "topology": "ring",
+      "source_bytes": 168000,
+      "samples_ms": [
+        22.084,
+        19.938399999999998,
+        24.5936
+      ],
+      "median_ms": 22.084,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 4000,
+      "edges": 4000,
+      "topology": "hub",
+      "source_bytes": 168000,
+      "samples_ms": [
+        33.523900000000005,
+        35.624700000000004,
+        37.850300000000004
+      ],
+      "median_ms": 35.624700000000004,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 4000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 3999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 4000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 8000,
+      "edges": 8000,
+      "topology": "ring",
+      "source_bytes": 336000,
+      "samples_ms": [
+        23.969399999999997,
+        24.3588,
+        32.5109
+      ],
+      "median_ms": 24.3588,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 8000,
+      "edges": 8000,
+      "topology": "hub",
+      "source_bytes": 336000,
+      "samples_ms": [
+        67.29780000000001,
+        67.8567,
+        67.4448
+      ],
+      "median_ms": 67.4448,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 8000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 8000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 8000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 7999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 8000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 100000,
+      "edges": 100000,
+      "topology": "ring",
+      "source_bytes": 4200000,
+      "samples_ms": [
+        244.2457,
+        216.5573,
+        214.0938
+      ],
+      "median_ms": 216.5573,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 1,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    },
+    {
+      "records": 100000,
+      "edges": 100000,
+      "topology": "hub",
+      "source_bytes": 4200000,
+      "samples_ms": [
+        673.513,
+        669.9387,
+        660.5803
+      ],
+      "median_ms": 669.9387,
+      "stats": [
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 100000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 100000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        },
+        {
+          "sources_resolved": 0,
+          "sources_reloaded": 1,
+          "draft_records_collected": 100000,
+          "records_validated": 1,
+          "records_materialized": 1,
+          "records_reused": 99999,
+          "ref_edges_rebuilt": 1,
+          "check_roots_executed": 100000,
+          "dimension_sources_planned": 0,
+          "dimension_sources_written": 0
+        }
+      ],
+      "verification": "fresh_reload_matches_all_values_references_and_no_diagnostics"
+    }
+  ],
+  "nested": [
+    {
+      "array_elements": 100000,
+      "batch": 1000,
+      "samples_ms": [
+        54.852,
+        60.5247,
+        53.353699999999996
+      ],
+      "median_ms": 54.852,
+      "verification": "all elements and independent full reload"
+    }
+  ],
+  "binaries_sha256": {
+    "engine_model_topology_perf": "7c7490fafbbcdff56b46858793453d445097ca32fee44f2c0e3aa32f1a77e601",
+    "engine_check_topology_perf": "59c9b1136fb0d8cbd2ec9bb653a8bc9d31821517ac9c86dce67c36065f474fc7",
+    "engine_nested_edit_perf": "3b96737fa22eff8619f7fb39368909d20e0acaa30a26e1c29103ef54bd7f6c77"
+  }
+}

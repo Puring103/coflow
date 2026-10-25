@@ -73,3 +73,19 @@ fn prepared_plan_preserves_order_errors_and_both_budget_boundaries() {
         assert_eq!(prepared, public, "{limits:?}");
     }
 }
+
+#[test]
+fn cached_record_sets_preserve_cold_and_warm_budget_results() {
+    let schema = build_schema(&parse_modules([CftFile::from_source(ModuleId::from("sets"),
+        "table Item {} check Count { records(Item).len() == 20; all item in records(Item) { item.id != \"\"; } }")])).unwrap();
+    for work in [1, 15, 30, 100, 1000] {
+        let mut builder = CfdDataModel::builder(&schema);
+        for index in 0..20 { builder.add_record(format!("i{index}"), "Item", std::iter::empty::<(&str, LoadedValueDraft)>()); }
+        let model = builder.build().unwrap();
+        let tasks: Vec<_> = schema.all_check_statements().map(|info| CheckTask { target: CheckTarget::Project, statement: info.id }).collect();
+        let limits = CheckLimits { max_request_work: work, ..CheckLimits::default() };
+        let cold = execute_checks(&schema, &model, tasks.clone(), limits);
+        let warm = execute_checks(&schema, &model, tasks, limits);
+        assert_eq!(cold, warm, "work budget {work}");
+    }
+}

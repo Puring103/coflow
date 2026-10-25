@@ -1,6 +1,6 @@
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { finishOffscreenDataEdit } from '../state/editSession'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DimensionFileRecords, DimensionFileRow } from '../api'
 import type { DimensionValueState } from '../bindings/DimensionValueState'
@@ -8,7 +8,7 @@ import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { FieldPathSegment, FieldValue } from '../wire'
-import { coordinateId, fieldPathField, sameCoordinate } from '../wire'
+import { coordinateId, fieldPathField } from '../wire'
 import { summaryOf as valueSummary } from '../value/fieldValue'
 import { parseCfdClipboard, serializeCfdMatrix } from '../state/clipboard'
 import { DataCardCompact, DirectEditor, InlineEditor } from './DataCard'
@@ -61,17 +61,28 @@ export function organizeDimensionRows(
   collapsed: ReadonlySet<string>,
 ): DimensionDisplayItem[] {
   const views = new Map<string, DimensionRecordGroupView>()
+  const memberships = new Map<string, Map<string, { settingsType: string; group: EditorRecordGroup }>>()
   const ungrouped: DimensionFileRow[] = []
   for (const row of rows) {
-    const typeGroups = groupsByFile[row.owner_file_path] ?? {}
+    let members = memberships.get(row.owner_file_path)
+    if (!members) {
+      members = new Map()
+      // 每个来源只建一次成员索引，保留原有“第一个类型/分组命中”的优先级。
+      for (const [settingsType, groups] of Object.entries(groupsByFile[row.owner_file_path] ?? {})) {
+        for (const group of groups ?? []) for (const member of group.records) {
+          const id = coordinateId(member)
+          if (!members.has(id)) members.set(id, { settingsType, group })
+        }
+      }
+      memberships.set(row.owner_file_path, members)
+    }
     let match: DimensionRecordGroupView | undefined
-    for (const [settingsType, groups] of Object.entries(typeGroups)) {
-      const group = groups?.find(candidate => candidate.records.some(member => sameCoordinate(member, row.coordinate)))
-      if (!group) continue
+    const membership = members.get(coordinateId(row.coordinate))
+    if (membership) {
+      const { settingsType, group } = membership
       const key = `${row.owner_file_path}\u001f${settingsType}\u001f${group.id}`
       match = views.get(key) ?? { key, ownerFilePath: row.owner_file_path, settingsType, group, rows: [] }
       if (!views.has(key)) views.set(key, match)
-      break
     }
     if (!match) {
       ungrouped.push(row)
@@ -84,11 +95,11 @@ export function organizeDimensionRows(
   for (const view of views.values()) {
     items.push({ kind: 'group', view })
     if (!collapsed.has(view.key)) {
-      items.push(...view.rows.map(row => ({ kind: 'row' as const, row, group: view.group })))
+      for (const row of view.rows) items.push({ kind: 'row', row, group: view.group })
     }
   }
   if (views.size > 0) items.push({ kind: 'ungrouped', rows: ungrouped })
-  items.push(...ungrouped.map(row => ({ kind: 'row' as const, row })))
+  for (const row of ungrouped) items.push({ kind: 'row', row })
   return items
 }
 
@@ -322,14 +333,15 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const rowIndexes = useMemo(() => new Map(visibleRows.map((row, index) => [row, index])), [visibleRows])
   const displayIndexes = useMemo(() => new Map(items.flatMap((item, index) => item.kind === 'row' ? [[item.row, index] as const] : [])), [items])
   // 维度表也只挂载可见行，分组标题与动态展开的字符串共用高度测量。
+  const virtualRowKey = useCallback((index: number) => {
+    const item = items[index]
+    return item.kind === 'row' ? dimensionRowId(item.row) : item.kind === 'group' ? `group:${item.view.key}` : 'ungrouped'
+  }, [items])
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => rootRef.current,
     estimateSize: () => 40,
-    getItemKey: index => {
-      const item = items[index]
-      return item.kind === 'row' ? dimensionRowId(item.row) : item.kind === 'group' ? `group:${item.view.key}` : 'ungrouped'
-    },
+    getItemKey: virtualRowKey,
     overscan: 8,
   })
   const virtualRows = virtualizer.getVirtualItems()
@@ -337,8 +349,9 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const padAfter = Math.max(0, virtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end ?? 0))
   const revealFrame = useRef(0)
   useEffect(() => () => cancelAnimationFrame(revealFrame.current), [])
-  const showRowField = new Set(data.rows.map(row => row.field)).size > 1
-  const showRowType = new Set(data.rows.map(row => row.coordinate.actual_type)).size > 1
+  // 滚动和选区更新只读取已计算的列标志，不扫描全部维度行。
+  const showRowField = useMemo(() => data.rows.some(row => row.field !== data.rows[0]?.field), [data.rows])
+  const showRowType = useMemo(() => data.rows.some(row => row.coordinate.actual_type !== data.rows[0]?.coordinate.actual_type), [data.rows])
 
   const selection = anchor
   const range: DimensionRange = rangeEnd ? {

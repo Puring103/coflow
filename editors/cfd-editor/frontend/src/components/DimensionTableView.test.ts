@@ -36,6 +36,16 @@ describe('organizeDimensionRows', () => {
     }))
   })
 
+  it('preserves first group priority, owner isolation and multiple fields', () => {
+    const first = { id: 'first', name: 'First', color: null, records: [row('a').coordinate] }
+    const second = { ...first, id: 'second' }
+    const groups = { 'data/items.cfd': { Base: [first, second], Item: [second] } }
+    const items = organizeDimensionRows([row('a'), { ...row('a'), field: 'description' }, row('a', 'other.cfd')], groups, new Set())
+    expect(items.filter(item => item.kind === 'group').map(item => item.view.group.id)).toEqual(['first'])
+    expect(items.filter(item => item.kind === 'row').map(item => item.row.field)).toEqual(['name', 'description', 'name'])
+    expect(items.find(item => item.kind === 'ungrouped')?.rows.map(item => item.owner_file_path)).toEqual(['other.cfd'])
+  })
+
   it('projects owner record groups into managed dimension rows', () => {
     const groups: EditorProjectSettings['record_groups'] = {
       'data/items.cfd': {

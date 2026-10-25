@@ -1,15 +1,15 @@
 import { DataFillContext } from '../state/dataFillContext'
 import { sameFieldValue } from '../state/fieldProjection'
+import { getSharedFlatRowModel } from '../state/flatRowModel'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { finishOffscreenDataEdit } from '../state/editSession'
 import { recordMatchesKeySearch } from '../value/fieldValue'
-import { useState, useEffect, useMemo, useRef, memo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 
 import { ShortNameColumnMenu } from './ShortNameContext'
 import { shortNameCandidate } from '../state/shortNames'
 import {
   useReactTable,
-  getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
   flexRender,
@@ -726,7 +726,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
       setColumnSizing(next)
     },
     onGlobalFilterChange: setGlobalFilter,
-    getCoreRowModel: getCoreRowModel(),
+    getCoreRowModel: getSharedFlatRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: (row, index) => rowPresentation?.(row, index)?.id ?? coordinateId(row.coordinate),
@@ -738,6 +738,8 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
 
   const rows = table.getRowModel().rows
   const displayItems = useMemo<TableDisplayItem[]>(() => {
+    // 无分组时不建立全表坐标索引，也不执行分组扫描。
+    if (!recordGroups?.length) return rows.map(row => ({ kind: 'row' as const, row }))
     const rowsById = new Map(rows.map(row => [coordinateId(row.original.coordinate), row]))
     const organized = organizeRecordRows(rows.map(row => row.original), recordGroups ?? [])
     if (organized.groups.length === 0) return rows.map(row => ({ kind: 'row', row }))
@@ -746,34 +748,39 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     for (const view of organized.groups) {
       items.push({ kind: 'group', view })
       if (!collapsedGroupKeys?.has(view.group.id)) {
-        items.push(...view.records.map(record => ({
-          kind: 'row' as const,
+        for (const record of view.records) items.push({
+          kind: 'row',
           row: rowsById.get(coordinateId(record.coordinate))!,
           group: view.group,
-        })))
+        })
       }
     }
     items.push({ kind: 'ungrouped', records: organized.ungrouped })
-    items.push(...organized.ungrouped.map(record => ({
-        kind: 'row' as const,
-        row: rowsById.get(coordinateId(record.coordinate))!,
-    })))
+    for (const record of organized.ungrouped) items.push({
+      kind: 'row',
+      row: rowsById.get(coordinateId(record.coordinate))!,
+    })
     return items
   }, [rows, recordGroups, collapsedGroupKeys])
-  const visibleRows = useMemo(
-    () => displayItems.flatMap(item => item.kind === 'row' ? [item.row] : []),
-    [displayItems],
-  )
-  const visibleRecordRows = useMemo(() => visibleRows.map(row => row.original), [visibleRows])
-  const visibleCoordinates = useMemo(
-    () => visibleRows.map(row => row.original.coordinate),
-    [visibleRows],
-  )
-  const visibleRowIndexes = useMemo(() => new Map(visibleCoordinates.map((coordinate, index) => [coordinateId(coordinate), index])), [visibleCoordinates])
+  const { visibleRows, visibleRecordRows, visibleCoordinates, visibleRowIndexes } = useMemo(() => {
+    const visibleRows: TanStackRow<RecordRow>[] = []
+    const visibleRecordRows: RecordRow[] = []
+    const visibleCoordinates: RecordCoordinate[] = []
+    const visibleRowIndexes = new Map<string, number>()
+    // 一次遍历生成导航数据，避免每行临时数组和多轮全表映射。
+    for (const item of displayItems) if (item.kind === 'row') {
+      visibleRowIndexes.set(coordinateId(item.row.original.coordinate), visibleRows.length)
+      visibleRows.push(item.row)
+      visibleRecordRows.push(item.row.original)
+      visibleCoordinates.push(item.row.original.coordinate)
+    }
+    return { visibleRows, visibleRecordRows, visibleCoordinates, visibleRowIndexes }
+  }, [displayItems])
   const fieldIndexes = useMemo(() => new Map(allFieldNames.map((field, index) => [field, index])), [allFieldNames])
+  const selectionIndexes = useMemo(() => ({ rows: visibleRowIndexes, columns: fieldIndexes }), [visibleRowIndexes, fieldIndexes])
   const selectedValueRange = useMemo(() => selection?.filePath === data.file_path
-    ? valueSelectionRange(selection, visibleCoordinates, allFieldNames) : null,
-  [selection, data.file_path, visibleCoordinates, allFieldNames])
+    ? valueSelectionRange(selection, visibleCoordinates, allFieldNames, selectionIndexes) : null,
+  [selection, data.file_path, visibleCoordinates, allFieldNames, selectionIndexes])
   const pointerSelectionRef = useRef(false)
   const pointerCellKeyRef = useRef<string | null>(null)
   const pointerStringEditRef = useRef(false)
@@ -791,7 +798,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
   const cellRangeDrag = useTableCellRangeDrag({
     rootRef: tableScrollRef,
     onSelectCell: (id, field, mode) => {
-      const coordinate = visibleCoordinates.find(item => coordinateId(item) === id)
+      const coordinate = visibleCoordinates[visibleRowIndexes.get(id) ?? -1]
       if (coordinate) {
         pointerCellKeyRef.current = tableCellKey(coordinate, field)
         onSelectValue?.(coordinate, [fieldPathField(field)], mode)
@@ -841,16 +848,19 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     const field = selectedTopLevelField(selection.fieldPath)
     if (field) mountedColumnIds.add(field)
   }
-  const rowVirtualizer = useVirtualizer({
-    count: displayItems.length,
-    getScrollElement: () => tableScrollRef.current,
-    estimateSize: index => (displayItems[index]?.kind === 'row' ? ROW_H : GROUP_ROW_H) * tableZoom,
-    getItemKey: index => {
+  // virtual-core 将 getItemKey 身份纳入测量缓存键；滚动重渲染不能使十万行测量全部失效。
+  // 排序、过滤、分组改变 displayItems 时才更新函数，继续正确失效旧布局。
+  const virtualRowKey = useCallback((index: number) => {
       const item = displayItems[index]
       if (item?.kind === 'group') return `group:${item.view.group.id}`
       if (item?.kind === 'ungrouped') return 'group:ungrouped'
       return item?.row.id ?? index
-    },
+  }, [displayItems])
+  const rowVirtualizer = useVirtualizer({
+    count: displayItems.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: index => (displayItems[index]?.kind === 'row' ? ROW_H : GROUP_ROW_H) * tableZoom,
+    getItemKey: virtualRowKey,
     overscan: 12,
   })
   useEffect(() => rowVirtualizer.measure(), [rowVirtualizer, tableZoom])
@@ -950,11 +960,11 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
 
   useEffect(() => {
     if (selection?.kind !== 'value' || selection.filePath !== data.file_path) return
-    if (valueSelectionRange(selection, visibleCoordinates, allFieldNames)) return
-    const focusVisible = visibleCoordinates.some(item => sameCoordinate(item, selection.coordinate))
+    if (valueSelectionRange(selection, visibleCoordinates, allFieldNames, selectionIndexes)) return
+    const focusVisible = visibleRowIndexes.has(coordinateId(selection.coordinate))
       && !!selectedTopLevelField(selection.fieldPath)
       && allFieldNames.includes(selectedTopLevelField(selection.fieldPath)!)
-    const anchorVisible = visibleCoordinates.some(item => sameCoordinate(item, selection.rangeAnchor.coordinate))
+    const anchorVisible = visibleRowIndexes.has(coordinateId(selection.rangeAnchor.coordinate))
       && !!selectedTopLevelField(selection.rangeAnchor.fieldPath)
       && allFieldNames.includes(selectedTopLevelField(selection.rangeAnchor.fieldPath)!)
     if (focusVisible) onSelectValue?.(selection.coordinate, selection.fieldPath, 'replace')
@@ -964,7 +974,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
       'replace',
     )
     else onClearSelection?.()
-  }, [selection, visibleCoordinates, allFieldNames, data.file_path, onSelectValue, onClearSelection])
+  }, [selection, visibleCoordinates, allFieldNames, selectionIndexes, visibleRowIndexes, data.file_path, onSelectValue, onClearSelection])
 
   useEffect(() => {
     onValueSelectionCellsChange?.(
@@ -1068,7 +1078,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
             }
 
             if (e.key === 'Tab' && selection.kind === 'value') {
-              const row = visibleCoordinates.findIndex(item => sameCoordinate(item, selection.coordinate))
+              const row = (visibleRowIndexes.get(coordinateId(selection.coordinate)) ?? -1)
               const column = allFieldNames.indexOf(selectedTopLevelField(selection.fieldPath) ?? '')
               const next = row * allFieldNames.length + column + (e.shiftKey ? -1 : 1)
               if (next >= 0 && next < visibleCoordinates.length * allFieldNames.length) {
@@ -1122,7 +1132,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 && e.shiftKey
                 && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
               ) {
-                const currentIndex = visibleCoordinates.findIndex(item => sameCoordinate(item, selection.coordinate))
+                const currentIndex = (visibleRowIndexes.get(coordinateId(selection.coordinate)) ?? -1)
                 const nextIndex = Math.max(0, Math.min(
                   visibleCoordinates.length - 1,
                   currentIndex + (e.key === 'ArrowDown' ? 1 : -1),
@@ -1161,7 +1171,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
             if (e.key === 'Enter' && onEnterInspector) {
               if (selection.kind === 'value') {
                 const field = selectedTopLevelField(selection.fieldPath)
-                const selectedRow = visibleRows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
+                const selectedRow = visibleRows[visibleRowIndexes.get(coordinateId(selection.coordinate)) ?? -1]
                 const selectedCell = field && selectedRow ? fieldCell(selectedRow.original, field) : undefined
                 if (selectedCell && !isComplexValue(selectedCell.value) && selectedCell.value.kind !== 'bool') {
                   e.preventDefault()
@@ -1294,7 +1304,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
 
             // Delete key with multi-cell range selection: batch-clear all cells.
             if (e.key === 'Delete' && !modified && canEdit && onWriteFieldBatch) {
-              const range = valueSelectionRange(selection, visibleCoordinates, allFieldNames)
+              const range = valueSelectionRange(selection, visibleCoordinates, allFieldNames, selectionIndexes)
               const isRange = range && (range.rowEnd > range.rowStart || range.columnEnd > range.columnStart)
               if (isRange) {
                 e.preventDefault()
@@ -1303,7 +1313,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 try {
                   const writes = cells.map(anchor => {
                     const f = selectedTopLevelField(anchor.fieldPath)
-                    const row = records.find(r => sameCoordinate(r.coordinate, anchor.coordinate))
+                    const row = records[visibleRowIndexes.get(coordinateId(anchor.coordinate)) ?? -1]
                     const cell = f && row ? fieldCell(row, f) : undefined
                     if (!cell || cellReadOnly(cell)) throw new Error('选区包含只读字段，未写入任何数据')
                     const next = defaultValueForClear(cell.annotation, cell.value.kind)
@@ -1320,7 +1330,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
 
             const field = selectedTopLevelField(selection.fieldPath)
             if (!field) return
-            const selectedRow = visibleRows.find(row => coordinateId(row.original.coordinate) === coordinateId(selection.coordinate))
+            const selectedRow = visibleRows[visibleRowIndexes.get(coordinateId(selection.coordinate)) ?? -1]
             const selectedCell = selectedRow ? fieldCell(selectedRow.original, field) : undefined
             const editable = !!selectedCell && canEdit && !cellReadOnly(selectedCell)
             const directlyEditable = editable && !isComplexValue(selectedCell?.value)

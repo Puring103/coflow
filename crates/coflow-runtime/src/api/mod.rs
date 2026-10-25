@@ -36,7 +36,7 @@ pub(crate) use source::{CfdLoadContext, CfdSource, CfdSourcePath, LoadedCfdSourc
 pub use writer::WriterCapabilities;
 pub(crate) use writer::{
     DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, ReorderRecordsOperation,
-    ReorderRecordsRequest, WriteBatchFailure, WriteCellRequest, WriteFieldPathSegment,
+    ReorderRecordsRequest, FieldMaterialization, WriteBatchFailure, WriteCellRequest, WriteFieldPathSegment,
     WriteOutcome, WriteRecordRef,
 };
 

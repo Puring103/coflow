@@ -243,7 +243,7 @@ pub(crate) enum PreparedMutationOp {
         write_file: String,
         path: Vec<crate::api::WriteFieldPathSegment>,
         value: CfdValue,
-        materialized_top_level: Option<CfdValue>,
+        materialized_top_level: Option<std::sync::Arc<crate::data_model::CfdObject>>,
     },
     UnsetField {
         record: RecordCoordinate,
@@ -423,6 +423,9 @@ pub struct MutationReport {
     /// filesystem changes. Unlike `affected_files`, it may contain non-CFD
     /// project files such as `coflow.enum.lock.json`.
     pub written_files: Vec<String>,
+    /// 宿主协调 watcher 的发布凭证，不进入用户协议。
+    #[serde(skip)]
+    pub published_files: Vec<crate::PublishedFile>,
     /// Writer diagnostics followed by diagnostics from the published generation.
     pub diagnostics: Vec<FlatDiagnostic>,
 }

@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [workspace]
 members = [
+    "crates/coflow-storage",
     "crates/coflow-format",
     "crates/coflow-language",
     "crates/coflow-diagnostics",

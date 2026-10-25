@@ -5,7 +5,7 @@ use crate::model::{
     CfdRecord, CfdRecordHandle, CfdValue, DimensionRefCoordinate, RefEdge, RefEdgeId, RefSite,
 };
 use coflow_language::cft::{CftValueType, RecordId, TypeName};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -17,8 +17,8 @@ struct HostRefs {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RefIndexes {
     // 引用按宿主分块，反向索引只保存块内地址；局部替换不复制其他记录的路径。
-    hosts: Vec<Arc<HostRefs>>,
-    incoming: Vec<Arc<Vec<RefEdgeId>>>,
+    hosts: coflow_storage::PagedVec<Arc<HostRefs>>,
+    incoming: coflow_storage::PagedVec<Arc<Vec<RefEdgeId>>>,
 }
 
 impl RefIndexes {
@@ -60,33 +60,30 @@ impl RefIndexes {
             schema,
             plan: &plan,
         };
-        let mut targets = std::collections::BTreeSet::new();
+        let mut targets = BTreeMap::<CfdRecordHandle, (BTreeSet<CfdRecordHandle>, Vec<RefEdgeId>)>::new();
         let mut visited = 0;
         for (host, record) in records {
-            let old_targets = self.hosts[host.index()]
-                .edges
-                .iter()
-                .map(|edge| edge.target)
-                .collect::<std::collections::BTreeSet<_>>();
-            for target in old_targets {
-                if let Some(incoming) = self.incoming.get_mut(target.index()) {
-                    Arc::make_mut(incoming).retain(|id| id.host() != host);
-                    targets.insert(target);
-                }
-            }
             let references = record_refs(record, host, &context);
             visited += references.edges.len();
+            // 普通字段变化不改动引用块；旧代次与当前代次继续共享同一邻接表。
+            if self.hosts[host.index()].as_ref() == &references {
+                continue;
+            }
+            for edge in &self.hosts[host.index()].edges {
+                targets.entry(edge.target).or_default().0.insert(host);
+            }
             for (index, edge) in references.edges.iter().enumerate() {
-                if let Some(incoming) = self.incoming.get_mut(edge.target.index()) {
-                    Arc::make_mut(incoming).push(RefEdgeId::new(host, index));
-                    targets.insert(edge.target);
-                }
+                targets.entry(edge.target).or_default().1.push(RefEdgeId::new(host, index));
             }
             self.hosts[host.index()] = Arc::new(references);
         }
-        for target in targets {
+        for (target, (removed_hosts, added)) in targets {
+            // 按目标合并整批变化，高扇入目标的旧列表只过滤一次。
+            let incoming = Arc::make_mut(&mut self.incoming[target.index()]);
+            incoming.retain(|id| !removed_hosts.contains(&id.host()));
+            incoming.extend(added);
             // 与全量构建的宿主顺序一致，不能让更新顺序改变查询或诊断结果。
-            Arc::make_mut(&mut self.incoming[target.index()]).sort_unstable();
+            incoming.sort_unstable();
         }
         visited
     }
@@ -99,8 +96,8 @@ pub(crate) fn build_ref_indexes(
     plan: &ReferenceFieldPlan<'_>,
 ) -> RefIndexes {
     let mut out = RefIndexes {
-        hosts: Vec::with_capacity(records.len()),
-        incoming: vec![Arc::new(Vec::new()); records.len()],
+        hosts: coflow_storage::PagedVec::default(),
+        incoming: vec![Arc::new(Vec::new()); records.len()].into(),
     };
     let context = RefEdgeBuildContext {
         record_by_domain_id,
