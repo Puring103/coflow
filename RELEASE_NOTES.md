@@ -1,5 +1,7 @@
 # Coflow 0.12.0
 
+本版本提供 Windows 完整版、Windows CLI 安装包和 VS Code 扩展，macOS 预编译包暂停发布。
+
 ## 语言与数据
 
 - 统一 table、data 与 singleton 的声明、继承、记录身份和引用规则。

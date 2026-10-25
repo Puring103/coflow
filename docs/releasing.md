@@ -1,8 +1,10 @@
 # Release Packaging
 
-The release workflow publishes a full Windows product, a Windows CLI-only
-installer, full macOS editor bundles (arm64 and x64), macOS CLI archives,
-and the VS Code extension.
+The release workflow currently publishes a full Windows product, a Windows
+CLI-only installer, and the VS Code extension. macOS publication is paused;
+its build and signing jobs remain disabled in `.github/workflows/release.yml`.
+To resume publication, enable both macOS jobs and add them to `release.needs`.
+The sections below retain the macOS packaging and signing requirements.
 
 ## Updater signing
 
@@ -54,12 +56,12 @@ The public release contains only:
 
 - `coflow-tools-windows-x64-setup.exe` and its updater `.sig`;
 - `coflow-cli-windows-x64-setup.exe`;
-- `coflow-tools-macos-arm64.dmg` and `coflow-tools-macos-x64.dmg`
+- When macOS publication is enabled: `coflow-tools-macos-arm64.dmg` and `coflow-tools-macos-x64.dmg`
   (user-facing downloads);
-- `coflow-tools-macos-arm64.app.tar.gz` and its updater `.sig`, plus the
+- When macOS publication is enabled: `coflow-tools-macos-arm64.app.tar.gz` and its updater `.sig`, plus the
   matching x64 pair (Tauri updater artifacts — Tauri's macOS updater expects a
   gzipped `.app` bundle, so the DMG is not the signed artifact);
-- `coflow-cli-macos-arm64.tar.gz` and `coflow-cli-macos-x64.tar.gz`;
+- When macOS publication is enabled: `coflow-cli-macos-arm64.tar.gz` and `coflow-cli-macos-x64.tar.gz`;
 - `latest.json` (merged updater manifest covering every signed platform);
 - the packaged VS Code extension.
 
