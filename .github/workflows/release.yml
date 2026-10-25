@@ -283,6 +283,8 @@ jobs:
 
   macos-cli:
     name: macOS CLI ${{ matrix.arch }}
+    # 暂停 macOS 发布；恢复时同时将两个 macOS 任务加入 release.needs。
+    if: ${{ false }}
     needs: ci
     runs-on: macos-latest
     strategy:
@@ -401,6 +403,8 @@ jobs:
 
   macos-full:
     name: macOS full editor ${{ matrix.arch }}
+    # 暂停 macOS 发布，保留构建与签名配置供恢复使用。
+    if: ${{ false }}
     needs: ci
     runs-on: macos-latest
     env:
@@ -629,7 +633,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [windows-full, windows-cli, macos-cli, macos-full, vsix]
+    needs: [windows-full, windows-cli, vsix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
