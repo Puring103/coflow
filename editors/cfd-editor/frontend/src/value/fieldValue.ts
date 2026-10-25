@@ -12,6 +12,7 @@ export function parseFieldValueText(original: FieldValue, raw: string): FieldVal
       if (raw !== 'true' && raw !== 'false') return null
       return { kind: 'bool', value: raw === 'true' }
     case 'int':
+      if (raw.trim() === '') return null
       try {
         return { kind: 'int', value: BigInt(raw) }
       } catch {

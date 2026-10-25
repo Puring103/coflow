@@ -20,6 +20,7 @@ interface Options {
   onRenderCellText?: (path: FieldPathSegment[]) => Promise<string>
   onParseCellText?: (path: FieldPathSegment[], text: string) => Promise<FieldValue>
   onPaste?: (path: FieldPathSegment[], text: string, mode: 'replace' | 'append') => Promise<void>
+  clearValue: (path: FieldPathSegment[]) => FieldValue
   onWriteField?: (path: FieldPathSegment[], value: FieldValue) => Promise<unknown>
   onNotice?: (notice: string | null) => void
   onBoundary?: (edge: 'before' | 'parent') => void
@@ -56,6 +57,11 @@ export function useRecordItemKeyboard(options: Options) {
       : selectedWire
         ? elements.find(element => element.dataset.fieldPathWire === selectedWire)
         : null
+    if (event.key === 'Tab' && current) {
+      const target = elements[elements.indexOf(current) + (event.shiftKey ? -1 : 1)]
+      if (target) { event.preventDefault(); selectElement(target); target.scrollIntoView({ block: 'nearest' }) }
+      return
+    }
     const isDirection = event.key === 'ArrowUp'
       || event.key === 'ArrowDown'
       || event.key === 'ArrowLeft'
@@ -116,7 +122,7 @@ export function useRecordItemKeyboard(options: Options) {
       if (intent.kind === 'clear' || intent.kind === 'toggle-bool') {
         try {
           const next: FieldValue = intent.kind === 'clear'
-            ? { kind: 'option_none' }
+            ? options.clearValue(path)
             : { kind: 'bool', value: current.dataset.boolValue !== 'true' }
           await options.onWriteField(path, next)
           options.onNotice?.(null)

@@ -99,13 +99,41 @@ type RichTextInputProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'val
   cell?: boolean
 }
 
+// 可见单元格共享尺寸观察器，按真实排版测量溢出，避免逐格创建观察器。
+const previewMeasurements = new WeakMap<Element, () => void>()
+let previewObserver: ResizeObserver | undefined
+
 export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFocus, onBlur, cell = false, ...props }: RichTextInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const previewRef = useRef<HTMLSpanElement>(null)
+  const entryCaret = useRef<number | null>(null)
+  const [overflow, setOverflow] = useState(false)
   const [focused, setFocused] = useState(false)
   const [cursor, setCursor] = useState(0)
   const [active, setActive] = useState(0)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const suggestions = useMemo(() => focused && !props.readOnly ? richTextSuggestions(value, cursor) : [], [value, cursor, focused, props.readOnly])
+
+  useLayoutEffect(() => {
+    const preview = previewRef.current
+    if (!cell || !preview || focused) return
+    const tableCell = preview.closest('td')
+    const measure = () => {
+      // 只扩展预览裁剪区域，不参与表格行高计算；列宽、行高变化都重新测量。
+      if (tableCell && !preview.closest('.dc-row')) {
+        const style = getComputedStyle(tableCell)
+        preview.style.height = `${Math.max(20, tableCell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))}px`
+      }
+      preview.parentElement?.style.setProperty('--cell-preview-height', `${preview.clientHeight}px`)
+      setOverflow(preview.scrollWidth > preview.clientWidth + 1 || preview.scrollHeight > preview.clientHeight + 1)
+    }
+    previewObserver ??= new ResizeObserver(entries => entries.forEach(entry => previewMeasurements.get(entry.target)?.()))
+    previewMeasurements.set(preview, measure)
+    previewObserver.observe(preview)
+    if (tableCell) { previewMeasurements.set(tableCell, measure); previewObserver.observe(tableCell) }
+    measure()
+    return () => { previewObserver?.unobserve(preview); previewMeasurements.delete(preview); if (tableCell) { previewObserver?.unobserve(tableCell); previewMeasurements.delete(tableCell) } }
+  }, [cell, value, focused])
 
   useLayoutEffect(() => {
     const input = inputRef.current
@@ -180,7 +208,7 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
         setActive(index => (index + delta + suggestions.length) % suggestions.length)
         return
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
         event.preventDefault()
         choose(suggestions[active] ?? suggestions[0])
         return
@@ -196,11 +224,35 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
 
   return (
     <span className={`rich-text-input${cell ? ' cell-string-input' : ''}${focused ? ' focused' : ''}`}>
-      {cell && <span className="cell-string-preview" aria-hidden>{value || '\u00a0'}</span>}
+      {cell && <span ref={previewRef} className="cell-string-preview" aria-hidden>{value || '\u00a0'}</span>}
+      {cell && !focused && overflow && <span className="cell-string-overflow" aria-hidden>…</span>}
       <textarea
         {...props}
         ref={inputRef}
         value={value}
+        onPointerDown={event => {
+          entryCaret.current = null
+          if (!cell || focused || event.button !== 0 || event.defaultPrevented) return
+          const preview = previewRef.current
+          const input = event.currentTarget
+          if (!preview) return
+          // 使用浏览器字形命中结果定位光标；进入编辑的双击不再选中整个词。
+          input.style.pointerEvents = 'none'
+          preview.style.pointerEvents = 'auto'
+          const range = document.caretRangeFromPoint(event.clientX, event.clientY)
+          input.style.pointerEvents = ''
+          preview.style.pointerEvents = ''
+          const offset = range && preview.contains(range.startContainer) ? range.startOffset : value.length
+          entryCaret.current = offset
+          event.preventDefault()
+          input.focus({ preventScroll: true })
+          input.setSelectionRange(offset, offset)
+        }}
+        onDoubleClick={event => {
+          if (entryCaret.current === null) return
+          event.preventDefault()
+          event.currentTarget.setSelectionRange(entryCaret.current, entryCaret.current)
+        }}
         onChange={event => {
           onValueChange(event.currentTarget.value)
           updateCursor(event.currentTarget)

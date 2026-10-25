@@ -154,9 +154,8 @@ function GraphNodeHeader({
     >
       <div className="gn-color-bar" />
       <div className="gn-graph-heading">
-        <span className="gn-key" title={shortName || recordId}>{shortName || recordId}</span>
+        <span className="gn-key" title={`${shortName || recordId} · ${actualType}`}>{shortName || recordId}</span>
         {shortName && shortName !== recordId && <span className="gn-graph-id" title={recordId}>{recordId}</span>}
-        <span className="gn-type">{actualType}</span>
       </div>
       {(diagSeverity === 'error' || diagSeverity === 'warning') && (
         <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
@@ -476,13 +475,19 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     .filter(field => availableFields.includes(field)).slice().sort())
   const enabledFields = useMemo<Set<string>>(() => new Set(JSON.parse(enabledFieldsKey)), [enabledFieldsKey])
 
-  const graph = useMemo(() => ({
-    ...sourceGraph,
-    nodes: sourceGraph.nodes.map(node => ({
-      ...node,
-      fields: graphCardFields(node.fields, visibleCardFields, enabledFields),
-    })),
-  }), [sourceGraph, visibleCardFields, enabledFields])
+  // 字段投影按节点身份缓存：修改一条记录时，其他节点复用字段树及卡片数据。
+  const projectNode = useMemo(() => {
+    const cache = new WeakMap<GraphNodeView, GraphNodeView>()
+    return (node: GraphNodeView) => {
+      let projected = cache.get(node)
+      if (!projected) {
+        projected = { ...node, fields: graphCardFields(node.fields, visibleCardFields, enabledFields) }
+        cache.set(node, projected)
+      }
+      return projected
+    }
+  }, [visibleCardFields, enabledFields])
+  const graph = useMemo(() => ({ ...sourceGraph, nodes: sourceGraph.nodes.map(projectNode) }), [sourceGraph, projectNode])
 
 
   // 展开状态只改变卡片内容，不重新执行关系布局。
@@ -490,9 +495,15 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   // Per-node set of expanded sub-row paths
   const [nodeRowExpandedMap, setNodeRowExpandedMap] = useState<Map<string, Set<string>>>(new Map())
   // 仅为选中的关系生成端口和强制展开路径，其他字段遵守可见性设置。
-  const relations = useMemo(() => new Map(sourceGraph.nodes.map(node => [node.id,
-    relationPorts(node.fields.filter(field => enabledFields.has(field.name))),
-  ])), [sourceGraph.nodes, enabledFields])
+  const nodeRelations = useMemo(() => {
+    const cache = new WeakMap<GraphNodeView, ReturnType<typeof relationPorts>>()
+    return (node: GraphNodeView) => {
+      let value = cache.get(node)
+      if (!value) { value = relationPorts(node.fields.filter(field => enabledFields.has(field.name))); cache.set(node, value) }
+      return value
+    }
+  }, [enabledFields])
+  const relations = useMemo(() => new Map(sourceGraph.nodes.map(node => [node.id, nodeRelations(node)])), [sourceGraph.nodes, nodeRelations])
   const expandedRows = useMemo(() => new Map(graph.nodes.map(node => [node.id,
     new Set([...(nodeRowExpandedMap.get(node.id) ?? []), ...(relations.get(node.id)?.expanded ?? [])]),
   ])), [graph.nodes, nodeRowExpandedMap, relations])
@@ -672,7 +683,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           actions = {
             expand: () => toggleNodeExpanded(n.id),
             row: (path, expanded) => handleRowToggle(n.id, path, expanded),
-            edit: (path, value) => { void nodeActionPort.current.onWriteField?.(n.file_path, n.coordinate, path, value) },
+            edit: (path, value) => nodeActionPort.current.onWriteField?.(n.file_path, n.coordinate, path, value),
             collection: (path, edit) => { void nodeActionPort.current.onCollectionEdit?.(n.file_path, n.coordinate, path, edit) },
             open: () => nodeActionPort.current.onOpenRecord(n.file_path, n.coordinate),
             diagnostic: () => nodeActionPort.current.onDiagnosticBadgeClick?.(n.file_path, n.coordinate, null),
@@ -943,6 +954,9 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
 
   async function endConnection(event: MouseEvent | TouchEvent) {
     const source = dragSource.current
+    // 在任何异步查询之前取走重连状态，结束事件随后会清理引用。
+    const reconnecting = reconnectEdgeRef.current
+    reconnectEdgeRef.current = null
     dragSource.current = null
     if (!source || connectionDone.current) return
     const version = dragVersion.current
@@ -951,6 +965,10 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     const point = 'changedTouches' in event ? event.changedTouches[0] : event
     if (!point) return
     const targetId = document.elementFromPoint(point.clientX, point.clientY)?.closest<HTMLElement>('.graph-node')?.dataset.nodeid
+    if (!targetId && reconnecting) {
+      onEdgesDelete([reconnecting])
+      return
+    }
     const result = await lookups.loadRefTargets(port.targetType)
     if (version !== dragVersion.current) return
     if (!result.ok) {
@@ -962,13 +980,6 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
       if (target) await commitRelation(source.nodeId, source.portId, target)
       else setConnectionError('目标节点类型不兼容')
     } else {
-      const reconnecting = reconnectEdgeRef.current
-      reconnectEdgeRef.current = null
-      if (reconnecting) {
-        // 重连拖到空白处即删除原关系，不在拖动中提前改变数据。
-        onEdgesDelete([reconnecting])
-        return
-      }
       const flowPosition = reactFlowRef.current?.screenToFlowPosition({
         x: point.clientX, y: point.clientY,
       }) ?? null
@@ -1496,7 +1507,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
               </ControlButton>
               <ControlButton onClick={toggleCompactNodes}
                 title={compactNodes ? '切换到完整模式' : '切换到缩略模式'} aria-label="切换显示模式">
-                <Icon name="overview" size={16} />
+                <Icon name={compactNodes ? "card-detail" : "card-compact"} size={16} />
               </ControlButton>
             </Controls>
             <MiniMap

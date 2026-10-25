@@ -14,7 +14,7 @@ export function selectionEditIntentForKey(
 ): SelectionEditIntent | null {
   if (modified) return null
   if (key === 'Delete') return { kind: 'clear' }
-  if (key === 'Enter' && valueKind === 'bool') return { kind: 'toggle-bool' }
+  if ((key === 'Enter' || key === ' ') && valueKind === 'bool') return { kind: 'toggle-bool' }
   if (key === 'Enter' || key === 'F2') return { kind: 'edit' }
   if (valueKind === 'array' || valueKind === 'dict' || valueKind === 'object') return null
   return key.length === 1 ? { kind: 'replace', text: key } : null
@@ -28,7 +28,7 @@ export function defaultValueForClear(annotation: FieldAnnotation | null, valueKi
   if (valueKind === 'bool') return { kind: 'bool', value: false }
   if (valueKind === 'int') return { kind: 'int', value: 0n }
   if (valueKind === 'float') return { kind: 'float', value: 0 }
-  if (valueKind === 'string') return { kind: 'string', value: '' }
-  // enum / ref / object / empty option fall back to an empty option.
-  return { kind: 'option_none' }
+  if (valueKind === 'string' || valueKind === 'formatted_string') return { kind: 'string', value: '' }
+  if (valueKind === 'option_none') return { kind: 'option_none' }
+  throw new Error('必填字段不能清空，请填写有效值')
 }

@@ -4,6 +4,8 @@ import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import { fieldPathField } from '../wire'
 import {
   parseCfdClipboard,
+  parseTabularText,
+  pasteCellAtRecordPath,
   planPaste,
   serializeCfdCellMatrix,
   shouldExpandSinglePasteTarget,
@@ -51,6 +53,7 @@ describe('CFD clipboard codec', () => {
     ]])
     expect(parseCfdClipboard('[1, 2]')).toEqual([['[1, 2]']])
     expect(parseCfdClipboard('[]')).toEqual([['[]']])
+    expect(parseCfdClipboard('Stats {\n\thp: 10\n}')).toEqual([['Stats {\n\thp: 10\n}']])
     expect(parseCfdClipboard('[[], []]')).toEqual([['[[], []]']])
     expect(parseCfdClipboard('"direct"')).toEqual([['"direct"']])
     expect(() => parseCfdClipboard('[["unterminated]]')).toThrow(/未闭合/)
@@ -178,5 +181,38 @@ describe('paste planner', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.errors).toHaveLength(2)
+  })
+})
+
+
+describe('nested collection paste contract', () => {
+  it('puts an entire copied column into a single list element whose value is a list', async () => {
+    const itemAnnotation = annotation({ declared_type: 'array<int>', item_annotation: annotation({ declared_type: 'int' }) })
+    const target = cell('groups', { fieldPath: [fieldPathField('groups'), { kind: 'index', value: 1 }], annotation: itemAnnotation, value: { kind: 'array', value: [] } })
+    const result = await planPaste([['1'], ['2'], ['3']], [[target]], {
+      mode: 'replace', parse: async (_coordinate, path, text) => {
+        expect(path).toEqual([...target.fieldPath, { kind: 'index', value: 0 }])
+        return { kind: 'int', value: BigInt(text) }
+      },
+    })
+    expect(result.ok && result.writes).toEqual([{ coordinate, field_path: target.fieldPath, new_value: { kind: 'array', value: [1n, 2n, 3n].map(value => ({ kind: 'int', value })) } }])
+  })
+  it('rejects a truncated rectangular target before parsing anything', async () => {
+    let calls = 0
+    const result = await planPaste([['1', '2'], ['3', '4']], [[cell('a'), cell('b')]], { mode: 'replace', parse: async () => { calls++; return { kind: 'int', value: 0n } } })
+    expect(result.ok).toBe(false)
+    expect(calls).toBe(0)
+  })
+  it('keeps dictionaries as dictionaries instead of treating their value annotations as arrays', async () => {
+    const target = cell('config', { value: { kind: 'dict', value: [] }, annotation: annotation({ declared_type: 'dict<string,int>', item_annotation: annotation() }) })
+    const result = await planPaste([['{}']], [[target]], { mode: 'replace', parse: async (_coord, path) => { expect(path).toEqual(target.fieldPath); return { kind: 'dict', value: [] } } })
+    expect(result.ok).toBe(true)
+  })
+  it('reads nested values through optional object wrappers', () => {
+    const record = { coordinate, display_path: 'test.cfd', container_index: 0, container_size: 1, field_summaries: {}, field_diagnostics: [], diagnostic_severity: null, fields: [{ name: 'data', missing: false, annotation: annotation(), value: { kind: 'option_some', value: { kind: 'object', value: { actual_type: 'Data', fields: { list: { kind: 'array', value: [] } } } } } }], field_index: { data: 0 } } as Parameters<typeof pasteCellAtRecordPath>[0]
+    expect(pasteCellAtRecordPath(record, [fieldPathField('data'), fieldPathField('list')], true)?.value.kind).toBe('array')
+  })
+  it('preserves spreadsheet quoting and multiline cells', () => {
+    expect(parseTabularText('"hello\nworld"\t"a""b"\r\nnext\t3\r\n')).toEqual([['hello\nworld', 'a"b'], ['next', '3']])
   })
 })

@@ -22,7 +22,10 @@ export function ProjectSearchDialog({ open, onClose, contribution, context }: {
     return () => cancelAnimationFrame(frame)
   }, [open])
   return <dialog ref={ref} className="project-search-dialog" aria-labelledby="project-search-title"
-    onCancel={onClose} onClose={onClose} onClick={event => {
+    onKeyDownCapture={event => {
+      if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); onClose() }
+    }}
+    onCancel={onClose} onClose={() => { if (!ref.current?.open) onClose() }} onClick={event => {
       if (event.target !== event.currentTarget) return
       const rect = event.currentTarget.getBoundingClientRect()
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose()

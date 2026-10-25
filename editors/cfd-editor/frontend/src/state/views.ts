@@ -66,8 +66,8 @@ export function viewTabsFor(
     return [{ id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true }]
   }
   const tabs: ViewTab[] = [
-    { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
     { id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', isDefault: true },
+    { id: DEFAULT_RECORD_VIEW_ID, name: '记录', kind: 'record', isDefault: true },
     { id: DEFAULT_SOURCE_VIEW_ID, name: '源码', kind: 'source', isDefault: true },
   ]
   if (isSingleton) return orderViewTabs(tabs, order)

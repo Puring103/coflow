@@ -1,10 +1,12 @@
+import type { RefTarget } from './bindings/RefTarget'
+import { ReferencePanel } from './components/ReferencePanel'
 import { ViewPicker } from './components/ViewPicker'
 import { createMockLookups } from './mockLookups'
 import { Menu } from './components/Menu'
 import { ProjectSearchDialog } from './components/ProjectSearchDialog'
 import { EditorSettingsMenu } from './components/EditorSettingsMenu'
 import { recordMatchesKeySearch } from './value/fieldValue'
-import { afterSourceSave, deferSourceNavigation, flushSourceChanges } from './state/sourceAutosave'
+import { afterSourceSave, deferSourceNavigation as deferSourceNavigationOnly, flushSourceChanges } from './state/sourceAutosave'
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FileTree } from './components/FileTree'
 import { CreateRecordDialog } from './components/CreateRecordDialog'
@@ -12,7 +14,7 @@ import { ConfirmDialog, TextInputDialog } from './components/ActionDialog'
 import { ViewEditorDialog } from './components/ViewEditorDialog'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { InspectorPanel } from './components/InspectorPanel'
-import { finishActiveDataEdit } from './state/editSession'
+import { finishActiveDataEdit, deferDataNavigation } from './state/editSession'
 import { Icon } from './components/Icon'
 import { ObjectDraftHost } from './components/ObjectDraftHost'
 import { ShortNameContext } from './components/ShortNameContext'
@@ -169,6 +171,11 @@ import {
 } from './state/appSupport'
 import './style.css'
 
+// 文件与视图导航共用草稿屏障，失败时保留原视图供用户修正。
+function deferSourceNavigation(action: () => void): boolean {
+  return deferDataNavigation(action) || deferSourceNavigationOnly(action)
+}
+
 // 预加载与 React.lazy 共享同一 Promise，切换视图时复用已经加载的模块。
 function cachedViewModule<T>(loader: () => Promise<T>): () => Promise<T> {
   let pending: Promise<T> | undefined
@@ -250,6 +257,23 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   >(null)
   const [fileActionBusy, setFileActionBusy] = useState(false)
   const [recoverySession, setRecoverySession] = useState<number | null>(null)
+  const [referenceHistory, setReferenceHistory] = useState<RefTarget[]>([])
+  const [referenceError, setReferenceError] = useState<string | null>(null)
+  const referenceTarget = referenceHistory[referenceHistory.length - 1]
+  useEffect(() => { setReferenceHistory([]) }, [project?.session_id])
+  useEffect(() => {
+    if (!referenceTarget || !project) return
+    const identity = generation.currentIdentity()
+    if (!identity) return
+    const file = referenceTarget.file_path
+    let cancelled = false
+    setReferenceError(null)
+    if (fileDataCacheRef.current[file]?.revision === identity.revision) return
+    void fetchFileRecords(queryClient, identity.sessionId, identity.revision, file, () => api.getFileRecords(identity.sessionId, file)).then(data => {
+      if (!cancelled && generation.isCurrent(identity.sessionId, identity.revision)) setFileDataCache(current => ({ ...current, [file]: data }))
+    }).catch(error => { if (!cancelled) setReferenceError(errorMessage(error)) })
+    return () => { cancelled = true }
+  }, [referenceTarget, project?.revision, project?.session_id, generation, setFileDataCache])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const {
     settings: projectSettings,
@@ -1077,7 +1101,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     [project],
   )
 
-  const openReference = useCallback((targetType: string, targetKey: string) => {
+  const navigateReference = useCallback((targetType: string, targetKey: string) => {
     void lookups.loadRefTargets(targetType).then(result => {
       if (!result.ok) {
         if (result.reason === 'failed') {
@@ -1110,6 +1134,20 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       if (tab.viewKind !== 'record') openInspector(filePath, coordinate)
     })
   }, [lookups, navigateWorkspaceTab, openInspector, project?.file_types])
+
+  // 引用查看沿用同一详情组件和写入控制器，避免改变底层文件与选区。
+  const openReference = useCallback((targetType: string, targetKey: string) => {
+    if (deferDataNavigation(() => openReference(targetType, targetKey))) return
+    const identity = generation.currentIdentity()
+    void lookups.loadRefTargets(targetType).then(result => {
+      if (!identity || !generation.isCurrent(identity.sessionId, identity.revision)) return
+      if (!result.ok) { setErrorMsg('读取引用目标失败'); return }
+      const target = result.value.find(item => item.coordinate.id === targetKey && item.coordinate.actual_type === targetType)
+        ?? result.value.find(item => item.coordinate.id === targetKey)
+      if (!target) { setErrorMsg(`引用记录 ${targetKey} 未找到`); return }
+      setReferenceHistory(current => [...current, target])
+    })
+  }, [lookups, generation])
 
   const rebindCoordinate = useCallback(
     (filePath: string, oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => {
@@ -2060,6 +2098,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const tableOnSelectValue = useCallback(
     (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], mode: ValueSelectionMode = 'replace') => {
       if (currentRoute?.view !== 'table') return
+      if (deferDataNavigation(() => tableOnSelectValue(coordinate, fieldPath, mode))) return
       // 表格在 pointerdown 阶段提交旧目标；选择同步不能再次 blur 刚获得焦点的输入。
       setInspectorSelection(current => updateValueSelection(
         current,
@@ -2512,10 +2551,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     if (workspaceTab) openFile(workspaceTab.filePath, workspaceTab.typeName)
   }
 
-  function editCurrentView() {
-    const saved = projectSettings?.views[activeFile ?? '']?.[activeType]?.find(view => view.id === currentRoute?.viewId)
+  function editView(viewId: string) {
+    const saved = projectSettings?.views[activeFile ?? '']?.[activeType]?.find(view => view.id === viewId)
     if (saved) setViewEditor({ mode: 'edit', view: saved })
-    else if (resolvedView?.id === DEFAULT_TABLE_VIEW_ID) setViewEditor({ mode: 'edit', view: {
+    else if (viewId === DEFAULT_TABLE_VIEW_ID) setViewEditor({ mode: 'edit', view: {
       id: DEFAULT_TABLE_VIEW_ID, name: '表格', kind: 'table', columns: viewEditorFields,
       column_widths: {}, relations: [], fields: [], group_filter: null,
     } })
@@ -2524,7 +2563,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const renderViewPicker = () => <ViewPicker tabs={viewTabs} activeId={currentRoute?.viewId}
     plugins={pluginViews} activePluginKey={activePluginView?.key} onSelect={switchView} onPreview={tab => preloadView(tab.kind)} onSelectPlugin={switchPluginView}
     onCreate={activeType && !isSingletonType ? openViewEditor : undefined}
-    onDelete={resolvedView && !resolvedView.isDefault ? () => void deleteView(resolvedView.id) : undefined}
+    onDelete={viewId => void deleteView(viewId)}
+    onEdit={editView}
     onReorder={ids => {
       if (activeFile) saveViewOrder(activeFile, activeType, ids)
     }} />
@@ -2555,6 +2595,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             <span className="app-logo" style={{ maskImage: `url("${coflowLogo}")` }} aria-hidden />
             coflow
           </span>
+            <Menu className="project-menu" title="项目" label={<><Icon name="folder" size={14} /><span>{project ? (api.isTauri ? project.project_root.split(/[\\/]/).filter(Boolean).pop() : '示例项目') : '打开项目'}</span><Icon name="chevron-down" size={12} /></>}>
+                <button className="btn" onClick={openProject}><Icon name="open" size={14} />打开项目</button>
+                <button className="btn" onClick={newProject}><Icon name="plus" size={14} />新建工程</button>
+            </Menu>
           <span className="topbar-divider" />
           <button
             className="btn btn-icon"
@@ -2619,6 +2663,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       <div className="main-layout">
         {/* 导航入口和资源面板共享宽度，收起时保留图标入口。 */}
         <div className={`layout-navigation${splitterDragging ? ' resizing' : ''}`}>
+        <div className="navigation-header">
         <ActivityBar
           activePane={activePane}
           registry={pluginRegistry}
@@ -2640,11 +2685,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             setActivePluginPageKey(null)
           }}
         />
-        <div className="navigation-header">
-            <Menu className="project-menu" title="项目" label={<><Icon name="folder" size={14} /><span>{project ? (api.isTauri ? project.project_root.split(/[\\/]/).filter(Boolean).pop() : '示例项目') : '打开项目'}</span><Icon name="chevron-down" size={12} /></>}>
-                <button className="btn" onClick={openProject}><Icon name="open" size={14} />打开项目</button>
-                <button className="btn" onClick={newProject}><Icon name="plus" size={14} />新建工程</button>
-            </Menu>
+
 
           <button className="btn navigation-toggle" aria-label={navigationCollapsed ? '展开侧栏' : '折叠侧栏'}
             title={navigationCollapsed ? '展开侧栏' : '折叠侧栏'} aria-expanded={!navigationCollapsed}
@@ -2752,8 +2793,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               className="plugin-sidebar-host"
             />
           )}
-          {activePane === 'files' && api.isTauri && <UpdateControl />}
         </div>
+        {api.isTauri && <UpdateControl />}
         </div>
 
         <div
@@ -2890,9 +2931,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               )}
 
               {/* Record search bar — shared by structured views. */}
+              <div className="structured-view-content">
+              <div className="structured-view-main">
               {activeViewKind !== 'source' && activeViewKind !== 'plugin' && <div className="global-search-bar">
                 {renderViewPicker()}
-                {resolvedView && (resolvedView.kind === 'table' || resolvedView.kind === 'graph') && <button className="btn btn-icon view-settings" aria-label="视图设置" title="视图设置" onClick={editCurrentView}><Icon name="settings" size={15} /></button>}
                 <div className="record-search">
                 <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
@@ -2939,7 +2981,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 )}
               </div>}
 
-              <div className="structured-view-content">
               <div className="view-container" ref={viewContainerRef}>
                 {activeViewKind === 'plugin' && activePluginView && pluginViewContext && (
                   <PluginContributionMount
@@ -3099,6 +3140,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                   )
                 )}
 
+              </div>
               </div>
         <InspectorPanel
           open={!!activeFile && !gitDiffActive && !activePluginPage
@@ -3262,6 +3304,25 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       )}
       <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
+      {referenceTarget && <ReferencePanel
+        recordId={referenceTarget.coordinate.id}
+        actualType={referenceTarget.coordinate.actual_type}
+        title={referenceTarget.short_name ?? referenceTarget.coordinate.id}
+        canGoBack={referenceHistory.length > 1}
+        onBack={() => setReferenceHistory(current => current.slice(0, -1))}
+        onClose={() => setReferenceHistory([])}
+        onNavigate={() => { navigateReference(referenceTarget.coordinate.actual_type, referenceTarget.coordinate.id); setReferenceHistory([]) }}>
+        {referenceError ? <div role="alert" className="content-empty">{referenceError}</div> : <InspectorPanel
+          open embedded data={fileDataCache[referenceTarget.file_path] ?? null}
+          selection={recordSelection(referenceTarget.file_path, referenceTarget.coordinate)}
+          readOnly={!isEditableFile(fileDataCache[referenceTarget.file_path])}
+          width={520} onWidthChange={() => {}} onClose={() => setReferenceHistory([])}
+          diagnostics={project?.diagnostics} onWriteField={writeField} onWriteFields={writeFields}
+          onWriteFieldBatch={writes => mutations.writeFieldBatch(referenceTarget.file_path, writes)}
+          onRenderCellText={(_file, coordinate, path) => tableOnRenderCellText(coordinate, path)}
+          onParseCellText={(_file, coordinate, path, text) => tableOnParseCellText(coordinate, path, text)}
+          onCollectionEdit={editCollection} />}
+      </ReferencePanel>}
     </ObjectDraftHost>
     </ShortNameContext.Provider>
   )

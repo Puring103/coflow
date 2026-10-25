@@ -17,3 +17,22 @@ export function finishOffscreenDataEdit(root: HTMLElement): void {
   const bounds = active.getBoundingClientRect()
   if (bounds.bottom < viewport.top || bounds.top > viewport.bottom) finishActiveDataEdit()
 }
+
+// 活动编辑器注册提交任务；关闭引用面板等操作必须等待真实写入结果。
+const draftCommits = new Map<() => Promise<boolean>, () => boolean>()
+export function registerDataEdit(commit: () => Promise<boolean>, pending: () => boolean): () => void {
+  draftCommits.set(commit, pending)
+  return () => { draftCommits.delete(commit) }
+}
+export async function flushDataEdits(): Promise<boolean> {
+  const results = await Promise.all([...draftCommits.keys()].map(commit => commit()))
+  return results.every(Boolean)
+}
+
+let navigationTicket = 0
+export function deferDataNavigation(action: () => void): boolean {
+  if (![...draftCommits.values()].some(pending => pending())) return false
+  const ticket = ++navigationTicket
+  void flushDataEdits().then(ok => { if (ok && ticket === navigationTicket) action() })
+  return true
+}

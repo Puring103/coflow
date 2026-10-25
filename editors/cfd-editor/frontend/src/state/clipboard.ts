@@ -1,3 +1,4 @@
+import { collectionShapeForDeclaredType } from '../value/fieldValue'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
 import type { CfdValue } from '../bindings/CfdValue'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
@@ -33,7 +34,13 @@ export function parseCfdClipboard(text: string): string[][] {
   const value = text.trim()
   if (value.length === 0) throw new Error('CFD 剪贴板内容为空')
   const outer = unwrapCfdArray(value)
-  if (outer === null) return [[value]]
+  if (outer === null) {
+    // 多行对象仍是一个 CFD 值，只有顶层行列分隔才属于外部表格。
+    const objectStart = value.indexOf('{')
+    if (objectStart >= 0 && /^[\p{L}\p{N}_:.\s]*$/u.test(value.slice(0, objectStart)) && matchingCfdDelimiter(value, objectStart) === value.length - 1) return [[value]]
+    if (value.startsWith('f"') && skipCfdString(value, 1) === value.length) return [[value]]
+    return (value.includes('\t') || (!value.startsWith('"') && value.includes('\n'))) ? parseTabularText(text) : [[value]]
+  }
   const rowValues = splitCfdValues(outer)
   if (rowValues.length === 0) return [[value]]
   const rowContents = rowValues.map(unwrapCfdArray)
@@ -44,6 +51,27 @@ export function parseCfdClipboard(text: string): string[][] {
   if (rows.some(row => row.length !== width)) {
     throw new Error('CFD 剪贴板矩阵的每一行必须具有相同列数')
   }
+  return rows
+}
+
+/** Excel/文本表格按引号解析，保留单元格中的换行和制表符。 */
+export function parseTabularText(text: string): string[][] {
+  const rows: string[][] = [[]]
+  let cell = '', quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '"') {
+      if (quoted && text[i + 1] === '"') { cell += '"'; i++ }
+      else if (quoted || cell.length === 0) quoted = !quoted
+      else cell += ch
+    } else if (!quoted && (ch === '\t' || ch === '\n' || ch === '\r')) {
+      rows[rows.length - 1].push(cell); cell = ''
+      if (ch !== '\t') { if (ch === '\r' && text[i + 1] === '\n') i++; rows.push([]) }
+    } else cell += ch
+  }
+  if (quoted) throw new Error('表格文本的引号未闭合')
+  if (cell.length || rows[rows.length - 1].length) rows[rows.length - 1].push(cell)
+  else if (rows.length > 1) rows.pop()
   return rows
 }
 
@@ -161,7 +189,10 @@ export function pasteCellAtRecordPath(
 
   let value = field.value
   let annotation = field.annotation
+  writable = writable && !annotation?.read_only
   for (const segment of fieldPath.slice(1)) {
+    writable = writable && !annotation?.read_only
+    while (value.kind === 'option_some') value = value.value
     if (segment.kind === 'field' && value.kind === 'object') {
       const child = value.value.fields[segment.value]
       if (!child) return null
@@ -218,6 +249,11 @@ export async function planPaste(
     return planComplex(source, target, context)
   }
 
+  // 尺寸不匹配时整批拒绝，不能截断到可见边界后部分覆盖。
+  const singleSource = source.length === 1 && source[0].length === 1
+  if (!singleSource && (source.length !== targets.length || source.some((row, index) => row.length !== targets[index]?.length))) {
+    return { ok: false, errors: [{ cell: target, message: '复制区域与目标区域尺寸不匹配，未写入任何数据' }] }
+  }
   const writes: BatchWriteFieldInput[] = []
   const errors: PasteError[] = []
   const broadcast = source.length === 1 && source[0].length === 1
@@ -248,11 +284,12 @@ async function planComplex(
   const annotation = cell.annotation!
   const errors: PasteError[] = []
   let value: CfdValue | undefined
-  if (annotation.item_annotation) {
+  if (isArrayCell(cell)) {
     value = await parseArray(source, cell, context, errors)
   } else if ((annotation.field_order?.length ?? 0) > 0) {
     value = await parseObjectRow(source, cell, annotation, context, errors)
   } else {
+    if (source.length !== 1 || source[0].length !== 1) return { ok: false, errors: [{ cell, message: '该目标只接受一个完整值' }] }
     value = await parseDirect(cell, source[0]?.[0] ?? '', context, errors)
   }
   return value && errors.length === 0
@@ -267,7 +304,7 @@ async function parseForCell(
   errors: PasteError[],
 ): Promise<CfdValue | undefined> {
   if (context.mode === 'append') {
-    if (!cell.annotation?.item_annotation) {
+    if (!isArrayCell(cell)) {
       errors.push({ cell, message: '追加粘贴仅支持 array 目标' })
       return undefined
     }
@@ -280,7 +317,7 @@ async function parseForCell(
     const current = cell.value.kind === 'array' ? cell.value.value : []
     return { kind: 'array', value: [...current, ...incoming.value] }
   }
-  if (cell.annotation?.item_annotation) return parseArray([[text]], cell, context, errors)
+  if (isArrayCell(cell)) return parseArray([[text]], cell, context, errors)
   return parseDirect(cell, text, context, errors)
 }
 
@@ -390,7 +427,8 @@ async function parseDirect(
   context: PasteContext,
   errors: PasteError[],
 ): Promise<CfdValue | undefined> {
-  const parsed = await tryParse(cell, cell.fieldPath, text, context)
+  let parsed = await tryParse(cell, cell.fieldPath, text, context)
+  if (!parsed && cell.annotation?.declared_type === 'string') parsed = await tryParse(cell, cell.fieldPath, JSON.stringify(text), context)
   if (!parsed) errors.push({ cell, message: `无法解析“${text}”` })
   return parsed
 }
@@ -406,6 +444,14 @@ async function tryParse(
   } catch {
     return undefined
   }
+}
+
+function isArrayCell(cell: PasteCell): boolean {
+  let value = cell.value
+  while (value.kind === 'option_some') value = value.value
+  if (value.kind === 'array') return true
+  if (value.kind === 'dict') return false
+  return collectionShapeForDeclaredType(cell.annotation?.declared_type ?? undefined)?.kind === 'array'
 }
 
 function isComplex(annotation: FieldAnnotation | null): boolean {

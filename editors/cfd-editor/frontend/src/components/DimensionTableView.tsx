@@ -315,6 +315,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   // inlineEdit: { row, column, initialText } — overlay syntax editor on that cell
   const [inlineEdit, setInlineEdit] = useState<{ row: number; column: number; initialText: string } | null>(null)
   const clipboardBusyRef = useRef(false)
+  const [clipboardError, setClipboardError] = useState<string | null>(null)
 
   const columnCount = data.variants.length + 2
   const visibleRows = useMemo(() => items.flatMap(item => item.kind === 'row' ? [item.row] : []), [items])
@@ -461,6 +462,9 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
             const pasteRowCount = rows.length
             const targetRowEnd = broadcast ? range.rowEnd : range.rowStart + pasteRowCount - 1
             const targetColEnd = broadcast ? range.colEnd : targetColStart + pasteColCount - 1
+            const oneTarget = range.rowStart === range.rowEnd && targetColStart === range.colEnd
+            if (!broadcast && !oneTarget && (pasteRowCount !== range.rowEnd - range.rowStart + 1 || pasteColCount !== range.colEnd - targetColStart + 1)) throw new Error('复制区域与目标区域尺寸不匹配')
+            if (targetRowEnd >= visibleRows.length || targetColEnd >= columnCount) throw new Error('粘贴区域超出可见范围')
             const writes: Array<() => Promise<void>> = []
             for (let ri = range.rowStart; ri <= Math.min(targetRowEnd, visibleRows.length - 1); ri++) {
               const row = visibleRows[ri]
@@ -471,17 +475,15 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 const sourceText = broadcast ? rows[0][0] : (rows[ri - range.rowStart]?.[ci - targetColStart] ?? '')
                 const state = row.values[variant] ?? { kind: 'missing' as const }
                 const capturedRow = row; const capturedVariant = variant; const capturedState = state
-                writes.push(async () => {
-                  try {
-                    const value = await onParseCellText(capturedRow.coordinate, fieldPathForVariant(capturedRow, capturedVariant), sourceText)
-                    await onWrite(capturedRow, capturedVariant, capturedState, { kind: 'value', value })
-                  } catch {
-                    // skip unparseable cells
-                  }
-                })
+                // 先解析整个区域，任何类型错误均在开始写入前返回。
+                const value = await onParseCellText(capturedRow.coordinate, fieldPathForVariant(capturedRow, capturedVariant), sourceText)
+                writes.push(() => onWrite(capturedRow, capturedVariant, capturedState, { kind: 'value', value }))
               }
             }
-            await Promise.all(writes.map(fn => fn()))
+            for (const write of writes) await write()
+            setClipboardError(null)
+          } catch (error) {
+            setClipboardError(error instanceof Error ? error.message : String(error))
           } finally {
             clipboardBusyRef.current = false
           }
@@ -552,6 +554,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
         select(next, event.shiftKey)
       }}
     >
+      {clipboardError && <div role="alert" className="table-cell-notice">{clipboardError}</div>}
       <table className="dimension-table">
         <thead>
           <tr>
