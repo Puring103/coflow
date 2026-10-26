@@ -26,7 +26,7 @@ import { isEditableCapabilities, isEditableFile } from '../utils/editable'
 import { DataCardNode } from './DataCard'
 import { DiagBadge } from './DiagBadge'
 import { typeColor } from '../utils/typeColor'
-import { ShaderEdge } from './GraphView.edgeComponent'
+import { GraphEdgeViewport, ShaderEdge } from './GraphView.edgeComponent'
 import { boundsOf, getHelperLines, unionBounds, type AlignBounds, type HelperLines } from './GraphView.alignment'
 import {
   defaultEnabledFields,
@@ -397,9 +397,10 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
 
 function geometryHandles(geometry: GraphRowGeometry, outgoingPaths: string[]) {
   return [
-    { id: '__in', type: 'target' as const, position: Position.Left, x: -6, y: geometry.borderTop + geometry.headerHeight / 2 - 6, width: 12, height: 12 },
+    // 与 CSS 的 16px Handle 及 1px 左右边框一致，保持公开几何与实际命中框相同。
+    { id: '__in', type: 'target' as const, position: Position.Left, x: -7, y: geometry.borderTop + geometry.headerHeight / 2 - 8, width: 16, height: 16 },
     ...outgoingPaths.map(path => ({ id: `path-${path}`, type: 'source' as const, position: Position.Right,
-      x: 274, y: geometry.center(path) - 6, width: 12, height: 12 })),
+      x: 271, y: geometry.center(path) - 8, width: 16, height: 16 })),
   ]
 }
 
@@ -771,7 +772,12 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   }>())
 
   const geometryCache = useRef(new Map<string, { fields: GraphNodeView['fields']; key: string; geometry: GraphRowGeometry }>())
-  useEffect(() => { geometryCache.current.clear() }, [viewKey])
+  const geometryView = useRef(viewKey)
+  if (geometryView.current !== viewKey) {
+    geometryCache.current.clear()
+    nodeActions.current.clear()
+    geometryView.current = viewKey
+  }
   const nodeDescriptions: Node[] = useMemo(
     () => (
       visibleNodes.map(n => {
@@ -1541,6 +1547,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           </div>
         ) : (
           <>
+            <GraphEdgeViewport left={-drawingViewport.x / drawingViewport.zoom - 50} top={-drawingViewport.y / drawingViewport.zoom - 50}
+              width={drawingSize.width / drawingViewport.zoom + 100} height={drawingSize.height / drawingViewport.zoom + 100}>
             <ReactFlow
             nodes={rfNodes}
             defaultViewport={viewportRef.current}
@@ -1720,7 +1728,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
                 />
               )}
             </ViewportPortal>
-          </ReactFlow>
+            </ReactFlow>
+            </GraphEdgeViewport>
           {!connectionError && <div className="graph-hint" title="点击节点打开侧边面板，Ctrl+点击跳转到记录视图">
             点击节点查看 · Ctrl+点击跳转
           </div>}

@@ -11,6 +11,9 @@ export interface EdgePoint {
   y: number
 }
 
+export interface EdgeClipRect { left: number; top: number; right: number; bottom: number }
+interface EdgeSegment { from: EdgePoint; to: EdgePoint; control?: EdgePoint }
+
 /** 端口水平伸出的固定长度（flow 坐标）。 */
 export const EDGE_STUB = 28
 /** 起点内角取满圆角，连最接近直线的钝角也会得到轻微圆角（正直线时半径自然为 0）。 */
@@ -47,9 +50,11 @@ function clamp01(value: number): number {
 }
 
 /** 将折线除首尾外的折点按角度做二次贝塞尔圆角，返回 SVG path。 */
-export function roundedPolyline(points: readonly EdgePoint[]): string {
-  if (points.length < 2) return ''
-  let d = `M ${format(points[0].x)} ${format(points[0].y)}`
+function roundedSegments(points: readonly EdgePoint[]): EdgeSegment[] {
+  if (points.length < 2) return []
+  const segments: EdgeSegment[] = []
+  let cursor = points[0]
+  const line = (to: EdgePoint) => { segments.push({ from: cursor, to }); cursor = to }
   for (let index = 1; index < points.length - 1; index++) {
     const previous = points[index - 1]
     const current = points[index]
@@ -63,7 +68,7 @@ export function roundedPolyline(points: readonly EdgePoint[]): string {
     const sharpness = clamp01((CORNER_START - angle) / (CORNER_START - CORNER_MIN))
     const radius = Math.min(inLength, outLength) * MAX_RADIUS_RATIO * sharpness
     if (radius < 0.5) {
-      d += ` L ${format(current.x)} ${format(current.y)}`
+      line(current)
       continue
     }
     const entry = {
@@ -74,12 +79,41 @@ export function roundedPolyline(points: readonly EdgePoint[]): string {
       x: current.x + (outgoing.x / outLength) * radius,
       y: current.y + (outgoing.y / outLength) * radius,
     }
-    d += ` L ${format(entry.x)} ${format(entry.y)}`
-    d += ` Q ${format(current.x)} ${format(current.y)} ${format(exit.x)} ${format(exit.y)}`
+    line(entry)
+    segments.push({ from: entry, control: current, to: exit })
+    cursor = exit
   }
   const last = points[points.length - 1]
-  d += ` L ${format(last.x)} ${format(last.y)}`
-  return d
+  line(last)
+  return segments
+}
+
+function segmentPath(segment: EdgeSegment): string {
+  return segment.control
+    ? `Q ${format(segment.control.x)} ${format(segment.control.y)} ${format(segment.to.x)} ${format(segment.to.y)}`
+    : `L ${format(segment.to.x)} ${format(segment.to.y)}`
+}
+
+export function roundedPolyline(points: readonly EdgePoint[]): string {
+  if (points.length < 2) return ''
+  return `M ${format(points[0].x)} ${format(points[0].y)} ` + roundedSegments(points).map(segmentPath).join(' ')
+}
+
+/** Liang–Barsky 裁剪直线；圆角保持原曲线，仅剔除整个控制包围盒在屏外的段。 */
+function clipSegment(segment: EdgeSegment, rect: EdgeClipRect): EdgeSegment | null {
+  const { from, to, control } = segment
+  if (control) return Math.max(from.x, to.x, control.x) < rect.left || Math.min(from.x, to.x, control.x) > rect.right
+    || Math.max(from.y, to.y, control.y) < rect.top || Math.min(from.y, to.y, control.y) > rect.bottom ? null : segment
+  const dx = to.x - from.x, dy = to.y - from.y
+  let first = 0, last = 1
+  for (const [p, q] of [[-dx, from.x - rect.left], [dx, rect.right - from.x], [-dy, from.y - rect.top], [dy, rect.bottom - from.y]]) {
+    if (p === 0) { if (q < 0) return null; continue }
+    const ratio = q / p
+    if (p < 0) first = Math.max(first, ratio)
+    else last = Math.min(last, ratio)
+    if (first > last) return null
+  }
+  return { from: { x: from.x + dx * first, y: from.y + dy * first }, to: { x: from.x + dx * last, y: from.y + dy * last } }
 }
 
 /**
@@ -92,8 +126,22 @@ export function shaderEdgePath(
   source: EdgePoint,
   target: EdgePoint,
   stub: number = EDGE_STUB,
+  clip?: EdgeClipRect,
 ): string {
   const sourceStub: EdgePoint = { x: source.x + stub, y: source.y }
   const targetStub: EdgePoint = { x: target.x - stub, y: target.y }
-  return roundedPolyline([source, sourceStub, targetStub, target])
+  const points = [source, sourceStub, targetStub, target]
+  if (!clip) return roundedPolyline(points)
+  // 只缩短可见绘制路径，原始几何继续用于命中和重连。屏外长线的滤镜表面因此有界。
+  let path = '', last: EdgePoint | undefined
+  for (const segment of roundedSegments(points)) {
+    const clipped = clipSegment(segment, clip)
+    if (!clipped) continue
+    if (!last || Math.abs(last.x - clipped.from.x) > 0.005 || Math.abs(last.y - clipped.from.y) > 0.005) {
+      path += ` M ${format(clipped.from.x)} ${format(clipped.from.y)}`
+    }
+    path += ` ${segmentPath(clipped)}`
+    last = clipped.to
+  }
+  return path.trim()
 }

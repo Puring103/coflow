@@ -69,10 +69,14 @@ function FlowControl() {
   const nodes = useNodes()
   useEffect(() => { Object.assign(window, { graphFlow: flow }) }, [flow])
   useEffect(() => {
-    if (!params.has('standard') || !nodes.length) return
-    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { void flow.setViewport({ x: 100, y: 100, zoom: 1 }) }) })
+    if (!nodes.length || nodes.some(node => (node.data as { geometry: GraphRowGeometry }).geometry.pendingCount > 0)
+      || (window as Window & { graphStableAt?: number }).graphStableAt !== undefined) return
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => {
+      if (params.has('standard')) void flow.setViewport({ x: 100, y: 100, zoom: 1 })
+      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => Object.assign(window, { graphStableAt: performance.now() })) })
+    }) })
     return () => cancelAnimationFrame(frame)
-  }, [flow, nodes.length])
+  }, [flow, nodes])
   return null
 }
 
@@ -104,6 +108,7 @@ function replaceAt(value: FieldValue, path: FieldPathSegment[], change: (value: 
 function Example() {
   const [data, setData] = useState(graph)
   const [compact, setCompact] = useState(params.has('compact'))
+  const [graphVisible, setGraphVisible] = useState(true)
   const failWrites = useRef(false)
   const update = (record: ReturnType<typeof coordinate>, path: FieldPathSegment[], change: (value: FieldValue) => FieldValue) => {
     setData(previous => {
@@ -134,7 +139,7 @@ function Example() {
     })
   }
   Object.assign(window, { graphHarness: {
-    events, setCompact, getData: () => data, setFailWrites: (fail: boolean) => { failWrites.current = fail },
+    events, setCompact, setGraphVisible, getData: () => data, setFailWrites: (fail: boolean) => { failWrites.current = fail },
     // 输入由测试驱动，组件内部仍使用正常的不可变快照更新。
     setData,
   } })
@@ -142,7 +147,7 @@ function Example() {
     <ShortNameContext.Provider value={{ fields: {} }}>
       <div style={{ width: '100vw', height: '100vh' }}>
         {params.has('reference') && <FullReference />}
-        <GraphView viewKey="graph-performance" graphData={data} filePath="graph.cfd" activeType="Item"
+        {graphVisible && <GraphView viewKey="graph-performance" graphData={data} filePath="graph.cfd" activeType="Item"
           savedPositions={positions} savedCompact={compact} onSaveCompact={setCompact}
           onWriteField={editable ? write : undefined}
           onCollectionEdit={editable ? collection : undefined}
@@ -154,7 +159,7 @@ function Example() {
               diagnostic_severity: null, field_diagnostics: [], fields: payload.kind === 'object' ? Object.entries(payload.value.fields).map(([name, value]) => ({ name, value, missing: false, annotation: annotation('string') })) : [],
             }] }))
           } : undefined}
-          onOpenRecord={(_file, record) => { events.push({ kind: 'open', record }) }} />
+          onOpenRecord={(_file, record) => { events.push({ kind: 'open', record }) }} />}
       </div>
     </ShortNameContext.Provider>
   </ObjectDraftHost></ReactFlowProvider>

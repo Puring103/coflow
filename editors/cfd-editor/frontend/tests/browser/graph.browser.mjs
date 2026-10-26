@@ -42,6 +42,16 @@ test('duplicate targets retain distinct source handles and accurate row anchors 
       return Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2)
     }))
     assert(differences.every(value => value <= 1), JSON.stringify(differences))
+    const boxes = await source.evaluate(root => {
+      const node = window.graphFlow.getInternalNode('Item::source')
+      const zoom = window.graphFlow.getViewport().zoom, origin = root.getBoundingClientRect()
+      return [...root.querySelectorAll('.react-flow__handle')].map(element => {
+        const rect = element.getBoundingClientRect()
+        const box = [...node.internals.handleBounds.source, ...node.internals.handleBounds.target].find(handle => handle.id === element.dataset.handleid)
+        return Math.max(Math.abs((rect.x - origin.x) / zoom - box.x), Math.abs((rect.y - origin.y) / zoom - box.y), Math.abs(rect.width / zoom - box.width), Math.abs(rect.height / zoom - box.height))
+      })
+    })
+    assert.ok(boxes.every(value => value <= 1), JSON.stringify(boxes))
   }
   await page.evaluate(() => window.graphHarness.setCompact(true))
   await settle()
@@ -288,5 +298,36 @@ test('foreign array deletion ends an old draft and rejected writes remain editab
   await editor.blur()
   await page.waitForFunction(() => window.graphHarness.events.length === 2)
   assert.equal(await editor.inputValue(), '重新提交')
+  assert.deepEqual(errors, [])
+})
+
+test('an offscreen append source supports canceling the picker and creating a new connected record', async () => {
+  await openFixture('items=1000&standard&editable&create')
+  const openPicker = async () => {
+    await page.evaluate(() => {
+      const node = window.graphFlow.getNode('Item::source')
+      window.graphFlow.setViewport({ x: 100, y: -node.data.geometry.center('links[+]') + 300, zoom: 1 })
+    })
+    await settle()
+    const box = await page.locator('[data-handleid="path-links[+]"]').boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(800, 450, { steps: 12 })
+    await page.mouse.up()
+    await page.getByRole('combobox', { name: '选择引用目标' }).waitFor()
+  }
+  await openPicker()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('combobox', { name: '选择引用目标' }).count(), 0)
+  assert.equal(await page.evaluate(() => window.graphHarness.events.length), 0)
+  await openPicker()
+  await page.getByRole('option').filter({ hasText: '新建节点' }).click()
+  const dialog = page.getByRole('dialog', { name: '新建记录', exact: true })
+  await dialog.getByRole('textbox', { name: '记录 ID' }).fill('created')
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
+  await page.waitForFunction(() => window.graphHarness.events.some(event => event.kind === 'collection'))
+  const events = await page.evaluate(() => window.graphHarness.events)
+  assert.deepEqual(events.find(event => event.kind === 'insert'), { kind: 'insert', id: 'created', actual_type: 'Item' })
+  assert.deepEqual(events.find(event => event.kind === 'collection').operation, { kind: 'array_append', value: { kind: 'ref', value: 'created' } })
   assert.deepEqual(errors, [])
 })

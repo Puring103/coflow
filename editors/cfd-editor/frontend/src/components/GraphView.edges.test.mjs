@@ -50,3 +50,13 @@ test('rounding never exceeds half of the shortest adjacent segment', () => {
     assert.ok(value >= 0 && value <= 10, `coordinate ${value} escaped the segment bounds`)
   }
 })
+
+test('drawing clips a crossing line while preserving every in-bounds rounded corner', () => {
+  const source = { x: -100000, y: -100000 }, target = { x: 100000, y: 100000 }
+  const clipped = shaderEdgePath(source, target, 28, { left: -100, top: -100, right: 100, bottom: 100 })
+  assert.ok(clipped.startsWith('M ') && clipped.includes(' L '))
+  assert.ok((clipped.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number).every(value => Math.abs(value) <= 100))
+  const a = { x: 0, y: 0 }, b = { x: 120, y: 160 }
+  assert.equal(shaderEdgePath(a, b, 28, { left: -50, top: -50, right: 200, bottom: 200 }), shaderEdgePath(a, b))
+  assert.equal(shaderEdgePath(a, b, 28, { left: 500, top: 500, right: 600, bottom: 600 }), '')
+})
