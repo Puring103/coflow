@@ -39,6 +39,7 @@ import {
   type GraphLayoutResult,
 } from './GraphView.layout'
 import { runGraphLayoutInWorker } from '../graph/layoutWorkerClient'
+import { LatestTaskQueue, SupersededTask } from '../graph/latestTaskQueue'
 import { graphCardFields, relationPorts, relationValue, type RelationPort, type RelationProjection } from './GraphView.relations'
 import { useEditorLookups } from '../utils/editContext'
 import { SearchableSelect } from './SearchableSelect'
@@ -546,6 +547,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   const [layoutError, setLayoutError] = useState<string | null>(null)
   const retainedPositions = useRef(new Map<string, { x: number; y: number }>())
   const layoutEpoch = useRef(0)
+  const layoutQueue = useMemo(() => new LatestTaskQueue<GraphLayoutResult>(), [])
+  useEffect(() => () => layoutQueue.cancel(), [layoutQueue, viewKey])
   const savePositionsRef = useRef(onSavePositions)
   savePositionsRef.current = onSavePositions
   const dragStartPositions = useRef(new Map<string, { x: number; y: number }>())
@@ -566,14 +569,24 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     await savePositionsRef.current?.(serialized, recordHistory)
   }
 
+  function scheduleLayout(saved?: ReadonlyMap<string, { x: number; y: number }>, heights?: ReadonlyMap<string, number>) {
+    return layoutQueue.schedule(current => layoutGraph(graph, enabledFields, activeType, expandedNodes, expandedRows,
+      async input => {
+        if (!current()) throw new SupersededTask()
+        const result = await runGraphLayoutInWorker(input)
+        if (!current()) throw new SupersededTask()
+        return result
+      }, saved, heights))
+  }
+
   async function relayout() {
     const epoch = ++layoutEpoch.current
     const previous = new Map(retainedPositions.current)
     setLayoutBusy(true)
     setLayoutError(null)
     try {
-      const next = await layoutGraph(graph, enabledFields, activeType, expandedNodes, expandedRows, runGraphLayoutInWorker)
-      if (epoch !== layoutEpoch.current) return
+      const next = await scheduleLayout()
+      if (!next || epoch !== layoutEpoch.current) return
       // 明确重新布局时覆盖用户位置；撤销仍可恢复操作前的位置。
       retainedPositions.current = new Map(next.positions)
       setLayout(next)
@@ -596,19 +609,13 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     const epoch = ++layoutEpoch.current
     setLayoutBusy(retainedPositions.current.size === 0 && graph.nodes.length > 0 && enabledFields.size > 0)
     setLayoutError(null)
-    layoutGraph(
-      graph,
-      enabledFields,
-      activeType,
-      expandedNodes,
-      expandedRows,
-      runGraphLayoutInWorker,
+    scheduleLayout(
       retainedPositions.current,
       new Map(reactFlowRef.current?.getNodes().flatMap(node => node.measured?.height
         ? [[node.id, node.measured.height] as const] : []) ?? []),
     )
       .then(next => {
-        if (!cancelled && epoch === layoutEpoch.current) {
+        if (next && !cancelled && epoch === layoutEpoch.current) {
           const changed = [...next.positions].some(([id, point]) => {
             const previous = retainedPositions.current.get(id)
             return !previous || previous.x !== point.x || previous.y !== point.y
@@ -622,14 +629,14 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
         }
       })
       .catch(err => {
-        console.error('Failed to layout graph', err)
-        if (!cancelled) {
+        if (!cancelled && epoch === layoutEpoch.current) {
           setLayoutBusy(false)
           setLayoutError(err instanceof Error ? err.message : String(err))
         }
       })
     return () => {
       cancelled = true
+      layoutQueue.cancel()
       if (epoch === layoutEpoch.current) layoutEpoch.current++
     }
   }, [viewKey, topologySignature, enabledFields, activeType, savedPositions])
