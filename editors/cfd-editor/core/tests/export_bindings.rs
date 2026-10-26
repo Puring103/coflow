@@ -41,6 +41,8 @@ fn export_bindings() {
     export_type::<t::ViewConfig>("ViewConfig");
     export_type::<t::ViewKind>("ViewKind");
     export_type::<t::FileRecords>("FileRecords");
+    export_type::<t::FileRecordsTransfer>("FileRecordsTransfer");
+    export_type::<t::FieldAnnotationDescriptor>("FieldAnnotationDescriptor");
     export_type::<t::ProjectSearchMode>("ProjectSearchMode");
     export_type::<t::ProjectSearchHit>("ProjectSearchHit");
     export_type::<t::ProjectSearchResults>("ProjectSearchResults");

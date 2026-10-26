@@ -14,6 +14,8 @@ mod language;
 mod project;
 mod records;
 mod settings;
+mod transfer;
+pub use transfer::{FieldAnnotationDescriptor, FileRecordsTransfer};
 
 pub use error::{EditorError, EditorErrorKind};
 pub use graph::{GraphData, GraphEdge, GraphNode, GraphQuery, RefTarget};

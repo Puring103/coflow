@@ -60,6 +60,35 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
                 .content_metrics
                 .entry(row.coordinate.actual_type.to_string())
                 .or_default();
+            if let Some(annotation) = &field.annotation {
+                if metrics.declared_type.is_none() {
+                    metrics.declared_type.clone_from(&annotation.declared_type);
+                }
+                if metrics.label.is_none() && metrics.description.is_none() {
+                    metrics.label.clone_from(&annotation.label);
+                    metrics.description.clone_from(&annotation.description);
+                }
+                if metrics.dropdown_kind.is_none() {
+                    metrics.dropdown_kind = if annotation.ref_target_type.is_some() {
+                        Some("ref".into())
+                    } else if annotation.enum_type.is_some() {
+                        Some("enum".into())
+                    } else {
+                        None
+                    };
+                }
+            }
+            if metrics.declared_type.is_none() {
+                metrics.declared_type = Some(inferred_display_type(&field.value));
+            }
+            if metrics.dropdown_kind.is_none() {
+                metrics.dropdown_kind = match &field.value {
+                    coflow_runtime::CfdValue::Ref(_) => Some("ref".into()),
+                    coflow_runtime::CfdValue::Enum(_) => Some("enum".into()),
+                    coflow_runtime::CfdValue::Bool(_) => Some("bool".into()),
+                    _ => None,
+                };
+            }
             // 与前端原估宽规则一致，内容达到上限后停止扫描长字符串。
             if metrics.max_width < 600.0 {
                 let summary = row
@@ -107,6 +136,25 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
         columns,
         records,
         capabilities: session_capabilities_for_file(session, file_path),
+    }
+}
+
+// 无 schema 的额外字段仍提供与值一致的显示类型；Option 只剥去实际包装。
+fn inferred_display_type(value: &coflow_runtime::CfdValue) -> String {
+    use coflow_runtime::CfdValue;
+    match value {
+        CfdValue::OptionSome(inner) => inferred_display_type(inner),
+        CfdValue::OptionNone => "None".into(),
+        CfdValue::Bool(_) => "bool".into(),
+        CfdValue::Int(_) => "int".into(),
+        CfdValue::Float(_) => "float".into(),
+        CfdValue::String(_) => "string".into(),
+        CfdValue::FormattedString(_) => "formatted_string".into(),
+        CfdValue::Enum(value) => value.enum_name.to_string(),
+        CfdValue::Object(value) => value.actual_type().to_string(),
+        CfdValue::Ref(_) => "ref".into(),
+        CfdValue::Array(_) => "array".into(),
+        CfdValue::Dict(_) => "dict".into(),
     }
 }
 

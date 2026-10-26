@@ -9,6 +9,8 @@ import type { DimensionValueState } from '../bindings/DimensionValueState'
 import type { DimensionValueView } from '../bindings/DimensionValueView'
 import type { EnumVariantOption } from '../bindings/EnumVariantOption'
 import type { FileRecords } from '../bindings/FileRecords'
+import type { FileRecordsTransfer } from '../bindings/FileRecordsTransfer'
+import { decodeFileRecords } from '../wire/fileRecordsTransfer'
 import type { GraphData } from '../bindings/GraphData'
 import type { InsertRecordOutcome } from '../bindings/InsertRecordOutcome'
 import type { PluginSchemaType } from '../bindings/PluginSchemaType'
@@ -25,7 +27,7 @@ import type { FieldPathSegment, FieldValue } from '../wire'
 import { invokeCommand } from './tauriEnv'
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
-  return invokeCommand<FileRecords>('get_file_records', { sessionId, filePath })
+  return decodeFileRecords(await invokeCommand<FileRecordsTransfer>('get_file_records', { sessionId, filePath }))
 }
 
 export async function searchRecords(

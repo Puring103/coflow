@@ -9,6 +9,7 @@ use coflow_runtime::{
     dict_key_path_text, value_summary, FieldShapeInfo, ProjectQueries, RecordCoordinate, RecordView,
 };
 use coflow_runtime::{CfdRecord, CfdValue};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -89,11 +90,47 @@ pub struct WireContext<'a> {
     pub queries: ProjectQueries<'a>,
     pub diagnostics: &'a Diagnostics,
     pub shapes: &'a ShapeCache,
+    annotations: RefCell<HashMap<(usize, AnnotationShape), Arc<FieldAnnotation>>>,
+}
+
+/// 只记录影响注解的值结构；文本、数字等业务内容不参与 schema 投影缓存键。
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum AnnotationShape {
+    Scalar,
+    Some(Box<Self>),
+    Enum(i64),
+    Object(String, Vec<(String, Self)>),
+    Array(Vec<Self>),
+    Dict(Vec<(String, Self)>),
+}
+impl AnnotationShape {
+    fn of(value: &CfdValue) -> Self {
+        match value {
+            CfdValue::OptionSome(inner) => Self::Some(Box::new(Self::of(inner))),
+            CfdValue::Enum(value) => Self::Enum(value.value),
+            CfdValue::Object(object) => Self::Object(
+                object.actual_type().to_string(),
+                object
+                    .fields()
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), Self::of(value)))
+                    .collect(),
+            ),
+            CfdValue::Array(items) => Self::Array(items.iter().map(Self::of).collect()),
+            CfdValue::Dict(items) => Self::Dict(
+                items
+                    .iter()
+                    .map(|(key, value)| (dict_key_path_text(key), Self::of(value)))
+                    .collect(),
+            ),
+            _ => Self::Scalar,
+        }
+    }
 }
 
 impl<'a> WireContext<'a> {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         queries: ProjectQueries<'a>,
         diagnostics: &'a Diagnostics,
         shapes: &'a ShapeCache,
@@ -102,6 +139,7 @@ impl<'a> WireContext<'a> {
             queries,
             diagnostics,
             shapes,
+            annotations: RefCell::new(HashMap::new()),
         }
     }
 
@@ -240,8 +278,17 @@ fn build_annotation(
     field_name: &str,
     value: &CfdValue,
     ctx: &WireContext<'_>,
-) -> Option<FieldAnnotation> {
+) -> Option<Arc<FieldAnnotation>> {
     let declared_shape = ctx.field_shape(host.actual_type(), field_name);
+    let key = (
+        declared_shape
+            .as_ref()
+            .map_or(0, |shape| Arc::as_ptr(shape) as usize),
+        AnnotationShape::of(value),
+    );
+    if let Some(annotation) = ctx.annotations.borrow().get(&key) {
+        return Some(annotation.clone());
+    }
     let annotation = annotation_for_value(value, ctx, declared_shape.as_deref());
     // Synthesized dimension records expose a `default` slot that mirrors the
     // source record's value. Writing into it isn't blocked at the engine
@@ -250,6 +297,8 @@ fn build_annotation(
     if annotation.is_empty() {
         None
     } else {
+        let annotation = Arc::new(annotation);
+        ctx.annotations.borrow_mut().insert(key, annotation.clone());
         Some(annotation)
     }
 }

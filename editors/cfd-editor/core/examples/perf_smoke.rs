@@ -14,7 +14,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout)]
 
-use cfd_editor_core::editor::{GraphQuery, SessionStore};
+use cfd_editor_core::editor::{FileRecordsTransfer, GraphQuery, SessionStore};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
@@ -134,6 +134,26 @@ fn main() {
             format_duration(times[samples / 2]),
             format_duration(times[(samples * 95 / 100).min(samples - 1)])
         );
+    }
+    // 同一快照比较完整注解与共享描述的传输成本，构建和序列化分别计时。
+    let (plain_json, plain_time) =
+        timed(|| serde_json::to_vec(&records).expect("serialize snapshot"));
+    let (transfer, pack_time) = timed(|| FileRecordsTransfer::from(records));
+    let (transfer_json, transfer_time) =
+        timed(|| serde_json::to_vec(&transfer).expect("serialize transfer"));
+    println!(
+        "snapshot transport      : {}",
+        serde_json::json!({
+            "plain_bytes": plain_json.len(), "transfer_bytes": transfer_json.len(),
+            "descriptors": transfer.annotations.len(), "plain_serialize_ms": plain_time.as_secs_f64() * 1000.0,
+            "pack_ms": pack_time.as_secs_f64() * 1000.0, "transfer_serialize_ms": transfer_time.as_secs_f64() * 1000.0,
+        })
+    );
+    if let Some(output) = std::env::var_os("PERF_WIRE_OUTPUT") {
+        let output = PathBuf::from(output);
+        fs::write(output.with_extension("plain.json"), plain_json).expect("write plain snapshot");
+        fs::write(output.with_extension("transfer.json"), transfer_json)
+            .expect("write shared snapshot");
     }
     if std::env::var_os("PERF_SNAPSHOT_ONLY").is_some() {
         if !config.keep {

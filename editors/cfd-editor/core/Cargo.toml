@@ -19,7 +19,7 @@ coflow-lsp = { path = "../../../crates/coflow-lsp" }
 coflow-runtime = { path = "../../../crates/coflow-runtime" }
 notify = "8"
 parking_lot = "0.12"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 sha2 = "0.10"
 ts-rs = { version = "10", optional = true }

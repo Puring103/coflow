@@ -4,6 +4,7 @@ pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{FlatDiagnostic, WriterCapabilities};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
 
@@ -77,6 +78,11 @@ pub struct RecordColumn {
 pub struct ColumnContentMetrics {
     pub max_width: f64,
     pub has_complex_value: bool,
+    /// 列展示信息在行构建时按实际类型聚合，宿主不再反复扫描字段注解。
+    pub declared_type: Option<String>,
+    pub label: Option<String>,
+    pub description: Option<String>,
+    pub dropdown_kind: Option<String>,
 }
 
 /// One top-level record's view inside a file.
@@ -134,7 +140,7 @@ pub struct FieldCell {
     /// until the user commits it.
     pub missing: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotation: Option<FieldAnnotation>,
+    pub annotation: Option<Arc<FieldAnnotation>>,
 }
 
 /// Editor-only derived metadata for a single cell.
@@ -152,7 +158,7 @@ pub struct FieldCell {
 ///   can offer a "set to None" option in dropdowns.
 /// - `children`: nested annotations for object fields, array items, or dict
 ///   values. Keys are field names, zero-based array indexes, or dict-key text.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
     feature = "ts-export",

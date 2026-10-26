@@ -6,7 +6,7 @@ use tauri::State;
 use super::run_host_command;
 use cfd_editor_core::editor::{
     BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit, CreateRecordDraft,
-    DeleteRecordOutcome, EditorError, EnumVariantOption, FileRecords, GraphData, GraphQuery,
+    DeleteRecordOutcome, EditorError, EnumVariantOption, FileRecordsTransfer, GraphData, GraphQuery,
     InsertRecordOutcome, PluginSchemaType, ProjectSearchMode, ProjectSearchResults, RecordRow,
     RefTarget, RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome,
     WriteFieldOutcome,
@@ -20,9 +20,9 @@ pub(crate) async fn get_file_records(
     session_id: u32,
     file_path: String,
     host: State<'_, EditorHost>,
-) -> Result<FileRecords, EditorError> {
+) -> Result<FileRecordsTransfer, EditorError> {
     run_host_command(host, move |host| {
-        host.sessions().get_file_records(session_id, &file_path)
+        host.sessions().get_file_records(session_id, &file_path).map(Into::into)
     })
     .await
 }
