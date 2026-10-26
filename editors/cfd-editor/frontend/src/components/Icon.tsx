@@ -17,7 +17,7 @@ interface IconProps {
 
 const PATHS: Record<IconProps['name'], string> = {
   // 引用统一使用同一条矢量 & 轮廓，避免摘要和输入框继承不同字体。
-  'reference': 'M17.5 20 9 11.5C6.5 9 6 7.5 6 6a4 4 0 0 1 8 0c0 2-1 3-4 5l-3 2a4.5 4.5 0 0 0 5 7c3-2 5-5 6-8M16 12h4',
+  'reference': 'M19 21 8 10C4 6 7 3 10 3s5 4 1 7l-4 3c-6 5 0 11 6 7 3-2 4-5 5-8M16 12h4',
   'undo': 'M9 4L4 9l5 5M4 9h10a6 6 0 010 12',
   'redo': 'M15 4l5 5-5 5M20 9H10a6 6 0 000 12',
   // Lucide KeyRound：圆头钥匙。

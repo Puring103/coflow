@@ -1,10 +1,12 @@
+import { TableExpansionContext, TableExpansionStore, useTableExpansion, previewRowCount, previewWindow } from './tableExpansion'
 import { DataFillContext } from '../state/dataFillContext'
+import { observeCellSize } from './cellSizeObserver'
 import { sameFieldValue } from '../state/fieldProjection'
 import { getSharedFlatRowModel } from '../state/flatRowModel'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { finishOffscreenDataEdit } from '../state/editSession'
 import { recordMatchesKeySearch } from '../value/fieldValue'
-import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, memo, createContext, useContext } from 'react'
 
 import { ShortNameColumnMenu } from './ShortNameContext'
 import { shortNameCandidate } from '../state/shortNames'
@@ -108,12 +110,10 @@ import { RecordContextMenu } from './RecordContextMenu'
 import { isNativeEditorTarget, replaceInputText } from '../utils/dom'
 import {
   boundedPasteMatrix,
-  columnDropdownKind,
   elementBounds,
   estimateTextWidth,
   fieldCell,
   fitsAxis,
-  inferredCellType,
   pasteCellFor,
   selectedTopLevelField,
   selectionCellMatrix,
@@ -233,6 +233,7 @@ interface TableContextMenu {
 }
 
 export const TableView = memo(function TableView({ rowHeights, onRowHeightsChange, onExpandCell, data, activeType, readOnly, diagnostics, searchQuery, keyOnlySearch = false, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
+  const expansionStore = useMemo(() => new TableExpansionStore(), [data.file_path, activeType])
   const [localRowHeights, setLocalRowHeights] = useState<Record<string, number>>({})
   useEffect(() => { setLocalRowHeights(Object.fromEntries(Object.entries(rowHeights ?? {}).filter((entry): entry is [string, number] => entry[1] !== undefined))) }, [rowHeights])
   const rowHeightsRef = useRef(localRowHeights)
@@ -267,6 +268,22 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
   const [scrollWidthFloor, setScrollWidthFloor] = useState<number | null>(null)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (selection?.kind !== 'value') return
+    // 选区外点击在捕获阶段清除；详情与菜单仍属于当前编辑上下文。
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('.inspector-panel, .searchable-select-menu, .context-menu, .reference-panel')) return
+      const cell = target.closest('[data-table-cell-key]')
+      if (cell && tableScrollRef.current?.contains(cell)) return
+      onClearSelection?.()
+      const focused = document.activeElement
+      if (focused instanceof HTMLElement && tableScrollRef.current?.contains(focused)) focused.blur()
+    }
+    document.addEventListener('pointerdown', dismiss, true)
+    return () => document.removeEventListener('pointerdown', dismiss, true)
+  }, [selection?.kind, onClearSelection])
   const columnSizingRef = useRef(columnSizing)
   const columnResizeRef = useRef<{
     pointerId: number
@@ -368,10 +385,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     [data.columns, activeType, visibleColumns]
   )
 
-  // Ref to the latest `data` so structural memos below (pill columns,
-  // declared-type map, column widths) can read the current annotations
-  // without listing `data.records` in their deps — that would rebuild the
-  // memo on every edit and cascade into a react-table column-defs replay.
+  // 渲染闭包读取最新快照，列定义身份不随单条记录写入改变。
   const dataForCellsRef = useRef(data)
   dataForCellsRef.current = data
   const rowPresentationRef = useRef(rowPresentation)
@@ -380,15 +394,16 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
   // 列的下拉/胶囊类型（ref/enum/bool）只依赖 schema；同一列集合内计算一次，
   // 供 pill-class 与列宽估算共用，避免两处重复扫描记录。
   const columnKinds = useMemo(
-    () => cachedColumnPrep(data, columnPrepKey('kinds', activeType), () => {
+    () => {
       const kinds: Record<string, 'ref' | 'enum' | 'bool' | null> = {}
       for (const column of data.columns) {
         if (!column.type_names.includes(activeType)) continue
-        kinds[column.name] = columnDropdownKind(data, column.name, activeType)
+        const kind = column.content_metrics[activeType]?.dropdown_kind
+        kinds[column.name] = kind === 'ref' || kind === 'enum' || kind === 'bool' ? kind : null
       }
       return kinds
-    }),
-    [data, activeType],
+    },
+    [data.columns, activeType],
   )
 
   // Which columns render as pill cells (ref/enum). Freezing this once per
@@ -403,58 +418,20 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     return set
   }, [columnKinds])
 
-  // Declared schema type per column, sampled from the first record that
-  // carries an annotation for this field. Different records normally
-  // agree on the declared type for a shared field name; if they don't
-  // (e.g. a rename mid-migration) we show whatever we saw first.
-  // 数据快照变化时重新读取注解；同一快照的列计算由共享 WeakMap 复用。
-  const columnDeclaredTypes = useMemo(
-    () => cachedColumnPrep(data,
-      columnPrepKey('declaredTypes', activeType, allFieldNames.join(',')),
-      () => {
-        const map: Record<string, string> = {}
-        const snapshot = dataForCellsRef.current
-        for (const name of allFieldNames) {
-          for (const record of snapshot.records) {
-            if (recordActualType(record) !== activeType) continue
-            const cell = fieldCell(record, name)
-            const declared = cell?.annotation?.declared_type ?? inferredCellType(cell)
-            if (declared) { map[name] = declared; break }
-          }
-        }
-        return map
-      },
-    ),
-    [data, activeType, allFieldNames],
-  )
+  // 类型和显示信息由后端按实际类型聚合；列准备不再遍历记录。
+  const columnDeclaredTypes = useMemo(() => Object.fromEntries(data.columns
+    .filter(column => column.type_names.includes(activeType))
+    .flatMap(column => {
+      const declared = column.content_metrics[activeType]?.declared_type
+      return declared ? [[column.name, declared]] : []
+    })), [data.columns, activeType])
 
-  // Display metadata follows the same structural lifetime as declared types:
-  // the schema owns it, while record values only carry it to the table.
-  const columnDisplay = useMemo(
-    () => cachedColumnPrep(data,
-      columnPrepKey('display', activeType, allFieldNames.join(',')),
-      () => {
-        const map: Record<string, { label?: string, description?: string }> = {}
-        const snapshot = dataForCellsRef.current
-        for (const name of allFieldNames) {
-          for (const record of snapshot.records) {
-            if (recordActualType(record) !== activeType) continue
-            const annotation = fieldCell(record, name)?.annotation
-            if (!annotation) continue
-            if (annotation.label || annotation.description) {
-              map[name] = {
-                label: annotation.label ?? undefined,
-                description: annotation.description ?? undefined,
-              }
-              break
-            }
-          }
-        }
-        return map
-      },
-    ),
-    [data, activeType, allFieldNames],
-  )
+  const columnDisplay = useMemo(() => Object.fromEntries(data.columns
+    .filter(column => column.type_names.includes(activeType))
+    .map(column => {
+      const metadata = column.content_metrics[activeType]
+      return [column.name, { label: metadata?.label ?? undefined, description: metadata?.description ?? undefined }]
+    })), [data.columns, activeType])
 
   // Compute column widths once per (file, activeType, column set) and freeze
   // them for the session. Recomputing on every `data.records` update meant a
@@ -462,7 +439,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
   // and snap the whole column to a new width — visible as jitter. Editing a
   // value shouldn't reflow the layout; the user can drag-resize if a newly
   // added cell needs more room.
-  const columnStructureKey = JSON.stringify([allFieldNames, columnKinds, columnDeclaredTypes, columnDisplay])
+  const columnStructureKey = useMemo(() => JSON.stringify([allFieldNames, columnKinds, columnDeclaredTypes, columnDisplay]), [allFieldNames, columnKinds, columnDeclaredTypes, columnDisplay])
   const columnSizeHints = useMemo(
     () => cachedColumnPrep(data, columnPrepKey('sizeHints', activeType, allFieldNames.join(',')), () => {
       const snapshot = dataForCellsRef.current
@@ -484,6 +461,8 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
         keyWidth = Math.max(keyWidth, measureMono(recordId(record)) + PLAIN_CHROME + BADGE_ROOM + 18 /* 拖动手柄与间距 */)
+        // 已达到自动列宽上限，后续记录不再影响布局。
+        if (keyWidth >= 500) break
       }
       const KEY_MAX = 500
       const hints: Record<string, number> = { id: Math.min(KEY_MAX, Math.max(MIN, Math.ceil(keyWidth))) }
@@ -819,34 +798,57 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     onDropRecordIntoGroup,
     onDropRecordIntoUngrouped,
   })
-  // 横向仅挂载视口附近的标量编辑器；保留单元格几何与复杂值行高。
+  // 列宽前缀只在布局改变时重建；滚动仅二分定位，跨越列边界时才更新挂载集合。
   const pluginRegistry = usePluginRegistry()
-  const pluginCellTypes = new Set(pluginRegistry.presentations.filter(item => item.slot === 'cell').flatMap(item => item.types))
-  const [horizontalViewport, setHorizontalViewport] = useState({ left: 0, width: 880 })
+  const pluginCellTypes = useMemo(() => new Set(pluginRegistry.presentations.filter(item => item.slot === 'cell').flatMap(item => item.types)), [pluginRegistry])
+  const horizontalColumns = table.getVisibleLeafColumns()
+  const columnOffsets = useMemo(() => {
+    const offsets = [0]
+    horizontalColumns.forEach(column => offsets.push(offsets[offsets.length - 1] + column.getSize() * tableZoom))
+    return offsets
+  }, [horizontalColumns, columnSizing, tableZoom])
+  const [horizontalRange, setHorizontalRange] = useState({ start: 0, end: 6 })
   useEffect(() => {
     const element = tableScrollRef.current
     if (!element) return
-    const update = () => setHorizontalViewport(current => {
-      const next = { left: element.scrollLeft, width: element.clientWidth }
-      return current.left === next.left && current.width === next.width ? current : next
-    })
+    const boundary = (position: number) => {
+      let low = 0, high = columnOffsets.length
+      while (low < high) {
+        const middle = (low + high) >>> 1
+        if (columnOffsets[middle] <= position) low = middle + 1
+        else high = middle
+      }
+      return low
+    }
+    const update = () => {
+      const start = Math.max(0, boundary(element.scrollLeft - 160) - 1)
+      const end = Math.min(horizontalColumns.length, boundary(element.scrollLeft + element.clientWidth + 160))
+      setHorizontalRange(current => current.start === start && current.end === end ? current : { start, end })
+    }
     update()
     const observer = new ResizeObserver(update)
     observer.observe(element)
     element.addEventListener('scroll', update, { passive: true })
     return () => { observer.disconnect(); element.removeEventListener('scroll', update) }
-  }, [])
+  }, [columnOffsets, horizontalColumns])
   const mountedColumnIds = new Set<string>(['id'])
-  let columnOffset = 0
-  for (const column of table.getVisibleLeafColumns()) {
-    const width = column.getSize() * tableZoom
-    if (columnOffset + width >= horizontalViewport.left - 160 && columnOffset <= horizontalViewport.left + horizontalViewport.width + 160) mountedColumnIds.add(column.id)
-    columnOffset += width
+  for (let index = horizontalRange.start; index < horizontalRange.end; index++) {
+    if (horizontalColumns[index]) mountedColumnIds.add(horizontalColumns[index].id)
   }
   // 活动单元格保持挂载，横向滚动不丢草稿，键盘导航能直接进入目标编辑器。
   if (selection?.kind === 'value') {
     const field = selectedTopLevelField(selection.fieldPath)
     if (field) mountedColumnIds.add(field)
+  }
+  // 列窗口及占位区间属于布局，不随记录变化；整张表共用一次分段结果。
+  const columnRuns: { start: number; end: number; mounted: boolean; width: number }[] = []
+  for (let index = 0; index < horizontalColumns.length;) {
+    const start = index
+    const needsContent = (position: number) => mountedColumnIds.has(horizontalColumns[position].id)
+      || !!rowPresentation || pluginCellTypes.has(columnDeclaredTypes[horizontalColumns[position].id] ?? '')
+    const mounted = needsContent(index++)
+    if (!mounted) while (index < horizontalColumns.length && !needsContent(index)) index++
+    columnRuns.push({ start, end: index, mounted, width: (columnOffsets[index] - columnOffsets[start]) / tableZoom })
   }
   // virtual-core 将 getItemKey 身份纳入测量缓存键；滚动重渲染不能使十万行测量全部失效。
   // 排序、过滤、分组改变 displayItems 时才更新函数，继续正确失效旧布局。
@@ -1566,16 +1568,24 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                       })
                     }}
                   >
-                    {row.getVisibleCells().map((cell, index, cells) => {
-                      const needsContent = (candidate: typeof cell) => mountedColumnIds.has(candidate.column.id)
-                        || isComplexValue(fieldCell(row.original, candidate.column.id)?.value)
-                        || !!rowPresentation || pluginCellTypes.has(columnDeclaredTypes[candidate.column.id] ?? '')
+                    {columnRuns.map(run => {
+                      const cells = row.getVisibleCells(), cell = cells[run.start]
                       // 连续屏外列合并成一个占位单元格，保留列宽并降低 DOM 与布局成本。
-                      if (!needsContent(cell)) {
-                        if (index > 0 && !needsContent(cells[index - 1])) return null
-                        let end = index, width = 0
-                        while (end < cells.length && !needsContent(cells[end])) width += cells[end++].column.getSize()
-                        return <td key={`spacer:${cell.id}`} colSpan={end - index} style={{ width }} aria-hidden />
+                      if (!run.mounted) {
+                        let height = 0
+                        const id = coordinateId(row.original.coordinate)
+                        const previewHeight = (localRowHeights[id] ?? 132) - 12
+                        for (let index = run.start; index < run.end && height < previewHeight; index++) {
+                          const candidate = cells[index]
+                          // 高度达到预览上限后无需再读取其他屏外字段。
+                          const field = fieldCell(row.original, candidate.column.id)
+                          if (field && isComplexValue(presentationValue(field.value))) {
+                            const rows = previewWindow(field.value, field.annotation, expansionStore.get(id), candidate.column.id, Math.ceil(previewHeight / 28)).rows
+                            height = Math.max(height, Math.min(previewHeight, rows * 28))
+                          }
+                        }
+                        // 区间宽度复用列前缀，不在每条记录内重复累加列宽。
+                        return <td key={`spacer:${cell.id}`} colSpan={run.end - run.start} style={{ width: run.width }} aria-hidden><div style={{ height }} /></td>
                       }
                       const fieldPath = cell.column.id === 'id'
                         ? null
@@ -1666,10 +1676,32 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                             }
                           }}
                         >
-                          <TableCellContent cell={cell} />
+                          <TableExpansionContext.Provider value={expansionStore}><TablePreviewRows.Provider value={selected ? undefined : Math.max(1, Math.ceil(((localRowHeights[coordinateId(row.original.coordinate)] ?? 132) - 12) / 28) + 1)}>
+                            <TableCellContent cell={cell} diagnostics={diagIndex} query={highlightQueryRef.current} syntaxEdit={syntaxEdit} rowPresentation={rowPresentation} writeField={onWriteField} renameRecord={onRenameRecord} diagnosticClick={onDiagnosticBadgeClick} expandCell={onExpandCell} />
+                          </TablePreviewRows.Provider></TableExpansionContext.Provider>
                           <div className="table-row-resizer" role="separator" aria-orientation="horizontal" aria-label="调整行高" tabIndex={0}
                             onMouseDown={event => event.stopPropagation()}
-                            onDoubleClick={event => { event.stopPropagation(); const contentHeight = Math.max(...[...event.currentTarget.closest('tr')!.querySelectorAll<HTMLElement>('.cell-complex-content, .cell-string-preview')].map(element => { if (!element.classList.contains('cell-string-preview')) return element.scrollHeight; const range = document.createRange(); range.selectNodeContents(element); return range.getBoundingClientRect().height }), 20); resizeRecordRow(coordinateId(row.original.coordinate), contentHeight + 12, true) }}
+                            onDoubleClick={event => {
+                              event.stopPropagation()
+                              const id = coordinateId(row.original.coordinate)
+                              // 仅用户请求适配时遍历完整展开树；包含当前屏外的可见列。
+                              let contentHeight = 20
+                              for (const column of horizontalColumns) {
+                                const field = fieldCell(row.original, column.id)
+                                if (field && isComplexValue(presentationValue(field.value))) contentHeight = Math.max(contentHeight,
+                                  previewRowCount(field.value, field.annotation, expansionStore.get(id), column.id) * 28)
+                              }
+                              for (const element of event.currentTarget.closest('tr')!.querySelectorAll<HTMLElement>('.cell-complex-content, .cell-string-preview')) {
+                                if (!element.classList.contains('cell-string-preview')) {
+                                  // 自定义展示保留真实布局测量；内置树由完整展开行数计算。
+                                  if (element.querySelector('.plugin-cell-presentation')) contentHeight = Math.max(contentHeight, element.scrollHeight)
+                                } else {
+                                  const range = document.createRange(); range.selectNodeContents(element)
+                                  contentHeight = Math.max(contentHeight, range.getBoundingClientRect().height / tableZoom)
+                                }
+                              }
+                              resizeRecordRow(id, contentHeight + 12, true)
+                            }}
                             onKeyDown={event => { if (event.key === 'Home') { event.preventDefault(); resizeRecordRow(coordinateId(row.original.coordinate), null, true) } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); resizeRecordRow(coordinateId(row.original.coordinate), (localRowHeights[coordinateId(row.original.coordinate)] ?? 132) + (event.key === 'ArrowDown' ? 20 : -20), true) } }}
                             onContextMenu={event => { event.preventDefault(); event.stopPropagation(); resizeRecordRow(coordinateId(row.original.coordinate), null, true) }}
                             title="拖动调整行高；双击适配内容；右键恢复默认"
@@ -1872,10 +1904,21 @@ interface EditableCellProps {
 }
 
 // 列定义随快照刷新时渲染函数身份会变化；固定组件边界才能保留输入节点、光标和草稿。
-function TableCellContent({ cell }: { cell: Cell<RecordRow, unknown> }) {
+const TablePreviewRows = createContext<number | undefined>(undefined)
+const TableCellContent = memo(function TableCellContent({ cell }: {
+  cell: Cell<RecordRow, unknown>
+  diagnostics: unknown
+  query: string
+  syntaxEdit: unknown
+  rowPresentation: unknown
+  writeField: unknown
+  renameRecord: unknown
+  diagnosticClick: unknown
+  expandCell: unknown
+}) {
   const render = cell.column.columnDef.cell
   return typeof render === 'function' ? render(cell.getContext()) : render ?? null
-}
+})
 
 export function EditableCell(props: EditableCellProps) {
   const { filePath, coordinate, fieldPath, value, declaredType } = props
@@ -1885,9 +1928,7 @@ export function EditableCell(props: EditableCellProps) {
   useEffect(() => {
     const viewport = viewportRef.current, content = contentRef.current
     if (!viewport || !content) return
-    const observer = new ResizeObserver(() => setOverflow(content.scrollHeight > viewport.clientHeight + 1))
-    observer.observe(viewport); observer.observe(content)
-    return () => observer.disconnect()
+    return observeCellSize([viewport, content], () => setOverflow(content.scrollHeight > viewport.clientHeight + 1))
   }, [value])
   const identity = currentPluginIdentity()
   const presentation = usePluginPresentation('cell', declaredType ?? '')
@@ -1922,8 +1963,10 @@ export function EditableCell(props: EditableCellProps) {
 }
 
 function EditableCellBuiltIn({
-  value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished, fieldPath, onEdit, expandedPaths, onRowToggle,
+  coordinate, value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished, fieldPath, onEdit, expandedPaths, onRowToggle,
 }: EditableCellProps) {
+  const previewRows = useContext(TablePreviewRows)
+  const expansion = useTableExpansion(coordinateId(coordinate))
   const shownValue = presentationValue(value)
   const commitValue = onCommit
     ? (next: FieldValue) => onCommit(replacePresentationValue(value, next))
@@ -1991,11 +2034,12 @@ function EditableCellBuiltIn({
   return (
     <div className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}>
       <DataCardCompact
+        previewRows={previewRows}
         value={shownValue}
         fieldPath={fieldPath}
         pathPrefix={fieldPath.map(segment => String(segment.value)).join('.')}
-        expandedPaths={expandedPaths}
-        onRowToggle={onRowToggle}
+        expandedPaths={expandedPaths ?? expansion.paths}
+        onRowToggle={onRowToggle ?? expansion.toggle}
         onEdit={editable ? onEdit : undefined}
         annotation={annotation}
         refTargetType={refTargetType}

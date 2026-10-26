@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { EditorLookupContext } from '../utils/editContext'
 import { Icon } from './Icon'
+import { referenceProjection } from '../state/shortNames'
 
 export const ShortNameContext = createContext<{
   fields: { [type: string]: string | undefined }
@@ -56,11 +57,12 @@ export function useReferenceShortName(targetType: string | undefined, key: strin
     let active = true
     void lookups.loadRefTargets(targetType).then(result => {
       if (active && result.ok) setResolved({ lookups, type: targetType, key,
-        name: result.value.find(target => target.coordinate.id === key)?.short_name ?? undefined })
+        name: referenceProjection(result.value).byId.get(key)?.short_name ?? undefined })
     })
     return () => { active = false }
   }, [lookups, targetType, key])
   // 同一会话刷新期间保留旧名称，避免每次字段保存都先回退为 key 再闪回名称。
   if (resolved?.lookups?.sessionId === lookups?.sessionId && resolved?.type === targetType && resolved?.key === key) return resolved.name
-  return targetType ? lookups?.cachedRefTargets(targetType)?.find(target => target.coordinate.id === key)?.short_name ?? undefined : undefined
+  const cached = targetType ? lookups?.cachedRefTargets(targetType) : undefined
+  return cached ? referenceProjection(cached).byId.get(key)?.short_name ?? undefined : undefined
 }

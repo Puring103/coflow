@@ -46,16 +46,33 @@ interface MenuPosition {
   opensUpward: boolean
 }
 
+const optionIndexes = new WeakMap<readonly SearchableOption[], Map<string, number>>()
+const optionSearchTexts = new WeakMap<readonly SearchableOption[], string[]>()
+function optionIndex(options: readonly SearchableOption[]): Map<string, number> {
+  let index = optionIndexes.get(options)
+  if (!index) {
+    index = new Map()
+    options.forEach((option, position) => { if (!index!.has(option.value)) index!.set(option.value, position) })
+    optionIndexes.set(options, index)
+  }
+  return index
+}
+
 export function filterSearchableOptions(
   options: readonly SearchableOption[],
   query: string,
-): SearchableOption[] {
+): readonly SearchableOption[] {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
-  if (terms.length === 0) return [...options]
+  if (terms.length === 0) return options
 
-  return options.filter(option => {
+  let texts = optionSearchTexts.get(options)
+  if (!texts) {
+    texts = options.map(option => `${option.selectedLabel ?? ''} ${option.label ?? ''} ${option.value}`.toLocaleLowerCase())
+    optionSearchTexts.set(options, texts)
+  }
+  return options.filter((_option, index) => {
     // 缩略显示名与完整标签、记录 ID 都参与搜索。
-    const searchableText = `${option.selectedLabel ?? ''} ${option.label ?? ''} ${option.value}`.toLocaleLowerCase()
+    const searchableText = texts![index]
     return terms.every(term => searchableText.includes(term))
   })
 }
@@ -94,12 +111,15 @@ export function SearchableSelect({
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [menuScrollTop, setMenuScrollTop] = useState(0)
 
   const filteredOptions = useMemo(
-    () => filterSearchableOptions(options, query),
-    [options, query],
+    () => open ? filterSearchableOptions(options, query) : options,
+    [options, query, open],
   )
-  const selectedOption = options.find(option => option.value === value)
+  const selectedIndex = optionIndex(options).get(value) ?? -1
+  const selectedOption = options[selectedIndex]
   const displayValue = selectedOption?.selectedLabel ?? selectedOption?.label ?? selectedOption?.value ?? value
   const activeOption = filteredOptions[activeIndex]
   const activeLabel = activeOption?.label ?? activeOption?.value
@@ -133,10 +153,10 @@ export function SearchableSelect({
   const openMenu = useCallback(() => {
     exitNotifiedRef.current = false
     setQuery('')
-    const selectedIndex = options.findIndex(option => option.value === value)
     setActiveIndex(Math.max(0, selectedIndex))
+    setMenuScrollTop(Math.max(0, selectedIndex - 3) * 28)
     setOpen(true)
-  }, [options, value])
+  }, [selectedIndex])
 
   const notifyExit = useCallback(() => {
     if (exitNotifiedRef.current) return
@@ -151,6 +171,27 @@ export function SearchableSelect({
   }, [notifyExit])
 
   const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues])
+
+  useEffect(() => {
+    if (!open) return
+    // 捕获外部交互，避免面板或单元格阻止冒泡、保留焦点时遗留下拉。
+    const dismiss = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (inputRef.current?.parentElement?.contains(target)
+        || document.getElementById(listboxId)?.contains(target)) return
+      closeMenu(true)
+    }
+    const blur = () => closeMenu(true)
+    document.addEventListener('pointerdown', dismiss, true)
+    document.addEventListener('focusin', dismiss, true)
+    window.addEventListener('blur', blur)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true)
+      document.removeEventListener('focusin', dismiss, true)
+      window.removeEventListener('blur', blur)
+    }
+  }, [open, closeMenu, listboxId])
 
   const chooseOption = useCallback((option: SearchableOption) => {
     if (onToggle) {
@@ -206,9 +247,18 @@ export function SearchableSelect({
 
   useEffect(() => {
     if (!open || !activeOption) return
+    if (filteredOptions.length > 100) {
+      const menu = menuRef.current
+      if (!menu) return
+      const top = activeIndex * 28
+      if (top < menu.scrollTop) menu.scrollTop = top
+      else if (top + 28 > menu.scrollTop + menu.clientHeight - 8) menu.scrollTop = top + 36 - menu.clientHeight
+      setMenuScrollTop(menu.scrollTop)
+      return
+    }
     document.getElementById(`${listboxId}-option-${activeIndex}`)
       ?.scrollIntoView({ block: 'nearest' })
-  }, [activeIndex, activeOption, listboxId, open])
+  }, [activeIndex, activeOption, listboxId, open, menuPosition, filteredOptions.length])
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
@@ -238,8 +288,14 @@ export function SearchableSelect({
     }
   }
 
+  // 长列表只挂载视口与活动项，键盘跳转先滚动再发布窗口，ARIA 身份保持稳定。
+  const virtualMenu = filteredOptions.length > 100
+  const firstOption = virtualMenu ? Math.min(filteredOptions.length - 1, Math.max(0, Math.floor(menuScrollTop / 28) - 4)) : 0
+  const lastOption = virtualMenu ? Math.min(filteredOptions.length, firstOption + 18) : filteredOptions.length
   const menu = open && menuPosition && createPortal(
     <div
+      ref={menuRef}
+      onScroll={event => setMenuScrollTop(event.currentTarget.scrollTop)}
       id={listboxId}
       className="searchable-select-menu"
       role="listbox"
@@ -264,7 +320,10 @@ export function SearchableSelect({
     >
       {filteredOptions.length === 0 ? (
         <div className="searchable-select-empty">无匹配项</div>
-      ) : filteredOptions.map((option, index) => {
+      ) : <>
+      {virtualMenu && <div aria-hidden style={{ height: firstOption * 28, flexShrink: 0 }} />}
+      {filteredOptions.slice(firstOption, lastOption).map((option, offset) => {
+        const index = firstOption + offset
         const selected = onToggle ? selectedSet.has(option.value) : option.value === value
         const active = index === activeIndex
         return (
@@ -274,6 +333,9 @@ export function SearchableSelect({
             type="button"
             className={`searchable-select-option${active ? ' active' : ''}${selected ? ' selected' : ''}`}
             role="option"
+            aria-posinset={index + 1}
+            aria-setsize={filteredOptions.length}
+            style={virtualMenu ? { height: 28 } : undefined}
             aria-selected={selected}
             title={option.description ?? option.label ?? option.value}
             onMouseDown={event => {
@@ -298,13 +360,15 @@ export function SearchableSelect({
           </button>
         )
       })}
+      {virtualMenu && <div aria-hidden style={{ height: (filteredOptions.length - lastOption) * 28, flexShrink: 0 }} />}
+      </>}
     </div>,
     document.body,
   )
 
   return (
     <span className={reference ? "searchable-reference-wrap" : undefined}>
-      {reference && <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={!onPreview} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); onPreview?.() }}><Icon name="reference" size={12} /></button>}
+      {reference && <button type="button" className="reference-open" aria-label="打开引用记录" title="打开引用记录" disabled={!onPreview} onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); closeMenu(); inputRef.current?.blur(); onPreview?.() }}><Icon name="reference" size={12} /></button>}
       <input
         ref={inputRef}
         className={`${className ?? ''} searchable-select${reference ? ' searchable-select-reference' : ''}${open ? ' searchable-select-open' : ''}`.trim()}
@@ -340,8 +404,9 @@ export function SearchableSelect({
         onChange={event => {
           const nextQuery = event.target.value
           setQuery(nextQuery)
+          if (menuRef.current) menuRef.current.scrollTop = 0
+          setMenuScrollTop(0)
           if (nextQuery.trim() === '') {
-            const selectedIndex = options.findIndex(option => option.value === value)
             setActiveIndex(Math.max(0, selectedIndex))
           } else {
             setActiveIndex(0)

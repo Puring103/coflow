@@ -1753,6 +1753,9 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 .table-row:hover td { background: var(--bg-3) !important; }
 
 .table-scroll {
+  /* 将表体控件限制在滚动区域内，避免覆盖并命中外部底栏。 */
+  position: relative;
+  isolation: isolate;
   overflow-anchor: none;
   flex: 1;
   overflow: auto;
@@ -1772,6 +1775,11 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
 }
 .data-table th:last-child {
   border-right: none;
+}
+/* 表体形成独立层叠上下文，行高拖拽条及单元格按钮始终位于固定表头下方。 */
+.data-table tbody {
+  position: relative;
+  z-index: 0;
 }
 .th-sort-btn {
   display: inline-flex;
@@ -5167,3 +5175,9 @@ input.searchable-select.searchable-select-reference,
 .dc-inspector .vc-num, .dc-inspector .numeric-value-input { font-variant-numeric: tabular-nums; }
 
 .dc-summary-list { display: inline-flex; align-items: center; gap: 8px; }
+
+/* 结构摘要与叶子字段共用值区起点；编辑包裹层不再向左偏移预览。 */
+.dc-inspector .dc-row > .dc-row-value { padding-left: 10px; }
+.dc-inspector-compact .dc-row > .dc-row-value { padding-left: 8px; }
+.dc-inspector .dc-row-value-inner.editable { margin-left: 0; padding-left: 0; }
+.dc-inspector .dc-row-value-inner > .dc-input-flat { margin-left: 0; padding-left: 0; }

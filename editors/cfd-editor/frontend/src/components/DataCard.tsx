@@ -1,3 +1,5 @@
+import { observeSummary } from './summaryMeasurement'
+import { previewWindow } from './tableExpansion'
 import { LookupErrorBadge } from './LookupErrorBadge'
 import {
   useState,
@@ -71,7 +73,7 @@ import {
 import { NODE_PEEK_FIELDS } from './DataCard.geometry'
 import { SearchableSelect } from './SearchableSelect'
 import { ShortNameContext, useReferenceShortName } from './ShortNameContext'
-import { recordShortName, shortNameLabel } from '../state/shortNames'
+import { recordShortName, referenceProjection, shortNameLabel } from '../state/shortNames'
 import {
   PluginContributionMount,
   PluginSummaryText,
@@ -198,7 +200,8 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-export function DataCardCompact({ value, refTargetType, annotation, highlightQuery, pathPrefix, fieldPath = [], expandedPaths, onRowToggle, diffChangedPaths, onEdit }: {
+export function DataCardCompact({ value, refTargetType, annotation, highlightQuery, pathPrefix, fieldPath = [], expandedPaths, onRowToggle, diffChangedPaths, onEdit, previewRows }: {
+  previewRows?: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   value: FieldValue
   refTargetType?: string
@@ -211,14 +214,16 @@ export function DataCardCompact({ value, refTargetType, annotation, highlightQue
   diffChangedPaths?: ReadonlySet<string>
 }) {
   // 表格、维度与详情共用字段树，紧凑模式只改变排版密度。
+  const preview = useMemo(() => previewRows === undefined ? null : previewWindow(value, annotation, expandedPaths ?? new Set(), pathPrefix ?? '', previewRows).windows,
+    [value, annotation, expandedPaths, pathPrefix, previewRows])
   return isComplexValue(value) ? (
     <DiffPathCtx.Provider value={diffChangedPaths ?? null}>
       <ControlledExpansionCtx.Provider value={expandedPaths ?? null}>
         <HighlightQueryCtx.Provider value={highlightQuery}>
-          <div className="dc-inspector dc-inspector-compact">
+          <PreviewWindowCtx.Provider value={preview}><div className="dc-inspector dc-inspector-compact">
             <ComplexValueChildren value={value} depth={0} fieldPath={fieldPath} pathKey={pathPrefix}
               valueAnnotation={annotation} onRowToggle={onRowToggle} onEdit={onEdit} />
-          </div>
+          </div></PreviewWindowCtx.Provider>
         </HighlightQueryCtx.Provider>
       </ControlledExpansionCtx.Provider>
     </DiffPathCtx.Provider>
@@ -330,53 +335,26 @@ function structuralSummaryValue(value: FieldValue, annotation?: FieldAnnotation 
 function StructureSummary({ value, annotation, firstValueOnly = false }: { value: FieldValue; annotation?: FieldAnnotation | null; firstValueOnly?: boolean }) {
   const rootRef = useRef<HTMLSpanElement>(null)
   const shown = presentationValue(value)
+  const [limit, setLimit] = useState(8)
   const parts: ReactNode[] = []
   let total = 0
   if (shown.kind === 'object') {
     const fields = objectFieldCells(shown, annotation)
     total = fields.length
-    fields.forEach((field, index) => parts.push(<span className="dc-summary-part" key={field.name}>{!(firstValueOnly && index === 0) && <span className="dc-summary-key">{field.annotation?.label ?? field.name}:</span>} {structuralSummaryValue(field.value, field.annotation)}</span>))
+    fields.slice(0, limit).forEach((field, index) => parts.push(<span className="dc-summary-part" key={field.name}>{!(firstValueOnly && index === 0) && <span className="dc-summary-key">{field.annotation?.label ?? field.name}:</span>} {structuralSummaryValue(field.value, field.annotation)}</span>))
   } else if (shown.kind === 'array') {
     total = shown.value.length
-    shown.value.forEach((item, index) => parts.push(<span className="dc-summary-part" key={index}>{structuralSummaryValue(item, annotationChild(annotation, index) ?? annotationItem(annotation))}</span>))
+    shown.value.slice(0, limit).forEach((item, index) => parts.push(<span className="dc-summary-part" key={index}>{structuralSummaryValue(item, annotationChild(annotation, index) ?? annotationItem(annotation))}</span>))
   } else if (shown.kind === 'dict') {
     total = shown.value.length
-    shown.value.forEach(([key, item]) => parts.push(<span className="dc-summary-part" key={dictKeyPathText(key)}><span className="dc-summary-key">{dictKeyText(key)}:</span> {structuralSummaryValue(item, annotationChild(annotation, dictKeyPathText(key)) ?? annotationItem(annotation))}</span>))
+    shown.value.slice(0, limit).forEach(([key, item]) => parts.push(<span className="dc-summary-part" key={dictKeyPathText(key)}><span className="dc-summary-key">{dictKeyText(key)}:</span> {structuralSummaryValue(item, annotationChild(annotation, dictKeyPathText(key)) ?? annotationItem(annotation))}</span>))
   }
-  // 按实际宽度保留完整片段，预留余项计数的空间；缩放或列宽变化后重新计算。
+  // 分批生成可容纳的前缀，尾部长度直接取集合长度，不挂载整份摘要树。
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root || !total) return
-    const measure = () => {
-      const items = [...root.querySelectorAll<HTMLElement>(':scope > .dc-summary-part')]
-      const rest = root.querySelector<HTMLElement>(':scope > .dc-summary-rest')!
-      items.forEach(item => { item.hidden = false })
-      const widths = items.map(item => item.getBoundingClientRect().width)
-      const gap = parseFloat(getComputedStyle(root).columnGap) || 0
-      const prefix = [0]
-      widths.forEach(width => prefix.push(prefix[prefix.length - 1] + width))
-      let visible = items.length
-      while (visible >= 0) {
-        const remaining = total - visible
-        rest.hidden = remaining === 0
-        rest.textContent = `+${remaining}`
-        const used = prefix[visible]
-          + gap * Math.max(0, visible - 1)
-          + (remaining ? rest.getBoundingClientRect().width + (visible ? gap : 0) : 0)
-        if (used <= root.clientWidth || visible === 0) break
-        visible--
-      }
-      items.forEach((item, index) => { item.hidden = index >= visible })
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(root)
-    // 引用显示名可能异步加载；内容变化后也必须重算，避免旧宽度裁掉胶囊。
-    const mutation = new MutationObserver(measure)
-    root.querySelectorAll('.dc-summary-part').forEach(part => mutation.observe(part, { childList: true, subtree: true, characterData: true }))
-    document.fonts.addEventListener('loadingdone', measure)
-    return () => { observer.disconnect(); mutation.disconnect(); document.fonts.removeEventListener('loadingdone', measure) }
-  }, [value, annotation, firstValueOnly, total])
+    return observeSummary(root, total, (visible, prepared) => setLimit(current => visible === prepared ? Math.min(total, current + 8) : Math.min(current, Math.max(8, visible + 8))))
+  }, [value, annotation, firstValueOnly, total, limit])
   return <span className="dc-business-summary" ref={rootRef}>
     {total ? parts : structuralSummaryValue(shown, annotation)}
     {total > 0 && <span className="dc-summary-rest" hidden={total <= parts.length}>+{Math.max(0, total - parts.length)}</span>}
@@ -384,6 +362,7 @@ function StructureSummary({ value, annotation, firstValueOnly = false }: { value
 }
 const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 const ControlledExpansionCtx = createContext<ReadonlySet<string> | null>(null)
+const PreviewWindowCtx = createContext<ReadonlyMap<string, number> | null>(null)
 const NodeRelationsCtx = createContext<{
   expandedPaths: ReadonlySet<string>
   appendPaths: ReadonlySet<string>
@@ -789,7 +768,7 @@ function FieldRow({
     ?? (shownValue.kind === 'object' ? shownValue.value.actual_type : '')
   const pluginPresentation = usePluginPresentation('inspector', presentationType)
   const pluginPresentationContext = useMemo<PluginPresentationContext | null>(() => (
-    pluginRecord
+    pluginRecord && pluginPresentation?.slot === 'inspector'
       ? {
           identity: pluginRecord.identity,
           filePath: pluginRecord.filePath,
@@ -800,7 +779,7 @@ function FieldRow({
           value: cloneValue(shownValue),
         }
       : null
-  ), [pluginRecord, pathKey, presentationType, shownValue])
+  ), [pluginRecord, pathKey, presentationType, shownValue, pluginPresentation])
   const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
   const optionDepth = optionDepthForDeclaredType(declaredType)
   const optionNoneLayer = optionLayerStates(value, optionDepth).indexOf('none')
@@ -1633,14 +1612,8 @@ export function RefDirectSelect({
 }) {
   const lookups = useEditorLookups()
   const navigation = useEditorNavigation()
-  const [targets, setTargets] = useState<{ key: string; label: string; shortName: string | null }[] | null>(() => (
-    targetType
-      ? lookups.cachedRefTargets(targetType)?.map(target => ({
-        key: target.coordinate.id,
-        label: shortNameLabel(target.coordinate.id, target.short_name),
-        shortName: target.short_name,
-      })) ?? null
-      : null
+  const [targets, setTargets] = useState(() => (
+    targetType ? lookups.cachedRefTargets(targetType) ?? null : null
   ))
   const targetsIdentity = useRef({ sessionId: lookups.sessionId, targetType })
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -1662,21 +1635,13 @@ export function RefDirectSelect({
       && targetsIdentity.current.targetType === targetType
     targetsIdentity.current = { sessionId: lookups.sessionId, targetType }
     // 同一引用域刷新时保留已有选项和输入控件，异步结果到达后原位更新。
-    const cachedTargets = lookups.cachedRefTargets(targetType)?.map(target => ({
-      key: target.coordinate.id,
-      label: shortNameLabel(target.coordinate.id, target.short_name),
-      shortName: target.short_name,
-    }))
+    const cachedTargets = lookups.cachedRefTargets(targetType)
     setTargets(current => cachedTargets ?? (sameTarget ? current : null))
     setLoadError(null)
     lookups.loadRefTargets(targetType).then(r => {
       if (!alive) return
       if (r.ok) {
-        setTargets(r.value.map(target => ({
-          key: target.coordinate.id,
-          label: shortNameLabel(target.coordinate.id, target.short_name),
-          shortName: target.short_name,
-        })))
+        setTargets(r.value)
       } else {
         setTargets(currentTargets => currentTargets ?? [])
         setLoadError(r.error ?? null)
@@ -1695,8 +1660,14 @@ export function RefDirectSelect({
     }
   }
 
+  const projection = targets ? referenceProjection(targets) : null
+  const targetOptions = useMemo(() => {
+    if (!projection) return []
+    const options = nullable ? projection.nullableOptions : projection.options
+    return value.kind === 'ref' && currentKey && !projection.byId.has(currentKey)
+      ? [{ value: currentKey }, ...options] : options
+  }, [projection, nullable, currentKey, value.kind])
   if (targetType && targets !== null && targets.length > 0) {
-    const hasCurrent = value.kind === 'ref' && !!currentKey && targets.some(target => target.key === currentKey)
     const select = (
       <SearchableSelect reference
         className={inputClass}
@@ -1706,11 +1677,7 @@ export function RefDirectSelect({
         ariaLabel="选择引用"
         title={targetType}
         placeholder={value.kind === 'option_none' ? '未设置 · 选择引用…' : '选择引用…'}
-        options={[
-          ...(nullable ? [{ value: NULL_SENTINEL }] : []),
-          ...(value.kind === 'ref' && !hasCurrent && currentKey ? [{ value: currentKey }] : []),
-          ...targets.map(target => ({ value: target.key, label: target.label, selectedLabel: target.shortName ?? target.key })),
-        ]}
+        options={targetOptions}
         onCommit={commit}
         onExit={onExit}
         onPreview={value.kind === 'ref' && targetType && navigation ? () => navigation.openReference(targetType, currentKey) : undefined}
@@ -1922,7 +1889,7 @@ function ExpandableRow({
   const summaryType = declaredType ?? concreteType ?? ''
   const summaryPresentation = usePluginPresentation('summary', summaryType)
   const summaryContext = useMemo<PluginPresentationContext | null>(() => (
-    pluginRecord
+    pluginRecord && !expanded && !summarizeValue && summaryPresentation?.slot === 'summary'
       ? {
           identity: pluginRecord.identity,
           filePath: pluginRecord.filePath,
@@ -1933,7 +1900,7 @@ function ExpandableRow({
           value: cloneValue(value),
         }
       : null
-  ), [pluginRecord, pathKey, summaryType, value])
+  ), [pluginRecord, pathKey, summaryType, value, expanded, summarizeValue, summaryPresentation])
 
   function toggle() {
     if (fixedExpanded) return
@@ -2071,14 +2038,17 @@ function ComplexValueChildren({
   onRowToggle?: (path: string, expanded: boolean) => void
   valueAnnotation?: FieldAnnotation | null
 }) {
+  const preview = useContext(PreviewWindowCtx)
   if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
   if ((value.kind === 'array' || value.kind === 'dict') && value.value.length === 0) {
     return <span className="dc-empty-collection">{value.kind === 'array' ? '空数组' : '空字典'}</span>
   }
+  const total = value.kind === 'object' ? objectFieldCells(value, valueAnnotation).length : value.value.length
+  const limit = Math.min(total, preview ? preview.get(pathKey ?? '') ?? 0 : total)
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
-      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).map((fc) => {
+      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).slice(0, limit).map((fc) => {
         const annotation = childAnnotation(fc.name) ?? fc.annotation
         return (
           <FieldRow
@@ -2105,6 +2075,7 @@ function ComplexValueChildren({
       {value.kind === 'array' && (
         <ArrayItems
           container={value}
+          maxRows={limit}
           depth={depth}
           fieldPath={fieldPath}
           pathKey={pathKey}
@@ -2115,7 +2086,7 @@ function ComplexValueChildren({
           itemAnnotations={valueAnnotation?.children}
         />
       )}
-      {value.kind === 'dict' && value.value.map(([key, item]) => {
+      {value.kind === 'dict' && value.value.slice(0, limit).map(([key, item]) => {
         const annotation = childAnnotation(dictKeyPathText(key)) ?? annotationItem(valueAnnotation)
         return (
           <FieldRow
@@ -2143,6 +2114,8 @@ function ComplexValueChildren({
           />
         )
       })}
+      {/* 省略尾部只标记溢出；选中后恢复完整树，由浏览器计算扩展表面。 */}
+      {total > limit && <div aria-hidden className="dc-preview-spacer" style={{ height: 28 }} />}
     </>
   )
 }
@@ -2193,6 +2166,7 @@ function dictKeyPathText(key: DictKey): string {
  *  Object types are not covered — they would need per-field defaults. */
 function ArrayItems({
   container,
+  maxRows,
   depth,
   fieldPath,
   pathKey,
@@ -2203,6 +2177,7 @@ function ArrayItems({
   itemAnnotations,
 }: {
   container: FieldValue & { kind: 'array' }
+  maxRows?: number
   depth: number
   fieldPath: FieldPathSegment[]
   pathKey?: string
@@ -2227,7 +2202,7 @@ function ArrayItems({
 
   return (
     <>
-      {container.value.map((item, i) => {
+      {container.value.slice(0, maxRows ?? container.value.length).map((item, i) => {
         const itemAnnotation = itemAnnotations?.[String(i)] ?? itemTemplate
         const canCollectionEdit = !!onCollectionEdit
         const dragHandle = canCollectionEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined

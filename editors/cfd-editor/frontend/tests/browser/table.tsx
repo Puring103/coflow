@@ -1,4 +1,5 @@
 import { DataCardCompact, EnumDirectSelect } from '../../src/components/DataCard'
+import { SearchableSelect } from '../../src/components/SearchableSelect'
 import type { FieldValue } from '../../src/wire'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -40,6 +41,7 @@ const fixture = {
 }
 
 const control = { writes: 0, batches: 0, fail: false, delay: 40, selectionEvents: [] as string[], writtenKinds: [] as string[] }
+const largeOptions = Array.from({ length: 10000 }, (_, index) => ({ value: `option_${index}`, label: `候选 ${index}` }))
 Object.assign(window, { tableTest: control })
 const lookupBackend = createMockLookups(() => MOCK_FILE_RECORDS)
 const getEnumVariants = lookupBackend.getEnumVariants
@@ -50,6 +52,7 @@ const lookups = new EditorLookupController(lookupBackend)
 lookups.adopt({ sessionId: 1, revision: 1 })
 
 function Fixture() {
+  const [largeValue, setLargeValue] = useState('option_9000')
   const [data, setData] = useState(fixture)
   const [flags, setFlags] = useState<FieldValue & {kind: 'enum' | 'option_none'}>({ kind: 'enum', value: { enum_name: 'Permissions', variant: null, value: 0n } })
   const [selection, setSelection] = useState<EditorSelection | null>(null)
@@ -112,10 +115,11 @@ function Fixture() {
         }} />
     </div>
     <div id="summary-fixture" style={{ width: 700 }}><DataCardCompact value={{ kind: 'object', value: { actual_type: 'SummaryFixture', fields: {
-      Values: { kind: 'array', value: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((variant, index) => ({ kind: 'enum', value: { enum_name: 'Mode', variant, value: BigInt(index) } })) },
+      Values: { kind: 'array', value: Array.from({ length: Number(new URLSearchParams(location.search).get('summaryCount')) || 5 }, (_, index) => ({ kind: 'enum', value: { enum_name: 'Mode', variant: ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'][index] ?? `Value${index}`, value: BigInt(index) } })) },
       Groups: { kind: 'array', value: [{ kind: 'array', value: [{ kind: 'string', value: 'Grass' }, { kind: 'string', value: 'Sand' }] }] },
     } } }} /></div>
     <button id="outside">outside</button>
+    <div id="large-select"><SearchableSelect value={largeValue} options={largeOptions} onCommit={setLargeValue} /></div>
     <div id="flags"><EnumDirectSelect value={flags} enumType="Permissions" isFlag onCommit={next => setFlags(next as typeof flags)} /><output>{flags.kind === 'enum' ? String(flags.value.value) : 'null'}</output></div>
     <div id="dimension" style={{ width: 300 }}><DimensionCellEditor row={dimension} variant="en"
       onWrite={async (_row, variant, _expected, next) => {

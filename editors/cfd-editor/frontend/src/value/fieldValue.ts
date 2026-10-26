@@ -101,7 +101,7 @@ export function summaryOf(value: FieldValue): string {
     case 'object': return value.value.actual_type
     case 'array': {
       if (value.value.length === 0) return '[]'
-      const allScalar = value.value.every(item => (
+      const allScalar = value.value.length <= 6 && value.value.every(item => (
         item.kind === 'bool' || item.kind === 'int' || item.kind === 'float'
         || item.kind === 'string' || item.kind === 'enum'
         || item.kind === 'formatted_string'
@@ -126,15 +126,19 @@ export function recordMatchesSearch(record: RecordRow, query: string): boolean {
   return !normalized || record.coordinate.id.toLowerCase().includes(normalized)
 }
 
-/** Matches a query against a record's complete, recursively traversed value tree. */
+const searchProjection = new WeakMap<RecordRow, string[]>()
+/** 全文投影按不可变记录身份增量失效；保持字段边界，避免跨字段误命中。 */
 export function recordMatchesFullTextSearch(record: RecordRow, query: string): boolean {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
-  if (record.coordinate.id.toLowerCase().includes(normalized)) return true
-  return record.fields.some(field => (
-    field.name.toLowerCase().includes(normalized)
-    || fullTextOf(field.value).toLowerCase().includes(normalized)
-  ))
+  let texts = searchProjection.get(record)
+  if (!texts) {
+    texts = [record.coordinate.id.toLowerCase(), ...record.fields.flatMap(field => (
+      [field.name.toLowerCase(), fullTextOf(field.value).toLowerCase()]
+    ))]
+    searchProjection.set(record, texts)
+  }
+  return texts.some(text => text.includes(normalized))
 }
 
 function fullTextOf(value: FieldValue): string {

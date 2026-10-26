@@ -1,4 +1,5 @@
 import { recordIndex } from '../state/recordIndex'
+import type { ColumnContentMetrics } from '../bindings/ColumnContentMetrics'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -13,7 +14,6 @@ import {
   fieldPathField,
   nullValue,
   isComplexValue,
-  recordActualType,
   sameCoordinate,
   type DiagnosticItem,
   type FieldPathSegment,
@@ -158,16 +158,8 @@ export function columnDropdownKind(
   fieldName: string,
   activeType: string,
 ): 'ref' | 'enum' | 'bool' | null {
-  for (const record of data.records) {
-    if (recordActualType(record) !== activeType) continue
-    const f = fieldCell(record, fieldName)
-    if (!f) continue
-    if (f.value.kind === 'ref') return 'ref'
-    if (f.value.kind === 'enum') return 'enum'
-    if (f.value.kind === 'bool') return 'bool'
-    if (cellRefTargetType(f)) return 'ref'
-    if (cellEnumType(f)) return 'enum'
-  }
+  const kind = data.columns.find(column => column.name === fieldName)?.content_metrics[activeType]?.dropdown_kind
+  if (kind === 'ref' || kind === 'enum' || kind === 'bool') return kind
   return null
 }
 
@@ -216,11 +208,18 @@ export function tableCellKey(coordinate: RecordCoordinate, fieldName: string): s
 
 /** 本地差异投影和演示数据没有后端快照，由同一估宽规则补充列统计。 */
 export function columnContentMetrics(rows: readonly RecordRow[], field: string) {
-  const result: Record<string, { max_width: number; has_complex_value: boolean }> = {}
+  const result: Record<string, ColumnContentMetrics> = {}
   for (const row of rows) {
     const cell = fieldCell(row, field)
     if (!cell) continue
-    const metrics = result[row.coordinate.actual_type] ??= { max_width: 0, has_complex_value: false }
+    const metrics = result[row.coordinate.actual_type] ??= { max_width: 0, has_complex_value: false, declared_type: null, label: null, description: null, dropdown_kind: null }
+    metrics.declared_type ??= cell.annotation?.declared_type ?? inferredCellType(cell) ?? null
+    if (!metrics.label && !metrics.description) {
+      metrics.label = cell.annotation?.label ?? null
+      metrics.description = cell.annotation?.description ?? null
+    }
+    metrics.dropdown_kind ??= cellRefTargetType(cell) || cell.value.kind === 'ref' ? 'ref'
+      : cellEnumType(cell) || cell.value.kind === 'enum' ? 'enum' : cell.value.kind === 'bool' ? 'bool' : null
     if (metrics.max_width < 600) metrics.max_width = Math.max(metrics.max_width, estimateTextWidth(row.field_summaries[field] ?? '', false, 600))
     metrics.has_complex_value ||= isComplexValue(cell.value)
   }

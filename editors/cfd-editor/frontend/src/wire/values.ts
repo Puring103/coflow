@@ -55,12 +55,16 @@ export function objectFields(value: FieldValue): FieldCell[] {
   return value.kind === 'object' ? recordFields(value.value) : []
 }
 
+// 快照和草稿更新均替换值身份；弱引用缓存随旧代际释放，不持有整个项目。
+const objectCellCache = new WeakMap<FieldValue, Map<FieldAnnotation | null | undefined, FieldCell[]>>()
 /** 按 schema 顺序投影对象字段，并为尚未写入 CFD 的必填字段保留可编辑行。 */
 export function objectFieldCells(
   value: FieldValue,
   annotation: FieldAnnotation | null | undefined,
 ): FieldCell[] {
   if (value.kind !== 'object') return []
+  const cached = objectCellCache.get(value)?.get(annotation)
+  if (cached) return cached
 
   const fields = value.value.fields
   const orderedNames = annotation?.field_order ?? []
@@ -85,7 +89,11 @@ export function objectFieldCells(
       annotation: annotation?.children?.[name] ?? null,
     } satisfies FieldCell))
 
-  return [...schemaCells, ...extraCells]
+  const cells = [...schemaCells, ...extraCells]
+  let projections = objectCellCache.get(value)
+  if (!projections) objectCellCache.set(value, projections = new Map())
+  projections.set(annotation, cells)
+  return cells
 }
 
 export function makeObjectValue(actualType: string, fields: FieldCell[] = []): FieldValue {

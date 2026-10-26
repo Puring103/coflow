@@ -191,6 +191,19 @@ export function InspectorPanel({
   const bodyRef = useRef<HTMLDivElement>(null)
   const [keyboardFieldPath, setKeyboardFieldPath] = useState<FieldPathSegment[] | null>(null)
   const [selectedActionPathWire, setSelectedActionPathWire] = useState<string | null>(null)
+  useEffect(() => {
+    // 空白处清除字段选中，但不干扰通过 portal 展示的编辑菜单。
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('.searchable-select-menu, .context-menu')) return
+      if (bodyRef.current?.contains(target) && target.closest('.dc-row, .dc-row-add')) return
+      setKeyboardFieldPath(null)
+      setSelectedActionPathWire(null)
+    }
+    document.addEventListener('pointerdown', dismiss, true)
+    return () => document.removeEventListener('pointerdown', dismiss, true)
+  }, [])
   const [keyboardNotice, setKeyboardNotice] = useState<string | null>(null)
   const [recordTreeMenu, setRecordTreeMenu] = useState<{
     x: number
