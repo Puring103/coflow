@@ -5,6 +5,50 @@ mod common;
 use common::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use coflow_model::CfdInputBatch;
+
+#[test]
+fn immutable_batches_limit_identity_and_origin_checks_to_changed_input() {
+    let schema = compile_schema("table Item { value: int; }");
+    let records = |start, end| (start..end).map(|index| {
+        LoadedRecordDraft::new(format!("i{index}"), "Item", [("value", LoadedValueDraft::from(i64::from(index)))])
+            .with_origin(origin(index as usize))
+    }).collect::<Vec<_>>();
+    let first = CfdInputBatch::from(records(0, 17));
+    let second = CfdInputBatch::from(records(17, 1050));
+    let build = |a: &CfdInputBatch<LoadedRecordDraft>, b: &CfdInputBatch<LoadedRecordDraft>, old: Option<&CfdDataModel>| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_input_batch(a).add_input_batch(b);
+        match old {
+            Some(old) => builder.try_build_partial_incremental(old, &[id(old, "Item", "i0")]).unwrap(),
+            None => builder.build_partial().unwrap(),
+        }
+    };
+    let initial = build(&first, &second, None);
+    let mut changed = first.to_vec();
+    changed[0].fields.insert("value".into(), 9000_i64.into());
+    // 同文件后续记录来源全部移动，未变化文件不能参与位置核对。
+    for record in &mut changed { record.origin = origin(2000); }
+    let changed = CfdInputBatch::from(changed);
+    let updated = build(&changed, &second, Some(&initial.model));
+    assert_eq!(updated.statistics.identity_records_checked, 17);
+    assert_eq!(updated.statistics.origin_records_checked, 17);
+    assert_eq!(updated.model, build(&changed, &second, None).model);
+    assert_eq!(initial.model.record(id(&initial.model, "Item", "i0")).unwrap().origin, origin(0));
+    let reused = build(&changed, &second.clone(), Some(&updated.model));
+    assert_eq!(reused.statistics.identity_records_checked, 0);
+    assert_eq!(reused.statistics.origin_records_checked, 0);
+    // 内容相同的新批次没有冒用旧身份，仍会执行身份验证。
+    let copied = CfdInputBatch::from(second.to_vec());
+    let checked = build(&changed, &copied, Some(&updated.model));
+    assert_eq!(checked.statistics.identity_records_checked, second.len());
+    let mut invalid = changed.to_vec();
+    invalid[0].id = "replacement".into();
+    let invalid = CfdInputBatch::from(invalid);
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_batch(&invalid).add_input_batch(&second);
+    assert!(builder.try_build_partial_incremental(&updated.model, &[]).is_none());
+}
 
 fn builder<'a>(
     schema: &'a CftSchema,

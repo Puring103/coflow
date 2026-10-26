@@ -3,6 +3,8 @@ mod defaults;
 mod draft;
 mod incremental;
 mod inputs;
+pub use inputs::CfdInputBatch;
+pub(crate) use inputs::SharedInputRange;
 mod resolve;
 mod validate;
 
@@ -69,6 +71,8 @@ pub struct CfdModelBuildOutput {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CfdModelBuildStats {
+    pub identity_records_checked: usize,
+    pub origin_records_checked: usize,
     pub validated_records: usize,
     pub materialized_records: usize,
     pub reused_records: usize,
@@ -123,6 +127,12 @@ impl<'a> CfdModelBuilder<'a> {
     /// 按不可变源批次借用，不为每条记录另建输入指针；批次顺序就是记录顺序。
     pub fn add_borrowed_records(&mut self, records: &'a [LoadedRecordDraft]) -> &mut Self {
         self.records.push_batch(records);
+        self
+    }
+
+    /// 以不可变批次身份复用未变化输入，记录身份与来源只核对变化批次。
+    pub fn add_input_batch(&mut self, records: &'a CfdInputBatch<LoadedRecordDraft>) -> &mut Self {
+        self.records.push_shared(records);
         self
     }
 
@@ -253,6 +263,7 @@ impl<'a> ModelCompiler<'a> {
     }
 
     pub(crate) fn build(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+        let input_manifest = self.input.manifest();
         let drafts = self.validate_input_records();
         self.move_editable_diagnostics(|code| {
             matches!(
@@ -342,11 +353,14 @@ impl<'a> ModelCompiler<'a> {
                 projection: None,
                 template_dependencies: Arc::new(TemplateDependencies::new(self.template_reads)),
                 incremental_ready: self.editable_diagnostics.is_empty(),
+                input_manifest: input_manifest.into(),
                 structural_limits: self.structural_limits,
                 schema_compilation: self.schema.cft().compilation_id(),
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
             statistics: CfdModelBuildStats {
+                identity_records_checked: record_count,
+                origin_records_checked: record_count,
                 validated_records: drafts.len(),
                 materialized_records: record_count,
                 reused_records: 0,

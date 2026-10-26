@@ -43,6 +43,7 @@ pub struct CfdDataModel {
     pub(crate) projection: Option<DimensionProjection>,
     pub(crate) template_dependencies: Arc<crate::build::TemplateDependencies>,
     pub(crate) incremental_ready: bool,
+    pub(crate) input_manifest: Arc<[crate::build::SharedInputRange]>,
     pub(crate) structural_limits: coflow_language::limits::StructuralLimits,
     pub(crate) schema_compilation: coflow_language::cft::CftSchemaIdentity,
 }

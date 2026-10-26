@@ -172,9 +172,8 @@ pub(super) fn rebuild(
     previous: &CfdDataModel,
     changed: &[CfdRecordHandle],
 ) -> Option<CfdModelBuildOutput> {
-    if !can_reuse_model(&builder, previous, changed) {
-        return None;
-    }
+    let input_ranges = can_reuse_model(&builder, previous, changed)?;
+    let input_records_checked = input_ranges.iter().map(|range| range.len()).sum();
     for input in &builder.dimension_values {
         builder
             .dimension_variants
@@ -204,7 +203,8 @@ pub(super) fn rebuild(
         reads,
     } = resolve_replacements(&builder, previous, schema, &drafts, &affected)?;
     let mut model = previous.clone();
-    let changed_records = apply_replacements(&mut model, &builder, &drafts, replacements);
+    let changed_records = apply_replacements(&mut model, &builder, &drafts, replacements, &input_ranges);
+    model.input_manifest = builder.records.manifest().into();
     let context = SemanticContext(&model);
     for id in &affected {
         let record = model.record(*id)?;
@@ -240,6 +240,8 @@ pub(super) fn rebuild(
     );
     model.refs = Arc::new(refs);
     let statistics = CfdModelBuildStats {
+        identity_records_checked: input_records_checked,
+        origin_records_checked: input_records_checked,
         validated_records: drafts.validated.get(),
         materialized_records: affected.len(),
         reused_records: previous.record_count() - changed_records.len(),
@@ -259,7 +261,7 @@ fn can_reuse_model(
     builder: &CfdModelBuilder<'_>,
     previous: &CfdDataModel,
     changed: &[CfdRecordHandle],
-) -> bool {
+) -> Option<Vec<std::ops::Range<usize>>> {
     // 这些类别改变全局身份、诊断或预算语义，必须重新执行完整编译流程。
     if !previous.incremental_ready
         || previous.projection.is_some()
@@ -270,14 +272,19 @@ fn can_reuse_model(
             .iter()
             .any(|id| id.index() >= previous.record_count())
     {
-        return false;
+        return None;
     }
-    for (input, (_, record)) in builder.records.iter().zip(previous.records()) {
-        if input.id != record.id() || input.actual_type != record.actual_type() {
-            return false;
+    let ranges = builder.records.changed_ranges(&previous.input_manifest);
+    for range in &ranges {
+        for index in range.clone() {
+            let input = &builder.records[index];
+            let record = previous.record(CfdRecordHandle::new(index))?;
+            if input.id != record.id() || input.actual_type != record.actual_type() {
+                return None;
+            }
         }
     }
-    true
+    Some(ranges)
 }
 
 fn prepare_dimensions<'a>(
@@ -424,6 +431,7 @@ fn apply_replacements(
     builder: &CfdModelBuilder<'_>,
     drafts: &LazyDrafts<'_, '_>,
     replacements: BTreeMap<CfdRecordHandle, CfdRecord>,
+    input_ranges: &[std::ops::Range<usize>],
 ) -> Vec<CfdRecordHandle> {
     let records = Arc::make_mut(&mut model.records);
     let mut changed_records = Vec::new();
@@ -440,7 +448,8 @@ fn apply_replacements(
             records[id.index()] = Arc::new(header);
         }
     }
-    for (index, input) in builder.records.iter().enumerate() {
+    for index in input_ranges.iter().cloned().flatten() {
+        let input = &builder.records[index];
         if records[index].origin != input.origin {
             // 文件前部长度变化只更新来源头部，object 与 dimension_fields 都保持共享。
             Arc::make_mut(&mut records[index]).origin = input.origin.clone();

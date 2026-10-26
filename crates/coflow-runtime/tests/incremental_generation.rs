@@ -172,12 +172,16 @@ fn disk_refresh_matches_full_generations_through_errors_membership_and_templates
                     expected.record_references(&right.coordinate),
                     "references step {step}"
                 );
+                assert_eq!(actual.iter_record_references(&left.coordinate).collect::<Vec<_>>(), expected.record_references(&right.coordinate));
+                assert_eq!(actual.has_record_references(&left.coordinate), !expected.record_references(&right.coordinate).is_empty());
             }
         }
         if step == 0 {
             assert_eq!(actual.execution_stats().records_materialized, 2);
             assert_eq!(actual.execution_stats().sources_reloaded, 1);
             assert_eq!(actual.execution_stats().draft_records_collected, 0);
+            assert_eq!(actual.execution_stats().identity_records_checked, 1);
+            assert_eq!(actual.execution_stats().origin_records_checked, 1);
         }
     }
 }

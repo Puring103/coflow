@@ -3,7 +3,7 @@ use crate::api::{
 };
 use crate::cfd_loader::CfdLoader;
 use crate::data_model::{
-    CfdDataModel, CfdDiagnostics, CfdModelBuildStats, CfdPath, CfdPathSegment, CfdRecordHandle,
+    CfdDataModel, CfdDiagnostics, CfdInputBatch, CfdModelBuildStats, CfdPath, CfdPathSegment, CfdRecordHandle,
     DimensionValueDraft, LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
@@ -61,7 +61,7 @@ enum CachedDiagnosticSlot {
 struct CachedSourceBatch {
     entry: CfdSourceEntry,
     source: Arc<str>,
-    records: Arc<[LoadedRecordDraft]>,
+    records: CfdInputBatch<LoadedRecordDraft>,
     dimension_values: Arc<[DimensionValueDraft]>,
     dimension_variants: Arc<[(DimensionName, VariantName)]>,
     diagnostics: Arc<DiagnosticSet>,
@@ -111,7 +111,7 @@ impl SourceDataCache {
                     display_path,
                 },
                 source: Arc::from(""),
-                records: Arc::default(),
+                records: CfdInputBatch::default(),
                 dimension_values: Arc::default(),
                 dimension_variants: Arc::default(),
                 diagnostics: Arc::default(),
@@ -459,7 +459,7 @@ pub(crate) fn reload_project_data_from_cache_with_preloaded(
                 batch.loaded = true;
             }
             Err(err) => {
-                batch.records = Arc::default();
+                batch.records = CfdInputBatch::default();
                 batch.dimension_values = Arc::default();
                 batch.dimension_variants = Arc::default();
                 batch.diagnostics = Arc::new(err);
@@ -518,7 +518,7 @@ fn load_resolved_sources(
         ) {
             Ok(batch) => {
                 diagnostics.extend(batch.diagnostics.clone());
-                let cached_records: Arc<[LoadedRecordDraft]> = batch.records.into();
+                let cached_records: CfdInputBatch<LoadedRecordDraft> = batch.records.into();
                 push_loaded_records(
                     &mut state.indexes.records,
                     source_id,
@@ -540,7 +540,7 @@ fn load_resolved_sources(
                 state.source_data.batches.push(CachedSourceBatch {
                     entry,
                     source: Arc::from(""),
-                    records: Arc::default(),
+                    records: CfdInputBatch::default(),
                     dimension_values: Arc::default(),
                     dimension_variants: Arc::default(),
                     diagnostics: Arc::new(err),
@@ -628,7 +628,7 @@ impl SourceDataCache {
             {
                 return None;
             }
-            if !Arc::ptr_eq(&current.records, &old.records) {
+            if !current.records.same_generation(&old.records) {
                 for (index, (input, prior)) in
                     current.records.iter().zip(old.records.iter()).enumerate()
                 {
@@ -711,7 +711,7 @@ fn model_builder<'a>(
     let mut builder = CfdDataModel::builder(schema)
         .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
     for batch in &source_data.batches {
-        builder.add_borrowed_records(&batch.records);
+        builder.add_input_batch(&batch.records);
         builder.add_borrowed_dimension_value_drafts(batch.dimension_values.iter());
         for (dimension, variant) in batch.dimension_variants.iter() {
             builder.add_dimension_variant(dimension.clone(), variant.clone());
@@ -901,8 +901,11 @@ fn build_partial_model(
         };
         let mut builder = CfdDataModel::builder(schema)
             .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
-        for &index in &candidates {
-            builder.add_borrowed_record(records[index]);
+        if candidates.len() == records.len() {
+            // 健康完整构建登记批次身份；首个局部更新即可跳过未变文件。
+            for batch in &source_data.batches { builder.add_input_batch(&batch.records); }
+        } else {
+            for &index in &candidates { builder.add_borrowed_record(records[index]); }
         }
         for batch in &source_data.batches {
             builder.add_borrowed_dimension_value_drafts(batch.dimension_values.iter());
@@ -1022,6 +1025,8 @@ const fn record_model_work(
     statistics.records_validated = statistics
         .records_validated
         .saturating_add(model.validated_records);
+    statistics.identity_records_checked = statistics.identity_records_checked.saturating_add(model.identity_records_checked);
+    statistics.origin_records_checked = statistics.origin_records_checked.saturating_add(model.origin_records_checked);
     statistics.records_materialized = statistics
         .records_materialized
         .saturating_add(model.materialized_records);

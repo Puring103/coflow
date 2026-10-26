@@ -8,6 +8,8 @@ pub struct ProjectExecutionStats {
     pub sources_reloaded: usize,
     pub draft_records_collected: usize,
     pub records_validated: usize,
+    pub identity_records_checked: usize,
+    pub origin_records_checked: usize,
     pub records_materialized: usize,
     pub records_reused: usize,
     pub ref_edges_rebuilt: usize,
