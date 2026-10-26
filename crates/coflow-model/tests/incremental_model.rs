@@ -8,6 +8,24 @@ use std::sync::Arc;
 use coflow_model::{CfdDimensionInputBatch, CfdInputBatch};
 
 #[test]
+fn field_updates_do_not_invalidate_readers_of_unrelated_fields() {
+    let schema = compile_schema(r#"table Source { name: string; count: int; } table Reader { text: string = f"{&Source::a.name}"; }"#);
+    let mut inputs = vec![LoadedRecordDraft::new("a", "Source", [("name", "first".into()), ("count", 1_i64.into())]), LoadedRecordDraft::new("reader", "Reader", Vec::<(String, LoadedValueDraft)>::new())];
+    let previous = builder(&schema, &inputs, &[]).build().unwrap();
+    let source = id(&previous, "Source", "a");
+    inputs[0].fields.insert("count".into(), 2_i64.into());
+    let changes = BTreeMap::from([(source, [FieldName::new("count").unwrap()].into_iter().collect())]);
+    let updated = builder(&schema, &inputs, &[]).try_build_field_updates(&previous, &changes).unwrap();
+    assert_eq!(updated.statistics.materialized_records, 1);
+    assert_eq!(updated.model, builder(&schema, &inputs, &[]).build().unwrap());
+    inputs[0].fields.insert("name".into(), "second".into());
+    let changes = BTreeMap::from([(source, [FieldName::new("name").unwrap()].into_iter().collect())]);
+    let renamed = builder(&schema, &inputs, &[]).try_build_field_updates(&updated.model, &changes).unwrap();
+    assert_eq!(renamed.statistics.materialized_records, 2);
+    assert_eq!(renamed.model, builder(&schema, &inputs, &[]).build().unwrap());
+}
+
+#[test]
 fn shared_dimension_batches_reindex_only_changed_overlays_and_refresh_origins() {
     let schema = compile_schema("table Source { @localized name: string; }");
     let records = CfdInputBatch::from((0..1030).map(|index| LoadedRecordDraft::new(
@@ -556,7 +574,7 @@ fn repeated_mixed_updates_match_full_builds_including_overlay_removal() {
     .build()
     .unwrap();
     let mut seed = 17_u64;
-    for step in 0..48 {
+    for step in 0..1000 {
         seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         let index = 1 + ((seed >> 32) as usize % 11);
         match step % 4 {
@@ -599,8 +617,10 @@ fn repeated_mixed_updates_match_full_builds_including_overlay_removal() {
         }
         let values = overlays.values().cloned().collect::<Vec<_>>();
         let changed = id(&model, "Item", &format!("i{index}"));
+        let field = ["name", "parent", "name", "details"][step % 4];
+        let changes = BTreeMap::from([(changed, [FieldName::new(field).unwrap()].into_iter().collect())]);
         let output = builder(&schema, &inputs, &values)
-            .try_build_partial_incremental(&model, &[changed])
+            .try_build_field_updates(&model, &changes)
             .unwrap();
         assert_eq!(
             output.model,

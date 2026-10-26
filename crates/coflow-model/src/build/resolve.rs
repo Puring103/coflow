@@ -1,5 +1,5 @@
 use super::draft::RecordDraftSource;
-use crate::build::{BuildSchema, RecordDraft, ValueDraft};
+use crate::build::{BuildSchema, RecordDraft, ValueDraft, TemplateField, TemplateReads};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordHandle, CfdValue};
 use crate::{stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString};
@@ -76,7 +76,8 @@ pub(super) struct ValueResolver<'a, 'schema, S: RecordDraftSource + ?Sized> {
     budget: StructuralBudget,
     budget_exhausted: bool,
     root_record: CfdRecordHandle,
-    reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    reads: TemplateReads,
+    root_field: Option<FieldName>,
     literal_costs: LiteralFieldCosts,
     trace_depth: u64,
     trace_template: bool,
@@ -109,6 +110,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             budget_exhausted: false,
             root_record: CfdRecordHandle::new(0),
             reads: BTreeMap::new(),
+            root_field: None,
             literal_costs: LiteralFieldCosts::default(),
             trace_depth: 0,
             trace_template: false,
@@ -148,7 +150,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         std::mem::take(&mut self.reference_diagnostics)
     }
 
-    pub(super) fn take_reads(&mut self) -> BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>> {
+    pub(super) fn take_reads(&mut self) -> TemplateReads {
         std::mem::take(&mut self.reads)
     }
 
@@ -200,6 +202,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         let mut complete = true;
         for (name, value) in fields {
             let top = parent.path.segments.is_empty() && parent.record == self.root_record;
+            if top { self.root_field = Some(name.clone()); }
             let selected_dimension = parent.context.as_ref().map(|(dimension, _)| dimension);
             let retain = !top || selected_dimension.is_none_or(|dimension| self.schema.field(owner.actual_type.as_str(), name)
                 .and_then(|field| field.dimension.as_ref()).is_some_and(|binding| &binding.dimension == dimension));
@@ -480,6 +483,17 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             self.push_unknown_format_field(owner.actual_type.as_str(), field_name, blame);
             return None;
         };
+        if let Some(reader) = &self.root_field {
+            let target = match owner_node.path.segments.first() {
+                Some(CfdPathSegment::Field(name)) => FieldName::new(name).ok(),
+                _ => Some(field.name.clone()),
+            };
+            if let Some(target) = target {
+                // 嵌套对象读取归属顶层字段；各维度读取取并集，结构变化保守失效整个字段。
+                self.reads.entry(TemplateField { record: self.root_record, field: reader.clone() })
+                    .or_default().insert(TemplateField { record: owner_node.record, field: target });
+            }
+        }
         // 缺少显式覆盖时仍在当前上下文求值基础表达式，不能复用基础渲染结果。
         let value = self
             .dimension_override(owner_node, &field.name)
@@ -503,12 +517,6 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         node: &ValueNode,
         cursor: TraversalCursor,
     ) -> Option<(CfdValue, CftValueType)> {
-        if record_id != self.root_record {
-            self.reads
-                .entry(self.root_record)
-                .or_default()
-                .insert(record_id);
-        }
         let drafts = self.drafts;
         let owner = drafts.get(record_id.index())?;
         let owner_node = ValueNode {

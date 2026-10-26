@@ -14,6 +14,7 @@ mod validate;
 pub(crate) use context::BuildSchema;
 pub(crate) use draft::{RecordDraft, ValueDraft};
 pub(crate) use incremental::TemplateDependencies;
+pub(crate) use incremental::{TemplateField, TemplateReads};
 
 use crate::diagnostics::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, RecordOrigin};
 use crate::indexes::{self, build_ref_indexes, ReferenceFieldPlan};
@@ -253,7 +254,18 @@ impl<'a> CfdModelBuilder<'a> {
         previous: &CfdDataModel,
         changed: &[CfdRecordHandle],
     ) -> Option<CfdModelBuildOutput> {
-        incremental::rebuild(self, previous, changed)
+        incremental::rebuild(self, previous, changed, None)
+    }
+
+    /// 调用方已比较原始字段时，按字段传播模板失效；每个受影响记录仍执行完整预算与验证。
+    #[must_use]
+    pub fn try_build_field_updates(
+        self,
+        previous: &CfdDataModel,
+        changed: &BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>,
+    ) -> Option<CfdModelBuildOutput> {
+        let records = changed.keys().copied().collect::<Vec<_>>();
+        incremental::rebuild(self, previous, &records, Some(changed))
     }
 }
 
@@ -265,7 +277,7 @@ pub(crate) struct ModelCompiler<'a> {
     diagnostics: Vec<CfdDiagnostic>,
     editable_diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
-    template_reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    template_reads: TemplateReads,
     literal_field_costs: resolve::LiteralFieldCosts,
     resolved_root_fields: usize,
     reused_literal_fields: usize,
@@ -755,8 +767,8 @@ impl<'a> ModelCompiler<'a> {
 }
 
 fn merge_reads(
-    target: &mut BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
-    reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    target: &mut TemplateReads,
+    reads: TemplateReads,
 ) {
     for (host, values) in reads {
         target.entry(host).or_default().extend(values);

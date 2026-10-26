@@ -7,7 +7,7 @@ use crate::data_model::{
     LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
-use coflow_language::cft::{CftSchema, DimensionName, VariantName};
+use coflow_language::cft::{CftSchema, DimensionName, FieldName, VariantName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -477,7 +477,7 @@ pub(crate) fn reload_project_data_from_cache_with_preloaded(
         &options,
         statistics,
         diagnostics,
-        changed_records.as_deref(),
+        changed_records.as_ref(),
     )
 }
 
@@ -615,12 +615,12 @@ impl SourceDataCache {
         &self,
         schema: &CftSchema,
         previous: &Self,
-    ) -> Option<Vec<CfdRecordHandle>> {
+    ) -> Option<BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>> {
         let model = previous.model.as_ref()?;
         if self.batches.len() != previous.batches.len() {
             return None;
         }
-        let mut changed = BTreeSet::new();
+        let mut changed = BTreeMap::<CfdRecordHandle, BTreeSet<FieldName>>::new();
         let mut offset = 0;
         for (current, old) in self.batches.iter().zip(&previous.batches) {
             if current.entry.display_path != old.entry.display_path
@@ -640,7 +640,13 @@ impl SourceDataCache {
                         if handle.index() != offset + index {
                             return None;
                         }
-                        changed.insert(handle);
+                        let fields = input.fields.keys().chain(prior.fields.keys()).filter(|name| {
+                            match (input.fields.get(*name), prior.fields.get(*name)) {
+                                (Some(left), Some(right)) => !left.same_value(right),
+                                _ => true,
+                            }
+                        }).map(|name| FieldName::new(name).ok()).collect::<Option<BTreeSet<_>>>()?;
+                        changed.entry(handle).or_default().extend(fields);
                     }
                 }
             }
@@ -666,16 +672,17 @@ impl SourceDataCache {
                         .iter()
                         .chain(old.dimension_values.iter())
                     {
-                        changed.insert(model.lookup_assignable(
+                        let host = model.lookup_assignable(
                             schema,
                             &value.source_type,
                             &value.source_id,
-                        )?);
+                        )?;
+                        changed.entry(host).or_default().insert(value.field.clone());
                     }
                 }
             }
         }
-        (offset == model.record_count()).then(|| changed.into_iter().collect())
+        (offset == model.record_count()).then_some(changed)
     }
 
     fn record_drafts(&self) -> Vec<&LoadedRecordDraft> {
@@ -724,9 +731,9 @@ fn model_builder<'a>(
 fn build_cached_model(
     schema: &CftSchema,
     source_data: &SourceDataCache,
-    changed_records: Option<&[CfdRecordHandle]>,
+    changed_records: Option<&BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>>,
 ) -> Result<(PartialModelBuild, usize), LoadDiagnostics> {
-    let unchanged = changed_records.is_some_and(<[_]>::is_empty)
+    let unchanged = changed_records.is_some_and(BTreeMap::is_empty)
         && source_data.changed_sources.is_empty()
         && source_data.model.is_some();
     // 健康增量直接借用源批次；只有完整容错重建才建立用于剔除候选的平面表。
@@ -753,7 +760,7 @@ fn build_cached_model(
             },
             Some((previous, changed)) => {
                 let builder = model_builder(schema, source_data);
-                match builder.try_build_partial_incremental(previous, changed) {
+                match builder.try_build_field_updates(previous, changed) {
                     Some(output) => PartialModelBuild {
                         // 增量模型自带最新来源，诊断按实际标签查找，避免复制全项目路径。
                         accepted_origins: Vec::new(),
@@ -781,7 +788,7 @@ fn build_output_from_cache(
     options: &ReloadProjectDataOptions<'_>,
     mut statistics: ProjectExecutionStats,
     source_diagnostics: DiagnosticSet,
-    changed_records: Option<&[CfdRecordHandle]>,
+    changed_records: Option<&BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>>,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     for batch in &source_data.batches {
         let source_id = SourceId(indexes.sources.entries.len());

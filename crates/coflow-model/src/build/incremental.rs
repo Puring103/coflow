@@ -17,14 +17,22 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct TemplateField {
+    pub record: CfdRecordHandle,
+    pub field: FieldName,
+}
+
+pub(crate) type TemplateReads = BTreeMap<TemplateField, BTreeSet<TemplateField>>;
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TemplateDependencies {
-    by_reader: BTreeMap<CfdRecordHandle, Arc<BTreeSet<CfdRecordHandle>>>,
-    readers: BTreeMap<CfdRecordHandle, Arc<BTreeSet<CfdRecordHandle>>>,
+    by_reader: BTreeMap<TemplateField, Arc<BTreeSet<TemplateField>>>,
+    readers: BTreeMap<TemplateField, Arc<BTreeSet<TemplateField>>>,
 }
 
 impl TemplateDependencies {
-    pub(crate) fn new(reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>) -> Self {
+    pub(crate) fn new(reads: TemplateReads) -> Self {
         let mut result = Self::default();
         for (host, targets) in reads {
             result.replace(host, targets);
@@ -32,7 +40,7 @@ impl TemplateDependencies {
         result
     }
 
-    fn replace(&mut self, host: CfdRecordHandle, targets: BTreeSet<CfdRecordHandle>) {
+    fn replace(&mut self, host: TemplateField, targets: BTreeSet<TemplateField>) {
         let previous = self.by_reader.get(&host).cloned().unwrap_or_default();
         // 模板读集通常稳定；仅维护差集，避免反复拆除、重建高扇入关系。
         if previous.as_ref() == &targets {
@@ -47,7 +55,7 @@ impl TemplateDependencies {
             }
         }
         for target in targets.difference(&previous) {
-            Arc::make_mut(self.readers.entry(*target).or_default()).insert(host);
+            Arc::make_mut(self.readers.entry(target.clone()).or_default()).insert(host.clone());
         }
         if targets.is_empty() {
             self.by_reader.remove(&host);
@@ -56,19 +64,19 @@ impl TemplateDependencies {
         }
     }
 
-    fn affected(&self, changed: &[CfdRecordHandle]) -> BTreeSet<CfdRecordHandle> {
-        let mut affected = changed.iter().copied().collect::<BTreeSet<_>>();
+    fn affected(&self, changed: &[TemplateField]) -> BTreeSet<CfdRecordHandle> {
+        let mut affected = changed.iter().cloned().collect::<BTreeSet<_>>();
         let mut pending = changed.to_vec();
         while let Some(target) = pending.pop() {
             if let Some(readers) = self.readers.get(&target) {
                 for reader in readers.iter() {
-                    if affected.insert(*reader) {
-                        pending.push(*reader);
+                    if affected.insert(reader.clone()) {
+                        pending.push(reader.clone());
                     }
                 }
             }
         }
-        affected
+        affected.into_iter().map(|field| field.record).collect()
     }
 }
 
@@ -182,6 +190,7 @@ pub(super) fn rebuild(
     mut builder: CfdModelBuilder<'_>,
     previous: &CfdDataModel,
     changed: &[CfdRecordHandle],
+    changed_fields: Option<&BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>>,
 ) -> Option<CfdModelBuildOutput> {
     let input_ranges = can_reuse_model(&builder, previous, changed)?;
     let input_records_checked = input_ranges.iter().map(|range| range.len()).sum();
@@ -209,7 +218,20 @@ pub(super) fn rebuild(
         validated: Cell::new(0),
         limits: builder.structural_limits,
     };
-    let affected = previous.template_dependencies.affected(changed);
+    let mut seeds = Vec::new();
+    for id in changed {
+        let record = previous.record(*id)?;
+        if let Some(fields) = changed_fields.and_then(|changes| changes.get(id)) {
+            for field in fields {
+                schema.field(record.actual_type(), field)?;
+                seeds.push(TemplateField { record: *id, field: field.clone() });
+            }
+        } else {
+            seeds.extend(schema.full_fields(record.actual_type()).map(|field| TemplateField { record: *id, field: field.name.clone() }));
+        }
+    }
+    let mut affected = previous.template_dependencies.affected(&seeds);
+    affected.extend(changed.iter().copied());
     let ResolvedIncremental {
         records: replacements,
         reads,
@@ -237,12 +259,14 @@ pub(super) fn rebuild(
     }
     let mut dependencies = Arc::clone(&previous.template_dependencies);
     for id in &affected {
-        let old = dependencies.by_reader.get(id).map(AsRef::as_ref);
-        let new = reads.get(id);
-        if old == new || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty) {
-            continue;
+        let record = model.record(*id)?;
+        for field in schema.full_fields(record.actual_type()) {
+            let key = TemplateField { record: *id, field: field.name.clone() };
+            let old = dependencies.by_reader.get(&key).map(AsRef::as_ref);
+            let new = reads.get(&key);
+            if old == new || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty) { continue; }
+            Arc::make_mut(&mut dependencies).replace(key, new.cloned().unwrap_or_default());
         }
-        Arc::make_mut(&mut dependencies).replace(*id, new.cloned().unwrap_or_default());
     }
     model.template_dependencies = dependencies;
     let mut refs = previous.refs.as_ref().clone();
@@ -307,7 +331,7 @@ fn can_reuse_model(
 
 struct ResolvedIncremental {
     records: BTreeMap<CfdRecordHandle, CfdRecord>,
-    reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    reads: TemplateReads,
     resolved_root_fields: usize,
     reused_literal_fields: usize,
 }
