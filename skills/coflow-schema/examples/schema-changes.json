@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "kind": "files",
+  "changes": [
+    { "op": "write", "file": "schema/main.cft", "content_file": "candidates/main.cft" },
+    { "op": "write", "file": "data/items.cfd", "content_file": "candidates/items.cfd" }
+  ]
+}

@@ -1,45 +1,36 @@
 ---
 name: coflow-workflow
-description: "维护使用 Coflow 的配置项目：查询与修改 CFD、项目配置、业务校验、诊断、代码生成、C# 接入，以及编辑器插件使用与编写。不用于开发 Coflow 本身。"
+description: "使用 Coflow CLI 查询、维护和批量修改 CFD 配置，处理本地化、校验与错误恢复，生成 C# 代码、接入应用或编写编辑器插件。适用于已有配置结构下的操作；类型设计与 CFT 结构变更使用 coflow-schema。不用于开发 Coflow 本身。"
 ---
 
 # Coflow Workflow
 
-在用户指定的项目与修改范围内工作，沿用已有授权。业务取值或范围不明确时询问用户。
+在用户指定的项目与业务范围内工作，沿用已有授权。业务取值、批量范围或规则调整目标不明确时询问用户。
 
-## 发现与读取
+## 执行主线
 
-用 `--project <目录或 coflow.yaml>` 定位。没有项目时用 `init`；未知类型先查 `project inspect`、`project files` 和 `schema symbols`，已知类型再用 `context --type <类型>`。模型损坏时用 `source read` 定位和修复，见 [CLI 恢复流程](references/cli.md#项目发现与错误恢复)。
+1. 用 `--project <目录或 coflow.yaml>` 固定项目。未知类型先 `project inspect`、`project files`、`schema symbols --kind type`，已有类型再 `context --type <类型>`。首次使用读[项目发现](references/discovery.md)和[核心概念](references/concepts.md)。
+2. 使用 `--json`，按字段、分页和预算读取任务所需信息，保存响应顶层的 `revision`。查询结果有数据时仍检查 `data_scope.complete`。
+3. 单字段用 `data set/unset`；多项关联修改用 `apply`。写入携带读取修订 `--if-revision`，业务修改加 `--rules`。需要审阅时使用 `--dry-run`。
+4. 以退出码、`status`、适用的 `complete` 和实际写入信息判断结果。成功写入已包含所选校验；直接编辑源码后执行 `check --rules`。发生冲突时重读目标和范围，重新形成修改。
 
-优先 `context` 和 `data get/list --fields ... --json`，按字段、分页和预算读取，保存 revision。`data_scope.complete` 表示加载完整性，`truncated` 表示输出分页或省略，分别判断。未知命令先用 `describe --json` 查目录，再用 `describe <命令> --json` 查参数；请求结构按需加 `--schema input`。能力缺失时核对 CLI 版本，不猜测参数。
+命令不明确时用 `coflow describe --json` 找入口，再用 `coflow describe data.set --json` 这样的点分名称查参数；构造请求前按需加 `--schema input`。以安装版本返回的协议为准，能力不匹配时先核对 `coflow --version`。
 
-## 选择修改方式
+## 按任务读取
 
-- 单字段：`data set` / `unset`。`--expected-cfd` 按类型与默认值比较当前基础有效值，模板比较 f 源表达式。
-- 多记录、集合及维度：`apply` 的 `kind: operations`。已知目标显式列出记录；按条件批量赋值用 `set_where`，先核对匹配范围并填写 expected_count。数组、字典和维度操作见 [CLI 请求结构](references/cli.md#批量修改与请求结构)。
-- CFT 与 CFD 联合变更、损坏源码修复：`kind: files`，一次提交相关源码与输入调整。类型、默认值和规则语义见 [CFT](references/cft.md)，写值见 [CFD](references/cfd.md)。
-- 本地化：`dimension get/missing` 区分已填写和回退；用 set/clear 修改覆盖，字段属于哪个维度以 CFT 为准，见[维度](references/localization.md)。
-- 交付：`check --rules` 完整校验，`build` 校验并生成，`codegen --check` 核对生成产物；C# 的加载与重载见 [C#](references/csharp.md)。
-- 插件：用户需要专用视图、类型展示或编辑工具时，按[插件指南](references/plugins.md)创建清单与单文件 ES 模块，使用公开的 register/events/data 接口；编辑器安装和启用通过插件面板完成，CLI 不提供插件管理命令。普通数据维护不需要插件。
+| 任务 | 资料 |
+| --- | --- |
+| 定位项目、发现类型、处理 CLI 缺失 | [项目发现](references/discovery.md) |
+| 调整输入、维度目录或生成目标 | [项目配置](references/project-config.md) |
+| 理解记录、字段值、默认值和模板 | [核心概念](references/concepts.md) |
+| 查询、筛选、分页、查引用或统计 | [读取数据](references/reading.md) |
+| 新增、修改、改名、迁移或删除记录 | [记录维护](references/record-editing.md) |
+| 按条件批量赋值、修改数组与字典 | [批量修改](references/batch-editing.md) |
+| 补翻译、维护平台或地区变体 | [维度维护](references/dimensions.md) |
+| 解释规则失败、修复坏文件、处理写入失败 | [校验与恢复](references/validation-and-recovery.md) |
+| 生成代码、检查产物或接入 CI | [代码生成](references/generation.md) |
+| 获取 Loader、接入 C# / Unity、重新加载 | [C# 接入](references/csharp-integration.md) |
+| 创建或安装编辑器专用视图与工具 | [插件编写](references/plugin-authoring.md) |
+| 构造 JSON 值、解析响应、修订与路径 | [CLI 协议](references/protocol.md) |
 
-批量写入用 `apply --input changes.json --rules --if-revision <revision> --json`，需要审阅补丁时加 `--dry-run`。成功已包含所选校验，不重复同范围检查；直接编辑源码后用 `check --rules`。
-
-## 结果处理
-
-单行 `--json` 用于机器处理，`--pretty` 用于人工查看。默认返回计数与失败信息、最多 50 条诊断；`diagnostics_summary` 表示诊断截断，`--details` 展开，显式 `--limit` 仍生效。
-
-按 code、help、record、field_path 修复；请求错误看 request_path、operation_index、target。规则解释用 `check --rule <rule list 返回的标识> --explain`；匿名规则的标识随源码位置变化，不手工构造。
-
-冲突时重读目标、范围与旧值后重新形成修改；旧游标去掉 cursor 后重查，不仅替换 revision 重试。事务失败检查 written、written_files、restored_files、restoration_failed；恢复未完成时先确认实际文件状态。结果以退出码、status 及适用的 complete 判断，详情见[诊断](references/diagnostics.md)。
-
-## 按需参考
-
-- [CLI](references/cli.md)：查询、恢复、批量请求与协议；[公开文档](https://puring103.github.io/coflow/docs/reference/08-cli)。
-- [项目配置](references/project-config.md)：输入与生成目录；[公开文档](https://puring103.github.io/coflow/docs/reference/01-project-config)。
-- [CFT](references/cft.md)：类型、默认值与规则；[公开文档](https://puring103.github.io/coflow/docs/reference/03-language/01-cft)。
-- [CFD](references/cfd.md)：字段值与来源；[公开文档](https://puring103.github.io/coflow/docs/reference/03-language/02-cfd)。
-- [维度](references/localization.md)：变体与覆盖；[公开文档](https://puring103.github.io/coflow/docs/reference/10-localization)。
-- [诊断](references/diagnostics.md)：位置与修复；[公开文档](https://puring103.github.io/coflow/docs/reference/09-diagnostics/01-diagnostics)。
-- [C#](references/csharp.md)：类型、加载与重载；[公开文档](https://puring103.github.io/coflow/docs/reference/07-codegen/01-csharp)。
-- [插件](references/plugins.md)：安装、扩展点与插件编写；[公开文档](https://puring103.github.io/coflow/docs/reference/13-plugins)。
-- [协作与 CI](references/best-practices.md)：检查范围与并发修改。
+仅读取当前任务需要的资料。类型设计、默认值策略和 CFT 结构变更由 `coflow-schema` 承担；普通数据维护可仅使用本 skill 完成。参考资料和示例随本 skill 提供，常规操作无需联网查网站。

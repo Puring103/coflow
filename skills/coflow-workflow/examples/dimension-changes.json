@@ -1,0 +1,24 @@
+{
+  "protocol_version": 1,
+  "kind": "operations",
+  "ops": [
+    {
+      "op": "set_dimension_value",
+      "record": { "type": "Item", "id": "shield" },
+      "dimension": "language",
+      "variant": "ja",
+      "field": "name",
+      "file": "data/items.cfd",
+      "value": { "kind": "expression", "source": "\"盾\"" }
+    },
+    {
+      "op": "set_dimension_value",
+      "record": { "type": "Item", "id": "sword" },
+      "dimension": "region",
+      "variant": "cn",
+      "field": "price",
+      "file": "data/items.cfd",
+      "value": { "kind": "expression", "source": "85" }
+    }
+  ]
+}

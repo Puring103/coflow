@@ -1,0 +1,27 @@
+{
+  "protocol_version": 1,
+  "kind": "operations",
+  "ops": [
+    {
+      "op": "set_field",
+      "record": { "type": "Item", "id": "sword" },
+      "path": [{ "kind": "field", "name": "price" }],
+      "value": { "kind": "expression", "source": "100" },
+      "expected": { "kind": "expression", "source": "90" }
+    },
+    {
+      "op": "array_insert",
+      "record": { "type": "Item", "id": "sword" },
+      "path": [{ "kind": "field", "name": "tags" }],
+      "index": 0,
+      "value": { "kind": "expression", "source": "\"weapon\"" }
+    },
+    {
+      "op": "dict_set",
+      "record": { "type": "Item", "id": "sword" },
+      "path": [{ "kind": "field", "name": "labels" }],
+      "key": { "kind": "expression", "source": "\"category\"" },
+      "value": { "kind": "expression", "source": "\"equipment\"" }
+    }
+  ]
+}

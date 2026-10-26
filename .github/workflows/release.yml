@@ -74,18 +74,6 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Sync skill references
-        if: steps.gate.outputs.full == 'true'
-        shell: pwsh
-        run: |
-          pwsh scripts/sync-skill-references.ps1
-          pwsh scripts/sync-skill-references.ps1 -Check
-          $skillStatus = git status --porcelain -- skills
-          if ($skillStatus) {
-            $skillStatus
-            throw "Skill references changed after sync. Commit synced files before release."
-          }
-
       - name: Check workspace
         run: cargo check --workspace
 

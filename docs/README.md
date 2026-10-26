@@ -37,6 +37,7 @@
 - [核心与前端性能审查](development/full-performance-audit.zh-CN.md)：当前实现的剩余热点、算法复杂度、微基准和优化优先级。
 
 - [质量要求](development/quality.md)：代码、诊断、测试、文档及检查职责。
+- [用户技能设计](development/skill-design.md)：任务边界、按需资料、实现依据与示例验证。
 - [复杂表格数据结构与渲染设计](development/editor-performance-review.zh-CN.md)：集中测量、投影与引用索引、预览窗口、共享注解协议及验证。
 - [编辑器性能与功能复核](development/editor-performance-audit.zh-CN.md)：预览高度边界、数据结构复核与后续算法优化候选。
 - [引擎核心性能优化方案](development/engine-performance-plan.zh-CN.md)：十万条记录与高频编辑的优化目标、已实施结构、增量安全边界和验收方式。

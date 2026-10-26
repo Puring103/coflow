@@ -88,7 +88,7 @@ CLI `rule list` 与 `rule inspect` 汇总整条规则；`check --rule Type::Rule
 
 C# 测试验证生成代码、Option 省略、独立视图、引用身份、多维组合、模板和显式覆盖；编辑器测试验证公开 DTO、文本/模板编辑与记录坐标。
 
-当前规格、开发设计、网站用法和 skills 参考保持一致。网站参考通过 `scripts/sync-skill-references.ps1` 同步到用户技能。普通开发的必需门禁为 `cargo check --workspace` 与 `cargo test --workspace`；发布遵循 [AGENTS.md](../../AGENTS.md)。
+当前规格、开发设计、网站用法和 skills 的能力与语义保持一致。用户技能按任务独立编写，维护方式与验证见 [技能设计](../development/skill-design.md)。普通开发的必需门禁为 `cargo check --workspace` 与 `cargo test --workspace`；发布遵循 [AGENTS.md](../../AGENTS.md)。
 
 ## 8. 数值位宽与枚举
 

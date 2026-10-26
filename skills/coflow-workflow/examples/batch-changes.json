@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "kind": "operations",
+  "ops": [{
+    "op": "set_where",
+    "selector": { "type": "Item", "filter": "price < 100" },
+    "path": [{ "kind": "field", "name": "price" }],
+    "value": { "kind": "expression", "source": "100" },
+    "expected_count": 2
+  }]
+}

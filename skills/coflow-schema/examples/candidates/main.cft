@@ -1,0 +1,34 @@
+enum Quality { Common, Rare }
+
+sealed data Stats {
+  hp: int = 100;
+  check PositiveHealth { hp > 0: "生命值必须为正"; }
+}
+
+table Item {
+  @localized
+  name: string;
+  @dimension("region")
+  price: int;
+  # 新字段没有默认值，候选数据必须为每条记录提供重量。
+  weight: int;
+  quality: Quality = Quality::Common;
+  stats: Stats = Stats {};
+  next: Option<&Item> = None;
+  note: Option<string> = None;
+  tags: [string] = [];
+  labels: {string: string} = {};
+  @localized
+  label: string = f"{self.name}：{self.price}";
+
+  # 业务规则作用于基础值；翻译完整性可按业务要求另加规则。
+  check ValidItem {
+    !name.isBlank(): "名称不能为空";
+    price >= 0: "价格不能为负数";
+    tags.isUnique(): "标签不能重复";
+  }
+}
+
+singleton Settings { start: &Item; }
+
+check HasItems { records(Item).len() > 0: "至少需要一个物品"; }

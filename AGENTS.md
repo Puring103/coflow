@@ -29,8 +29,6 @@ and patch release gates must not require formatting, Clippy, C#, frontend, exten
 For major or minor version releases (for example `0.9.x` to `0.10.0` or `0.x` to `1.0.0`), run the full gate from the repository root. Release versions `X.Y.0` use the full gate; `X.Y.Z` with `Z > 0` use the standard gate above. The same rule applies to packaging and manual release workflow runs:
 
 ```powershell
-pwsh scripts/sync-skill-references.ps1
-pwsh scripts/sync-skill-references.ps1 -Check
 cargo check --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -58,11 +56,11 @@ patch changes to that same series note. Do not retain release notes from an earl
 Updater key setup, release assets, and installer behavior are documented in
 `docs/releasing.md`.
 
-The skill reference sync copies public website reference docs into synced files under
-`skills/*/references/*.md`. Synced files intentionally have no file header; source mappings live in
-`scripts/sync-skill-references.ps1`, and public URLs are listed from each skill's `SKILL.md`. Run the
-sync for release/packaging whenever `website/docs/docs/reference/` or `skills/` changes, and commit
-the synced files.
+Skills under `skills/` are independently authored, task-oriented user instructions bundled with
+the CLI. Keep their commands, language semantics, examples, and integration guidance aligned
+with the released product. Maintain website reference documents and skill instructions for their
+respective audiences. Skill design, source-of-truth locations, and validation are documented in
+`docs/development/skill-design.md`; executable skill examples are covered by the Rust workspace tests.
 
 When the user specifies a version to package or release, reinstall the local Cargo CLI after the checks pass:
 
@@ -104,7 +102,7 @@ Internal documentation is indexed by `docs/README.md` and grouped by responsibil
 - `docs/archive/`: historical plans, UI previews, and dated benchmark reports.
 
 The cross-module language contracts are documented in `docs/language-design/05-language-evolution.zh-CN.md`.
-Keep the language specifications, implementation design, public website and synced skill references aligned.
+Keep the language specifications, implementation design, public website and user skill semantics aligned.
 
 Keep public C# syntax and API guidance concise in
 `website/docs/docs/reference/07-codegen/01-csharp.md`; do not duplicate internal layouts or
