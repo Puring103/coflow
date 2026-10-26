@@ -88,5 +88,7 @@ describe('graph row geometry', () => {
     const moved = build([3n, 20n, 4n], removed)
     expect(moved.collectionEpoch(key)).toBe(removed.collectionEpoch(key) + 1)
     expect(moved.resetsPath(moved.rows[1].key)).toBe(true)
+    const replaced = build([20n, 4n, 5n], moved)
+    expect(replaced.collectionEpoch(key)).toBe(moved.collectionEpoch(key) + 1)
   })
 })

@@ -318,6 +318,7 @@ test('an offscreen append source supports canceling the picker and creating a ne
   }
   await openPicker()
   await page.keyboard.press('Escape')
+  await page.getByRole('combobox', { name: '选择引用目标' }).waitFor({ state: 'hidden' })
   assert.equal(await page.getByRole('combobox', { name: '选择引用目标' }).count(), 0)
   assert.equal(await page.evaluate(() => window.graphHarness.events.length), 0)
   await openPicker()

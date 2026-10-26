@@ -25,15 +25,8 @@ function shiftsArrayIndexes(previous: CollectionIdentity, items: FieldValue[]): 
   const after = items.map(storageKey)
   if (after.length > before.length) return !before.every((key, index) => after[index] === key)
   const different = after.reduce((count, key, index) => count + Number(before[index] !== key), 0)
-  if (different < 2) return false
-  const counts = new Map<string, number>()
-  for (const key of before) counts.set(key, (counts.get(key) ?? 0) + 1)
-  for (const key of after) {
-    const count = counts.get(key) ?? 0
-    if (count === 0) return false
-    counts.set(key, count - 1)
-  }
-  return true
+  // 等长快照也可能合并了删除和插入；多项变化不能证明原索引身份仍然有效。
+  return different >= 2
 }
 
 export interface GeometryRow {
