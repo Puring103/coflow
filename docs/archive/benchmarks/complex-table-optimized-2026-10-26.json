@@ -1,0 +1,929 @@
+{
+  "date": "2026-10-26T03:18:09.125Z",
+  "disableSummaryMeasurement": false,
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "memoryGiB": 32,
+  "browser": "156.0.8078.4",
+  "rows": 3000,
+  "cols": 20,
+  "viewport": [
+    1280,
+    800
+  ],
+  "table": [
+    880,
+    480
+  ],
+  "results": [
+    {
+      "round": 0,
+      "name": "scalar",
+      "complexCols": 0,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 483,
+            "LayoutDuration": 141.5,
+            "RecalcStyleDuration": 60.1,
+            "TaskDuration": 938
+          },
+          "dom": {
+            "nodes": 2111,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 92.7,
+            "LayoutDuration": 67.8,
+            "RecalcStyleDuration": 29.8,
+            "TaskDuration": 325.2
+          },
+          "dom": {
+            "nodes": 1094,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 1094,
+        "rows": 27,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 81,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 326,
+            "LayoutDuration": 54.4,
+            "RecalcStyleDuration": 24.2,
+            "TaskDuration": 577.8
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 89.3,
+            "LayoutDuration": 53.5,
+            "RecalcStyleDuration": 22.3,
+            "TaskDuration": 265.2
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 320.8,
+            "LayoutDuration": 52.3,
+            "RecalcStyleDuration": 23.3,
+            "TaskDuration": 562.9
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 217.8,
+            "LayoutDuration": 136.2,
+            "RecalcStyleDuration": 64,
+            "TaskDuration": 727.9
+          },
+          "dom": {
+            "nodes": 9125,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 9125,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 16,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2-long",
+      "complexCols": 2,
+      "items": 32,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 302.6,
+            "LayoutDuration": 52,
+            "RecalcStyleDuration": 23,
+            "TaskDuration": 539.6
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 1,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 85.2,
+            "LayoutDuration": 89,
+            "RecalcStyleDuration": 22.4,
+            "TaskDuration": 292
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2-nested",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 2,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 303.1,
+            "LayoutDuration": 51.8,
+            "RecalcStyleDuration": 23.6,
+            "TaskDuration": 544.2
+          },
+          "dom": {
+            "nodes": 1495,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 87.9,
+            "LayoutDuration": 52.8,
+            "RecalcStyleDuration": 21.8,
+            "TaskDuration": 258.9
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "object-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "shape": "object",
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 319.2,
+            "LayoutDuration": 52.8,
+            "RecalcStyleDuration": 23.2,
+            "TaskDuration": 561
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 165.8,
+            "LayoutDuration": 81.5,
+            "RecalcStyleDuration": 46.6,
+            "TaskDuration": 529.4
+          },
+          "dom": {
+            "nodes": 5189,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 5189,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 400,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-12-visible",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "complexViewport": true,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 33.3,
+          "over33": 3,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 585.3,
+            "LayoutDuration": 234.4,
+            "RecalcStyleDuration": 103.1,
+            "TaskDuration": 1679.3
+          },
+          "dom": {
+            "nodes": 16188,
+            "complexCells": 116
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 223.2,
+            "LayoutDuration": 137.3,
+            "RecalcStyleDuration": 72.7,
+            "TaskDuration": 749.7
+          },
+          "dom": {
+            "nodes": 9125,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 9125,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 16,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2-long-visible",
+      "complexCols": 2,
+      "items": 32,
+      "depth": 1,
+      "complexViewport": true,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 50,
+          "over33": 7,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 521.6,
+            "LayoutDuration": 185.5,
+            "RecalcStyleDuration": 76.8,
+            "TaskDuration": 1581.1
+          },
+          "dom": {
+            "nodes": 8503,
+            "complexCells": 58
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 33.3,
+          "over33": 4,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 203.8,
+            "LayoutDuration": 79.1,
+            "RecalcStyleDuration": 35.9,
+            "TaskDuration": 537.8
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "object-12-visible",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "shape": "object",
+      "complexViewport": true,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 33.4,
+          "over33": 3,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1063.4,
+            "LayoutDuration": 166,
+            "RecalcStyleDuration": 85.9,
+            "TaskDuration": 1907.6
+          },
+          "dom": {
+            "nodes": 8915,
+            "complexCells": 112
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 221.2,
+            "LayoutDuration": 111,
+            "RecalcStyleDuration": 71.1,
+            "TaskDuration": 789
+          },
+          "dom": {
+            "nodes": 5301,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 5301,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 400,
+        "overflowing": 64
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "object-12-visible",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "shape": "object",
+      "complexViewport": true,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 33.4,
+          "over33": 9,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1120.8,
+            "LayoutDuration": 171.4,
+            "RecalcStyleDuration": 110.2,
+            "TaskDuration": 1999.5
+          },
+          "dom": {
+            "nodes": 8915,
+            "complexCells": 112
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 183.5,
+            "LayoutDuration": 89.5,
+            "RecalcStyleDuration": 54.8,
+            "TaskDuration": 567.8
+          },
+          "dom": {
+            "nodes": 5189,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 5189,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 400,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2-long-visible",
+      "complexCols": 2,
+      "items": 32,
+      "depth": 1,
+      "complexViewport": true,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 428.6,
+            "LayoutDuration": 148.3,
+            "RecalcStyleDuration": 62.1,
+            "TaskDuration": 1106.4
+          },
+          "dom": {
+            "nodes": 8215,
+            "complexCells": 56
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 94.9,
+            "LayoutDuration": 63.3,
+            "RecalcStyleDuration": 30.4,
+            "TaskDuration": 286.6
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-12-visible",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "complexViewport": true,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 33.4,
+          "over33": 4,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 644.3,
+            "LayoutDuration": 251.6,
+            "RecalcStyleDuration": 109.3,
+            "TaskDuration": 1868.7
+          },
+          "dom": {
+            "nodes": 16188,
+            "complexCells": 116
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 234.5,
+            "LayoutDuration": 154.7,
+            "RecalcStyleDuration": 77.8,
+            "TaskDuration": 807.6
+          },
+          "dom": {
+            "nodes": 9125,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 9125,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 16,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "object-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "shape": "object",
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 330.5,
+            "LayoutDuration": 53.4,
+            "RecalcStyleDuration": 23.3,
+            "TaskDuration": 578.2
+          },
+          "dom": {
+            "nodes": 1495,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 169.1,
+            "LayoutDuration": 81.7,
+            "RecalcStyleDuration": 46.5,
+            "TaskDuration": 530.8
+          },
+          "dom": {
+            "nodes": 5189,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 5189,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 400,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2-nested",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 2,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 309.4,
+            "LayoutDuration": 52.5,
+            "RecalcStyleDuration": 23.1,
+            "TaskDuration": 550
+          },
+          "dom": {
+            "nodes": 1495,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 83.8,
+            "LayoutDuration": 53,
+            "RecalcStyleDuration": 21.8,
+            "TaskDuration": 254.8
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2-long",
+      "complexCols": 2,
+      "items": 32,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 311.1,
+            "LayoutDuration": 53.5,
+            "RecalcStyleDuration": 23.6,
+            "TaskDuration": 553.2
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 93.1,
+            "LayoutDuration": 56.7,
+            "RecalcStyleDuration": 23.4,
+            "TaskDuration": 275.7
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 324,
+            "LayoutDuration": 53.6,
+            "RecalcStyleDuration": 23.4,
+            "TaskDuration": 567.5
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 218.6,
+            "LayoutDuration": 141.7,
+            "RecalcStyleDuration": 66.4,
+            "TaskDuration": 740.7
+          },
+          "dom": {
+            "nodes": 9125,
+            "complexCells": 64
+          }
+        }
+      },
+      "dom": {
+        "nodes": 9125,
+        "rows": 16,
+        "complexCells": 64,
+        "fields": 384,
+        "textareas": 16,
+        "overflowing": 48
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 320.4,
+            "LayoutDuration": 54.4,
+            "RecalcStyleDuration": 23.7,
+            "TaskDuration": 566.9
+          },
+          "dom": {
+            "nodes": 1543,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 87.6,
+            "LayoutDuration": 55.3,
+            "RecalcStyleDuration": 23.2,
+            "TaskDuration": 264.7
+          },
+          "dom": {
+            "nodes": 661,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 661,
+        "rows": 16,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 48,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "scalar",
+      "complexCols": 0,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 452.8,
+            "LayoutDuration": 133.3,
+            "RecalcStyleDuration": 56.6,
+            "TaskDuration": 888.2
+          },
+          "dom": {
+            "nodes": 2111,
+            "complexCells": 0
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 96.8,
+            "LayoutDuration": 68.2,
+            "RecalcStyleDuration": 29.5,
+            "TaskDuration": 326.2
+          },
+          "dom": {
+            "nodes": 1094,
+            "complexCells": 0
+          }
+        }
+      },
+      "dom": {
+        "nodes": 1094,
+        "rows": 27,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 81,
+        "overflowing": 0
+      },
+      "errors": []
+    }
+  ]
+}

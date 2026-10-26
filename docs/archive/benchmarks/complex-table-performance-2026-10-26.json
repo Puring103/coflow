@@ -1,0 +1,525 @@
+{
+  "date": "2026-10-26T02:13:15.754Z",
+  "disableSummaryMeasurement": false,
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "memoryGiB": 32,
+  "browser": "156.0.8078.4",
+  "rows": 3000,
+  "cols": 20,
+  "viewport": [
+    1280,
+    800
+  ],
+  "table": [
+    880,
+    480
+  ],
+  "results": [
+    {
+      "round": 0,
+      "name": "scalar",
+      "complexCols": 0,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 553.8,
+            "LayoutDuration": 140.2,
+            "RecalcStyleDuration": 58.4,
+            "TaskDuration": 1007.7
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 145.2,
+            "LayoutDuration": 61.9,
+            "RecalcStyleDuration": 27.9,
+            "TaskDuration": 347
+          }
+        }
+      },
+      "dom": {
+        "nodes": 1040,
+        "rows": 27,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 81,
+        "overflowing": 0
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 33.3,
+          "p95": 50,
+          "over33": 38,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1821.7,
+            "LayoutDuration": 941.2,
+            "RecalcStyleDuration": 148.4,
+            "TaskDuration": 3217.7
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 392.4,
+            "LayoutDuration": 157.4,
+            "RecalcStyleDuration": 34.4,
+            "TaskDuration": 747.4
+          }
+        }
+      },
+      "dom": {
+        "nodes": 6293,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 256,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 266.6,
+          "p95": 583.4,
+          "over33": 27,
+          "samples": 27,
+          "ms": {
+            "ScriptDuration": 4421.7,
+            "LayoutDuration": 3165.8,
+            "RecalcStyleDuration": 336.4,
+            "TaskDuration": 8444.2
+          }
+        },
+        "horizontal": {
+          "p50": 83.3,
+          "p95": 116.6,
+          "over33": 84,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 6512.1,
+            "LayoutDuration": 2300.7,
+            "RecalcStyleDuration": 308.5,
+            "TaskDuration": 10527.1
+          }
+        }
+      },
+      "dom": {
+        "nodes": 34373,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 16,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2-long",
+      "complexCols": 2,
+      "items": 32,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 133.3,
+          "p95": 316.8,
+          "over33": 54,
+          "samples": 54,
+          "ms": {
+            "ScriptDuration": 4923.4,
+            "LayoutDuration": 2648.7,
+            "RecalcStyleDuration": 359.1,
+            "TaskDuration": 8431.8
+          }
+        },
+        "horizontal": {
+          "p50": 50,
+          "p95": 66.7,
+          "over33": 71,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 4479.5,
+            "LayoutDuration": 1325.6,
+            "RecalcStyleDuration": 215.2,
+            "TaskDuration": 6508.3
+          }
+        }
+      },
+      "dom": {
+        "nodes": 22421,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 1024,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-2-nested",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 2,
+      "axes": {
+        "vertical": {
+          "p50": 33.4,
+          "p95": 50,
+          "over33": 51,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1878.4,
+            "LayoutDuration": 934.1,
+            "RecalcStyleDuration": 140,
+            "TaskDuration": 3255.3
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 410.7,
+            "LayoutDuration": 152.6,
+            "RecalcStyleDuration": 32.8,
+            "TaskDuration": 759.6
+          }
+        }
+      },
+      "dom": {
+        "nodes": 6037,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 256,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "object-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "shape": "object",
+      "axes": {
+        "vertical": {
+          "p50": 83.3,
+          "p95": 100.1,
+          "over33": 83,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 5642,
+            "LayoutDuration": 370.7,
+            "RecalcStyleDuration": 207.2,
+            "TaskDuration": 6880.9
+          }
+        },
+        "horizontal": {
+          "p50": 50,
+          "p95": 66.7,
+          "over33": 63,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 3702.2,
+            "LayoutDuration": 176.4,
+            "RecalcStyleDuration": 90.1,
+            "TaskDuration": 4814.5
+          }
+        }
+      },
+      "dom": {
+        "nodes": 19013,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 1552,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "object-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "shape": "object",
+      "axes": {
+        "vertical": {
+          "p50": 83.3,
+          "p95": 100,
+          "over33": 82,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 5657.5,
+            "LayoutDuration": 374.1,
+            "RecalcStyleDuration": 206.2,
+            "TaskDuration": 6903.4
+          }
+        },
+        "horizontal": {
+          "p50": 50,
+          "p95": 66.7,
+          "over33": 70,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 3880,
+            "LayoutDuration": 181.1,
+            "RecalcStyleDuration": 91.6,
+            "TaskDuration": 5020.4
+          }
+        }
+      },
+      "dom": {
+        "nodes": 19013,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 1552,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2-nested",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 2,
+      "axes": {
+        "vertical": {
+          "p50": 33.4,
+          "p95": 50,
+          "over33": 41,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1835.4,
+            "LayoutDuration": 935.7,
+            "RecalcStyleDuration": 139.7,
+            "TaskDuration": 3212.8
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 420.1,
+            "LayoutDuration": 157.3,
+            "RecalcStyleDuration": 33.5,
+            "TaskDuration": 766.3
+          }
+        }
+      },
+      "dom": {
+        "nodes": 6037,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 256,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2-long",
+      "complexCols": 2,
+      "items": 32,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 133.4,
+          "p95": 316.7,
+          "over33": 53,
+          "samples": 53,
+          "ms": {
+            "ScriptDuration": 4872.5,
+            "LayoutDuration": 2589.7,
+            "RecalcStyleDuration": 357.1,
+            "TaskDuration": 8319
+          }
+        },
+        "horizontal": {
+          "p50": 49.9,
+          "p95": 66.6,
+          "over33": 50,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 3827.2,
+            "LayoutDuration": 1241.5,
+            "RecalcStyleDuration": 205.3,
+            "TaskDuration": 5715.5
+          }
+        }
+      },
+      "dom": {
+        "nodes": 22421,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 1024,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 233.3,
+          "p95": 550.1,
+          "over33": 29,
+          "samples": 29,
+          "ms": {
+            "ScriptDuration": 4453.3,
+            "LayoutDuration": 3202.3,
+            "RecalcStyleDuration": 336.1,
+            "TaskDuration": 8515.3
+          }
+        },
+        "horizontal": {
+          "p50": 83.3,
+          "p95": 100.1,
+          "over33": 84,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 6660.7,
+            "LayoutDuration": 2234.3,
+            "RecalcStyleDuration": 305,
+            "TaskDuration": 10658.8
+          }
+        }
+      },
+      "dom": {
+        "nodes": 34373,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 16,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 33.4,
+          "p95": 50.1,
+          "over33": 39,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1857.3,
+            "LayoutDuration": 944.2,
+            "RecalcStyleDuration": 146.6,
+            "TaskDuration": 3264.8
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 416.2,
+            "LayoutDuration": 152.5,
+            "RecalcStyleDuration": 34.3,
+            "TaskDuration": 764.3
+          }
+        }
+      },
+      "dom": {
+        "nodes": 6293,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 256,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "scalar",
+      "complexCols": 0,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.7,
+          "p95": 16.8,
+          "over33": 2,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 562.9,
+            "LayoutDuration": 144.1,
+            "RecalcStyleDuration": 59.6,
+            "TaskDuration": 1021.9
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 152,
+            "LayoutDuration": 64.4,
+            "RecalcStyleDuration": 28.5,
+            "TaskDuration": 357.6
+          }
+        }
+      },
+      "dom": {
+        "nodes": 1040,
+        "rows": 27,
+        "complexCells": 0,
+        "fields": 0,
+        "textareas": 81,
+        "overflowing": 0
+      },
+      "errors": []
+    }
+  ]
+}

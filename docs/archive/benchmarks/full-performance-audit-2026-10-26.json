@@ -1,0 +1,151 @@
+{
+  "date": "2026-10-26T04:00:03.888Z",
+  "node": "v24.18.0",
+  "method": "Node source microbench, not browser or desktop latency. Proposal source overlay only; repository implementation unchanged.",
+  "field_projection_sha256": "acaa259a89e8428c5fa720ede3c8990963f885cc358bb103deb10c0845246efe",
+  "selection": [
+    {
+      "size": 1000,
+      "comparisons": 500500,
+      "current": {
+        "samples_ms": [
+          3.358000000000004,
+          3.2327999999999975,
+          3.140199999999993
+        ],
+        "median_ms": 3.2327999999999975
+      },
+      "indexed_including_build": {
+        "samples_ms": [
+          0.6299999999999955,
+          0.9596000000000089,
+          0.531099999999995
+        ],
+        "median_ms": 0.6299999999999955
+      }
+    },
+    {
+      "size": 2000,
+      "comparisons": 2001000,
+      "current": {
+        "samples_ms": [
+          11.942199999999985,
+          12.909599999999983,
+          10.46860000000001
+        ],
+        "median_ms": 11.942199999999985
+      },
+      "indexed_including_build": {
+        "samples_ms": [
+          1.0725000000000193,
+          1.4003999999999905,
+          1.158600000000007
+        ],
+        "median_ms": 1.158600000000007
+      }
+    },
+    {
+      "size": 4000,
+      "comparisons": 8002000,
+      "current": {
+        "samples_ms": [
+          27.272099999999995,
+          29.5882,
+          27.730700000000013
+        ],
+        "median_ms": 27.730700000000013
+      },
+      "indexed_including_build": {
+        "samples_ms": [
+          2.675299999999993,
+          2.36039999999997,
+          2.4318000000000097
+        ],
+        "median_ms": 2.4318000000000097
+      }
+    },
+    {
+      "size": 8000,
+      "comparisons": 32004000,
+      "current": {
+        "samples_ms": [
+          119.31419999999997,
+          113.32629999999995,
+          121.03649999999993
+        ],
+        "median_ms": 119.31419999999997
+      },
+      "indexed_including_build": {
+        "samples_ms": [
+          8.002599999999916,
+          5.150600000000054,
+          5.043800000000033
+        ],
+        "median_ms": 5.150600000000054
+      }
+    }
+  ],
+  "values": [
+    {
+      "size": 1000,
+      "comparisons_per_sample": 5,
+      "current": {
+        "samples_ms": [
+          1.3410000000000082,
+          1.535600000000045,
+          1.1147999999999456
+        ],
+        "median_ms": 1.3410000000000082
+      },
+      "identity_proposal": {
+        "samples_ms": [
+          0.11850000000004002,
+          0.06120000000009895,
+          0.06729999999993197
+        ],
+        "median_ms": 0.06729999999993197
+      }
+    },
+    {
+      "size": 10000,
+      "comparisons_per_sample": 5,
+      "current": {
+        "samples_ms": [
+          8.917200000000093,
+          8.882600000000025,
+          8.49860000000001
+        ],
+        "median_ms": 8.882600000000025
+      },
+      "identity_proposal": {
+        "samples_ms": [
+          0.35169999999993706,
+          0.4132000000000744,
+          0.3484999999999445
+        ],
+        "median_ms": 0.35169999999993706
+      }
+    },
+    {
+      "size": 50000,
+      "comparisons_per_sample": 5,
+      "current": {
+        "samples_ms": [
+          48.35480000000007,
+          48.15340000000003,
+          49.95370000000014
+        ],
+        "median_ms": 48.35480000000007
+      },
+      "identity_proposal": {
+        "samples_ms": [
+          1.842200000000048,
+          1.5584000000001197,
+          1.6030000000000655
+        ],
+        "median_ms": 1.6030000000000655
+      }
+    }
+  ],
+  "consumed": 90000
+}

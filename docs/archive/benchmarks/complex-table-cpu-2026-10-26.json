@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-26T02:20:48.534Z",
+  "disableSummaryMeasurement": false,
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "memoryGiB": 32,
+  "browser": "156.0.8078.4",
+  "rows": 3000,
+  "cols": 20,
+  "viewport": [
+    1280,
+    800
+  ],
+  "table": [
+    880,
+    480
+  ],
+  "results": [
+    {
+      "round": 0,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 250,
+          "p95": 299.9,
+          "over33": 34,
+          "samples": 35,
+          "ms": {
+            "ScriptDuration": 4264.5,
+            "LayoutDuration": 3214.9,
+            "RecalcStyleDuration": 334.5,
+            "TaskDuration": 8361.5
+          }
+        },
+        "horizontal": {
+          "p50": 33.4,
+          "p95": 50.1,
+          "over33": 37,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 3089.3,
+            "LayoutDuration": 1157.9,
+            "RecalcStyleDuration": 154,
+            "TaskDuration": 5184.1
+          }
+        }
+      },
+      "dom": {
+        "nodes": 34373,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 16,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 250,
+          "p95": 283.3,
+          "over33": 34,
+          "samples": 34,
+          "ms": {
+            "ScriptDuration": 4155.2,
+            "LayoutDuration": 3238.6,
+            "RecalcStyleDuration": 352.8,
+            "TaskDuration": 8273.3
+          }
+        },
+        "horizontal": {
+          "p50": 33.4,
+          "p95": 50,
+          "over33": 34,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 3009.3,
+            "LayoutDuration": 1189.5,
+            "RecalcStyleDuration": 156.8,
+            "TaskDuration": 5132.1
+          }
+        }
+      },
+      "dom": {
+        "nodes": 34373,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 16,
+        "overflowing": 192
+      },
+      "errors": []
+    }
+  ]
+}

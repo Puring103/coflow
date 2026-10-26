@@ -1,0 +1,54 @@
+{
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "browser": "156.0.8078.4",
+  "results": [
+    {
+      "round": 0,
+      "rows": 200,
+      "partsPerRow": 8,
+      "oldMs": 65.79999995231628,
+      "batchMs": 2.5,
+      "cachedMs": 0.20000004768371582,
+      "zoomGeometry": {
+        "zoom": 1.25,
+        "containerClientWidth": 230,
+        "containerRectWidth": 287.5,
+        "partRectWidth": 95.3125,
+        "partLogicalWidth": 76.25
+      },
+      "equivalent": true
+    },
+    {
+      "round": 1,
+      "rows": 200,
+      "partsPerRow": 8,
+      "oldMs": 57.69999980926514,
+      "batchMs": 2.5,
+      "cachedMs": 0.20000004768371582,
+      "zoomGeometry": {
+        "zoom": 1.25,
+        "containerClientWidth": 230,
+        "containerRectWidth": 287.5,
+        "partRectWidth": 95.3125,
+        "partLogicalWidth": 76.25
+      },
+      "equivalent": true
+    },
+    {
+      "round": 2,
+      "rows": 200,
+      "partsPerRow": 8,
+      "oldMs": 55.90000009536743,
+      "batchMs": 2.3999998569488525,
+      "cachedMs": 0.10000014305114746,
+      "zoomGeometry": {
+        "zoom": 1.25,
+        "containerClientWidth": 230,
+        "containerRectWidth": 287.5,
+        "partRectWidth": 95.3125,
+        "partLogicalWidth": 76.25
+      },
+      "equivalent": true
+    }
+  ]
+}

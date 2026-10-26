@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-26",
+  "profile": "release",
+  "files": 1,
+  "configured_entity_rows": 3000,
+  "actual_rows": 3300,
+  "columns": 22,
+  "build_before_annotation_sharing_ms": { "cold": 136.42, "warm": 131.85 },
+  "build_after_annotation_sharing_ms": { "cold": 61.49, "warm": 60.18 },
+  "plain_bytes": 27560483,
+  "transfer_bytes": 13596270,
+  "descriptors": 23,
+  "unique_top_level_annotations": 19,
+  "plain_serialize_ms": 37.4274,
+  "pack_ms": 1.0258,
+  "transfer_serialize_ms": 20.721,
+  "frontend_round_trip": true
+}

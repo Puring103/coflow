@@ -1,0 +1,187 @@
+{
+  "date": "2026-10-26T02:14:48.784Z",
+  "disableSummaryMeasurement": true,
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "memoryGiB": 32,
+  "browser": "156.0.8078.4",
+  "rows": 3000,
+  "cols": 20,
+  "viewport": [
+    1280,
+    800
+  ],
+  "table": [
+    880,
+    480
+  ],
+  "results": [
+    {
+      "round": 0,
+      "name": "array-2",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.8,
+          "p95": 33.4,
+          "over33": 8,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1739,
+            "LayoutDuration": 127,
+            "RecalcStyleDuration": 66.9,
+            "TaskDuration": 2162
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 400.4,
+            "LayoutDuration": 44.1,
+            "RecalcStyleDuration": 20.9,
+            "TaskDuration": 615.8
+          }
+        }
+      },
+      "dom": {
+        "nodes": 6293,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 256,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    },
+    {
+      "round": 0,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 133.2,
+          "p95": 266.7,
+          "over33": 63,
+          "samples": 63,
+          "ms": {
+            "ScriptDuration": 7064.9,
+            "LayoutDuration": 309,
+            "RecalcStyleDuration": 205.6,
+            "TaskDuration": 8161.4
+          }
+        },
+        "horizontal": {
+          "p50": 83.3,
+          "p95": 116.6,
+          "over33": 83,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 6443.5,
+            "LayoutDuration": 183.7,
+            "RecalcStyleDuration": 101.3,
+            "TaskDuration": 7946.6
+          }
+        }
+      },
+      "dom": {
+        "nodes": 34373,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 16,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-12",
+      "complexCols": 12,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 133.3,
+          "p95": 300,
+          "over33": 62,
+          "samples": 62,
+          "ms": {
+            "ScriptDuration": 7373.3,
+            "LayoutDuration": 310.4,
+            "RecalcStyleDuration": 197.5,
+            "TaskDuration": 8472.5
+          }
+        },
+        "horizontal": {
+          "p50": 83.3,
+          "p95": 100.1,
+          "over33": 84,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 6350.1,
+            "LayoutDuration": 187,
+            "RecalcStyleDuration": 100.6,
+            "TaskDuration": 7845.1
+          }
+        }
+      },
+      "dom": {
+        "nodes": 34373,
+        "rows": 16,
+        "complexCells": 192,
+        "fields": 1536,
+        "textareas": 16,
+        "overflowing": 192
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "name": "array-2",
+      "complexCols": 2,
+      "items": 8,
+      "depth": 1,
+      "axes": {
+        "vertical": {
+          "p50": 16.8,
+          "p95": 33.4,
+          "over33": 11,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 1731.6,
+            "LayoutDuration": 127.2,
+            "RecalcStyleDuration": 67.2,
+            "TaskDuration": 2157.2
+          }
+        },
+        "horizontal": {
+          "p50": 16.7,
+          "p95": 16.7,
+          "over33": 0,
+          "samples": 85,
+          "ms": {
+            "ScriptDuration": 409.7,
+            "LayoutDuration": 44.8,
+            "RecalcStyleDuration": 21.3,
+            "TaskDuration": 629.1
+          }
+        }
+      },
+      "dom": {
+        "nodes": 6293,
+        "rows": 16,
+        "complexCells": 32,
+        "fields": 256,
+        "textareas": 48,
+        "overflowing": 32
+      },
+      "errors": []
+    }
+  ]
+}

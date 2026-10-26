@@ -4,6 +4,10 @@
 
 | 资料 | 类型 | 当前对应文档 |
 | --- | --- | --- |
+| [全路径审查微基准](benchmarks/full-performance-audit-2026-10-26.json) | 选区集合索引与不可变值身份比较的局部算法对照 | [核心与前端性能审查](../development/full-performance-audit.zh-CN.md) |
+| [表格尺寸预算优化验收](benchmarks/table-size-budget-2026-10-26.md) | 可见高度预算、主动适配、列区间共享与滚动复测 | [性能约束](../editor-design/performance.md) |
+| [复杂表格优化验收](benchmarks/complex-table-optimized-2026-10-26.md) | 集中测量、复杂列窗口、共享描述与生产构建复测 | [复杂表格设计](../development/editor-performance-review.zh-CN.md) |
+| [复杂表格滚动专项采样](benchmarks/complex-table-performance-2026-10-26.md) | 复杂列数量、集合长度、摘要测量诊断对照与 CPU 热点 | [性能约束](../editor-design/performance.md) |
 | [编辑热路径与界面帧间隔](benchmarks/engine-editing-2026-10-26.md) | 批次输入、行对象复用、虚拟列表缓存与生产构建前后对照 | [引擎优化方案](../development/engine-performance-plan.zh-CN.md) |
 | [局部更新、检查与加载测量](benchmarks/engine-performance-incremental-2026-10-26.md) | 分页共享、重复刷新、批量更新与完整原始对照 | [引擎优化方案](../development/engine-performance-plan.zh-CN.md) |
 | [数据加载器重构](plans/data-loader-redesign.zh-CN.md) | 历史实施方案 | [C# 生成与加载](../language-design/02-api-runtime-design.zh-CN.md) |
