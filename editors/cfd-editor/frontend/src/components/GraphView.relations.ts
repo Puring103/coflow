@@ -16,8 +16,19 @@ export interface RelationPort {
   value: FieldValue
 }
 
+export interface RelationProjection {
+  ports: RelationPort[]
+  expanded: Set<string>
+  byId: ReadonlyMap<string, RelationPort>
+  appendPaths: ReadonlySet<string>
+}
+
+const projections = new WeakMap<FieldCell[], RelationProjection>()
+
 // 端口保留结构化写入路径；显示路径只用于匹配连线，不能反向解析为配置路径。
-export function relationPorts(fields: FieldCell[]): { ports: RelationPort[]; expanded: Set<string> } {
+export function relationPorts(fields: FieldCell[]): RelationProjection {
+  const cached = projections.get(fields)
+  if (cached) return cached
   const ports: RelationPort[] = []
   const expanded = new Set<string>()
   function visit(original: FieldValue, annotation: FieldAnnotation | null | undefined,
@@ -54,7 +65,10 @@ export function relationPorts(fields: FieldCell[]): { ports: RelationPort[]; exp
     }
   }
   for (const field of fields) visit(field.value, field.annotation, [fieldPathField(field.name)], field.name, [], false)
-  return { ports, expanded }
+  const result = { ports, expanded, byId: new Map(ports.map(port => [port.id, port])),
+    appendPaths: new Set(ports.filter(port => port.append).map(port => JSON.stringify(port.path))) }
+  projections.set(fields, result)
+  return result
 }
 
 export function graphCardFields(

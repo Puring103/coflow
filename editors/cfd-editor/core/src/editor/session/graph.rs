@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use coflow_runtime::{format_field_path, RecordCoordinate};
 use coflow_runtime::{CfdPath, CfdPathSegment};
 
-use crate::editor::convert::{record_to_row, WireContext};
+use crate::editor::convert::{diagnostics_for_record, record_fields, WireContext};
 use crate::editor::types::{GraphData, GraphEdge, GraphNode, GraphQuery};
 
 use super::EditorSession;
@@ -30,10 +30,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     let mut available_fields: BTreeSet<String> = BTreeSet::new();
     let mut queue: VecDeque<(RecordCoordinate, usize)> = VecDeque::new();
     let mut depths: HashMap<RecordCoordinate, usize> = HashMap::new();
-    for coordinate in &starts {
-        if depths.len() >= node_limit {
-            break;
-        }
+    for coordinate in starts.take(node_limit) {
         queue.push_back((coordinate.clone(), 0));
         depths.insert(coordinate.clone(), 0);
     }
@@ -50,8 +47,11 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         let in_focus = host_file == file_path;
         let is_collapsed = depth >= max_depth;
 
-        let row = record_to_row(view.record, &host_file, &ctx);
-        let fields = if is_collapsed { Vec::new() } else { row.fields };
+        // 深度折叠节点只需要身份与诊断，不能先转换整棵字段树再丢弃。
+        let fields = if is_collapsed { Vec::new() } else { record_fields(view.record, &ctx) };
+        let (field_diagnostics, diagnostic_severity) = diagnostics_for_record(
+            &session.diagnostics, &host_file, &coordinate,
+        );
 
         nodes.entry(node_key.clone()).or_insert_with(|| GraphNode {
             coordinate: coordinate.clone(),
@@ -59,15 +59,15 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
             in_focus_file: in_focus,
             is_collapsed,
             fields,
-            field_diagnostics: row.field_diagnostics,
-            diagnostic_severity: row.diagnostic_severity,
+            field_diagnostics,
+            diagnostic_severity,
         });
 
         if is_collapsed {
             continue;
         }
 
-        for edge in queries.record_references(&coordinate) {
+        for edge in queries.iter_record_references(&coordinate) {
             if let Some(field) = top_level_field(&edge.path) {
                 available_fields.insert(field.to_string());
             }
@@ -94,15 +94,14 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     }
 }
 
-fn start_records(session: &EditorSession, file_path: &str) -> Vec<RecordCoordinate> {
+fn start_records<'a>(session: &'a EditorSession, file_path: &'a str) -> impl Iterator<Item = RecordCoordinate> + 'a {
     session
         .queries()
         .record_views_in_file(file_path)
         .filter_map(|view| {
             let coordinate = view.coordinate;
-            (!session.queries().record_references(&coordinate).is_empty()).then_some(coordinate)
+            session.queries().has_record_references(&coordinate).then_some(coordinate)
         })
-        .collect()
 }
 
 fn top_level_field(path: &CfdPath) -> Option<&str> {

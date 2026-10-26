@@ -39,7 +39,7 @@ import {
   type GraphLayoutResult,
 } from './GraphView.layout'
 import { runGraphLayoutInWorker } from '../graph/layoutWorkerClient'
-import { graphCardFields, relationPorts, relationValue, type RelationPort } from './GraphView.relations'
+import { graphCardFields, relationPorts, relationValue, type RelationPort, type RelationProjection } from './GraphView.relations'
 import { useEditorLookups } from '../utils/editContext'
 import { SearchableSelect } from './SearchableSelect'
 import { Icon } from './Icon'
@@ -67,7 +67,7 @@ interface NodeData extends Record<string, unknown> {
   expanded: boolean
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
-  ports: RelationPort[]
+  relation: RelationProjection
   compact: boolean
   /** Stable signature of the per-row expanded set, so CfdNode can re-measure
    *  handle Y positions only when something that affects row geometry changes. */
@@ -172,14 +172,13 @@ function CfdNode(props: NodeProps) {
 
 // 查询 generation 变化只重新解析名称；名称未变时不重新执行卡片字段树。
 const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pick<NodeProps, 'id' | 'data'> & { shortName?: string }) {
-  const { graphNode: gn, expanded, outgoingPaths, ports, compact, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, relation, compact, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
-  const graphRelations = useMemo(() => ports.length > 0 ? {
-    expandedPaths: relationPorts(gn.fields).expanded,
-    appendPaths: new Set(ports.filter(port => port.append).map(port => JSON.stringify(port.path))),
-  } : undefined, [gn.fields, ports])
+  const graphRelations = useMemo(() => relation.ports.length > 0 ? {
+    expandedPaths: relation.expanded, appendPaths: relation.appendPaths,
+  } : undefined, [relation])
 
   const outgoingKey = outgoingPaths.join('|')
   const estimatedHandles = useMemo(
@@ -211,17 +210,23 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
         ? offsetWithin(headerRef.current, root) + headerRef.current.offsetHeight / 2
         : 21
       const next = new Map<string, number>()
+      // 一次建立真实行索引，端口循环内不再重复扫描整个节点 DOM。
+      const wireRows = new Map<string, HTMLElement>(), namedRows = new Map<string, HTMLElement>()
+      const displayRows = new Map<string, HTMLElement>(), addRows = new Map<string, HTMLElement>()
+      root.querySelectorAll<HTMLElement>('.dc-row').forEach(row => {
+        if (row.dataset.fieldPathWire && !wireRows.has(row.dataset.fieldPathWire)) wireRows.set(row.dataset.fieldPathWire, row)
+        if (row.dataset.fieldPath && !displayRows.has(row.dataset.fieldPath)) displayRows.set(row.dataset.fieldPath, row)
+        if (row.dataset.fieldName && !namedRows.has(row.dataset.fieldName)) namedRows.set(row.dataset.fieldName, row)
+      })
+      root.querySelectorAll<HTMLElement>('[data-add-path-wire]').forEach(row => {
+        if (row.dataset.addPathWire && !addRows.has(row.dataset.addPathWire)) addRows.set(row.dataset.addPathWire, row)
+      })
       for (const path of outgoingPaths) {
-        const port = ports.find(port => port.id === path)
-        let row = root.querySelector<HTMLElement>(
-          port?.append
-            ? `[data-add-path-wire="${CSS.escape(JSON.stringify(port.path))}"]`
-            : port ? `.dc-row[data-field-path-wire="${CSS.escape(JSON.stringify(port.path))}"]`
-              : `.dc-row[data-field-path="${CSS.escape(path)}"]`,
-        )
+        const port = relation.byId.get(path)
+        let row = port ? (port.append ? addRows : wireRows).get(JSON.stringify(port.path)) : displayRows.get(path)
         if (!row) {
           const top = path.match(/^[^.[]+/)?.[0]
-          if (top) row = root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
+          if (top) row = namedRows.get(top)
         }
         next.set(path, row ? offsetWithin(row, root) + row.offsetHeight / 2 : headerY)
       }
@@ -236,7 +241,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
     const observer = new ResizeObserver(measure)
     observer.observe(root)
     return () => observer.disconnect()
-  }, [outgoingKey, expanded, rowExpandKey, gn.fields, ports])
+  }, [outgoingKey, expanded, rowExpandKey, gn.fields, relation])
 
   // Tell React Flow to recompute edge paths AFTER our handle Y values land
   // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
@@ -271,8 +276,8 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
           type="source"
           position={Position.Right}
           id={`path-${path}`}
-          isConnectable={!!onEdit && !!ports.find(port => port.id === path && !port.readOnly && (!port.append || !!onCollectionEdit))}
-          title={ports.find(port => port.id === path)?.append ? '追加引用' : path}
+          isConnectable={!!onEdit && !!relation.byId.get(path) && !relation.byId.get(path)!.readOnly && (!relation.byId.get(path)!.append || !!onCollectionEdit)}
+          title={relation.byId.get(path)?.append ? '追加引用' : path}
           style={{ top: pathOffsets.get(path) ?? headerCenterY, bottom: 'auto' }}
         />
       ))}
@@ -653,14 +658,14 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
 
   // Group outgoing edge paths by source node id (used to render per-path handles).
   const outgoingPathsByNode = useMemo(() => {
-    const m = new Map<string, string[]>()
-    for (const [id, relation] of relations) m.set(id, relation.ports.map(port => port.id))
+    const m = new Map<string, Set<string>>()
+    for (const [id, relation] of relations) m.set(id, new Set(relation.ports.map(port => port.id)))
     for (const e of [...forwardEdges, ...backEdges]) {
-      const list = m.get(e.source) ?? []
-      if (!list.includes(e.field_path)) list.push(e.field_path)
+      const list = m.get(e.source) ?? new Set<string>()
+      list.add(e.field_path)
       m.set(e.source, list)
     }
-    return m
+    return new Map([...m].map(([id, paths]) => [id, [...paths]]))
   }, [forwardEdges, backEdges, relations])
 
   const nodeActionPort = useRef({ onWriteField, onCollectionEdit, onOpenRecord, onDiagnosticBadgeClick })
@@ -704,7 +709,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           },
         ).severity
         const outgoingPaths = (outgoingPathsByNode.get(n.id) ?? []).filter(path => {
-          const port = relations.get(n.id)?.ports.find(port => port.id === path)
+          const port = relations.get(n.id)?.byId.get(path)
           return !port?.append || (editable && !!onCollectionEdit && !port.readOnly)
         })
         const estimated = estimateHandleOffsets(n, outgoingPaths, expandedNodes.get(n.id) ?? false)
@@ -726,7 +731,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           data: {
             graphNode: n,
             expanded: expandedNodes.get(n.id) ?? false,
-            ports: relations.get(n.id)?.ports ?? [],
+            relation: relations.get(n.id) ?? relationPorts([]),
             outgoingPaths,
             compact: compactNodes,
             rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
@@ -853,7 +858,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   const dragVersion = useRef(0)
 
   function sourcePort(nodeId: string, handle: string | null | undefined) {
-    return relations.get(nodeId)?.ports.find(port => `path-${port.id}` === handle)
+    return (handle?.startsWith('path-') ? relations.get(nodeId)?.byId.get(handle.slice(5)) : undefined)
   }
   function editablePort(nodeId: string, port: RelationPort | undefined) {
     const node = currentNodeById.get(nodeId)
@@ -876,7 +881,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   }
   async function commitRelation(nodeId: string, portId: string, target: RefTarget) {
     const node = currentNodeById.get(nodeId)
-    const port = relations.get(nodeId)?.ports.find(port => port.id === portId)
+    const port = relations.get(nodeId)?.byId.get(portId)
     if (!node || !port || !editablePort(nodeId, port)) return
     try {
       // 使用现有写入通道，统一执行校验、配置落盘和撤销历史记录。
@@ -921,7 +926,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
         forwardEdges.includes(item) ? 'fwd' : 'back', item,
       ) === edge.id)
       if (!graphEdge) continue
-      const port = relations.get(graphEdge.source)?.ports.find(item => item.id === graphEdge.field_path)
+      const port = relations.get(graphEdge.source)?.byId.get(graphEdge.field_path)
       const node = currentNodeById.get(graphEdge.source)
       if (!port || !node || !editablePort(graphEdge.source, port)) continue
       const lastPath = port.path[port.path.length - 1]
@@ -960,7 +965,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     dragSource.current = null
     if (!source || connectionDone.current) return
     const version = dragVersion.current
-    const port = relations.get(source.nodeId)?.ports.find(port => port.id === source.portId)
+    const port = relations.get(source.nodeId)?.byId.get(source.portId)
     if (!port) return
     const point = 'changedTouches' in event ? event.changedTouches[0] : event
     if (!point) return

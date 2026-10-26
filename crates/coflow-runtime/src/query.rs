@@ -386,20 +386,30 @@ impl<'a> ProjectQueries<'a> {
 
     #[must_use]
     pub fn record_references(self, coordinate: &RecordCoordinate) -> Vec<RecordReferenceInfo> {
-        let Some(host) = self.id_for_coordinate(&coordinate.actual_type, &coordinate.id) else {
-            return Vec::new();
-        };
-        self.session
-            .model()
-            .ref_edges_from_host(host)
-            .filter_map(|edge| {
+        self.iter_record_references(coordinate).collect()
+    }
+
+    /// 图查询只需判断是否存在关系，不创建路径副本和完整引用列表。
+    #[must_use]
+    pub fn has_record_references(self, coordinate: &RecordCoordinate) -> bool {
+        self.id_for_coordinate(&coordinate.actual_type, &coordinate.id)
+            .is_some_and(|host| self.session.model().ref_edges_from_host(host).next().is_some())
+    }
+
+    pub fn iter_record_references(
+        self,
+        coordinate: &RecordCoordinate,
+    ) -> impl Iterator<Item = RecordReferenceInfo> + 'a {
+        self.id_for_coordinate(&coordinate.actual_type, &coordinate.id)
+            .into_iter()
+            .flat_map(move |host| self.session.model().ref_edges_from_host(host))
+            .filter_map(move |edge| {
                 Some(RecordReferenceInfo {
                     target: self.coordinate_of(edge.target)?,
                     path: edge.site.path.clone(),
                     dimension: edge.site.dimension.clone(),
                 })
             })
-            .collect()
     }
 
     #[must_use]

@@ -168,28 +168,7 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
     }
 }
 
-/// Convenience: pull the [`RecordView`] from the session, then render it.
-#[must_use]
-pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
-    let fields = record_fields(record, ctx);
-    let (field_index, field_summaries) = field_indexes(&fields);
-    let coordinate = record.coordinate();
-    let (field_diagnostics, diagnostic_severity) =
-        diagnostics_for_record(ctx.diagnostics, display_path, &coordinate);
-    RecordRow {
-        coordinate,
-        display_path: display_path.to_string(),
-        container_index: 0,
-        container_size: 1,
-        fields,
-        field_index,
-        field_summaries,
-        field_diagnostics,
-        diagnostic_severity,
-    }
-}
-
-fn diagnostics_for_record(
+pub(crate) fn diagnostics_for_record(
     diagnostics: &Diagnostics,
     file_path: &str,
     coordinate: &RecordCoordinate,
@@ -222,7 +201,7 @@ fn normalized_severity(severity: &str) -> &'static str {
     }
 }
 
-fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
+pub(crate) fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
     // `CfdRecord` stores fields in a BTreeMap for deterministic lookup, not
     // presentation. The schema retains the declared (including inherited)
     // field order, which is what users expect in the editor.
