@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { GraphRowGeometry } from './rowGeometry'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
+import { relationPorts } from '../components/GraphView.relations'
+import { countVisibleRows } from '../components/DataCard.geometry'
 
 const annotation = (declared_type: string): FieldAnnotation => ({ declared_type, ref_target_type: null,
   enum_int_value: null, enum_type: null, enum_is_flag: false, nullable: false, read_only: false,
@@ -11,6 +13,25 @@ const list = (count: number): FieldCell[] => [{ name: 'links', missing: false,
   annotation: { ...annotation('[&Item]'), item_annotation: { ...annotation('&Item'), ref_target_type: 'Item' } } }]
 
 describe('graph row geometry', () => {
+  it('uses omitted annotation defaults through layout, relation projection and row geometry', () => {
+    const fields: FieldCell[] = [
+      { name: 'name', missing: false, value: { kind: 'string', value: '名称' }, annotation: { declared_type: 'string' } },
+      { name: 'links', missing: false, value: { kind: 'array', value: [{ kind: 'ref', value: 'same' }] },
+        annotation: { declared_type: '[&Item]', item_annotation: { declared_type: '&Item', ref_target_type: 'Item' } } },
+      { name: 'dict', missing: false, value: { kind: 'dict', value: [[{ kind: 'string', value: 'key' }, { kind: 'int', value: 1n }]] },
+        annotation: { declared_type: '{string: int}', item_annotation: { declared_type: 'int' } } },
+    ]
+    const relation = relationPorts(fields)
+    expect(relation.ports.map(port => [port.id, port.readOnly, port.nullable])).toEqual([
+      ['links[0]', false, false], ['links[+]', false, false],
+    ])
+    const expanded = new Set(['links', 'dict'])
+    expect(countVisibleRows(fields, expanded)).toBe(5)
+    const geometry = new GraphRowGeometry(fields, expanded, relation.appendPaths, true)
+    expect(geometry.rows).toHaveLength(6)
+    expect(geometry.rows.every(row => Number.isFinite(geometry.center(row.path)))).toBe(true)
+  })
+
   it('keeps a fixed viewport bounded while all duplicate target anchors remain distinct', () => {
     const mounted: number[] = []
     for (const count of [1000, 10000]) {

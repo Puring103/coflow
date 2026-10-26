@@ -36,10 +36,10 @@ describe('snapshot receive boundary', () => {
     const decoded = decodeFileRecords(fromIpc(transfer))
     const first = decoded.records[0].fields[0].annotation!
     expect(decoded.records[0].fields[1].annotation).toBe(first)
-    expect(first.children['0']).toBe(first.item_annotation)
+    expect(first.children!['0']).toBe(first.item_annotation)
     expect(decoded.records[1].fields[0].annotation).toBe(first.item_annotation)
-    expect(first.children['0']!.enum_int_value).toBe(9007199254740993n)
-    expect(first.children['1']!.enum_int_value).toBe(2n)
+    expect(first.children!['0']!.enum_int_value).toBe(9007199254740993n)
+    expect(first.children!['1']!.enum_int_value).toBe(2n)
     expect(decoded.records[1].fields[1].annotation).toBeNull()
     expect(transfer.snapshot.records[0].fields[0].annotation).toBeNull()
   })

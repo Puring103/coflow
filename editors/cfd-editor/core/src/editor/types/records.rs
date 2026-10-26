@@ -178,19 +178,27 @@ pub struct FieldAnnotation {
         with = "coflow_runtime::serde_i64::option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "ts-export", ts(optional = nullable))]
     pub enum_int_value: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional = nullable))]
     pub declared_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional = nullable))]
     pub ref_target_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional = nullable))]
     pub enum_type: Option<String>,
+    // 序列化省略默认注解；生成类型也必须标记可省略，防止前端直接解引用缺失集合。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<bool>", optional))]
     pub enum_is_flag: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<bool>", optional))]
     pub nullable: bool,
     /// True when this cell is exposed for inspection but cannot be edited.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<bool>", optional))]
     pub read_only: bool,
     /// Template annotation for elements of an array/dict field. Carries the
     /// declared element type (and derived ref/enum/nullable metadata) so the
@@ -198,6 +206,7 @@ pub struct FieldAnnotation {
     /// new element or when the collection is empty. `None` for non-collection
     /// fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional = nullable))]
     pub item_annotation: Option<Box<Self>>,
     /// 字典键的 schema 模板。新增首项时必须依据它选择键编辑器，不能从已有数据猜测。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,14 +217,18 @@ pub struct FieldAnnotation {
     /// this to expose a type-switch control on object cells and to prompt for
     /// a concrete type when materializing a null polymorphic field.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<Vec<String>>", optional))]
     pub polymorphic_types: Vec<String>,
     /// Concrete object type when schema context determines one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional = nullable))]
     pub object_type: Option<String>,
     /// Direct object fields in inherited schema declaration order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<Vec<String>>", optional))]
     pub field_order: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(feature = "ts-export", ts(as = "Option<BTreeMap<String, Self>>", optional))]
     pub children: BTreeMap<String, Self>,
 }
 

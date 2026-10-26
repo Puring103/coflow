@@ -1,7 +1,7 @@
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { FieldCell } from '../bindings/FieldCell'
 import {
-  dictKeyPathText, fieldPathDictKey, fieldPathField, fieldPathIndex, objectFieldCells,
+  annotationChild, dictKeyPathText, fieldPathDictKey, fieldPathField, fieldPathIndex, objectFieldCells,
   presentationValue, replacePresentationValue, type FieldPathSegment, type FieldValue,
 } from '../wire'
 import { collectionShapeForDeclaredType } from '../value/fieldValue'
@@ -38,7 +38,7 @@ export function relationPorts(fields: FieldCell[]): RelationProjection {
       ? collectionShapeForDeclaredType(annotation?.declared_type ?? undefined) ?? shown : shown
     readOnly ||= !!annotation?.read_only
     if (annotation?.ref_target_type) {
-      ports.push({ id, path, targetType: annotation.ref_target_type, append: false, readOnly, nullable: annotation.nullable, value: original })
+      ports.push({ id, path, targetType: annotation.ref_target_type, append: false, readOnly, nullable: !!annotation.nullable, value: original })
       ancestors.forEach(parent => expanded.add(parent))
       return
     }
@@ -48,18 +48,18 @@ export function relationPorts(fields: FieldCell[]): RelationProjection {
         visit(field.value, field.annotation, [...path, fieldPathField(field.name)], `${id}.${field.name}`, parents, readOnly)
       }
     } else if (value.kind === 'array') {
-      value.value.forEach((item, index) => visit(item, annotation?.children[String(index)] ?? annotation?.item_annotation,
+      value.value.forEach((item, index) => visit(item, annotationChild(annotation, index) ?? annotation?.item_annotation,
         [...path, fieldPathIndex(index)], `${id}[${index}]`, parents, readOnly))
       const item = annotation?.item_annotation
       if (item?.ref_target_type) {
         ports.push({ id: `${id}[+]`, path, targetType: item.ref_target_type, append: true,
-          readOnly: readOnly || item.read_only, nullable: item.nullable, value: { kind: 'option_none' } })
+          readOnly: readOnly || !!item.read_only, nullable: !!item.nullable, value: { kind: 'option_none' } })
         parents.forEach(parent => expanded.add(parent))
       }
     } else if (value.kind === 'dict') {
       for (const [key, item] of value.value) {
         const text = dictKeyPathText(key)
-        visit(item, annotation?.children[text] ?? annotation?.item_annotation,
+        visit(item, annotationChild(annotation, text) ?? annotation?.item_annotation,
           [...path, fieldPathDictKey(text)], `${id}[${text}]`, parents, readOnly)
       }
     }

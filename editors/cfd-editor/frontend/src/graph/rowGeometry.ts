@@ -1,7 +1,7 @@
 import type { FieldCell } from '../bindings/FieldCell'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import {
-  dictKeyPathText, fieldPathDictKey, fieldPathField, fieldPathIndex, objectFieldCells,
+  annotationChild, annotationPolymorphicTypes, dictKeyPathText, fieldPathDictKey, fieldPathField, fieldPathIndex, objectFieldCells,
   type FieldPathSegment, type FieldValue,
 } from '../wire'
 import { fieldRowPresentation } from '../value/rowPresentation'
@@ -129,7 +129,7 @@ export class GraphRowGeometry {
         const last = complex ? !expanded.has(item.display) : index === items.length - 1 && !appended
         const sample = !item.editable && (value.kind === 'string' || value.kind === 'formatted_string') ? null : JSON.stringify([
           value.kind, item.value.kind, item.annotation?.declared_type, item.annotation?.ref_target_type,
-          item.annotation?.nullable, item.annotation?.enum_is_flag, item.annotation?.polymorphic_types.length,
+          item.annotation?.nullable, item.annotation?.enum_is_flag, annotationPolymorphicTypes(item.annotation).length,
           item.editable, !!item.missing, last, appendPaths.has(key),
         ])
         add(key, item.display, sample, last, complex ? (last ? 24 : 25) : item.editable ? (last ? 30 : 31) : (last ? 23 : 24), item.value)
@@ -140,12 +140,12 @@ export class GraphRowGeometry {
             path: [...item.path, fieldPathField(field.name)], display: `${item.display}.${field.name}`, editable: item.editable && !field.annotation?.read_only,
           }))
           else if (value.kind === 'array') nested = value.value.map((child, i) => ({
-            name: String(i), value: child, annotation: item.annotation?.children[String(i)] ?? item.annotation?.item_annotation,
+            name: String(i), value: child, annotation: annotationChild(item.annotation, i) ?? item.annotation?.item_annotation,
             path: [...item.path, fieldPathIndex(i)], display: `${item.display}[${i}]`, editable: item.editable,
           }))
           else if (value.kind === 'dict') nested = value.value.map(([dictKey, child]) => {
             const name = dictKeyPathText(dictKey)
-            return { name, value: child, annotation: item.annotation?.children[name] ?? item.annotation?.item_annotation,
+            return { name, value: child, annotation: annotationChild(item.annotation, name) ?? item.annotation?.item_annotation,
               path: [...item.path, fieldPathDictKey(name)], display: `${item.display}[${name}]`, editable: item.editable }
           })
           children(nested, key, item.editable && value.kind === 'array' && appendPaths.has(key))

@@ -21,7 +21,9 @@ const count = Number(params.get('items') ?? 100)
 const editable = params.has('editable')
 const kind = params.get('kind') ?? 'refs'
 const referenceCount = kind === 'refs' ? count : 8
-const annotation = (type: string, ref: string | null = null): FieldAnnotation => ({
+// 真实 IPC 会省略默认空注解；wire 模式直接覆盖该传输形状，避免夹具补齐属性掩盖崩溃。
+const annotation = (type: string, ref: string | null = null): FieldAnnotation => params.has('wire')
+  ? { declared_type: type, ...(ref ? { ref_target_type: ref } : {}) } : ({
   declared_type: type, ref_target_type: ref, enum_int_value: null, enum_type: null,
   enum_is_flag: false, nullable: false, read_only: false, item_annotation: null,
   polymorphic_types: [], object_type: null, field_order: [], children: {},

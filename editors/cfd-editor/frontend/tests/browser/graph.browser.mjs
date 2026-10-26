@@ -25,6 +25,22 @@ beforeEach(async () => {
   await settle()
 })
 
+test('sparse wire annotations load scalar, reference, object and dictionary graph rows', async () => {
+  for (const query of ['kind=refs', 'kind=scalar', 'kind=objects', 'kind=dict']) {
+    await openFixture(`items=8&editable&wire&${query}`)
+    const source = page.locator('.graph-node[data-nodeid="Item::source"]')
+    if (!query.includes('refs')) {
+      await source.locator('.dc-row[data-field-path="values"]').click()
+      await page.waitForFunction(() => window.graphFlow.getNode('Item::source').data.geometry.pendingCount === 0)
+    }
+    assert.equal(await source.count(), 1)
+    assert.equal(await page.evaluate(() => window.graphHarness.getData().edges.length), 8)
+    assert.ok(await page.locator('.react-flow__edge').count() > 0)
+    assert.ok(await source.locator('.dc-row').count() > 0)
+    assert.deepEqual(errors, [])
+  }
+})
+
 test('duplicate targets retain distinct source handles and accurate row anchors through zoom and compact mode', async () => {
   const source = page.locator('.graph-node[data-nodeid="Item::source"]')
   const initial = await page.evaluate(() => {

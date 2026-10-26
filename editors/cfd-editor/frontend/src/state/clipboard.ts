@@ -4,7 +4,7 @@ import type { CfdValue } from '../bindings/CfdValue'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
-import { dictKeyPathText, fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
+import { annotationChild, annotationPolymorphicTypes, dictKeyPathText, fieldPathField, fieldPathIndex, type FieldPathSegment } from '../wire'
 import type { CellAnchor } from './editorSelection'
 import { sameFieldValue } from './fieldProjection'
 
@@ -197,21 +197,21 @@ export function pasteCellAtRecordPath(
       const child = value.value.fields[segment.value]
       if (!child) return null
       value = child
-      annotation = annotation?.children[segment.value] ?? null
+      annotation = annotationChild(annotation, segment.value) ?? null
       continue
     }
     if (segment.kind === 'index' && value.kind === 'array') {
       const child = value.value[segment.value]
       if (!child) return null
       value = child
-      annotation = annotation?.children[String(segment.value)] ?? annotation?.item_annotation ?? null
+      annotation = annotationChild(annotation, segment.value) ?? annotation?.item_annotation ?? null
       continue
     }
     if (segment.kind === 'dict_key' && value.kind === 'dict') {
       const entry = value.value.find(([key]) => dictKeyPathText(key) === segment.value)
       if (!entry) return null
       value = entry[1]
-      annotation = annotation?.children[segment.value] ?? annotation?.item_annotation ?? null
+      annotation = annotationChild(annotation, segment.value) ?? annotation?.item_annotation ?? null
       continue
     }
     return null
@@ -336,9 +336,10 @@ async function parseArray(
       incoming = await tryParse(cell, [...cell.fieldPath, fieldPathIndex(0)], source[0][0], context)
       if (incoming) incoming = { kind: 'array', value: [incoming] }
     }
-  } else if ((item.field_order?.length ?? 0) > 0 && source[0].length > 1) {
-    if (source.some(row => row.length !== item.field_order.length)) {
-      errors.push({ cell, message: `array object 需要 ${item.field_order.length} 列` })
+  } else if (item.field_order && item.field_order.length > 0 && source[0].length > 1) {
+    const fieldCount = item.field_order.length
+    if (source.some(row => row.length !== fieldCount)) {
+      errors.push({ cell, message: `array object 需要 ${fieldCount} 列` })
       return undefined
     }
     const items: CfdValue[] = []
@@ -418,7 +419,8 @@ async function parseObjectFields(
 
 function objectType(value: CfdValue, annotation: FieldAnnotation): string | null {
   if (value.kind === 'object') return value.value.actual_type
-  return annotation.object_type ?? (annotation.polymorphic_types.length === 1 ? annotation.polymorphic_types[0] : null)
+  const types = annotationPolymorphicTypes(annotation)
+  return annotation.object_type ?? (types.length === 1 ? types[0] : null)
 }
 
 async function parseDirect(

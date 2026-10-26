@@ -25,11 +25,11 @@ label?: string,
 /**
  * Optional schema documentation shown by the editor as contextual help.
  */
-description?: string, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, enum_is_flag: boolean, nullable: boolean,
+description?: string, enum_int_value?: bigint | null, declared_type?: string | null, ref_target_type?: string | null, enum_type?: string | null, enum_is_flag?: boolean, nullable?: boolean,
 /**
  * True when this cell is exposed for inspection but cannot be edited.
  */
-read_only: boolean,
+read_only?: boolean,
 /**
  * Template annotation for elements of an array/dict field. Carries the
  * declared element type (and derived ref/enum/nullable metadata) so the
@@ -37,7 +37,7 @@ read_only: boolean,
  * new element or when the collection is empty. `None` for non-collection
  * fields.
  */
-item_annotation: FieldAnnotation | null,
+item_annotation?: FieldAnnotation | null,
 /**
  * 字典键的 schema 模板。新增首项时必须依据它选择键编辑器，不能从已有数据猜测。
  */
@@ -48,12 +48,12 @@ key_annotation?: FieldAnnotation,
  * this to expose a type-switch control on object cells and to prompt for
  * a concrete type when materializing a null polymorphic field.
  */
-polymorphic_types: Array<string>,
+polymorphic_types?: Array<string>,
 /**
  * Concrete object type when schema context determines one.
  */
-object_type: string | null,
+object_type?: string | null,
 /**
  * Direct object fields in inherited schema declaration order.
  */
-field_order: Array<string>, children: { [key in string]?: FieldAnnotation }, };
+field_order?: Array<string>, children?: { [key in string]?: FieldAnnotation }, };
