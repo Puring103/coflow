@@ -159,7 +159,9 @@ onMounted(async () => {
   const formulaOutput = root.querySelector<HTMLElement>('[data-chemical-output]')!
   const formulaController = new AbortController()
   cleanups.push(() => formulaController.abort())
-  const formulaModule = await import(/* @vite-ignore */ withBase('/examples/chemistry/plugin.js'))
+  // public 插件使用完整 URL 交给浏览器加载，避免开发服务器将其纳入源码转换。
+  const formulaModuleUrl = new URL(withBase('/examples/chemistry/plugin.js'), window.location.origin).href
+  const formulaModule = await import(/* @vite-ignore */ formulaModuleUrl)
   if (formulaController.signal.aborted) return
   const formulaContext = () => ({ value: { kind: 'object', value: { actual_type: 'Formula', fields: {
     expression: { kind: 'string', value: formulaInput.value },

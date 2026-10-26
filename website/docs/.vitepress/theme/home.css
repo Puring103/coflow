@@ -234,8 +234,9 @@ p { margin: 0; }
 /* 连线止于圆形之外，数字淡出或缩放时也不会露出穿心线。 */
 .stage-marker::before, .stage-marker::after { content: ""; position: absolute; z-index: -1; top: 58px; bottom: calc(-1 * clamp(46px, 5vw, 72px) + 10px); left: 23px; width: 2px; pointer-events: none; }
 .stage-marker::before { background: color-mix(in srgb, var(--planner) 24%, var(--line-strong)); }
-.stage-marker::after { width: 4px; margin-left: -1px; border-radius: 2px; background: linear-gradient(to bottom, transparent 0%, transparent 62%, var(--brand) 78%, var(--brand-bright) 88%, transparent 100%) 0 0 / 100% 180px repeat-y; filter: drop-shadow(0 0 4px var(--brand)); animation: stage-current 2.4s linear infinite; opacity: 0.95; }
-.stage.is-focused .stage-marker::after { opacity: 1; }
+/* 流动高光贴合主线宽度，以低透明度保留方向感。 */
+.stage-marker::after { border-radius: 2px; background: linear-gradient(to bottom, transparent 0%, transparent 62%, var(--brand) 78%, var(--brand-bright) 88%, transparent 100%) 0 0 / 100% 180px repeat-y; animation: stage-current 2.4s linear infinite; opacity: 0.4; }
+.stage.is-focused .stage-marker::after { opacity: 0.5; }
 @keyframes stage-current { to { background-position-y: 180px; } }
 .stage:last-child .stage-marker::before, .stage:last-child .stage-marker::after { display: none; }
 .stage-marker span { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface); color: var(--accent, var(--brand)); font: 660 14px/1 var(--mono); box-shadow: var(--shadow-sm); transition: transform 0.3s ease, box-shadow 0.3s ease; }
@@ -628,8 +629,8 @@ p { margin: 0; }
 .hero::before, .stages::after, .roles::before, .cta::before {
   content: ""; position: absolute; z-index: -1; inset: -90px -5%; pointer-events: none;
   background-image:
-    radial-gradient(ellipse 520px 320px at 18% 45%, color-mix(in srgb, var(--brand) 17%, transparent), transparent 100%),
-    radial-gradient(ellipse 600px 340px at 82% 55%, color-mix(in srgb, var(--coflow-purple) 12%, transparent), transparent 100%);
+    radial-gradient(ellipse 520px 320px at 18% 45%, color-mix(in srgb, var(--brand) 8%, transparent), transparent 100%),
+    radial-gradient(ellipse 600px 340px at 82% 55%, color-mix(in srgb, var(--coflow-purple) 6%, transparent), transparent 100%);
   background-size: 100% 900px;
   animation: ambient-current 12s ease-in-out infinite alternate;
 }
