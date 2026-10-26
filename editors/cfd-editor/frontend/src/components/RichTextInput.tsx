@@ -197,7 +197,9 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
       resize()
     })
     observer.observe(input)
-    return () => observer.disconnect()
+    // 字体加载可改变换行而不改变输入框宽度，必须同步真实行高与图几何。
+    document.fonts.addEventListener('loadingdone', resize)
+    return () => { observer.disconnect(); document.fonts.removeEventListener('loadingdone', resize) }
   }, [cell, focused, value])
 
   useLayoutEffect(() => {

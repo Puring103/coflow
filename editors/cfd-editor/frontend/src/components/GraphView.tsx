@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, memo, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap, ConnectionLineType, SelectionMode,
-  Handle, Position, useUpdateNodeInternals, type NodeProps,
-  BaseEdge, type EdgeProps,
+  Handle, Position, useReactFlow, useViewport, useInternalNode, type NodeProps,
   ControlButton, getViewportForBounds, ViewportPortal,
   type Node, type Edge, type ReactFlowInstance,
   type Connection, applyNodeChanges, type NodeChange,
@@ -27,12 +26,10 @@ import { isEditableCapabilities, isEditableFile } from '../utils/editable'
 import { DataCardNode } from './DataCard'
 import { DiagBadge } from './DiagBadge'
 import { typeColor } from '../utils/typeColor'
-import { shaderEdgePath } from './GraphView.edges'
+import { ShaderEdge } from './GraphView.edgeComponent'
 import { boundsOf, getHelperLines, unionBounds, type AlignBounds, type HelperLines } from './GraphView.alignment'
 import {
   defaultEnabledFields,
-  estimateNodeHeight,
-  estimateHandleOffsets,
   graphEdgeId,
   graphTopologySignature,
   layoutGraph,
@@ -40,6 +37,8 @@ import {
 } from './GraphView.layout'
 import { runGraphLayoutInWorker } from '../graph/layoutWorkerClient'
 import { LatestTaskQueue, SupersededTask } from '../graph/latestTaskQueue'
+import { GraphRowGeometry } from '../graph/rowGeometry'
+import { GraphRowWindowContext } from '../graph/rowWindow'
 import { graphCardFields, relationPorts, relationValue, type RelationPort, type RelationProjection } from './GraphView.relations'
 import { useEditorLookups } from '../utils/editContext'
 import { SearchableSelect } from './SearchableSelect'
@@ -69,6 +68,7 @@ interface NodeData extends Record<string, unknown> {
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
   relation: RelationProjection
+  geometry: GraphRowGeometry
   compact: boolean
   /** Stable signature of the per-row expanded set, so CfdNode can re-measure
    *  handle Y positions only when something that affects row geometry changes. */
@@ -76,6 +76,7 @@ interface NodeData extends Record<string, unknown> {
   expandedPaths: ReadonlySet<string>
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
+  onInteraction: (active: boolean) => void
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onCollectionEdit?: (fieldPath: FieldPathSegment[], edit: CollectionEdit) => void
   /** Ctrl+click on a node body opens that record in the record view. */
@@ -173,89 +174,163 @@ function CfdNode(props: NodeProps) {
 
 // 查询 generation 变化只重新解析名称；名称未变时不重新执行卡片字段树。
 const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pick<NodeProps, 'id' | 'data'> & { shortName?: string }) {
-  const { graphNode: gn, expanded, outgoingPaths, relation, compact, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, relation, geometry, compact, rowExpandKey, expandedPaths, onToggleExpand, onRowToggle, onInteraction, onEdit, onCollectionEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
-  const updateNodeInternals = useUpdateNodeInternals()
+  const flow = useReactFlow()
+  const viewport = useViewport()
+  const internal = useInternalNode(id)
+  const geometryVersion = useSyncExternalStore(geometry.subscribe, geometry.snapshot)
+  const [canvasHeight, setCanvasHeight] = useState(900)
+  const [pinnedKeys, setPinnedKeys] = useState<ReadonlySet<string>>(new Set())
   const graphRelations = useMemo(() => relation.ports.length > 0 ? {
     expandedPaths: relation.expanded, appendPaths: relation.appendPaths,
   } : undefined, [relation])
+  const outgoingSet = useMemo(() => new Set(outgoingPaths), [outgoingPaths])
+  const handles = useMemo(() => geometryHandles(geometry, outgoingPaths), [geometry, geometryVersion, outgoingPaths])
+  const publishGeometry = useCallback(() => {
+    // React Flow 的尺寸观察会从 DOM 重新收集端口；随后用公开 API 恢复完整逻辑几何。
+    flow.updateNode(id, { handles, width: 280, height: geometry.height, measured: { width: 280, height: geometry.height } })
+  }, [flow, id, handles, geometry, geometryVersion])
 
-  const outgoingKey = outgoingPaths.join('|')
-  const estimatedHandles = useMemo(
-    () => estimateHandleOffsets(gn, outgoingPaths, expanded),
-    [gn, outgoingKey, expanded],
-  )
-  // Per-path Y offsets; estimates exist on first render so React Flow can
-  // resolve handles before optional DOM measurement lands.
-  const [pathOffsets, setPathOffsets] = useState<Map<string, number>>(() => estimatedHandles.pathOffsets)
-  const [headerCenterY, setHeaderCenterY] = useState(() => estimatedHandles.headerCenterY)
+  const localTop = -viewport.y / viewport.zoom - (internal?.internals.positionAbsolute.y ?? 0)
+  const [handleFirst, handleEnd] = geometry.range(localTop - 180, localTop + canvasHeight / viewport.zoom + 180)
+  const lastReset = useRef({ geometry, version: geometry.resetVersion })
+  const newReset = lastReset.current.geometry !== geometry || lastReset.current.version !== geometry.resetVersion
+  const pinned = useMemo(() => new Set([...pinnedKeys].flatMap(key => {
+    if (newReset && geometry.resetsPath(key)) return []
+    const index = geometry.byKey.get(key)
+    return index === undefined ? [] : [index]
+  })), [pinnedKeys, geometry, newReset, geometryVersion])
+  useLayoutEffect(() => {
+    if (!newReset) return
+    lastReset.current = { geometry, version: geometry.resetVersion }
+    setPinnedKeys(previous => {
+      const next = new Set([...previous].filter(key => !geometry.resetsPath(key)))
+      return next.size === previous.size ? previous : next
+    })
+    if (!rootRef.current?.contains(document.activeElement)) onInteraction(false)
+  }, [geometry, geometryVersion, newReset, onInteraction])
+  const rowWindow = useMemo(() => ({ geometry, first: compact ? 0 : handleFirst, end: compact ? 0 : handleEnd, pinned }),
+    [geometry, geometryVersion, compact, handleFirst, handleEnd, pinned])
+  const visibleHandles = useMemo(() => {
+    const visible = new Set(geometry.rows.slice(handleFirst, handleEnd).map(row => row.path))
+    for (const index of pinned) visible.add(geometry.rows[index].path)
+    return [...visible].filter(path => outgoingSet.has(path))
+  }, [geometry, handleFirst, handleEnd, pinned, outgoingSet])
 
+  const zoomRef = useRef(viewport.zoom)
+  zoomRef.current = viewport.zoom
+  const publishRef = useRef(publishGeometry)
+  publishRef.current = publishGeometry
+  const publishFrame = useRef(0)
+  const schedulePublish = useCallback(() => {
+    cancelAnimationFrame(publishFrame.current)
+    publishFrame.current = requestAnimationFrame(() => publishRef.current())
+  }, [])
+  const measureRows = useCallback(() => {
+    const root = rootRef.current
+    if (!root) return
+    const rows = new Map<string, number>()
+    const dynamic = new Set<string>()
+    root.querySelectorAll<HTMLElement>('.dc-row[data-field-path-wire], [data-geometry-key]').forEach(row => {
+      const key = row.dataset.geometryKey ?? row.dataset.fieldPathWire!
+      rows.set(key, row.getBoundingClientRect().height / zoomRef.current)
+      if (row.matches(':focus-within') || row.querySelector('.string-value-error, [aria-invalid="true"]')) dynamic.add(key)
+    })
+    const style = getComputedStyle(root)
+    geometry.measure(rows, headerRef.current ? {
+      height: headerRef.current.getBoundingClientRect().height / zoomRef.current,
+      top: parseFloat(style.borderTopWidth), bottom: parseFloat(style.borderBottomWidth),
+    } : undefined, dynamic)
+  }, [geometry])
+  const rowObserver = useRef<ResizeObserver | null>(null)
+  const observedRows = useRef(new Set<Element>())
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
-    // Use offsetTop/offsetHeight (CSS pixels relative to offsetParent =
-    // .graph-node) instead of getBoundingClientRect, which gives screen
-    // pixels distorted by React Flow's viewport zoom transform.
-    function offsetWithin(el: HTMLElement, ancestor: HTMLElement): number {
-      let y = 0
-      let cur: HTMLElement | null = el
-      while (cur && cur !== ancestor) {
-        y += cur.offsetTop
-        cur = cur.offsetParent as HTMLElement | null
+    const canvas = root.closest<HTMLElement>('.react-flow')
+    let previousSize = ''
+    const observer = new ResizeObserver(entries => {
+      measureRows()
+      // 只有节点外框真正变动才重新发布全量端口；窗口切换只测量新挂载的行。
+      if (entries.some(entry => entry.target === root)) {
+        const size = `${root.offsetWidth}:${root.offsetHeight}`
+        if (size !== previousSize) { previousSize = size; schedulePublish() }
       }
-      return y
-    }
-    const measure = () => {
-      const headerY = headerRef.current
-        ? offsetWithin(headerRef.current, root) + headerRef.current.offsetHeight / 2
-        : 21
-      const next = new Map<string, number>()
-      // 一次建立真实行索引，端口循环内不再重复扫描整个节点 DOM。
-      const wireRows = new Map<string, HTMLElement>(), namedRows = new Map<string, HTMLElement>()
-      const displayRows = new Map<string, HTMLElement>(), addRows = new Map<string, HTMLElement>()
-      root.querySelectorAll<HTMLElement>('.dc-row').forEach(row => {
-        if (row.dataset.fieldPathWire && !wireRows.has(row.dataset.fieldPathWire)) wireRows.set(row.dataset.fieldPathWire, row)
-        if (row.dataset.fieldPath && !displayRows.has(row.dataset.fieldPath)) displayRows.set(row.dataset.fieldPath, row)
-        if (row.dataset.fieldName && !namedRows.has(row.dataset.fieldName)) namedRows.set(row.dataset.fieldName, row)
-      })
-      root.querySelectorAll<HTMLElement>('[data-add-path-wire]').forEach(row => {
-        if (row.dataset.addPathWire && !addRows.has(row.dataset.addPathWire)) addRows.set(row.dataset.addPathWire, row)
-      })
-      for (const path of outgoingPaths) {
-        const port = relation.byId.get(path)
-        let row = port ? (port.append ? addRows : wireRows).get(JSON.stringify(port.path)) : displayRows.get(path)
-        if (!row) {
-          const top = path.match(/^[^.[]+/)?.[0]
-          if (top) row = namedRows.get(top)
-        }
-        next.set(path, row ? offsetWithin(row, root) + row.offsetHeight / 2 : headerY)
-      }
-      setHeaderCenterY(prev => prev === headerY ? prev : headerY)
-      setPathOffsets(prev => {
-        if (prev.size !== next.size) return next
-        for (const [k, v] of next) if (prev.get(k) !== v) return next
-        return prev
-      })
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
+      if (canvas) setCanvasHeight(canvas.clientHeight)
+    })
+    rowObserver.current = observer
     observer.observe(root)
-    return () => observer.disconnect()
-  }, [outgoingKey, expanded, rowExpandKey, gn.fields, relation])
+    if (canvas) observer.observe(canvas)
+    if (headerRef.current) observer.observe(headerRef.current)
+    return () => {
+      observer.disconnect()
+      rowObserver.current = null
+      observedRows.current.clear()
+      cancelAnimationFrame(publishFrame.current)
+    }
+  }, [geometry, measureRows, schedulePublish])
+  useLayoutEffect(() => {
+    const next = new Set<Element>(rootRef.current?.querySelectorAll<HTMLElement>('.dc-row, [data-geometry-key]') ?? [])
+    for (const row of observedRows.current) if (!next.has(row)) rowObserver.current?.unobserve(row)
+    for (const row of next) if (!observedRows.current.has(row)) rowObserver.current?.observe(row)
+    observedRows.current = next
+    measureRows()
+  }, [geometry, geometryVersion, compact, handleFirst, handleEnd, pinned, rowExpandKey, viewport.zoom, measureRows])
+  useLayoutEffect(schedulePublish, [handles, geometryVersion, schedulePublish])
 
-  // Tell React Flow to recompute edge paths AFTER our handle Y values land
-  // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
-  useEffect(() => {
-    updateNodeInternals(id)
-  }, [pathOffsets, headerCenterY, id, updateNodeInternals])
+  const interactionFrame = useRef(0)
+  const pointerCleanup = useRef<(() => void) | null>(null)
+  useEffect(() => () => {
+    cancelAnimationFrame(interactionFrame.current)
+    pointerCleanup.current?.()
+    onInteraction(false)
+  }, [onInteraction])
+  function releaseInteraction() {
+    if (!rootRef.current?.contains(document.activeElement)) onInteraction(false)
+  }
+  function beginPointerInteraction(target: EventTarget | null) {
+    if (!(target instanceof Element) || !target.closest('[data-field-path-wire], [data-add-path-wire], [data-handleid]')) return
+    pinInteraction(target)
+    onInteraction(true)
+    pointerCleanup.current?.()
+    const cleanup = () => {
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      pointerCleanup.current = null
+    }
+    const end = () => { cleanup(); releaseInteraction() }
+    pointerCleanup.current = cleanup
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+
+  function pinInteraction(target: EventTarget | null) {
+    if (!(target instanceof Element)) return
+    const row = target.closest<HTMLElement>('[data-field-path-wire], [data-add-path-wire], [data-handleid]')
+    const path = row?.dataset.fieldPathWire
+      ?? (row?.dataset.addPathWire ? `append:${row.dataset.addPathWire}` : undefined)
+      ?? (row?.dataset.handleid?.startsWith('path-') ? geometry.rows[geometry.byPath.get(row.dataset.handleid.slice(5)) ?? -1]?.key : undefined)
+    if (path) {
+      const active = document.activeElement?.closest<HTMLElement>('[data-field-path-wire]')?.dataset.fieldPathWire
+      const next = new Set(active ? [path, active] : [path])
+      setPinnedKeys(previous => previous.size === next.size && [...next].every(key => previous.has(key)) ? previous : next)
+    }
+  }
 
   return (
     <div
       ref={rootRef}
       className={`graph-node${compact ? ' compact' : ''}${gn.in_focus_file ? ' focused' : ' dim'}${selected ? ' selected' : ''}`}
       data-nodeid={gn.id}
-      style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
+      data-geometry-pending={geometry.pendingCount}
+      style={{'--node-color': typeColor(gn.actual_type), height: geometry.height} as React.CSSProperties}
+      onPointerDownCapture={event => beginPointerInteraction(event.target)}
+      onFocusCapture={event => { cancelAnimationFrame(interactionFrame.current); pinInteraction(event.target); onInteraction(true) }}
+      onBlurCapture={() => { cancelAnimationFrame(interactionFrame.current); interactionFrame.current = requestAnimationFrame(releaseInteraction) }}
+      onDragStartCapture={() => onInteraction(true)}
+      onDragEndCapture={releaseInteraction}
       onClick={e => {
         // Ctrl+click (or Cmd+click on macOS) opens the record. Plain click
         // is left for React Flow's selection/drag handling.
@@ -267,11 +342,9 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
       }}
       title={onCtrlClick ? `${gn.record_id} — Ctrl+点击打开记录` : gn.record_id}
     >
-      <Handle type="target" position={Position.Left} id="__in" isConnectableStart={false} style={{ top: headerCenterY }} />
-      {/* Render a handle for EVERY outgoing path on first render (default Y=0)
-          so React Flow can resolve the edge sourceHandle on initial mount;
-          useLayoutEffect then updates Y values to row centres. */}
-      {outgoingPaths.map(path => (
+      <Handle type="target" position={Position.Left} id="__in" isConnectableStart={false} style={{ top: geometry.headerHeight / 2 }} />
+      {/* 屏外端口保留在 Node.handles 中；仅可见和活动端口挂载交互 DOM。 */}
+      {visibleHandles.map(path => (
         <Handle
           key={`src-${path}`}
           type="source"
@@ -279,7 +352,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
           id={`path-${path}`}
           isConnectable={!!onEdit && !!relation.byId.get(path) && !relation.byId.get(path)!.readOnly && (!relation.byId.get(path)!.append || !!onCollectionEdit)}
           title={relation.byId.get(path)?.append ? '追加引用' : path}
-          style={{ top: pathOffsets.get(path) ?? headerCenterY, bottom: 'auto' }}
+          style={{ top: geometry.center(path) - geometry.borderTop, bottom: 'auto' }}
         />
       ))}
       {compact && (
@@ -291,7 +364,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
           )}
         </div>
       )}
-      {/* 缩略只替换视觉内容，完整卡片仍占据原来的空间，端口坐标不随缩放变化。 */}
+      {/* 缩略卸载字段明细，完整高度与锚点由几何模型保留。 */}
       <div className="gn-detail" style={compact ? { visibility: 'hidden', pointerEvents: 'none' } : undefined} inert={compact}>
           <div ref={headerRef}>
             <GraphNodeHeader
@@ -303,9 +376,9 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
             />
           </div>
           {gn.is_collapsed ? (
-            <div className="gn-collapsed">折叠（超出深度）</div>
+            <div className="gn-collapsed" data-geometry-key="collapsed">折叠（超出深度）</div>
           ) : (
-            <DataCardNode
+            <GraphRowWindowContext.Provider value={rowWindow}><DataCardNode
               fields={gn.fields}
               actualType={gn.actual_type}
               showAll={expanded}
@@ -315,61 +388,67 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
               onEdit={onEdit}
               onCollectionEdit={onCollectionEdit}
               graphRelations={graphRelations}
-            />
+            /></GraphRowWindowContext.Provider>
           )}
       </div>
     </div>
   )
 })
 
+function geometryHandles(geometry: GraphRowGeometry, outgoingPaths: string[]) {
+  return [
+    { id: '__in', type: 'target' as const, position: Position.Left, x: -6, y: geometry.borderTop + geometry.headerHeight / 2 - 6, width: 12, height: 12 },
+    ...outgoingPaths.map(path => ({ id: `path-${path}`, type: 'source' as const, position: Position.Right,
+      x: 274, y: geometry.center(path) - 6, width: 12, height: 12 })),
+  ]
+}
+
+/** 屏外节点也按帧完成未知行高，每帧最多取 12 个样本，不同步挂载整棵字段树。 */
+function GraphGeometryProbeHost({ nodes }: { nodes: Node[] }) {
+  const [batch, setBatch] = useState(0)
+  const node = nodes.find(node => (node.data as NodeData).geometry.pendingCount > 0)
+  const advance = useCallback(() => setBatch(value => value + 1), [])
+  return node ? <GraphGeometryProbe key={`${node.id}:${batch}`} id={node.id} data={node.data as NodeData} onMeasured={advance} /> : null
+}
+
+function GraphGeometryProbe({ id, data, onMeasured }: { id: string; data: NodeData; onMeasured: () => void }) {
+  const { graphNode: node, geometry, relation } = data
+  const root = useRef<HTMLDivElement>(null)
+  const flow = useReactFlow()
+  const shortName = useReferenceShortName(node.actual_type, node.record_id)
+  const [pinned] = useState(() => new Set(geometry.probes(12)))
+  useLayoutEffect(() => {
+    const element = root.current
+    if (!element) return
+    const rows = new Map<string, number>()
+    element.querySelectorAll<HTMLElement>('.dc-row[data-field-path-wire], [data-geometry-key]').forEach(row => {
+      rows.set(row.dataset.geometryKey ?? row.dataset.fieldPathWire!, row.getBoundingClientRect().height)
+    })
+    const header = element.querySelector<HTMLElement>('.gn-header')!
+    const style = getComputedStyle(element)
+    geometry.measure(rows, { height: header.getBoundingClientRect().height, top: parseFloat(style.borderTopWidth), bottom: parseFloat(style.borderBottomWidth) })
+    const frame = requestAnimationFrame(() => {
+      flow.updateNode(id, { handles: geometryHandles(geometry, data.outgoingPaths), width: 280, height: geometry.height, measured: { width: 280, height: geometry.height } })
+      onMeasured()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [geometry, pinned, flow, id, data, onMeasured])
+  return <div ref={root} className="graph-node graph-geometry-probe" aria-hidden inert
+    style={{ position: 'fixed', left: -10000, top: 0, width: 280, visibility: 'hidden', pointerEvents: 'none' }}>
+    <GraphNodeHeader recordId={node.record_id} shortName={shortName} actualType={node.actual_type} />
+    {node.is_collapsed ? <div className="gn-collapsed" data-geometry-key="collapsed">折叠（超出深度）</div>
+      : <GraphRowWindowContext.Provider value={{ geometry, first: 0, end: 0, pinned }}>
+        <DataCardNode fields={node.fields} actualType={node.actual_type} showAll={data.expanded} onToggle={data.onToggleExpand}
+          expandedPaths={data.expandedPaths} onRowToggle={data.onRowToggle} onEdit={data.onEdit} onCollectionEdit={data.onCollectionEdit}
+          graphRelations={relation.ports.length ? { expandedPaths: relation.expanded, appendPaths: relation.appendPaths } : undefined} />
+      </GraphRowWindowContext.Provider>}
+  </div>
+}
+
 // 卡片不读取坐标；移动节点只更新外层变换，不重新执行字段树和端口测量。
 const CfdNodeMemo = memo(CfdNode, (previous, next) => previous.id === next.id && previous.data === next.data)
 const nodeTypes = { cfd: CfdNodeMemo }
 
-// Shader Graph 风格：端口先水平伸出一小段，再斜直线连接到目标端口前的短段；
-// 折点按角度自适应圆角，避免锐角尖点。
-function ShaderEdge({ id, sourceX, sourceY, targetX, targetY, style, markerEnd }: EdgeProps) {
-  const path = shaderEdgePath(
-    { x: sourceX, y: sourceY },
-    { x: targetX, y: targetY },
-  )
-  // 线体拖动：找到离按下点较近的重连锚点，把原生事件转发给它，复用 React Flow 的重连流程。
-  const beginBodyDrag = (event: ReactMouseEvent<SVGPathElement>) => {
-    if (event.button !== 0) return
-    const group = event.currentTarget.closest('.react-flow__edge')
-    if (!group) return
-    const anchors = Array.from(group.querySelectorAll<SVGCircleElement>('.react-flow__edgeupdater'))
-    let nearest: SVGCircleElement | null = null
-    let nearestDistance = Infinity
-    for (const anchor of anchors) {
-      const rect = anchor.getBoundingClientRect()
-      const dx = rect.left + rect.width / 2 - event.clientX
-      const dy = rect.top + rect.height / 2 - event.clientY
-      const squared = dx * dx + dy * dy
-      if (squared < nearestDistance) { nearestDistance = squared; nearest = anchor }
-    }
-    if (!nearest) return
-    event.preventDefault()
-    event.stopPropagation()
-    nearest.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true, cancelable: true, view: window,
-      clientX: event.clientX, clientY: event.clientY, button: 0,
-    }))
-  }
-  return (
-    <>
-      <BaseEdge path={path} style={style} markerEnd={markerEnd} id={id} />
-      <path
-        d={path}
-        className="graph-edge-drag"
-        fill="none"
-        stroke="transparent"
-        strokeWidth={22}
-        onMouseDown={beginBodyDrag}
-      />
-    </>
-  )
-}
 const edgeTypes = { shader: ShaderEdge }
 
 // 拖线到空白处的下拉列表固定首项：先创建记录，再建立引用。
@@ -450,6 +529,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   const lookups = useEditorLookups()
   const previousViews = useRef<GraphNodeView[]>([])
   const [selectedElement, setSelectedElement] = useState<GraphFocus>(null)
+  const [activeEditorNodes, setActiveEditorNodes] = useState<ReadonlySet<string>>(new Set())
+  const [connectionActive, setConnectionActive] = useState(false)
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
   // 框选连线允许批量选择；删除时逐条复用现有字段/集合写入历史。
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set())
@@ -554,6 +635,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   const dragStartPositions = useRef(new Map<string, { x: number; y: number }>())
   const fitted = useRef(false)
   const viewportRef = useRef({ x: 0, y: 0, zoom: 1 })
+  const [drawingViewport, setDrawingViewport] = useState(viewportRef.current)
+  const [drawingSize, setDrawingSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   useEffect(() => {
     retainedPositions.current.clear()
     fitted.current = false
@@ -684,8 +767,11 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     collection: (path: FieldPathSegment[], edit: CollectionEdit) => void
     open: () => void
     diagnostic: () => void
+    interaction: (active: boolean) => void
   }>())
 
+  const geometryCache = useRef(new Map<string, { fields: GraphNodeView['fields']; key: string; geometry: GraphRowGeometry }>())
+  useEffect(() => { geometryCache.current.clear() }, [viewKey])
   const nodeDescriptions: Node[] = useMemo(
     () => (
       visibleNodes.map(n => {
@@ -696,9 +782,19 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             expand: () => toggleNodeExpanded(n.id),
             row: (path, expanded) => handleRowToggle(n.id, path, expanded),
             edit: (path, value) => nodeActionPort.current.onWriteField?.(n.file_path, n.coordinate, path, value),
-            collection: (path, edit) => { void nodeActionPort.current.onCollectionEdit?.(n.file_path, n.coordinate, path, edit) },
+            collection: (path, edit) => {
+              if (edit.kind === 'array_remove' || edit.kind === 'array_move') geometryCache.current.get(n.id)?.geometry.resetCollection(JSON.stringify(path))
+              return nodeActionPort.current.onCollectionEdit?.(n.file_path, n.coordinate, path, edit)
+            },
             open: () => nodeActionPort.current.onOpenRecord(n.file_path, n.coordinate),
             diagnostic: () => nodeActionPort.current.onDiagnosticBadgeClick?.(n.file_path, n.coordinate, null),
+            interaction: active => setActiveEditorNodes(previous => {
+              if (previous.has(n.id) === active) return previous
+              const next = new Set(previous)
+              if (active) next.add(n.id)
+              else next.delete(n.id)
+              return next
+            }),
           }
           nodeActions.current.set(actionKey, actions)
         }
@@ -719,7 +815,14 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           const port = relations.get(n.id)?.byId.get(path)
           return !port?.append || (editable && !!onCollectionEdit && !port.readOnly)
         })
-        const estimated = estimateHandleOffsets(n, outgoingPaths, expandedNodes.get(n.id) ?? false)
+        const expanded = expandedNodes.get(n.id) ?? false
+        const expansionKey = rowExpanded ? [...rowExpanded].sort().join('|') : ''
+        const geometryKey = JSON.stringify([expanded, expansionKey, editable, !!onCollectionEdit, n.is_collapsed])
+        const oldGeometry = geometryCache.current.get(n.id)
+        const geometry = oldGeometry?.fields === n.fields && oldGeometry.key === geometryKey ? oldGeometry.geometry
+          : new GraphRowGeometry(expanded ? n.fields : n.fields.slice(0, 5), rowExpanded ?? new Set(),
+            onCollectionEdit ? relations.get(n.id)?.appendPaths ?? new Set() : new Set(), editable, oldGeometry?.geometry, { collapsed: n.is_collapsed, more: !expanded && !relations.get(n.id)?.ports.length && n.fields.length > 5 })
+        geometryCache.current.set(n.id, { fields: n.fields, key: geometryKey, geometry })
         return {
           id: n.id,
           selected: selectedNodeIds.has(n.id),
@@ -727,24 +830,22 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           deletable: false,
           type: 'cfd',
           initialWidth: 280,
-          initialHeight: estimateNodeHeight(n, expandedNodes.get(n.id) ?? false, rowExpanded ?? new Set()),
+          initialHeight: geometry.height,
           // 尚未进入屏幕的节点也提供端口几何，使跨越视口的连线可以绘制。
-          handles: [
-            { id: '__in', type: 'target', position: Position.Left, x: -6, y: estimated.headerCenterY - 6, width: 12, height: 12 },
-            ...outgoingPaths.map(path => ({ id: `path-${path}`, type: 'source' as const, position: Position.Right,
-              x: 274, y: (estimated.pathOffsets.get(path) ?? estimated.headerCenterY) - 6, width: 12, height: 12 })),
-          ],
+          handles: geometryHandles(geometry, outgoingPaths),
           position: retainedPositions.current.get(n.id) ?? positions.get(n.id) ?? { x: 0, y: 0 },
           data: {
             graphNode: n,
             expanded: expandedNodes.get(n.id) ?? false,
             relation: relations.get(n.id) ?? relationPorts([]),
+            geometry,
             outgoingPaths,
             compact: compactNodes,
             rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
             expandedPaths: rowExpanded ?? new Set<string>(),
             onToggleExpand: actions.expand,
             onRowToggle: actions.row,
+            onInteraction: actions.interaction,
             onEdit: editable ? actions.edit : undefined,
             onCollectionEdit: editable && onCollectionEdit ? actions.collection : undefined,
             onCtrlClick: actions.open,
@@ -757,6 +858,14 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     ),
     [visibleNodes, positions, expandedNodes, expandedRows, relations, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onCollectionEdit, fileCapabilities, selectedElement, selectedNodeIds, diagnosticIndex, onDiagnosticBadgeClick]
   )
+  useEffect(() => {
+    // 查询移除节点后及时释放旧字段树和动作闭包，缓存只覆盖当前逻辑图。
+    const ids = new Set(visibleNodes.map(node => node.id))
+    const actions = new Set(visibleNodes.map(node => JSON.stringify([node.file_path, node.id])))
+    for (const id of geometryCache.current.keys()) if (!ids.has(id)) geometryCache.current.delete(id)
+    for (const key of nodeActions.current.keys()) if (!actions.has(key)) nodeActions.current.delete(key)
+    setActiveEditorNodes(previous => [...previous].every(id => ids.has(id)) ? previous : new Set([...previous].filter(id => ids.has(id))))
+  }, [visibleNodes])
   const [rfNodes, setRfNodes] = useState<Node[]>([])
   const rfNodesRef = useRef<Node[]>([])
   rfNodesRef.current = rfNodes
@@ -813,12 +922,10 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
       setHelperLines(prev => sameHelperLines(prev, nextLines) ? prev : nextLines)
     }
     setRfNodes(current => {
-      const measured = new Set(adjusted.filter(change => change.type === 'dimensions').map(change => change.id))
       for (const change of adjusted) {
         if (change.type === 'position' && change.position) retainedPositions.current.set(change.id, change.position)
       }
-      return applyNodeChanges(adjusted, current).map(node => measured.has(node.id) && node.handles
-        ? { ...node, handles: undefined } : node)
+      return applyNodeChanges(adjusted, current)
     })
   }, [])
   const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null)
@@ -1093,10 +1200,56 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     return next
   }, [forwardEdges, backEdges, positions, compactNodes, relations, fileCapabilities, onWriteField, onCollectionEdit, selectedElement, selectedEdgeIds])
 
+  // 画布裁剪依据真实端口折线，不能用超高节点的外框代替连线的可见性。
+  const edgeGeometry = useMemo(() => {
+    const nodes = new Map(rfNodes.map(node => [node.id, node]))
+    return rfEdges.map(edge => {
+      const source = nodes.get(edge.source), target = nodes.get(edge.target)
+      if (!source || !target) return { edge, points: [] }
+      const sourceGeometry = (source.data as NodeData).geometry
+      const targetGeometry = (target.data as NodeData).geometry
+      const from = { x: source.position.x + 280, y: source.position.y + sourceGeometry.center(edge.sourceHandle?.slice(5) ?? '') }
+      const to = { x: target.position.x, y: target.position.y + targetGeometry.borderTop + targetGeometry.headerHeight / 2 }
+      return { edge, points: [from, { x: from.x + 28, y: from.y }, { x: to.x - 28, y: to.y }, to] }
+    })
+  }, [rfEdges, rfNodes])
+  const drawnEdges = useMemo(() => {
+    // 圆角偏离原折线最多 14px，另保留命中宽度和屏幕 overscan；跨屏线段同样命中。
+    const margin = 36 / drawingViewport.zoom + 14
+    const rect = {
+      left: -drawingViewport.x / drawingViewport.zoom - margin,
+      right: (drawingSize.width - drawingViewport.x) / drawingViewport.zoom + margin,
+      top: -drawingViewport.y / drawingViewport.zoom - margin,
+      bottom: (drawingSize.height - drawingViewport.y) / drawingViewport.zoom + margin,
+    }
+    return edgeGeometry.filter(({ edge, points }) => edge.selected || edge.id === reconnectEdgeRef.current?.id || polylineIntersectsRect(points, rect)).map(({ edge }) => edge)
+  }, [edgeGeometry, drawingViewport, drawingSize])
+
   // ── Imperative hover highlight (zero re-renders) ────────────────────────
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
   // flicker cycle. The adjacency map is rebuilt whenever edges change.
   const wrapRef = useRef<HTMLDivElement>(null)
+  const [geometryStyleVersion, setGeometryStyleVersion] = useState(0)
+  useEffect(() => {
+    const invalidate = () => {
+      const models = new Set(rfNodesRef.current.map(node => (node.data as NodeData).geometry))
+      for (const model of models) model.invalidateMeasurements()
+      setGeometryStyleVersion(value => value + 1)
+    }
+    document.fonts.addEventListener('loadingdone', invalidate)
+    const observer = new MutationObserver(invalidate)
+    const targets = new Set([document.documentElement, document.body, wrapRef.current?.closest('.app, [data-theme]')].filter((target): target is HTMLElement => target instanceof HTMLElement))
+    for (const target of targets) observer.observe(target, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
+    return () => { document.fonts.removeEventListener('loadingdone', invalidate); observer.disconnect() }
+  }, [])
+  useLayoutEffect(() => {
+    const root = wrapRef.current
+    if (!root) return
+    const observer = new ResizeObserver(() => setDrawingSize(previous => previous.width === root.clientWidth && previous.height === root.clientHeight
+      ? previous : { width: root.clientWidth, height: root.clientHeight }))
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!firstRecordFocusRequest) return
@@ -1156,6 +1309,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   // 只记录视口用于重挂载时的默认视口，不再据此自动切换缩略模式。
   const handleViewportChange = useCallback((viewport: { x: number; y: number; zoom: number }) => {
     viewportRef.current = viewport
+    setDrawingViewport(previous => previous.x === viewport.x && previous.y === viewport.y && previous.zoom === viewport.zoom ? previous : viewport)
     // 同步换算屏幕对应的 flow 范围，供拖动对齐时筛选屏幕内节点。
     const container = wrapRef.current
     visibleFlowRef.current = container
@@ -1390,11 +1544,12 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             <ReactFlow
             nodes={rfNodes}
             defaultViewport={viewportRef.current}
-            edges={rfEdges}
+            edges={drawnEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             nodesDraggable={!layoutBusy && !positionSaving}
-            onlyRenderVisibleElements
+            // 活动编辑或拖线期间保留节点壳；内部窗口继续裁剪，避免框架卸载屏外草稿。
+            onlyRenderVisibleElements={activeEditorNodes.size === 0 && !connectionActive && !picker && !newTarget}
             onNodeDragStart={(_event, node) => {
               dragStartPositions.current = new Map(retainedPositions.current)
               setSelectedElement({ kind: 'node', id: node.id })
@@ -1419,6 +1574,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             // 重连时 React Flow 会先触发 onReconnectStart，再触发 onConnectStart；
             // 后者会用固定端覆盖拖动源，必须跳过，否则端点拖不动。
             onConnectStart={(_event, params) => {
+              setConnectionActive(true)
               if (reconnectStartRef.current) {
                 reconnectStartRef.current = false
                 return
@@ -1427,18 +1583,20 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             }}
             onConnect={connect}
             onEdgesDelete={onEdgesDelete}
-            onConnectEnd={event => { void endConnection(event) }}
+            onConnectEnd={event => { setConnectionActive(false); void endConnection(event) }}
             edgesReconnectable
             edgesFocusable
             elementsSelectable
             deleteKeyCode={["Backspace", "Delete"]}
             onReconnectStart={(_event, edge) => {
+              setConnectionActive(true)
               reconnectEdgeRef.current = edge
               reconnectStartRef.current = true
               beginConnection(edge.source, edge.sourceHandle ?? null)
             }}
             onReconnect={(_edge, connection) => connect(connection)}
             onReconnectEnd={event => {
+              setConnectionActive(false)
               void endConnection(event)
               reconnectEdgeRef.current = null
               reconnectStartRef.current = false
@@ -1507,6 +1665,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             minZoom={0.1}
             maxZoom={2}
           >
+            <GraphGeometryProbeHost key={geometryStyleVersion} nodes={rfNodes} />
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
             {/* 左下角只保留自动布局、回正、缩略/完整模式切换三个按钮。 */}
             <Controls showZoom={false} showFitView={false} showInteractive={false}>

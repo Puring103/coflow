@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 
 test('failed project load keeps Git diff, tabs and navigation usable', async () => {
-  const server = await createServer({ root: fileURLToPath(new URL('../..', import.meta.url)), server: { port: 0, host: '127.0.0.1' } })
+  const server = await createServer({ root: fileURLToPath(new URL('../..', import.meta.url)), server: { port: 0, strictPort: false, host: '127.0.0.1' } })
   let browser
   try {
     await server.listen()

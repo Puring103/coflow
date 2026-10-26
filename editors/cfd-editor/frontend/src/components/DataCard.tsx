@@ -1,3 +1,5 @@
+import { fieldRowPresentation } from '../value/rowPresentation'
+import { GraphRowWindowContext, WindowedItems, WindowedAuxRow } from '../graph/rowWindow'
 import { observeSummary } from './summaryMeasurement'
 import { previewWindow } from './tableExpansion'
 import { LookupErrorBadge } from './LookupErrorBadge'
@@ -61,7 +63,6 @@ import { typeColor, fieldTypeColor } from '../utils/typeColor'
 import { useEditorLookups, useEditorNavigation } from '../utils/editContext'
 import type { EditorLookupAccess } from '../utils/editContext'
 import {
-  collectionShapeForDeclaredType,
   enumVariantText,
   optionDepthForDeclaredType,
   parseFieldValueText,
@@ -586,7 +587,8 @@ export function DataCardExpanded({
       if (key && key !== selected) { event.preventDefault(); inspectorRef.current?.focus({ preventScroll: true }) }
       pointerField.current = key ?? null
     }} style={{ '--depth': depth } as CSSProperties}>
-      {fields.map((fc) => {
+      <WindowedItems parent="[]" count={fields.length} render={index => {
+        const fc = fields[index]
         const fieldEdit = cellReadOnly(fc) ? undefined : onEdit
         const declaredType = cellDeclaredType(fc)
         const refTargetType = cellRefTargetType(fc)
@@ -620,7 +622,7 @@ export function DataCardExpanded({
               && isComplexValue(shownValue)}
           />
         )
-      })}
+      }} />
     </div>
   )
   const wrapped = (
@@ -762,7 +764,7 @@ function FieldRow({
   flattenComplexChildren?: boolean
 }) {
   const effectiveEnumIsFlag = enumIsFlag ?? annotationEnumIsFlag(valueAnnotation)
-  const shownValue = presentationValue(value)
+  const { shownValue, displayValue, innerValueAvailable, canExpand } = fieldRowPresentation(value, declaredType)
   const pluginRecord = useContext(PluginRecordCtx)
   const presentationType = declaredType
     ?? (shownValue.kind === 'object' ? shownValue.value.actual_type : '')
@@ -781,18 +783,6 @@ function FieldRow({
       : null
   ), [pluginRecord, pathKey, presentationType, shownValue, pluginPresentation])
   const isComplex = shownValue.kind === 'object' || shownValue.kind === 'array' || shownValue.kind === 'dict'
-  const optionDepth = optionDepthForDeclaredType(declaredType)
-  const optionNoneLayer = optionLayerStates(value, optionDepth).indexOf('none')
-  const innerValueAvailable = optionNoneLayer < 0 || optionNoneLayer === optionDepth - 1
-  // A `null` value on a field whose declared type is an array/dict/object
-  // should still be treated as expandable, so the user can just click
-  // "add element" instead of first coercing null → empty collection by
-  // hand. The materialization happens lazily when the user hits add.
-  const nullCollectionShape = shownValue.kind === 'option_none' && innerValueAvailable
-    ? collectionShapeForDeclaredType(declaredType)
-    : null
-  const displayValue = nullCollectionShape ?? shownValue
-  const canExpand = isComplex || nullCollectionShape !== null
   const polyTypes = annotationPolymorphicTypes(valueAnnotation)
 
   // Extra trailing controls for nullable / polymorphic fields. Enum and ref
@@ -1975,7 +1965,7 @@ function ExpandableRow({
             valueAnnotation={valueAnnotation}
           />
           {appendAtEnd && onCollectionEdit && value.kind === 'array' && (
-            <div className="dc-row dc-row-item" style={inspectorDepthStyle(depth + 1)}>
+            <WindowedAuxRow rowKey={`append:${JSON.stringify(fieldPath)}`}><div className="dc-row dc-row-item" data-geometry-key={`append:${JSON.stringify(fieldPath)}`} style={inspectorDepthStyle(depth + 1)}>
               <div className="dc-row-label">{value.value.length + 1}</div>
               <CollectionAddControl
                 container={value}
@@ -1984,7 +1974,7 @@ function ExpandableRow({
                 onCollectionEdit={editCollection}
                 itemAnnotation={annotationItem(valueAnnotation)}
               />
-            </div>
+            </div></WindowedAuxRow>
           )}
         </div>
       )}
@@ -2039,16 +2029,18 @@ function ComplexValueChildren({
   valueAnnotation?: FieldAnnotation | null
 }) {
   const preview = useContext(PreviewWindowCtx)
+  const graphWindow = useContext(GraphRowWindowContext)
   if (value.kind !== 'object' && value.kind !== 'array' && value.kind !== 'dict') return null
   if ((value.kind === 'array' || value.kind === 'dict') && value.value.length === 0) {
-    return <span className="dc-empty-collection">{value.kind === 'array' ? '空数组' : '空字典'}</span>
+    return <WindowedAuxRow rowKey={`empty:${JSON.stringify(fieldPath)}`}><span className="dc-empty-collection" data-geometry-key={`empty:${JSON.stringify(fieldPath)}`}>{value.kind === 'array' ? '空数组' : '空字典'}</span></WindowedAuxRow>
   }
   const total = value.kind === 'object' ? objectFieldCells(value, valueAnnotation).length : value.value.length
   const limit = Math.min(total, preview ? preview.get(pathKey ?? '') ?? 0 : total)
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
   return (
     <>
-      {value.kind === 'object' && objectFieldCells(value, valueAnnotation).slice(0, limit).map((fc) => {
+      {value.kind === 'object' && <WindowedItems parent={JSON.stringify(fieldPath)} count={limit} render={index => {
+        const fc = objectFieldCells(value, valueAnnotation)[index]
         const annotation = childAnnotation(fc.name) ?? fc.annotation
         return (
           <FieldRow
@@ -2071,9 +2063,10 @@ function ComplexValueChildren({
             valueAnnotation={annotation}
           />
         )
-      })}
+      }} />}
       {value.kind === 'array' && (
         <ArrayItems
+          key={graphWindow?.geometry.collectionEpoch(JSON.stringify(fieldPath))}
           container={value}
           maxRows={limit}
           depth={depth}
@@ -2086,7 +2079,8 @@ function ComplexValueChildren({
           itemAnnotations={valueAnnotation?.children}
         />
       )}
-      {value.kind === 'dict' && value.value.slice(0, limit).map(([key, item]) => {
+      {value.kind === 'dict' && <WindowedItems parent={JSON.stringify(fieldPath)} count={limit} render={index => {
+        const [key, item] = value.value[index]
         const annotation = childAnnotation(dictKeyPathText(key)) ?? annotationItem(valueAnnotation)
         return (
           <FieldRow
@@ -2113,7 +2107,7 @@ function ComplexValueChildren({
             ) : undefined}
           />
         )
-      })}
+      }} />}
       {/* 省略尾部只标记溢出；选中后恢复完整树，由浏览器计算扩展表面。 */}
       {total > limit && <div aria-hidden className="dc-preview-spacer" style={{ height: 28 }} />}
     </>
@@ -2202,7 +2196,8 @@ function ArrayItems({
 
   return (
     <>
-      {container.value.slice(0, maxRows ?? container.value.length).map((item, i) => {
+      <WindowedItems parent={JSON.stringify(fieldPath)} count={maxRows ?? container.value.length} render={i => {
+        const item = container.value[i]
         const itemAnnotation = itemAnnotations?.[String(i)] ?? itemTemplate
         const canCollectionEdit = !!onCollectionEdit
         const dragHandle = canCollectionEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
@@ -2282,7 +2277,7 @@ function ArrayItems({
             dragProps={itemDragProps}
           />
         )
-      })}
+      }} />
     </>
   )
 }
@@ -2634,7 +2629,7 @@ export function DataCardNode({
         />
       </NodeRelationsCtx.Provider>
       {!graphRelations && fields.length > NODE_PEEK_FIELDS && (
-        <button className="dc-node-more" onClick={onToggle}>
+        <button className="dc-node-more" data-geometry-key="more" onClick={onToggle}>
           {showAll ? '收起' : `显示全部 (+${fields.length - NODE_PEEK_FIELDS})`}
         </button>
       )}

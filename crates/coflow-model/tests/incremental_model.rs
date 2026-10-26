@@ -533,101 +533,103 @@ fn repeated_mixed_updates_match_full_builds_including_overlay_removal() {
         }
     "#,
     );
-    let mut inputs = (0..12)
-        .map(|index| {
-            LoadedRecordDraft::new(
-                format!("i{index}"),
-                "Item",
-                [
-                    ("name", format!("Name {index}").into()),
-                    (
-                        "parent",
-                        LoadedValueDraft::record_ref(format!("i{}", (index + 1) % 12)),
-                    ),
-                    (
-                        "details",
+    for initial_seed in 0..20_u64 {
+        let mut inputs = (0..12)
+            .map(|index| {
+                LoadedRecordDraft::new(
+                    format!("i{index}"),
+                    "Item",
+                    [
+                        ("name", format!("Name {index}").into()),
+                        (
+                            "parent",
+                            LoadedValueDraft::record_ref(format!("i{}", (index + 1) % 12)),
+                        ),
+                        (
+                            "details",
+                            LoadedValueDraft::object(
+                                "Details",
+                                [("numbers", LoadedValueDraft::Array(vec![1_i64.into()]))],
+                            ),
+                        ),
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+        let make_overlay = |index: usize, step: usize| DimensionValueDraft {
+            source_type: TypeName::new("Item").unwrap(),
+            source_id: RecordId::new(format!("i{index}")).unwrap(),
+            field: FieldName::new("name").unwrap(),
+            dimension: DimensionName::new("language").unwrap(),
+            variant: VariantName::new("ja").unwrap(),
+            value: format!("Localized {step}").into(),
+            origin: origin(step),
+        };
+        // i0 始终保留覆盖，单独测试覆盖增删而不混入变体集合的全局失效。
+        let mut overlays = BTreeMap::from([(0, make_overlay(0, 0))]);
+        let mut model = builder(
+            &schema,
+            &inputs,
+            &overlays.values().cloned().collect::<Vec<_>>(),
+        )
+        .build()
+        .unwrap();
+        let mut seed = 17 + initial_seed;
+        for step in 0..200 {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            let index = 1 + ((seed >> 32) as usize % 11);
+            match step % 4 {
+                0 => {
+                    inputs[index]
+                        .fields
+                        .insert("name".into(), format!("Changed {step}").into());
+                }
+                1 => {
+                    inputs[index].fields.insert(
+                        "parent".into(),
+                        LoadedValueDraft::record_ref(format!("i{}", step % 12)),
+                    );
+                }
+                2 => {
+                    if overlays.remove(&index).is_none() {
+                        overlays.insert(index, make_overlay(index, step));
+                    }
+                }
+                _ => {
+                    inputs[index].fields.insert(
+                        "details".into(),
                         LoadedValueDraft::object(
                             "Details",
-                            [("numbers", LoadedValueDraft::Array(vec![1_i64.into()]))],
+                            [(
+                                "numbers",
+                                LoadedValueDraft::Array(vec![
+                                    LoadedValueDraft::from(
+                                        i64::try_from(step).expect("fixture index fits i64")
+                                    );
+                                    1 + step % 5
+                                ]),
+                            )],
                         ),
-                    ),
-                ],
-            )
-        })
-        .collect::<Vec<_>>();
-    let make_overlay = |index: usize, step: usize| DimensionValueDraft {
-        source_type: TypeName::new("Item").unwrap(),
-        source_id: RecordId::new(format!("i{index}")).unwrap(),
-        field: FieldName::new("name").unwrap(),
-        dimension: DimensionName::new("language").unwrap(),
-        variant: VariantName::new("ja").unwrap(),
-        value: format!("Localized {step}").into(),
-        origin: origin(step),
-    };
-    // i0 始终保留覆盖，单独测试覆盖增删而不混入变体集合的全局失效。
-    let mut overlays = BTreeMap::from([(0, make_overlay(0, 0))]);
-    let mut model = builder(
-        &schema,
-        &inputs,
-        &overlays.values().cloned().collect::<Vec<_>>(),
-    )
-    .build()
-    .unwrap();
-    let mut seed = 17_u64;
-    for step in 0..1000 {
-        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-        let index = 1 + ((seed >> 32) as usize % 11);
-        match step % 4 {
-            0 => {
-                inputs[index]
-                    .fields
-                    .insert("name".into(), format!("Changed {step}").into());
-            }
-            1 => {
-                inputs[index].fields.insert(
-                    "parent".into(),
-                    LoadedValueDraft::record_ref(format!("i{}", step % 12)),
-                );
-            }
-            2 => {
-                if overlays.remove(&index).is_none() {
-                    overlays.insert(index, make_overlay(index, step));
+                    );
                 }
             }
-            _ => {
-                inputs[index].fields.insert(
-                    "details".into(),
-                    LoadedValueDraft::object(
-                        "Details",
-                        [(
-                            "numbers",
-                            LoadedValueDraft::Array(vec![
-                                LoadedValueDraft::from(
-                                    i64::try_from(step).expect("fixture index fits i64")
-                                );
-                                1 + step % 5
-                            ]),
-                        )],
-                    ),
-                );
+            for input in &mut inputs {
+                input.origin = origin(step);
             }
+            let values = overlays.values().cloned().collect::<Vec<_>>();
+            let changed = id(&model, "Item", &format!("i{index}"));
+            let field = ["name", "parent", "name", "details"][step % 4];
+            let changes = BTreeMap::from([(changed, [FieldName::new(field).unwrap()].into_iter().collect())]);
+            let output = builder(&schema, &inputs, &values)
+                .try_build_field_updates(&model, &changes)
+                .unwrap();
+            assert_eq!(
+                output.model,
+                builder(&schema, &inputs, &values).build().unwrap(),
+                "seed {initial_seed}, step {step}"
+            );
+            model = output.model;
         }
-        for input in &mut inputs {
-            input.origin = origin(step);
-        }
-        let values = overlays.values().cloned().collect::<Vec<_>>();
-        let changed = id(&model, "Item", &format!("i{index}"));
-        let field = ["name", "parent", "name", "details"][step % 4];
-        let changes = BTreeMap::from([(changed, [FieldName::new(field).unwrap()].into_iter().collect())]);
-        let output = builder(&schema, &inputs, &values)
-            .try_build_field_updates(&model, &changes)
-            .unwrap();
-        assert_eq!(
-            output.model,
-            builder(&schema, &inputs, &values).build().unwrap(),
-            "step {step}"
-        );
-        model = output.model;
     }
 }
 
