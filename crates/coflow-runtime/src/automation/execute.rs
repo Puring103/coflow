@@ -72,7 +72,7 @@ pub fn execute(
                 .map(|change| {
                     Ok(
                         json!({"path":crate::project_path(project.root_dir(), &change.path),
-                    "change":"modified", "patch":crate::diff::unified_hunks(
+                    "change":"modified", "patch":crate::inspection::diff::unified_hunks(
                         &String::from_utf8_lossy(change.before.as_deref().unwrap_or_default()),
                         &String::from_utf8_lossy(change.after.as_deref().unwrap_or_default())
                     )?}),
@@ -151,7 +151,7 @@ pub fn execute(
             }
         }
         "diff" if input.is_none() => {
-            response.result = crate::diff::automation_diff(project, snapshot, args)?;
+            response.result = crate::inspection::diff::automation_diff(project, snapshot, args)?;
             if response.result["semantic_available"] == false {
                 response.status = Status::Partial;
             }

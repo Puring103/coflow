@@ -1,5 +1,5 @@
 use super::draft::RecordDraftSource;
-use crate::build::{BuildSchema, RecordDraft, ValueDraft, TemplateField, TemplateReads};
+use crate::build::{BuildSchema, RecordDraft, TemplateField, TemplateReads, ValueDraft};
 use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath, CfdPathSegment};
 use crate::model::{CfdDictKey, CfdFormattedString, CfdObject, CfdRecordHandle, CfdValue};
 use crate::{stringify_value, LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString};
@@ -154,9 +154,15 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         std::mem::take(&mut self.reads)
     }
 
-    pub(super) fn take_literal_costs(&mut self) -> LiteralFieldCosts { std::mem::take(&mut self.literal_costs) }
-    pub(super) fn set_literal_costs(&mut self, costs: LiteralFieldCosts) { self.literal_costs = costs }
-    pub(super) fn enable_literal_costs(&mut self) { self.cache_literal_costs = true }
+    pub(super) fn take_literal_costs(&mut self) -> LiteralFieldCosts {
+        std::mem::take(&mut self.literal_costs)
+    }
+    pub(super) fn set_literal_costs(&mut self, costs: LiteralFieldCosts) {
+        self.literal_costs = costs;
+    }
+    pub(super) fn enable_literal_costs(&mut self) {
+        self.cache_literal_costs = true;
+    }
 
     pub(super) fn diagnostic_count(&self) -> usize {
         self.diagnostics.len()
@@ -202,27 +208,56 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         let mut complete = true;
         for (name, value) in fields {
             let top = parent.path.segments.is_empty() && parent.record == self.root_record;
-            if top { self.root_field = Some(name.clone()); }
+            if top {
+                self.root_field = Some(name.clone());
+            }
             let selected_dimension = parent.context.as_ref().map(|(dimension, _)| dimension);
-            let retain = !top || selected_dimension.is_none_or(|dimension| self.schema.field(owner.actual_type.as_str(), name)
-                .and_then(|field| field.dimension.as_ref()).is_some_and(|binding| &binding.dimension == dimension));
+            let retain = !top
+                || selected_dimension.is_none_or(|dimension| {
+                    self.schema
+                        .field(owner.actual_type.as_str(), name)
+                        .and_then(|field| field.dimension.as_ref())
+                        .is_some_and(|binding| &binding.dimension == dimension)
+                });
             // 纯值根本来只计一个节点，可直接计费，无需克隆未保留的值。
-            if top && !retain && matches!(value, ValueDraft::Value(_)) && self.dimension_override(parent, name).is_none() {
-                if self.enter_node(cursor, &parent.field(name), StructureKind::DataValue).is_none() { complete = false; }
+            if top
+                && !retain
+                && matches!(value, ValueDraft::Value(_))
+                && self.dimension_override(parent, name).is_none()
+            {
+                if self
+                    .enter_node(cursor, &parent.field(name), StructureKind::DataValue)
+                    .is_none()
+                {
+                    complete = false;
+                }
                 self.reused_literal_fields += 1;
                 continue;
             }
             let cost_key = (top && self.cache_literal_costs).then(|| {
                 let mut key = parent.field(name);
-                if self.dimension_override(parent, name).is_none() { key.context = None }
+                if self.dimension_override(parent, name).is_none() {
+                    key.context = None;
+                }
                 key
             });
             if top && !retain && !self.budget_exhausted {
-                if let Some(cost) = cost_key.as_ref().and_then(|key| self.literal_costs.0.get(key)).copied() {
+                if let Some(cost) = cost_key
+                    .as_ref()
+                    .and_then(|key| self.literal_costs.0.get(key))
+                    .copied()
+                {
                     let before = self.budget.clone();
                     // 复用仍按原根的真实节点/深度计费；失败后恢复并正常求值，保留精确诊断位置。
-                    if self.budget.check_additional_depth(cursor, StructureKind::DataValue, cost.depth)
-                        .and_then(|()| self.budget.charge_nodes(StructureKind::DataValue, cost.nodes)).is_ok() {
+                    if self
+                        .budget
+                        .check_additional_depth(cursor, StructureKind::DataValue, cost.depth)
+                        .and_then(|()| {
+                            self.budget
+                                .charge_nodes(StructureKind::DataValue, cost.nodes)
+                        })
+                        .is_ok()
+                    {
                         self.reused_literal_fields += 1;
                         continue;
                     }
@@ -231,7 +266,11 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             }
             let nodes_before = self.budget.nodes_used();
             let errors_before = self.reference_diagnostics.len();
-            if top { self.trace_depth = cursor.depth(); self.trace_template = false; self.resolved_root_fields += 1; }
+            if top {
+                self.trace_depth = cursor.depth();
+                self.trace_template = false;
+                self.resolved_root_fields += 1;
+            }
             let selected = self.dimension_override(parent, name).cloned();
             let value = selected.as_ref().unwrap_or(value);
             let Some(value) =
@@ -240,13 +279,23 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
                 complete = false;
                 continue;
             };
-            if let Some(cost_key) = cost_key.filter(|_| !self.trace_template && self.reference_diagnostics.len() == errors_before) {
+            if let Some(cost_key) = cost_key.filter(|_| {
+                !self.trace_template && self.reference_diagnostics.len() == errors_before
+            }) {
                 let nodes = self.budget.nodes_used().saturating_sub(nodes_before);
                 if nodes > 1 {
-                    self.literal_costs.0.insert(cost_key, MaterializedShape { nodes, depth: self.trace_depth.saturating_sub(cursor.depth()) });
+                    self.literal_costs.0.insert(
+                        cost_key,
+                        MaterializedShape {
+                            nodes,
+                            depth: self.trace_depth.saturating_sub(cursor.depth()),
+                        },
+                    );
                 }
             }
-            if retain { out.insert(name.clone(), value); }
+            if retain {
+                out.insert(name.clone(), value);
+            }
         }
         (out, complete && self.diagnostics.len() == diagnostic_start)
     }
@@ -490,8 +539,16 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             };
             if let Some(target) = target {
                 // 嵌套对象读取归属顶层字段；各维度读取取并集，结构变化保守失效整个字段。
-                self.reads.entry(TemplateField { record: self.root_record, field: reader.clone() })
-                    .or_default().insert(TemplateField { record: owner_node.record, field: target });
+                self.reads
+                    .entry(TemplateField {
+                        record: self.root_record,
+                        field: reader.clone(),
+                    })
+                    .or_default()
+                    .insert(TemplateField {
+                        record: owner_node.record,
+                        field: target,
+                    });
             }
         }
         // 缺少显式覆盖时仍在当前上下文求值基础表达式，不能复用基础渲染结果。
@@ -661,7 +718,10 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         }
         let result = self.budget.enter(parent, kind, 1);
         match result {
-            Ok(cursor) => { self.trace_depth = self.trace_depth.max(cursor.depth()); Some(cursor) },
+            Ok(cursor) => {
+                self.trace_depth = self.trace_depth.max(cursor.depth());
+                Some(cursor)
+            }
             Err(error) => {
                 self.push_budget_error(error.to_string(), node);
                 None

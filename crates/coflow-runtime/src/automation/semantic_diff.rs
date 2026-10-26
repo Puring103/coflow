@@ -129,14 +129,15 @@ impl SemanticSnapshot {
         let session = if let Some(loaded) = loaded {
             loaded
         } else {
-            built =
-                match crate::session_build::open_data_session_from_schema(schema_session.clone()) {
-                    Ok(session) => ReadOnlyProjectSession { session },
-                    Err(diagnostics) => {
-                        snapshot.diagnostics = diagnostics;
-                        return Ok(snapshot);
-                    }
-                };
+            built = match crate::sessions::session_build::open_data_session_from_schema(
+                schema_session.clone(),
+            ) {
+                Ok(session) => ReadOnlyProjectSession { session },
+                Err(diagnostics) => {
+                    snapshot.diagnostics = diagnostics;
+                    return Ok(snapshot);
+                }
+            };
             &built
         };
         if session.queries().has_diagnostics() {

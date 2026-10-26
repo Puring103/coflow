@@ -1,0 +1,213 @@
+import { recordIndex } from '../../workspace/state/recordIndex'
+import type { ColumnContentMetrics } from '../../../bindings/ColumnContentMetrics'
+import type { FileRecords } from '../../../bindings/FileRecords'
+import type { RecordCoordinate } from '../../../bindings/RecordCoordinate'
+import type { RecordRow } from '../../../bindings/RecordRow'
+import { cellEnumType, cellReadOnly, cellRefTargetType, coordinateId, diagnosticDisplayMessage, diagnosticMatchesCoordinate, diagnosticRecordTarget, fieldPathField, nullValue, isComplexValue, sameCoordinate, type DiagnosticItem, type FieldPathSegment } from '../../../wire'
+import { valueSelectionRange, type CellAnchor, type ValueSelection } from '../../workspace/state/editorSelection'
+import type { PasteCell } from '../../record-editing/state/clipboard'
+import type { AxisRange } from '../state/scrollVisibility'
+
+/** Approximate visual width in pixels for `text` at 14px UI font. Uses a
+ *  codepoint scan (East Asian Wide ≈ 2 ASCII cells) instead of canvas
+ *  measurement — deterministic across webview builds and cheap enough to
+ *  run over every cell. Not pixel-perfect, but the caller adds chrome
+ *  padding and clamps to a max, so approximate is enough. */
+export function estimateTextWidth(text: string, monospace = false, maxWidth = Number.POSITIVE_INFINITY): number {
+  const narrow = monospace ? 8.6 : 7.7
+  const wide = monospace ? 15.9 : 15.4
+  let w = 0
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    w += isEastAsianWide(cp) ? wide : narrow
+    // 列宽达到上限后，剩余字符不再影响布局，避免扫描超长文本。
+    if (w >= maxWidth) return maxWidth
+  }
+  return w
+}
+
+export function elementBounds(elements: readonly HTMLElement[]): DOMRect {
+  const rects = elements.map(element => element.getBoundingClientRect())
+  const left = Math.min(...rects.map(rect => rect.left))
+  const top = Math.min(...rects.map(rect => rect.top))
+  const right = Math.max(...rects.map(rect => rect.right))
+  const bottom = Math.max(...rects.map(rect => rect.bottom))
+  return new DOMRect(left, top, right - left, bottom - top)
+}
+
+export function fitsAxis(start: number, end: number, visibleStart: number, visibleEnd: number): boolean {
+  const target: AxisRange = { start, end }
+  const viewport: AxisRange = { start: visibleStart, end: visibleEnd }
+  return target.end - target.start <= viewport.end - viewport.start
+}
+
+/** Rough East Asian Wide detection covering the ranges that show up in game
+ *  data: CJK ideographs, Hangul, kana, full-width forms, CJK punctuation.
+ *  Doesn't need to be exhaustive — misses under-count width by ~1 char,
+ *  which the column-width clamp absorbs. */
+function isEastAsianWide(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115F) ||        // Hangul Jamo
+    (cp >= 0x2E80 && cp <= 0x9FFF) ||        // CJK Radicals..Unified Ideographs
+    (cp >= 0xA960 && cp <= 0xA97F) ||        // Hangul Jamo Extended-A
+    (cp >= 0xAC00 && cp <= 0xD7A3) ||        // Hangul Syllables
+    (cp >= 0xF900 && cp <= 0xFAFF) ||        // CJK Compatibility Ideographs
+    (cp >= 0xFE30 && cp <= 0xFE4F) ||        // CJK Compatibility Forms
+    (cp >= 0xFF00 && cp <= 0xFF60) ||        // Full-width Forms
+    (cp >= 0xFFE0 && cp <= 0xFFE6) ||        // Full-width signs
+    (cp >= 0x20000 && cp <= 0x3FFFD)         // CJK Extension B..F, supplements
+  )
+}
+
+export function selectionCellMatrix(
+  selection: ValueSelection,
+  rows: readonly RecordCoordinate[],
+  columns: readonly string[],
+): CellAnchor[][] {
+  const range = valueSelectionRange(selection, rows, columns)
+  if (!range) return [[{ coordinate: selection.coordinate, fieldPath: selection.fieldPath }]]
+  const matrix: CellAnchor[][] = []
+  for (let row = range.rowStart; row <= range.rowEnd; row++) {
+    const cells: CellAnchor[] = []
+    for (let column = range.columnStart; column <= range.columnEnd; column++) {
+      cells.push({ coordinate: rows[row], fieldPath: [fieldPathField(columns[column])] })
+    }
+    matrix.push(cells)
+  }
+  return matrix
+}
+
+export function boundedPasteMatrix(
+  start: CellAnchor,
+  rowCount: number,
+  columnCount: number,
+  rows: readonly RecordCoordinate[],
+  columns: readonly string[],
+): CellAnchor[][] {
+  const rowStart = rows.findIndex(row => sameCoordinate(row, start.coordinate))
+  const field = selectedTopLevelField(start.fieldPath)
+  const columnStart = field ? columns.indexOf(field) : -1
+  if (rowStart < 0 || columnStart < 0) return [[start]]
+  const matrix: CellAnchor[][] = []
+  for (let row = rowStart; row < Math.min(rows.length, rowStart + rowCount); row++) {
+    const cells: CellAnchor[] = []
+    for (let column = columnStart; column < Math.min(columns.length, columnStart + columnCount); column++) {
+      cells.push({ coordinate: rows[row], fieldPath: [fieldPathField(columns[column])] })
+    }
+    matrix.push(cells)
+  }
+  return matrix
+}
+
+
+export function pasteCellFor(
+  anchor: CellAnchor,
+  rows: readonly RecordRow[],
+  editable: boolean,
+): PasteCell {
+  const field = selectedTopLevelField(anchor.fieldPath)
+  const row = recordIndex(rows).get(coordinateId(anchor.coordinate))
+  const cell = field && row ? fieldCell(row, field) : undefined
+  return {
+    coordinate: anchor.coordinate,
+    fieldPath: anchor.fieldPath,
+    annotation: cell?.annotation ?? null,
+    value: cell?.value ?? nullValue(),
+    writable: editable && !!cell && !cellReadOnly(cell),
+  }
+}
+
+export function fieldCell(record: RecordRow, fieldName: string) {
+  const index = record.field_index[fieldName]
+  return typeof index === 'number' ? record.fields[index] : undefined
+}
+
+export function inferredCellType(cell: RecordRow['fields'][number] | undefined): string | undefined {
+  if (!cell) return undefined
+  const value = cell.value
+  if (value.kind === 'enum') return value.value.enum_name
+  if (value.kind === 'ref') return 'ref'
+  if (value.kind === 'object') return value.value.actual_type
+  if (value.kind === 'array') return 'array'
+  if (value.kind === 'dict') return 'dict'
+  if (value.kind === 'option_none') return 'None'
+  if (value.kind === 'option_some') {
+    return inferredCellType({ ...cell, value: value.value })
+  }
+  return value.kind
+}
+
+
+
+export function columnDropdownKind(
+  data: FileRecords,
+  fieldName: string,
+  activeType: string,
+): 'ref' | 'enum' | 'bool' | null {
+  const kind = data.columns.find(column => column.name === fieldName)?.content_metrics[activeType]?.dropdown_kind
+  if (kind === 'ref' || kind === 'enum' || kind === 'bool') return kind
+  return null
+}
+
+export function severityForCoordinate(
+  diagnostics: DiagnosticItem[] | undefined,
+  filePath: string,
+  coordinate: RecordCoordinate,
+): 'error' | 'warning' | null {
+  if (!diagnostics) return null
+  let sev: 'error' | 'warning' | null = null
+  for (const d of diagnostics) {
+    const target = diagnosticRecordTarget(d)
+    if (!target || target.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    if (d.severity === 'error') return 'error'
+    if (d.severity === 'warning') sev = 'warning'
+  }
+  return sev
+}
+
+export function findDiagMessage(
+  diags: DiagnosticItem[] | undefined,
+  filePath: string,
+  coordinate: RecordCoordinate,
+  topField: string,
+): string | undefined {
+  if (!diags) return undefined
+  const msgs: string[] = []
+  for (const d of diags) {
+    const target = diagnosticRecordTarget(d)
+    if (!target || target.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    const top = target.kind === 'table_field' ? target.field_path.split(/[.[]/, 1)[0] : null
+    if (top !== topField) continue
+    msgs.push(diagnosticDisplayMessage(d))
+  }
+  return msgs.length ? msgs.join('\n') : undefined
+}
+
+export function selectedTopLevelField(path: FieldPathSegment[]): string | null {
+  return path.length === 1 && path[0].kind === 'field' ? path[0].value : null
+}
+
+export function tableCellKey(coordinate: RecordCoordinate, fieldName: string): string {
+  return `${coordinateId(coordinate)}::${fieldName}`
+}
+
+
+/** 本地差异投影和演示数据没有后端快照，由同一估宽规则补充列统计。 */
+export function columnContentMetrics(rows: readonly RecordRow[], field: string) {
+  const result: Record<string, ColumnContentMetrics> = {}
+  for (const row of rows) {
+    const cell = fieldCell(row, field)
+    if (!cell) continue
+    const metrics = result[row.coordinate.actual_type] ??= { max_width: 0, has_complex_value: false, declared_type: null, label: null, description: null, dropdown_kind: null }
+    metrics.declared_type ??= cell.annotation?.declared_type ?? inferredCellType(cell) ?? null
+    if (!metrics.label && !metrics.description) {
+      metrics.label = cell.annotation?.label ?? null
+      metrics.description = cell.annotation?.description ?? null
+    }
+    metrics.dropdown_kind ??= cellRefTargetType(cell) || cell.value.kind === 'ref' ? 'ref'
+      : cellEnumType(cell) || cell.value.kind === 'enum' ? 'enum' : cell.value.kind === 'bool' ? 'bool' : null
+    if (metrics.max_width < 600) metrics.max_width = Math.max(metrics.max_width, estimateTextWidth(row.field_summaries[field] ?? '', false, 600))
+    metrics.has_complex_value ||= isComplexValue(cell.value)
+  }
+  return result
+}

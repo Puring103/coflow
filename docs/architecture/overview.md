@@ -58,4 +58,4 @@ Coflow 使用 CFT 定义结构与业务规则，使用 CFD 保存记录和维度
 
 CFT 源码需通过声明检查后写盘，错误声明保留在编辑草稿；CFD 源码允许带诊断保存。代码生成与数据写入通过暂存事务保留失败恢复信息。
 
-接口与协作约束见 [项目代次](project-generations.md)、[CLI 设计](../runtime-design/cli.md)、[C# 加载](../language-design/02-api-runtime-design.zh-CN.md) 和 [编辑器视图](../editor-design/views.md)。
+接口与协作约束见 [项目代次](project-generations.md)、[CLI 设计](../runtime-design/cli.md)、[C# 加载](../codegen-design/csharp-runtime.zh-CN.md) 和 [编辑器视图](../editor-design/views.md)。

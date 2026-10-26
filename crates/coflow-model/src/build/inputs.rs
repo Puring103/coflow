@@ -15,7 +15,10 @@ pub struct CfdInputBatch<T> {
 impl<T> CfdInputBatch<T> {
     #[must_use]
     pub fn new(values: impl Into<Arc<[T]>>) -> Self {
-        Self { values: values.into(), identity: Arc::new(()) }
+        Self {
+            values: values.into(),
+            identity: Arc::new(()),
+        }
     }
 
     #[must_use]
@@ -23,24 +26,37 @@ impl<T> CfdInputBatch<T> {
         Arc::ptr_eq(&self.identity, &other.identity)
     }
 
-    pub(crate) fn identity(&self) -> Arc<()> { self.identity.clone() }
+    pub(crate) fn identity(&self) -> Arc<()> {
+        self.identity.clone()
+    }
 }
 
 impl<T> Clone for CfdInputBatch<T> {
-    fn clone(&self) -> Self { Self { values: self.values.clone(), identity: self.identity.clone() } }
+    fn clone(&self) -> Self {
+        Self {
+            values: self.values.clone(),
+            identity: self.identity.clone(),
+        }
+    }
 }
 
 impl<T> Default for CfdInputBatch<T> {
-    fn default() -> Self { Self::new(Arc::<[T]>::from([])) }
+    fn default() -> Self {
+        Self::new(Arc::<[T]>::from([]))
+    }
 }
 
 impl<T> From<Vec<T>> for CfdInputBatch<T> {
-    fn from(values: Vec<T>) -> Self { Self::new(values) }
+    fn from(values: Vec<T>) -> Self {
+        Self::new(values)
+    }
 }
 
 impl<T> Deref for CfdInputBatch<T> {
     type Target = [T];
-    fn deref(&self) -> &Self::Target { &self.values }
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +81,6 @@ impl Chunk<'_> {
             Self::Shared(records) => records.get(index),
         }
     }
-
 }
 
 enum ChunkIntoIter<'a> {
@@ -122,26 +137,46 @@ impl<'a> RecordInputs<'a> {
     }
 
     pub fn manifest(&self) -> Vec<SharedInputRange> {
-        self.chunks.iter().enumerate().filter_map(|(index, chunk)| {
-            let Chunk::Shared(batch) = chunk else { return None };
-            Some(SharedInputRange { range: self.start(index)..self.ends[index], identity: batch.identity() })
-        }).collect()
+        self.chunks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, chunk)| {
+                let Chunk::Shared(batch) = chunk else {
+                    return None;
+                };
+                Some(SharedInputRange {
+                    range: self.start(index)..self.ends[index],
+                    identity: batch.identity(),
+                })
+            })
+            .collect()
     }
 
-    fn start(&self, index: usize) -> usize { index.checked_sub(1).map_or(0, |prior| self.ends[prior]) }
+    fn start(&self, index: usize) -> usize {
+        index.checked_sub(1).map_or(0, |prior| self.ends[prior])
+    }
 
     /// 只扫描变化批次。旧代次保留身份 Arc，地址不会在缓存期被复用。
     pub fn changed_ranges(&self, previous: &[SharedInputRange]) -> Vec<Range<usize>> {
-        let previous = previous.iter().map(|entry| (entry.range.start, entry)).collect::<std::collections::BTreeMap<_, _>>();
-        self.chunks.iter().enumerate().filter_map(|(index, chunk)| {
-            let range = self.start(index)..self.ends[index];
-            if let Chunk::Shared(batch) = chunk {
-                if previous.get(&range.start).is_some_and(|old| old.range == range && Arc::ptr_eq(&old.identity, &batch.identity)) {
-                    return None;
+        let previous = previous
+            .iter()
+            .map(|entry| (entry.range.start, entry))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        self.chunks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, chunk)| {
+                let range = self.start(index)..self.ends[index];
+                if let Chunk::Shared(batch) = chunk {
+                    if previous.get(&range.start).is_some_and(|old| {
+                        old.range == range && Arc::ptr_eq(&old.identity, &batch.identity)
+                    }) {
+                        return None;
+                    }
                 }
-            }
-            Some(range)
-        }).collect()
+                Some(range)
+            })
+            .collect()
     }
 
     pub fn get(&self, index: usize) -> Option<&LoadedRecordDraft> {

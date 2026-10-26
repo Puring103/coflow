@@ -405,7 +405,8 @@ mod batch_tests {
         )
         .expect("second source");
         let project = Project::open(Some(&directory.path().join("coflow.yaml"))).expect("project");
-        let session = crate::session_build::open_project_session(project).expect("session");
+        let session =
+            crate::sessions::session_build::open_project_session(project).expect("session");
         assert!(!session.has_diagnostics());
         (directory, session)
     }

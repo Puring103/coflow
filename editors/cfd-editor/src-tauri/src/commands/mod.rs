@@ -41,12 +41,12 @@ where
     let result = run_blocking(move || span.in_scope(|| work(host))).await;
     match result {
         Ok(value) => {
-            coflow_observability::tracing::info!(run_id = coflow_observability::run_id(), command, %operation_id, elapsed_ms = started.elapsed().as_millis() as u64, event = "command_completed");
+            coflow_observability::tracing::info!(run_id = coflow_observability::run_id(), command, %operation_id, elapsed_ms = started.elapsed().as_millis(), event = "command_completed");
             Ok(value)
         }
         Err(mut error) => {
             error.error_id = Some(operation_id.clone());
-            coflow_observability::tracing::error!(run_id = coflow_observability::run_id(), command, error_id = %operation_id, code = %error.code, kind = ?error.kind, persistence = ?error.publication.as_ref().map(|p| &p.state), elapsed_ms = started.elapsed().as_millis() as u64, event = "command_failed");
+            coflow_observability::tracing::error!(run_id = coflow_observability::run_id(), command, error_id = %operation_id, code = %error.code, kind = ?error.kind, persistence = ?error.publication.as_ref().map(|p| &p.state), elapsed_ms = started.elapsed().as_millis(), event = "command_failed");
             Err(error)
         }
     }

@@ -17,10 +17,10 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#main">跳到主要内容</a>
+    <a class="skip-link" href="#main" data-en="Skip to main content">跳到主要内容</a>
 
     <header class="site-header" data-header>
-      <a class="brand" href="#top" aria-label="Coflow 首页">
+      <a class="brand" href="#top" aria-label="Coflow 首页" data-en-aria-label="Coflow home">
         <span class="brand-mark" style="--brand-logo: url(assets/coflow-mark.svg)" aria-hidden="true"></span>
         <span>Coflow</span>
       </a>
@@ -30,17 +30,17 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.84a9.6 9.6 0 0 1 2.5.34c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
         </a>
         <div class="language-picker" data-lang-picker>
-          <button class="language-trigger" type="button" data-lang-trigger aria-label="页面语言" aria-haspopup="menu" aria-expanded="false"><span data-lang-current>中</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg></button>
+          <button class="language-trigger" type="button" data-lang-trigger aria-label="页面语言" data-en-aria-label="Page language" aria-haspopup="menu" aria-expanded="false"><span data-lang-current>中</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg></button>
           <div class="language-menu" data-lang-menu role="menu">
             <button type="button" role="menuitem" data-lang-option="zh"><span>中文</span><i>中</i></button>
             <button type="button" role="menuitem" data-lang-option="en"><span>English</span><i>EN</i></button>
           </div>
         </div>
-        <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换到深色模式" title="切换明暗模式">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换到深色模式" data-en-aria-label="Switch to dark mode" title="切换明暗模式" data-en-title="Toggle color theme">
           <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
           <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 13.3A8.5 8.5 0 1 1 10.7 3.3 6.5 6.5 0 0 0 20.7 13.3Z"/></svg>
         </button>
-        <a class="header-icon-link header-docs" href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener" aria-label="阅读文档" title="阅读文档">
+        <a class="header-icon-link header-docs" href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener" aria-label="阅读文档" data-en-aria-label="Read documentation" title="阅读文档" data-en-title="Read documentation">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5A3.5 3.5 0 0 1 20 23V5.5Z" /></svg>
         </a>
       </div>
@@ -87,7 +87,7 @@
                 <p data-en="A CLI designed for AI, paired with dedicated skills, lets AI accelerate iteration.">针对AI设计的命令行工具，配合专属skill，让AI高速参与迭代。</p>
               </div>
               <div class="stage-demo">
-                <div class="editor-chrome cli-demo" aria-label="常用 Coflow 命令">
+                <div class="editor-chrome cli-demo" aria-label="常用 Coflow 命令" data-en-aria-label="Common Coflow commands">
                   <div><span>$</span><code>coflow context --type Skill --examples 3</code><em data-en="Read context">理解配置</em></div>
                   <div><span>$</span><code>coflow apply --input changes.json --rules --dry-run</code><em data-en="Preview edits">预览修改</em></div>
                   <div><span>$</span><code>coflow diff --input changes.json</code><em data-en="Review changes">审查差异</em></div>
@@ -105,7 +105,7 @@
                 <p data-en="Keep people involved throughout, with multiple editor views for efficient editing.">始终保持人类参与，多种编辑器视图高效编辑</p>
               </div>
               <div class="stage-demo">
-                <div class="card-stack cfd-stack" data-cardstack aria-label="同一份 skills.cfd 的四种视图">
+                <div class="card-stack cfd-stack" data-cardstack aria-label="同一份 skills.cfd 的四种视图" data-en-aria-label="Four views of the same skills.cfd">
                   <div class="stack-tabs" role="tablist">
                     <button type="button" data-view="table" data-label="表格视图" data-en="Table">表格</button>
                     <button type="button" data-view="record" data-label="记录视图" data-en="Record">记录</button>
@@ -114,7 +114,7 @@
                   </div>
                   <div class="stack-deck">
                     <!-- 表格视图（还原 .table-view / .data-table） -->
-                    <article class="stack-card cfd-card" data-card="table" data-depth="0"><div class="cfd-search"><span>skills.cfd · Skill</span><em>6 条</em></div><div class="cfd-table"><div class="cfd-thead"><div class="cfd-th"><span class="th-name">ID</span><span class="th-type">id</span></div><div class="cfd-th"><span class="th-name">name</span><span class="th-type">string</span></div><div class="cfd-th"><span class="th-name">element</span><span class="th-type">Element</span></div><div class="cfd-th"><span class="th-name">tier</span><span class="th-type">int</span></div><div class="cfd-th"><span class="th-name">power</span><span class="th-type">int</span></div></div><div class="cfd-tr"><div class="td-key">initiation</div><div class="td"><span class="vc-str">奥术入门</span></div><div class="td"><span class="vc-enum">Arcane</span></div><div class="td"><span class="vc-num">1</span></div><div class="td"><span class="vc-num">0</span></div></div><div class="cfd-tr selected"><div class="td-key">fireball</div><div class="td"><span class="vc-str">火球术</span></div><div class="td"><span class="vc-enum">Fire</span></div><div class="td"><span class="vc-num">2</span></div><div class="td"><span class="vc-num">35</span></div></div><div class="cfd-tr"><div class="td-key">frost_nova</div><div class="td"><span class="vc-str">冰霜新星</span></div><div class="td"><span class="vc-enum">Ice</span></div><div class="td"><span class="vc-num">2</span></div><div class="td"><span class="vc-num">28</span></div></div><div class="cfd-tr"><div class="td-key">meteor</div><div class="td"><span class="vc-str">陨石术</span></div><div class="td"><span class="vc-enum">Fire</span></div><div class="td"><span class="vc-num">3</span></div><div class="td"><span class="vc-num">90</span></div></div><div class="cfd-tr"><div class="td-key">blizzard</div><div class="td"><span class="vc-str">暴风雪</span></div><div class="td"><span class="vc-enum">Ice</span></div><div class="td"><span class="vc-num">3</span></div><div class="td"><span class="vc-num">75</span></div></div><div class="cfd-tr"><div class="td-key">arcane_mastery</div><div class="td"><span class="vc-str">元素精通</span></div><div class="td"><span class="vc-enum">Arcane</span></div><div class="td"><span class="vc-num">4</span></div><div class="td"><span class="vc-num">120</span></div></div></div></article>
+                    <article class="stack-card cfd-card" data-card="table" data-depth="0"><div class="cfd-search"><span>skills.cfd · Skill</span><em data-en="6 records">6 条</em></div><div class="cfd-table"><div class="cfd-thead"><div class="cfd-th"><span class="th-name">ID</span><span class="th-type">id</span></div><div class="cfd-th"><span class="th-name">name</span><span class="th-type">string</span></div><div class="cfd-th"><span class="th-name">element</span><span class="th-type">Element</span></div><div class="cfd-th"><span class="th-name">tier</span><span class="th-type">int</span></div><div class="cfd-th"><span class="th-name">power</span><span class="th-type">int</span></div></div><div class="cfd-tr"><div class="td-key">initiation</div><div class="td"><span class="vc-str">奥术入门</span></div><div class="td"><span class="vc-enum">Arcane</span></div><div class="td"><span class="vc-num">1</span></div><div class="td"><span class="vc-num">0</span></div></div><div class="cfd-tr selected"><div class="td-key">fireball</div><div class="td"><span class="vc-str">火球术</span></div><div class="td"><span class="vc-enum">Fire</span></div><div class="td"><span class="vc-num">2</span></div><div class="td"><span class="vc-num">35</span></div></div><div class="cfd-tr"><div class="td-key">frost_nova</div><div class="td"><span class="vc-str">冰霜新星</span></div><div class="td"><span class="vc-enum">Ice</span></div><div class="td"><span class="vc-num">2</span></div><div class="td"><span class="vc-num">28</span></div></div><div class="cfd-tr"><div class="td-key">meteor</div><div class="td"><span class="vc-str">陨石术</span></div><div class="td"><span class="vc-enum">Fire</span></div><div class="td"><span class="vc-num">3</span></div><div class="td"><span class="vc-num">90</span></div></div><div class="cfd-tr"><div class="td-key">blizzard</div><div class="td"><span class="vc-str">暴风雪</span></div><div class="td"><span class="vc-enum">Ice</span></div><div class="td"><span class="vc-num">3</span></div><div class="td"><span class="vc-num">75</span></div></div><div class="cfd-tr"><div class="td-key">arcane_mastery</div><div class="td"><span class="vc-str">元素精通</span></div><div class="td"><span class="vc-enum">Arcane</span></div><div class="td"><span class="vc-num">4</span></div><div class="td"><span class="vc-num">120</span></div></div></div></article>
                     <!-- 记录视图（还原 .record-view：左 sidebar + 右 gn-header + dc-inspector） -->
                     <article class="stack-card cfd-card" data-card="record" data-depth="1">
                       <div class="cfd-record">
@@ -132,7 +132,7 @@
                       </div>
                     </article>
                     <!-- 图、表、记录与源码均展示同一份技能数据，关系使用 prerequisites。 -->
-                    <article class="stack-card cfd-card" data-card="graph" data-depth="2"><div class="real-graph-preview"><img class="graph-light" src="assets/skill-tree-light.png" width="960" height="500" alt="编辑器真实图视图：六个技能形成两条分支，在元素精通汇合" loading="lazy"/><img class="graph-dark" src="assets/skill-tree-dark.png" width="960" height="500" alt="编辑器真实图视图：六个技能形成两条分支，在元素精通汇合" loading="lazy"/></div></article>
+                    <article class="stack-card cfd-card" data-card="graph" data-depth="2"><div class="real-graph-preview"><img class="graph-light" src="assets/skill-tree-light.png" width="960" height="500" alt="编辑器真实图视图：六个技能形成两条分支，在元素精通汇合" data-en-alt="Editor graph view: six skills form two branches that converge at Elemental Mastery" loading="lazy"/><img class="graph-dark" src="assets/skill-tree-dark.png" width="960" height="500" alt="编辑器真实图视图：六个技能形成两条分支，在元素精通汇合" data-en-alt="Editor graph view: six skills form two branches that converge at Elemental Mastery" loading="lazy"/></div></article>
                     <article class="stack-card cfd-card source-view" data-card="source" data-depth="3"><pre><code>initiation: <span class="tok-type">Skill</span> {
   name: <span class="tok-string">&quot;奥术入门&quot;</span>, element: <span class="tok-type">Element</span>::<span class="tok-type">Arcane</span>, tier: <span class="tok-number">1</span>,
   power: <span class="tok-number">0</span>, cooldown: <span class="tok-number">0.0</span>, prerequisites: [],
@@ -171,12 +171,12 @@ arcane_mastery: <span class="tok-type">Skill</span> {
                 <p data-en="Describe types, fields and references in CFT, giving designers, AI and programmers a shared data language.">用 CFT 描述类型、字段与引用，让策划、AI和程序遵循共同的数据语言。</p>
               </div>
               <div class="stage-demo">
-                <div class="card-stack code-stack" data-cardstack aria-label="CFT 定义能力">
+                <div class="card-stack code-stack" data-cardstack aria-label="CFT 定义能力" data-en-aria-label="CFT definitions">
                   <div class="stack-tabs" role="tablist">
-                    <button type="button" data-view="type" data-label="类型与字段" class="is-active">类型与字段</button>
-                    <button type="button" data-view="enum" data-label="枚举">枚举</button>
-                    <button type="button" data-view="annotation" data-label="注解">注解</button>
-                    <button type="button" data-view="inherit" data-label="继承">继承</button>
+                    <button type="button" data-view="type" data-label="类型与字段" class="is-active" data-en="Types and fields">类型与字段</button>
+                    <button type="button" data-view="enum" data-label="枚举" data-en="Enums">枚举</button>
+                    <button type="button" data-view="annotation" data-label="注解" data-en="Annotations">注解</button>
+                    <button type="button" data-view="inherit" data-label="继承" data-en="Inheritance">继承</button>
                   </div>
                   <div class="stack-deck">
                     <article class="stack-card code-card" data-card="type" data-depth="0"><div class="code-window"><div class="win-bar"><span class="win-file">skills.cft</span><span class="win-lang">CFT</span></div><pre class="code-sample"><code><span class="tok-keyword">enum</span> <span class="tok-type">Element</span> { <span class="tok-type">Arcane</span>, <span class="tok-type">Fire</span>, <span class="tok-type">Ice</span> }
@@ -246,12 +246,12 @@ arcane_mastery: <span class="tok-type">Skill</span> {
                 <p data-en="Declare type-level and cross-record rules in CFT so human and AI edits follow the same business constraints.">在 CFT 中声明类型内规则和跨记录检查，让人和 AI 的修改都遵循相同的业务约束。</p>
               </div>
               <div class="stage-demo">
-                <div class="card-stack code-stack" data-cardstack aria-label="check 约束能力">
+                <div class="card-stack code-stack" data-cardstack aria-label="check 约束能力" data-en-aria-label="Check constraints">
                   <div class="stack-tabs" role="tablist">
-                    <button type="button" data-view="basic" data-label="基础约束" class="is-active">基础约束</button>
-                    <button type="button" data-view="when" data-label="条件分支">条件分支</button>
-                    <button type="button" data-view="quant" data-label="集合规则">集合规则</button>
-                    <button type="button" data-view="project" data-label="项目检查">项目检查</button>
+                    <button type="button" data-view="basic" data-label="基础约束" class="is-active" data-en="Basic constraints">基础约束</button>
+                    <button type="button" data-view="when" data-label="条件分支" data-en="Conditions">条件分支</button>
+                    <button type="button" data-view="quant" data-label="集合规则" data-en="Collection rules">集合规则</button>
+                    <button type="button" data-view="project" data-label="项目检查" data-en="Project checks">项目检查</button>
                   </div>
                   <div class="stack-deck">
                     <article class="stack-card code-card" data-card="basic" data-depth="0"><div class="code-window"><div class="win-bar"><span class="win-file">skills.cft · Skill</span><span class="win-lang">CFT</span></div><pre class="code-sample"><code><span class="tok-keyword">check</span> <span class="tok-type">Progression</span> {
@@ -309,7 +309,7 @@ arcane_mastery: <span class="tok-type">Skill</span> {
   name: <span class="tok-string">&quot;陨石术&quot;</span>, tier: <span class="tok-number">2</span>,
   prerequisites: [&amp;<span class="tok-type">Skill</span>::fireball],
 }
-<span class="tok-comment"># fireball.tier = 2，meteor.tier 应为 3</span></code></pre></div><div class="business-diagnostic"><b>技能阶级必须高于前置技能</b><span>CHECK-019 · Skill::Progression</span><span>meteor · tier = 2 → 3</span></div></div>
+<span class="tok-comment"># fireball.tier = 2，meteor.tier 应为 3</span></code></pre></div><div class="business-diagnostic"><b data-en="Skill tier must exceed prerequisite tiers">技能阶级必须高于前置技能</b><span>CHECK-019 · Skill::Progression</span><span>meteor · tier = 2 → 3</span></div></div>
               </div>
             </li>
 
@@ -320,7 +320,7 @@ arcane_mastery: <span class="tok-type">Skill</span> {
                 <h3 data-en="One CFD source, one configuration model">CFD 数据，统一配置</h3>
                 <p data-en="Use the purpose-built CFD language for nested, version-friendly configuration.">使用专门设计的 CFD 语言表达可版本管理的嵌套配置。</p>
               </div>
-              <div class="stage-demo"><div class="code-window"><div class="win-bar"><span class="win-file">skills.cfd · 技能树分支</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code>initiation: <span class="tok-type">Skill</span> { name: <span class="tok-string">&quot;奥术入门&quot;</span>, tier: <span class="tok-number">1</span> }
+              <div class="stage-demo"><div class="code-window"><div class="win-bar"><span class="win-file" data-en="skills.cfd · Skill tree branches">skills.cfd · 技能树分支</span><span class="win-lang">CFD</span></div><pre class="code-sample"><code>initiation: <span class="tok-type">Skill</span> { name: <span class="tok-string">&quot;奥术入门&quot;</span>, tier: <span class="tok-number">1</span> }
 fireball: <span class="tok-type">Skill</span> {
   name: <span class="tok-string">&quot;火球术&quot;</span>, element: <span class="tok-type">Element</span>::<span class="tok-type">Fire</span>, tier: <span class="tok-number">2</span>,
   power: <span class="tok-number">35</span>, prerequisites: [&amp;<span class="tok-type">Skill</span>::initiation],
@@ -341,7 +341,7 @@ meteor: <span class="tok-type">Skill</span> {
               </div>
               <div class="stage-demo">
                 <div class="editor-chrome dimension-demo">
-                  <header><b>维度配置</b><span>配置 · CFT · 具体数据</span></header>
+                  <header><b data-en="Dimension configuration">维度配置</b><span data-en="Configuration · CFT · Data">配置 · CFT · 具体数据</span></header>
                   <div class="dimension-columns">
                     <section><strong>coflow.yaml</strong><pre><code><span class="tok-key">dimensions</span>:
   <span class="tok-key">platform</span>:
@@ -369,12 +369,12 @@ name: <span class="tok-type">string</span>;</code></pre></section>
                 <p data-en="Generate type-safe code from precise type definitions, connecting programmers and designers.">根据准确的类型定义生成类型安全的代码，打通程序与策划的边界。</p>
               </div>
               <div class="stage-demo"><div class="codegen-flow">
-<div class="code-window"><div class="win-bar"><span class="win-file">skills.cft · 类型定义</span><span class="win-lang">CFT</span></div><pre class="code-sample"><code><span class="tok-keyword">table</span> <span class="tok-type">Skill</span> {
+<div class="code-window"><div class="win-bar"><span class="win-file" data-en="skills.cft · Type definitions">skills.cft · 类型定义</span><span class="win-lang">CFT</span></div><pre class="code-sample"><code><span class="tok-keyword">table</span> <span class="tok-type">Skill</span> {
   name: <span class="tok-keyword">string</span>;
   power: <span class="tok-keyword">int</span>;
 }</code></pre></div>
 <div class="codegen-direction" aria-hidden="true">↓ <code>coflow codegen</code></div>
-<div class="code-window"><div class="win-bar"><span class="win-file">Skill.cs · 生成代码节选</span><span class="win-lang">C#</span></div><pre class="code-sample"><code><span class="tok-keyword">public partial class</span> <span class="tok-type">Skill</span>
+<div class="code-window"><div class="win-bar"><span class="win-file" data-en="Skill.cs · Generated code excerpt">Skill.cs · 生成代码节选</span><span class="win-lang">C#</span></div><pre class="code-sample"><code><span class="tok-keyword">public partial class</span> <span class="tok-type">Skill</span>
 {
   <span class="tok-keyword">public string</span> name { <span class="tok-keyword">get; internal set;</span> } = <span class="tok-keyword">default!</span>;
   <span class="tok-keyword">public int</span> power { <span class="tok-keyword">get; internal set;</span> } = <span class="tok-keyword">default!</span>;
@@ -391,7 +391,7 @@ name: <span class="tok-type">string</span>;</code></pre></section>
               </div>
               <div class="stage-demo"><div class="editor-chrome chemistry-demo">
 <header><span data-en="Chemical formula plugin">化学公式插件</span><span class="chemistry-badge" data-en="Type presentation">类型展示</span></header>
-<div class="chemistry-config"><label for="chemical-expression">Formula.expression</label><input id="chemical-expression" data-chemical-input value="2H2 + O2 -> 2H2O" spellcheck="false" autocomplete="off" aria-label="化学公式配置" maxlength="160" />
+<div class="chemistry-config"><label for="chemical-expression">Formula.expression</label><input id="chemical-expression" data-chemical-input value="2H2 + O2 -> 2H2O" spellcheck="false" autocomplete="off" aria-label="化学公式配置" data-en-aria-label="Chemical formula configuration" maxlength="160" />
 <div class="chemistry-presets"><button type="button" data-formula="2H2 + O2 -> 2H2O" data-en="Water synthesis">合成水</button><button type="button" data-formula="CH4 + 2O2 -> CO2 + 2H2O" data-en="Methane combustion">甲烷燃烧</button><button type="button" data-formula="Ca(OH)2 + 2HCl -> CaCl2 + 2H2O" data-en="Neutralization">酸碱中和</button></div></div>
 <div class="chemistry-transform" aria-hidden="true">↓</div>
 <div class="chemistry-result"><span data-en="Plugin rendering">插件渲染</span><div data-chemical-output aria-live="polite"></div></div>
@@ -409,7 +409,7 @@ name: <span class="tok-type">string</span>;</code></pre></section>
           <header class="section-head" data-reveal>
             <h2 data-en="Each role works naturally in the same flow">各司其职，自然流动</h2>
           </header>
-          <figure class="flow workflow-overview" id="flow" data-reveal aria-label="程序、策划、AI 汇入 Coflow，再交付到 Runtime">
+          <figure class="flow workflow-overview" id="flow" data-reveal aria-label="程序、策划、AI 汇入 Coflow，再交付到 Runtime" data-en-aria-label="Programmers, designers and AI collaborate in Coflow and deliver to the runtime">
             <div class="flow-stage"><div class="flow-canvas">
               <svg class="flow-lines" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
                 <defs><mask id="joint-branch-gap"><rect width="1000" height="300" fill="#fff" /><rect y="138" width="1000" height="4" fill="#000" /><rect y="158" width="1000" height="4" fill="#000" /></mask></defs>
@@ -472,12 +472,12 @@ name: <span class="tok-type">string</span>;</code></pre></section>
 
     <footer class="site-footer">
       <div class="wrap footer-inner">
-        <a class="brand footer-brand" href="#top" aria-label="返回顶部">
+        <a class="brand footer-brand" href="#top" aria-label="返回顶部" data-en-aria-label="Back to top">
           <span class="brand-mark" style="--brand-logo: url(assets/coflow-mark.svg)" aria-hidden="true"></span>
           <span>Coflow</span>
         </a>
         <p data-en="An AI-native data configuration workflow">AI 原生的数据配置工作流</p>
-        <nav class="footer-links" aria-label="页脚链接">
+        <nav class="footer-links" aria-label="页脚链接" data-en-aria-label="Footer links">
           <a href="https://github.com/Puring103/coflow" target="_blank" rel="noopener">GitHub</a>
           <a href="https://puring103.github.io/coflow/docs/" target="_blank" rel="noopener">Docs</a>
           <a href="https://github.com/Puring103/coflow/releases/latest" target="_blank" rel="noopener">Release</a>

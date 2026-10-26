@@ -118,4 +118,4 @@ target/release/examples/engine_perf.exe
 
 批量组使用 `ENGINE_SAMPLES=1`、`ENGINE_VALIDATION_SAMPLES=3`、`ENGINE_UPDATE_SAMPLES=7`、`ENGINE_BATCHES=1000`。微基准使用 `ENGINE_MODE=model`、`ENGINE_RECORDS=2000`、`ENGINE_DIMENSION_RECORDS=1000`、`ENGINE_SAMPLES=7`。系统分配器对照构建加 `--features engine-perf-system`。
 
-后续重点是完整加载的解析/降低/规则执行成本，以及跨文件批次仍需处理的完整文件内容和发布成本；局部编辑还包含全记录指针表与身份/来源核对。成员变化的局部维护、连续字段槽和宿主导航统计的增量更新继续按[优化方案](../../development/engine-performance-plan.zh-CN.md)验证。完整加载、跨文件批次和严格 P50 目标保持原阈值。
+后续重点是完整加载的解析/降低/规则执行成本，以及跨文件批次仍需处理的完整文件内容和发布成本；局部编辑还包含全记录指针表与身份/来源核对。成员变化的局部维护、连续字段槽和宿主导航统计的增量更新继续按[增量代次契约](../../runtime-design/incremental-generations.md)验证。完整加载、跨文件批次和严格 P50 目标保持原阈值。

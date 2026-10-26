@@ -672,7 +672,7 @@ impl Candidate {
             self.track(&original)?;
             self.shadow(&original)
         } else {
-            crate::query::dimension_destination_for_owner(&project, &owner, dimension)?
+            crate::inspection::query::dimension_destination_for_owner(&project, &owner, dimension)?
         };
         let new_value = if let Some(value) = value {
             if path.is_empty() {

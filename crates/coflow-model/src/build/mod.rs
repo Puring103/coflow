@@ -188,7 +188,10 @@ impl<'a> CfdModelBuilder<'a> {
     pub fn add_dimension_input_batch(&mut self, batch: &'a CfdDimensionInputBatch) -> &mut Self {
         self.dimension_batches.push(batch);
         for (dimension, variant) in &batch.variants {
-            self.dimension_variants.entry(dimension.clone()).or_default().insert(variant.clone());
+            self.dimension_variants
+                .entry(dimension.clone())
+                .or_default()
+                .insert(variant.clone());
         }
         self
     }
@@ -218,7 +221,11 @@ impl<'a> CfdModelBuilder<'a> {
     pub fn build_partial(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
         let dimension_batches = self.dimension_batches.clone();
         let unbatched_dimensions = !self.dimension_values.is_empty();
-        self.dimension_values.extend(dimension_batches.iter().flat_map(|batch| batch.iter().map(DraftInput::Borrowed)));
+        self.dimension_values.extend(
+            dimension_batches
+                .iter()
+                .flat_map(|batch| batch.iter().map(DraftInput::Borrowed)),
+        );
         // 变体来自已选 CFD，空覆盖块同样声明可供选择的变体。
         for value in &self.dimension_values {
             self.dimension_variants
@@ -238,7 +245,9 @@ impl<'a> CfdModelBuilder<'a> {
         if !unbatched_dimensions && output.model.incremental_ready {
             let mut inputs = CfdModelBuilder::new(self.schema);
             inputs.dimension_batches = dimension_batches;
-            if let Some(prepared) = DimensionInputIndex::prepare(&inputs, &output.model, BuildSchema::new(self.schema)) {
+            if let Some(prepared) =
+                DimensionInputIndex::prepare(&inputs, &output.model, BuildSchema::new(self.schema))
+            {
                 output.model.dimension_input_index = Some(Arc::new(prepared.index));
             }
         }
@@ -360,19 +369,7 @@ impl<'a> ModelCompiler<'a> {
         );
         self.move_editable_diagnostics(|_| true);
         attach_dimension_values(&mut records, dimension_values);
-        for (record_id, field, dimension, variant, value) in effective_values {
-            if let Some(record) = records.get_mut(record_id.index()) {
-                Arc::make_mut(&mut record.dimension_fields)
-                    .entry(field)
-                    .or_insert_with(|| CfdDimensionFieldValues {
-                        dimension,
-                        variants: BTreeMap::new(),
-                        effective_variants: BTreeMap::new(),
-                    })
-                    .effective_variants
-                    .insert(variant, value);
-            }
-        }
+        attach_effective_dimension_values(&mut records, effective_values);
 
         let ref_indexes = build_ref_indexes(
             &records,
@@ -464,7 +461,9 @@ impl<'a> ModelCompiler<'a> {
             &mut self.diagnostics,
             self.structural_limits,
         );
-        if !self.dimension_variants.is_empty() { resolver.enable_literal_costs(); }
+        if !self.dimension_variants.is_empty() {
+            resolver.enable_literal_costs();
+        }
         for (index, draft) in drafts.iter().enumerate() {
             let record_id = CfdRecordHandle::new(index);
             let Some(fields) = resolver.resolve_record_fields(record_id, None) else {
@@ -650,20 +649,7 @@ impl<'a> ModelCompiler<'a> {
     ) -> (Vec<ResolvedDimensionValue>, Vec<EffectiveDimensionValue>) {
         let mut explicit_values = Vec::new();
         let mut effective_values = Vec::new();
-        let inputs = validated
-            .iter()
-            .map(|(record, input, _, _)| {
-                (
-                    (
-                        *record,
-                        input.field.clone(),
-                        input.dimension.clone(),
-                        input.variant.clone(),
-                    ),
-                    &**input,
-                )
-            })
-            .collect::<DimensionInputs<'_>>();
+        let inputs = dimension_inputs(validated);
         let mut diagnostic_contexts = Vec::new();
         {
             let mut resolver = ValueResolver::new(
@@ -766,10 +752,45 @@ impl<'a> ModelCompiler<'a> {
     }
 }
 
-fn merge_reads(
-    target: &mut TemplateReads,
-    reads: TemplateReads,
+// 来源覆盖和有效维度值分别保存，复用同一份不可变业务值。
+fn attach_effective_dimension_values(
+    records: &mut [CfdRecord],
+    effective_values: Vec<EffectiveDimensionValue>,
 ) {
+    for (record_id, field, dimension, variant, value) in effective_values {
+        if let Some(record) = records.get_mut(record_id.index()) {
+            Arc::make_mut(&mut record.dimension_fields)
+                .entry(field)
+                .or_insert_with(|| CfdDimensionFieldValues {
+                    dimension,
+                    variants: BTreeMap::new(),
+                    effective_variants: BTreeMap::new(),
+                })
+                .effective_variants
+                .insert(variant, value);
+        }
+    }
+}
+
+// 显式覆盖按记录、字段和维度坐标索引，供来源诊断和结果连接共用。
+fn dimension_inputs<'a>(validated: &'a [ValidatedDimensionValue<'_>]) -> DimensionInputs<'a> {
+    validated
+        .iter()
+        .map(|(record, input, _, _)| {
+            (
+                (
+                    *record,
+                    input.field.clone(),
+                    input.dimension.clone(),
+                    input.variant.clone(),
+                ),
+                &**input,
+            )
+        })
+        .collect::<DimensionInputs<'_>>()
+}
+
+fn merge_reads(target: &mut TemplateReads, reads: TemplateReads) {
     for (host, values) in reads {
         target.entry(host).or_default().extend(values);
     }

@@ -1,5 +1,5 @@
-use crate::artifacts::{CodeOutput, PreparedCodeRelease};
 use crate::codegen::{CodegenInput, CodegenRegistry, CodegenTarget};
+use crate::publication::artifacts::{CodeOutput, PreparedCodeRelease};
 use crate::Project;
 use crate::Runtime;
 use crate::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};

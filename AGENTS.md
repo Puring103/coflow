@@ -92,14 +92,15 @@ Internal documentation is indexed by `docs/README.md` and grouped by responsibil
 
 - `docs/language-design/spec/`: the implemented CFT/CFD language specification.
 - `docs/language-design/01-language-design.zh-CN.md`: language implementation boundaries.
-- `docs/language-design/02-api-runtime-design.zh-CN.md`: generated business types, typed descriptors, CFD loading, references, dimensions, and interpolation.
+- `docs/codegen-design/csharp-runtime.zh-CN.md`: generated business types, typed descriptors, CFD loading, references, dimensions, and interpolation.
 - `docs/language-design/04-source-formatting.zh-CN.md`: shared CFT/CFD source formatting contract and host integration.
 - `docs/architecture/`: shared module boundaries, project generations, and domain terminology.
 - `docs/runtime-design/`: CLI protocols, project paths, mutations, and artifact publication.
 - `docs/editor-design/`: views, dimensions, value creation, tolerant loading, plugins, and Git comparison.
 - `docs/integration/`: application integration guidance.
-- `docs/development/`: engineering quality requirements; release procedures remain in `docs/releasing.md`.
-- `docs/archive/`: historical plans, UI previews, and dated benchmark reports.
+- `docs/codegen-design/`: generated-code and target-runtime design contracts.
+- `docs/development/`: engineering quality requirements, performance validation protocols and optimization candidates. Release procedures remain in `docs/releasing.md`.
+- `docs/archive/`: versioned benchmark reports and their raw measurement evidence.
 
 The cross-module language contracts are documented in `docs/language-design/05-language-evolution.zh-CN.md`.
 Keep the language specifications, implementation design, public website and user skill semantics aligned.
@@ -107,6 +108,8 @@ Keep the language specifications, implementation design, public website and user
 Keep public C# syntax and API guidance concise in
 `website/docs/docs/reference/07-codegen/01-csharp.md`; do not duplicate internal layouts or
 implementation constraints there.
+
+Directory ownership and module organization are documented in `docs/architecture/repository-layout.md`.
 
 ### Internal Crate Boundaries
 

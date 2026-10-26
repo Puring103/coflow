@@ -13,7 +13,7 @@ const disableSummaryMeasurement = process.env.COMPLEX_PERF_NO_SUMMARY_MEASURE ==
 await build({ root, logLevel: 'error', plugins: disableSummaryMeasurement ? [{
   name: 'diagnostic-summary-measurement', enforce: 'pre',
   load(id) {
-    if (!id.replaceAll('\\', '/').endsWith('/src/components/DataCard.tsx')) return
+    if (!id.replaceAll('\\', '/').endsWith('/src/features/record-editing/components/DataCard.tsx')) return
     const source = readFileSync(id, 'utf8')
     const marker = '    return observeSummary(root, total, (visible, prepared) => setLimit(current => visible === prepared ? Math.min(total, current + 8) : Math.min(current, Math.max(8, visible + 8))))'
     const normalized = source.replaceAll('\r\n', '\n')

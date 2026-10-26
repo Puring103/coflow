@@ -333,7 +333,7 @@ pub(crate) fn check_with_limits(
         .records()
         .map(|(_, record)| record.origin.clone())
         .collect();
-    let logical = crate::load::logical_locations_from_cfd(
+    let logical = crate::loading::load::logical_locations_from_cfd(
         &crate::CfdDiagnostics::new(
             raw.iter()
                 .map(|diagnostic| diagnostic.diagnostic.clone())

@@ -49,7 +49,7 @@ pub(crate) fn dimensions_for_project(
     project: &Project,
     schema: &CftSchema,
     model: &crate::CfdDataModel,
-    sources: &crate::load::SourceDataCache,
+    sources: &crate::loading::load::SourceDataCache,
 ) -> Vec<DimensionInfo> {
     let mut out = Vec::new();
     for dimension in schema.all_dimensions() {

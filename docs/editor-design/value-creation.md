@@ -68,5 +68,5 @@ data Node {
 
 - [mutation/defaults.rs](../../crates/coflow-runtime/src/mutation/defaults.rs)：字段草稿与默认值物化。
 - [value_creation_schema.rs](../../crates/coflow-language/tests/value_creation_schema.rs)：包含环和有限默认值。
-- [DataCard.tsx](../../editors/cfd-editor/frontend/src/components/DataCard.tsx)：可选层、对象类型选择和缺失修复。
+- [DataCard.tsx](../../editors/cfd-editor/frontend/src/features/record-editing/components/DataCard.tsx)：可选层、对象类型选择和缺失修复。
 - [容错加载](tolerant-loading.md)：partial model 与严格消费者边界。

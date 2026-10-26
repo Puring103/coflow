@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 pub struct DiagnosticSet {
     pub diagnostics: Vec<Diagnostic>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub publication: Option<crate::PublicationReport>,
+    // 发布报告仅在写入失败时出现，避免扩大所有诊断结果的栈占用。
+    pub publication: Option<Box<crate::PublicationReport>>,
 }
 
 impl DiagnosticSet {

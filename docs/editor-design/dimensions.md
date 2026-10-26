@@ -36,7 +36,7 @@
 
 ## 实现入口
 
-- [runtime/query.rs](../../crates/coflow-runtime/src/query.rs)：推荐路径、覆盖状态与来源查询。
+- [runtime/query.rs](../../crates/coflow-runtime/src/inspection/query.rs)：推荐路径、覆盖状态与来源查询。
 - [session/dimension.rs](../../editors/cfd-editor/core/src/editor/session/dimension.rs)：文件行投影、写请求与返回数据。
-- [dimensionNavigation.ts](../../editors/cfd-editor/frontend/src/state/dimensionNavigation.ts)：真实来源树与虚拟路径。
+- [dimensionNavigation.ts](../../editors/cfd-editor/frontend/src/features/workspace/state/dimensionNavigation.ts)：真实来源树与虚拟路径。
 - [dimension_files.rs](../../editors/cfd-editor/core/tests/dimension_files.rs)：推荐来源、分散来源和首次写入场景。

@@ -22,7 +22,7 @@ SKILL.md 保存简短主流程和任务路由。references 每篇回答一个任
 | 初始化和配置路径 | crates/coflow-runtime/src/project/ |
 | 类型、默认值与检查规则 | docs/language-design/spec/、coflow-language、coflow-model、coflow-checker |
 | C# 使用方式和版本 | runtimes/csharp/Coflow.Loader/、coflow-codegen-csharp、docs/integration/csharp-unity.md |
-| 插件公开接口 | editors/cfd-editor/frontend/src/plugins/types.ts 和公开 wire 类型 |
+| 插件公开接口 | editors/cfd-editor/frontend/src/features/plugins/runtime/types.ts 和公开 wire 类型 |
 | 打包安装 | src/skill_commands.rs |
 
 新增能力时更新对应任务文件；涉及已有任务选择时同步更新入口路由。语言语义变化时检查两个技能中的相关概念和示例。网站章节重组不要求技能按相同结构改动。

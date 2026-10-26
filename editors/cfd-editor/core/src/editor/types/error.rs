@@ -24,7 +24,8 @@ pub struct EditorError {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub error_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub publication: Option<coflow_runtime::PublicationReport>,
+    // 恢复信息按需分配，保持常规错误对象紧凑。
+    pub publication: Option<Box<coflow_runtime::PublicationReport>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub diagnostics: Vec<FlatDiagnostic>,
 }
@@ -97,14 +98,14 @@ impl EditorError {
         mut self,
         publication: Option<coflow_runtime::PublicationReport>,
     ) -> Self {
-        self.publication = publication;
+        self.publication = publication.map(Box::new);
         self
     }
 
     #[must_use]
     pub fn with_diagnostics(mut self, diagnostics: Vec<FlatDiagnostic>) -> Self {
         if let Some(first) = diagnostics.first() {
-            self.code = first.code.clone();
+            self.code.clone_from(&first.code);
         }
         self.diagnostics = diagnostics;
         self

@@ -219,7 +219,9 @@ impl Candidate {
 
     pub(crate) fn data_session(&self) -> Result<crate::ReadOnlyProjectSession> {
         Ok(crate::ReadOnlyProjectSession {
-            session: crate::session_build::open_data_session_from_schema(self.schema_session()?)?,
+            session: crate::sessions::session_build::open_data_session_from_schema(
+                self.schema_session()?,
+            )?,
         })
     }
 
@@ -455,7 +457,7 @@ impl Candidate {
             || cache
                 .schema
                 .as_ref()
-                .is_some_and(super::super::session::ProjectSchemaSession::has_diagnostics)
+                .is_some_and(crate::sessions::session::ProjectSchemaSession::has_diagnostics)
         {
             cache.schema = None;
         }
@@ -849,7 +851,7 @@ impl Candidate {
                 "change":if change.before.is_none() {"added"} else if change.after.is_none() {"deleted"} else {"modified"}});
             if !args.flag("summary") {
                 if args.get("view").is_none_or(|view| view == "source") {
-                    file["patch"] = json!(crate::diff::unified_hunks(
+                    file["patch"] = json!(crate::inspection::diff::unified_hunks(
                         &String::from_utf8_lossy(change.before.as_deref().unwrap_or_default()),
                         &String::from_utf8_lossy(change.after.as_deref().unwrap_or_default())
                     )?);

@@ -30,7 +30,7 @@ pub(crate) fn diagnostics_to_error(
     );
     EditorError::new(kind, message)
         .with_diagnostics(flat_views(diagnostics))
-        .with_publication(diagnostics.publication.clone())
+        .with_publication(diagnostics.publication.as_deref().cloned())
 }
 
 #[expect(

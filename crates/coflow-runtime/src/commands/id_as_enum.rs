@@ -1,5 +1,5 @@
-use crate::artifacts::{artifact_error, enum_lockfile_path, read_id_as_enum_values};
 use crate::codegen::IdAsEnumValues;
+use crate::publication::artifacts::{artifact_error, enum_lockfile_path, read_id_as_enum_values};
 use crate::{
     DiagnosticSet, IdAsEnumInfo, MutationAppliedOp, Project, ProjectFileUpdate, ProjectQueries,
 };

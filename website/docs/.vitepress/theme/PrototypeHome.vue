@@ -1,25 +1,41 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { withBase } from 'vitepress'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useData, withBase } from 'vitepress'
 import prototypeDocument from './home-template.html?raw'
 import prototypeStyles from './home.css?raw'
 
 const host = ref<HTMLElement | null>(null)
+const { lang } = useData()
+const english = computed(() => lang.value === 'en')
 const bodyMatch = prototypeDocument.match(/<body>([\s\S]*?)<script src="app\.js"><\/script>\s*<\/body>/)
 
-const prototypeBody = (bodyMatch?.[1] ?? '')
+// 静态构建与浏览器首屏共用语言内容，避免英文页面先展示中文。
+const prototypeBody = computed(() => {
+  const prefix = english.value ? '/en' : ''
+  let body = (bodyMatch?.[1] ?? '')
   .replaceAll('assets/coflow-mark.svg', withBase('/logo.svg'))
   .replaceAll('assets/skill-tree-light.png', withBase('/assets/skill-tree-light.png'))
   .replaceAll('assets/skill-tree-dark.png', withBase('/assets/skill-tree-dark.png'))
-  .replaceAll('https://puring103.github.io/coflow/docs/guide/install.html', withBase('/docs/guide/install'))
-  .replaceAll('https://puring103.github.io/coflow/docs/', withBase('/docs/'))
+  .replaceAll('https://puring103.github.io/coflow/docs/guide/install.html', withBase(`${prefix}/docs/guide/install`))
+  .replaceAll('https://puring103.github.io/coflow/docs/', withBase(`${prefix}/docs/`))
+  if (english.value) {
+    body = body.replace(/<(\w+)\b([^>]*\bdata-en="([^"]*)"[^>]*)>[\s\S]*?<\/\1>/g,
+      (_, tag, attributes, text) => `<${tag}${attributes}>${text}</${tag}>`)
+    body = body.replace(/<[^>]+>/g, tag => {
+      for (const [, attribute, text] of tag.matchAll(/data-en-(aria-label|title|alt)="([^"]*)"/g)) {
+        tag = tag.replace(new RegExp(` ${attribute}="[^"]*"`), ` ${attribute}="${text}"`)
+      }
+      return tag
+    })
+    body = body.replace('<span data-lang-current>中</span>', '<span data-lang-current>EN</span>')
+  }
+  return body
+})
 
 const cleanups: Array<() => void> = []
 let revealObserver: IntersectionObserver | null = null
 let styleElement: HTMLStyleElement | null = null
 let previousTheme: string | undefined
-let previousLang: string | null = null
-const originalContent = new Map<HTMLElement, string>()
 
 function listen(target: EventTarget, event: string, handler: EventListener, options?: AddEventListenerOptions) {
   target.addEventListener(event, handler, options)
@@ -33,7 +49,6 @@ onMounted(async () => {
   document.head.appendChild(styleElement)
 
   previousTheme = document.documentElement.dataset.theme
-  previousLang = document.documentElement.getAttribute('lang')
   const forcedTheme = new URLSearchParams(location.search).get('theme')
   const savedTheme = localStorage.getItem('coflow-theme')
   const preferredTheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -47,25 +62,15 @@ onMounted(async () => {
   const themeToggle = root.querySelector<HTMLButtonElement>('[data-theme-toggle]')
   const langPicker = root.querySelector<HTMLElement>('[data-lang-picker]')
   const langTrigger = root.querySelector<HTMLButtonElement>('[data-lang-trigger]')
-  const langCurrent = root.querySelector<HTMLElement>('[data-lang-current]')
   const langOptions = [...root.querySelectorAll<HTMLButtonElement>('[data-lang-option]')]
   const themeQuery = matchMedia('(prefers-color-scheme: dark)')
 
-  const translatable = [...root.querySelectorAll<HTMLElement>('[data-en]')]
-  translatable.forEach((element) => originalContent.set(element, element.innerHTML))
-  const updateLanguage = (language: 'zh' | 'en') => {
-    root.dataset.lang = language
-    document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN'
-    translatable.forEach((element) => {
-      if (language === 'en') element.textContent = element.dataset.en ?? ''
-      else element.innerHTML = originalContent.get(element) ?? ''
-    })
-    if (langCurrent) langCurrent.textContent = language === 'en' ? 'EN' : '中'
-    langOptions.forEach((option) => option.classList.toggle('is-active', option.dataset.langOption === language))
-  }
+  langOptions.forEach(option => option.classList.toggle('is-active', option.dataset.langOption === (english.value ? 'en' : 'zh')))
   const updateThemeControl = () => {
     const dark = document.documentElement.dataset.theme === 'dark'
-    themeToggle?.setAttribute('aria-label', dark ? '切换到浅色模式' : '切换到深色模式')
+    themeToggle?.setAttribute('aria-label', english.value
+      ? (dark ? 'Switch to light mode' : 'Switch to dark mode')
+      : (dark ? '切换到浅色模式' : '切换到深色模式'))
     themeToggle?.setAttribute('aria-pressed', String(dark))
   }
   const toggleTheme = () => {
@@ -90,10 +95,8 @@ onMounted(async () => {
     langTrigger.setAttribute('aria-expanded', String(open))
   }) as EventListener)
   langOptions.forEach((option) => listen(option, 'click', (() => {
-    const next = option.dataset.langOption === 'en' ? 'en' : 'zh'
-    localStorage.setItem('coflow-home-language', next)
-    updateLanguage(next)
-    closeLanguageMenu()
+    // 使用语言路由统一首页、文档链接与页面元数据。
+    location.assign(withBase(option.dataset.langOption === 'en' ? '/en/' : '/') + location.search + location.hash)
   }) as EventListener))
   listen(document, 'click', ((event: MouseEvent) => {
     if (!langPicker?.contains(event.target as Node)) closeLanguageMenu()
@@ -230,7 +233,6 @@ onMounted(async () => {
   }
 
   updateThemeControl()
-  updateLanguage(localStorage.getItem('coflow-home-language') === 'en' ? 'en' : 'zh')
   updateHeader()
 })
 
@@ -238,14 +240,11 @@ onBeforeUnmount(() => {
   revealObserver?.disconnect()
   cleanups.splice(0).forEach((cleanup) => cleanup())
   styleElement?.remove()
-  originalContent.clear()
   if (previousTheme === undefined) delete document.documentElement.dataset.theme
   else document.documentElement.dataset.theme = previousTheme
-  if (previousLang === null) document.documentElement.removeAttribute('lang')
-  else document.documentElement.setAttribute('lang', previousLang)
 })
 </script>
 
 <template>
-  <div ref="host" class="prototype-home" v-html="prototypeBody"></div>
+  <div ref="host" class="prototype-home" :data-lang="english ? 'en' : 'zh'" v-html="prototypeBody"></div>
 </template>

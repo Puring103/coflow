@@ -35,7 +35,9 @@ impl SessionStore {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
         session.ensure_writable()?;
-        write_field_in_session(&mut session, coordinate, field_path, new_value)
+        let outcome = write_field_in_session(&mut session, coordinate, field_path, new_value);
+        drop(session);
+        outcome
     }
 
     pub fn write_fields(

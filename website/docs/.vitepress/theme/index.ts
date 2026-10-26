@@ -21,7 +21,7 @@ const theme: Theme = {
         if (!text) return
         navigator.clipboard.writeText(text).then(() => {
           const original = btn.textContent
-          btn.textContent = '已复制'
+          btn.textContent = document.documentElement.lang === 'en' ? 'Copied' : '已复制'
           btn.classList.add('is-copied')
           window.setTimeout(() => {
             btn.textContent = original

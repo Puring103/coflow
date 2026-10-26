@@ -48,4 +48,4 @@ var japaneseName = japanese.name;
 
 普通字符串保留原文，`f"..."` 在所选上下文中求值为 string。业务 partial 文件只扩展方法和计算属性，重新生成源码不会覆盖扩展文件。
 
-具体构造、缓存和类型契约见 [加载器设计](../language-design/02-api-runtime-design.zh-CN.md)。面向使用者的命令与 API 示例见 [C# 参考](../../website/docs/docs/reference/07-codegen/01-csharp.md)。
+具体构造、缓存和类型契约见 [加载器设计](../codegen-design/csharp-runtime.zh-CN.md)。面向使用者的命令与 API 示例见 [C# 参考](../../website/docs/docs/reference/07-codegen/01-csharp.md)。

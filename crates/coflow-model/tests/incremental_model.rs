@@ -2,48 +2,96 @@
 
 #[path = "data_model_common/mod.rs"]
 mod common;
+use coflow_model::{CfdDimensionInputBatch, CfdInputBatch};
 use common::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use coflow_model::{CfdDimensionInputBatch, CfdInputBatch};
 
 #[test]
 fn field_updates_do_not_invalidate_readers_of_unrelated_fields() {
-    let schema = compile_schema(r#"table Source { name: string; count: int; } table Reader { text: string = f"{&Source::a.name}"; }"#);
-    let mut inputs = vec![LoadedRecordDraft::new("a", "Source", [("name", "first".into()), ("count", 1_i64.into())]), LoadedRecordDraft::new("reader", "Reader", Vec::<(String, LoadedValueDraft)>::new())];
+    let schema = compile_schema(
+        r#"table Source { name: string; count: int; } table Reader { text: string = f"{&Source::a.name}"; }"#,
+    );
+    let mut inputs = vec![
+        LoadedRecordDraft::new(
+            "a",
+            "Source",
+            [("name", "first".into()), ("count", 1_i64.into())],
+        ),
+        LoadedRecordDraft::new("reader", "Reader", Vec::<(String, LoadedValueDraft)>::new()),
+    ];
     let previous = builder(&schema, &inputs, &[]).build().unwrap();
     let source = id(&previous, "Source", "a");
     inputs[0].fields.insert("count".into(), 2_i64.into());
-    let changes = BTreeMap::from([(source, [FieldName::new("count").unwrap()].into_iter().collect())]);
-    let updated = builder(&schema, &inputs, &[]).try_build_field_updates(&previous, &changes).unwrap();
+    let changes = BTreeMap::from([(
+        source,
+        std::iter::once(FieldName::new("count").unwrap()).collect(),
+    )]);
+    let updated = builder(&schema, &inputs, &[])
+        .try_build_field_updates(&previous, &changes)
+        .unwrap();
     assert_eq!(updated.statistics.materialized_records, 1);
-    assert_eq!(updated.model, builder(&schema, &inputs, &[]).build().unwrap());
+    assert_eq!(
+        updated.model,
+        builder(&schema, &inputs, &[]).build().unwrap()
+    );
     inputs[0].fields.insert("name".into(), "second".into());
-    let changes = BTreeMap::from([(source, [FieldName::new("name").unwrap()].into_iter().collect())]);
-    let renamed = builder(&schema, &inputs, &[]).try_build_field_updates(&updated.model, &changes).unwrap();
+    let changes = BTreeMap::from([(
+        source,
+        std::iter::once(FieldName::new("name").unwrap()).collect(),
+    )]);
+    let renamed = builder(&schema, &inputs, &[])
+        .try_build_field_updates(&updated.model, &changes)
+        .unwrap();
     assert_eq!(renamed.statistics.materialized_records, 2);
-    assert_eq!(renamed.model, builder(&schema, &inputs, &[]).build().unwrap());
+    assert_eq!(
+        renamed.model,
+        builder(&schema, &inputs, &[]).build().unwrap()
+    );
 }
 
 #[test]
 fn shared_dimension_batches_reindex_only_changed_overlays_and_refresh_origins() {
     let schema = compile_schema("table Source { @localized name: string; }");
-    let records = CfdInputBatch::from((0..1030).map(|index| LoadedRecordDraft::new(
-        format!("a{index}"), "Source", [("name", "base".into())],
-    )).collect::<Vec<_>>());
+    let records = CfdInputBatch::from(
+        (0..1030)
+            .map(|index| {
+                LoadedRecordDraft::new(format!("a{index}"), "Source", [("name", "base".into())])
+            })
+            .collect::<Vec<_>>(),
+    );
     let value = |index, text, line| {
         let mut value = overlay(text, origin(line));
         value.source_id = RecordId::new(format!("a{index}")).unwrap();
         value
     };
     let single = CfdDimensionInputBatch::from(vec![value(0, "first", 0)]);
-    let many = CfdDimensionInputBatch::from((1..1030).map(|index| value(index, "other", index)).collect::<Vec<_>>());
+    let many = CfdDimensionInputBatch::from(
+        (1..1030)
+            .map(|index| value(index, "other", index))
+            .collect::<Vec<_>>(),
+    );
     let build = |single: &CfdDimensionInputBatch, old: Option<&CfdDataModel>, changed: bool| {
         let mut builder = CfdDataModel::builder(&schema);
-        builder.add_input_batch(&records).add_dimension_input_batch(single).add_dimension_input_batch(&many);
-        builder.add_dimension_variant(DimensionName::new("language").unwrap(), VariantName::new("ja").unwrap());
+        builder
+            .add_input_batch(&records)
+            .add_dimension_input_batch(single)
+            .add_dimension_input_batch(&many);
+        builder.add_dimension_variant(
+            DimensionName::new("language").unwrap(),
+            VariantName::new("ja").unwrap(),
+        );
         match old {
-            Some(old) => builder.try_build_partial_incremental(old, &if changed { vec![id(old, "Source", "a0")] } else { vec![] }).unwrap(),
+            Some(old) => builder
+                .try_build_partial_incremental(
+                    old,
+                    &if changed {
+                        vec![id(old, "Source", "a0")]
+                    } else {
+                        vec![]
+                    },
+                )
+                .unwrap(),
             None => builder.build_partial().unwrap(),
         }
     };
@@ -63,27 +111,54 @@ fn shared_dimension_batches_reindex_only_changed_overlays_and_refresh_origins() 
     let removed = build(&empty, Some(&moved.model), true);
     assert_eq!(removed.model, build(&empty, None, false).model);
     assert_eq!(removed.statistics.dimension_inputs_checked, 0);
-    assert_eq!(first.model.record(id(&first.model, "Source", "a0")).unwrap().dimension_field("name").unwrap().variants["ja"].origin, origin(0));
+    assert_eq!(
+        first
+            .model
+            .record(id(&first.model, "Source", "a0"))
+            .unwrap()
+            .dimension_field("name")
+            .unwrap()
+            .variants["ja"]
+            .origin,
+        origin(0)
+    );
     // 同一不可变批次重复注册也必须保留完整构建的重复覆盖诊断。
     let mut duplicate = CfdDataModel::builder(&schema);
-    duplicate.add_input_batch(&records).add_dimension_input_batch(&many).add_dimension_input_batch(&many);
-    assert!(duplicate.try_build_partial_incremental(&removed.model, &[]).is_none());
+    duplicate
+        .add_input_batch(&records)
+        .add_dimension_input_batch(&many)
+        .add_dimension_input_batch(&many);
+    assert!(duplicate
+        .try_build_partial_incremental(&removed.model, &[])
+        .is_none());
 }
 
 #[test]
 fn immutable_batches_limit_identity_and_origin_checks_to_changed_input() {
     let schema = compile_schema("table Item { value: int; }");
-    let records = |start, end| (start..end).map(|index| {
-        LoadedRecordDraft::new(format!("i{index}"), "Item", [("value", LoadedValueDraft::from(i64::from(index)))])
-            .with_origin(origin(index as usize))
-    }).collect::<Vec<_>>();
+    let records = |start, end| {
+        (start..end)
+            .map(|index| {
+                LoadedRecordDraft::new(
+                    format!("i{index}"),
+                    "Item",
+                    [("value", LoadedValueDraft::from(i64::from(index)))],
+                )
+                .with_origin(origin(usize::try_from(index).unwrap()))
+            })
+            .collect::<Vec<_>>()
+    };
     let first = CfdInputBatch::from(records(0, 17));
     let second = CfdInputBatch::from(records(17, 1050));
-    let build = |a: &CfdInputBatch<LoadedRecordDraft>, b: &CfdInputBatch<LoadedRecordDraft>, old: Option<&CfdDataModel>| {
+    let build = |a: &CfdInputBatch<LoadedRecordDraft>,
+                 b: &CfdInputBatch<LoadedRecordDraft>,
+                 old: Option<&CfdDataModel>| {
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_input_batch(a).add_input_batch(b);
         match old {
-            Some(old) => builder.try_build_partial_incremental(old, &[id(old, "Item", "i0")]).unwrap(),
+            Some(old) => builder
+                .try_build_partial_incremental(old, &[id(old, "Item", "i0")])
+                .unwrap(),
             None => builder.build_partial().unwrap(),
         }
     };
@@ -91,14 +166,25 @@ fn immutable_batches_limit_identity_and_origin_checks_to_changed_input() {
     let mut changed = first.to_vec();
     changed[0].fields.insert("value".into(), 9000_i64.into());
     // 同文件后续记录来源全部移动，未变化文件不能参与位置核对。
-    for record in &mut changed { record.origin = origin(2000); }
+    for record in &mut changed {
+        record.origin = origin(2000);
+    }
     let changed = CfdInputBatch::from(changed);
     let updated = build(&changed, &second, Some(&initial.model));
     assert_eq!(updated.statistics.identity_records_checked, 17);
     assert_eq!(updated.statistics.origin_records_checked, 17);
     assert_eq!(updated.model, build(&changed, &second, None).model);
-    assert_eq!(initial.model.record(id(&initial.model, "Item", "i0")).unwrap().origin, origin(0));
-    let reused = build(&changed, &second.clone(), Some(&updated.model));
+    assert_eq!(
+        initial
+            .model
+            .record(id(&initial.model, "Item", "i0"))
+            .unwrap()
+            .origin,
+        origin(0)
+    );
+    let shared = second.clone();
+    assert!(second.same_generation(&shared));
+    let reused = build(&changed, &shared, Some(&updated.model));
     assert_eq!(reused.statistics.identity_records_checked, 0);
     assert_eq!(reused.statistics.origin_records_checked, 0);
     // 内容相同的新批次没有冒用旧身份，仍会执行身份验证。
@@ -110,7 +196,9 @@ fn immutable_batches_limit_identity_and_origin_checks_to_changed_input() {
     let invalid = CfdInputBatch::from(invalid);
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_input_batch(&invalid).add_input_batch(&second);
-    assert!(builder.try_build_partial_incremental(&updated.model, &[]).is_none());
+    assert!(builder
+        .try_build_partial_incremental(&updated.model, &[])
+        .is_none());
 }
 
 fn builder<'a>(
@@ -617,9 +705,12 @@ fn repeated_mixed_updates_match_full_builds_including_overlay_removal() {
                 input.origin = origin(step);
             }
             let values = overlays.values().cloned().collect::<Vec<_>>();
-            let changed = id(&model, "Item", &format!("i{index}"));
+            let record_handle = id(&model, "Item", &format!("i{index}"));
             let field = ["name", "parent", "name", "details"][step % 4];
-            let changes = BTreeMap::from([(changed, [FieldName::new(field).unwrap()].into_iter().collect())]);
+            let changes = BTreeMap::from([(
+                record_handle,
+                std::iter::once(FieldName::new(field).unwrap()).collect(),
+            )]);
             let output = builder(&schema, &inputs, &values)
                 .try_build_field_updates(&model, &changes)
                 .unwrap();

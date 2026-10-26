@@ -248,13 +248,13 @@ test('view tabs show names, drag to reorder, and discard uses a modal dialog', a
 test('basic views preload in parallel and a cold source view preserves navigation', async () => {
   let release, requested, recordRequested
   const recordStarted = new Promise(resolve => { recordRequested = resolve })
-  await page.route('**/src/components/RecordView.tsx*', async route => {
+  await page.route('**/src/features/record-editing/components/RecordView.tsx*', async route => {
     recordRequested()
     await route.continue()
   })
   const gate = new Promise(resolve => { release = resolve })
   const requestStarted = new Promise(resolve => { requested = resolve })
-  await page.route('**/src/components/SourceEditorView.tsx*', async route => {
+  await page.route('**/src/features/source-editor/components/SourceEditorView.tsx*', async route => {
     requested()
     await gate
     await route.continue()

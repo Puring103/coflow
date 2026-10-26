@@ -494,7 +494,11 @@ fn repository_projects_open_in_editor() {
     let repository_root = fixtures.path();
     // 本机设置按项目路径隔离；复制夹具避免读取或改写开发者已有的项目设置。
 
-    for relative in ["examples/showcase", "tests/editor-project", "examples/new"] {
+    for relative in [
+        "examples/showcase",
+        "tests/fixtures/editor-project",
+        "tests/fixtures/editor-inheritance",
+    ] {
         let source = source_root.join(relative);
         let target = repository_root.join(relative);
         fs::create_dir_all(&target).expect("create isolated project");
@@ -513,9 +517,12 @@ fn repository_projects_open_in_editor() {
         ),
         (
             "editor-project",
-            repository_root.join("tests/editor-project/coflow.yaml"),
+            repository_root.join("tests/fixtures/editor-project/coflow.yaml"),
         ),
-        ("new", repository_root.join("examples/new/coflow.yaml")),
+        (
+            "editor-inheritance",
+            repository_root.join("tests/fixtures/editor-inheritance/coflow.yaml"),
+        ),
     ] {
         let store = SessionStore::new().expect("create editor session store");
         let snapshot = store.load_project(&config).unwrap_or_else(|error| {

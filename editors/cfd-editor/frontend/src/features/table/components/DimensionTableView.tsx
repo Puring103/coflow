@@ -1,0 +1,916 @@
+import { revealTableCell } from '../../../shared/lib/tableViewport'
+import { useTableSelectionDismiss } from '../hooks/useTableSelectionDismiss'
+import { EditableCell } from './TableCell'
+import { InspectorPanel } from '../../record-editing/components/InspectorPanel'
+import type { FileRecords } from '../../../bindings/FileRecords'
+import { valueSelection } from '../../workspace/state/editorSelection'
+import { projectFieldValue } from '../../record-editing/state/fieldProjection'
+import type { MotionOrigin } from '../../../shared/motion/motion'
+import { ViewToolbar, ViewSearchField } from '../../workspace/components/ViewToolbar'
+import { BuiltinViewPicker } from '../../workspace/components/ViewPicker'
+import { useCellMotion } from '../../../shared/motion/useCellMotion'
+import { useContentMotion } from '../../../shared/motion/useContentMotion'
+import { useSelectionSlide } from '../../../shared/motion/useSelectionSlide'
+import { readClipboardText, writeClipboardText } from '../../../api/clipboard'
+import { finishOffscreenDataEdit } from '../../record-editing/state/editSession'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import type { DimensionFileRecords, DimensionFileRow } from '../../../api'
+import type { DimensionValueState } from '../../../bindings/DimensionValueState'
+import type { EditorProjectSettings } from '../../../bindings/EditorProjectSettings'
+import type { EditorRecordGroup } from '../../../bindings/EditorRecordGroup'
+import type { RecordCoordinate } from '../../../bindings/RecordCoordinate'
+import type { FieldPathSegment, FieldValue } from '../../../wire'
+import { coordinateId, fieldPathField, isComplexValue, presentationValue } from '../../../wire'
+import { summaryOf as valueSummary } from '../../record-editing/value/fieldValue'
+import { parseCfdClipboard, serializeCfdMatrix } from '../../record-editing/state/clipboard'
+import { CardHeader } from '../../record-editing/components/CardHeader'
+import { DataCardExpanded, DirectEditor, InlineEditor } from '../../record-editing/components/DataCard'
+import { Icon } from '../../../shared/ui/Icon'
+import { TextInputDialog } from '../../../shared/ui/ActionDialog'
+import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from '../../record-editing/components/RecordGroupHeader'
+
+interface Props {
+  data: DimensionFileRecords
+  mode: 'table' | 'record'
+  onModeChange?: (mode: 'table' | 'record') => void
+  recordGroupsByFile?: EditorProjectSettings['record_groups']
+  onRenameGroup?: (filePath: string, actualType: string, groupId: string, name: string) => void
+  onColorGroup?: (filePath: string, actualType: string, groupId: string, color: string | null) => void
+  onWrite: (
+    row: DimensionFileRow,
+    variant: string,
+    expected: DimensionValueState,
+    next: DimensionValueState,
+  ) => Promise<void>
+  onRenderCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[]) => Promise<string>
+  onParseCellText?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], text: string) => Promise<FieldValue>
+  onExitLeft?: () => void
+  onExitUp?: () => void
+  focusRequest?: number
+  onFocusRequestConsumed?: (request: number) => void
+}
+
+export interface DimensionCellSelection { row: number; column: number }
+
+export function dimensionRowId(row: DimensionFileRow): string {
+  return `${coordinateId(row.coordinate)}\u001f${row.field}`
+}
+
+export interface DimensionRecordGroupView {
+  key: string
+  ownerFilePath: string
+  settingsType: string
+  group: EditorRecordGroup
+  rows: DimensionFileRow[]
+}
+
+export type DimensionDisplayItem =
+  | { kind: 'group'; view: DimensionRecordGroupView }
+  | { kind: 'ungrouped'; rows: DimensionFileRow[] }
+  | { kind: 'row'; row: DimensionFileRow; group?: EditorRecordGroup }
+
+export function organizeDimensionRows(
+  rows: readonly DimensionFileRow[],
+  groupsByFile: EditorProjectSettings['record_groups'],
+  collapsed: ReadonlySet<string>,
+): DimensionDisplayItem[] {
+  const views = new Map<string, DimensionRecordGroupView>()
+  const memberships = new Map<string, Map<string, { settingsType: string; group: EditorRecordGroup }>>()
+  const ungrouped: DimensionFileRow[] = []
+  for (const row of rows) {
+    let members = memberships.get(row.owner_file_path)
+    if (!members) {
+      members = new Map()
+      // 每个来源只建一次成员索引，保留原有“第一个类型/分组命中”的优先级。
+      for (const [settingsType, groups] of Object.entries(groupsByFile[row.owner_file_path] ?? {})) {
+        for (const group of groups ?? []) for (const member of group.records) {
+          const id = coordinateId(member)
+          if (!members.has(id)) members.set(id, { settingsType, group })
+        }
+      }
+      memberships.set(row.owner_file_path, members)
+    }
+    let match: DimensionRecordGroupView | undefined
+    const membership = members.get(coordinateId(row.coordinate))
+    if (membership) {
+      const { settingsType, group } = membership
+      const key = `${row.owner_file_path}\u001f${settingsType}\u001f${group.id}`
+      match = views.get(key) ?? { key, ownerFilePath: row.owner_file_path, settingsType, group, rows: [] }
+      if (!views.has(key)) views.set(key, match)
+    }
+    if (!match) {
+      ungrouped.push(row)
+      continue
+    }
+    match.rows.push(row)
+  }
+
+  const items: DimensionDisplayItem[] = []
+  for (const view of views.values()) {
+    items.push({ kind: 'group', view })
+    if (!collapsed.has(view.key)) {
+      for (const row of view.rows) items.push({ kind: 'row', row, group: view.group })
+    }
+  }
+  if (views.size > 0) items.push({ kind: 'ungrouped', rows: ungrouped })
+  for (const row of ungrouped) items.push({ kind: 'row', row })
+  return items
+}
+
+export function moveDimensionCell(
+  selection: DimensionCellSelection,
+  direction: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown',
+  rowCount: number,
+  columnCount: number,
+): DimensionCellSelection {
+  return {
+    row: Math.max(0, Math.min(rowCount - 1, selection.row
+      + (direction === 'ArrowDown' ? 1 : direction === 'ArrowUp' ? -1 : 0))),
+    column: Math.max(0, Math.min(columnCount - 1, selection.column
+      + (direction === 'ArrowRight' ? 1 : direction === 'ArrowLeft' ? -1 : 0))),
+  }
+}
+
+export function DimensionTableView({
+  data: sourceData,
+  mode,
+  onModeChange,
+  recordGroupsByFile = {},
+  onRenameGroup,
+  onColorGroup,
+  onWrite,
+  onRenderCellText,
+  onParseCellText,
+  onExitLeft,
+  onExitUp,
+  focusRequest = 0,
+  onFocusRequestConsumed,
+}: Props) {
+  const [query, setQuery] = useState('')
+  const contentRef = useRef<HTMLDivElement>(null)
+  useContentMotion(contentRef, `${sourceData.file_path}:${mode}`)
+  const [addingVariant, setAddingVariant] = useState(false)
+  const [draftVariants, setDraftVariants] = useState<string[]>([])
+  // 新变体先作为当前文件的待填列，首次填值时与覆盖文件一起持久化。
+  const data = useMemo(() => ({ ...sourceData,
+    variants: [...new Set([...sourceData.variants, ...draftVariants])],
+    rows: sourceData.rows.filter(row => !query || `${row.coordinate.actual_type}.${row.coordinate.id} ${row.field} ${valueSummary(row.default_value)} ${Object.values(row.values).map(v => v?.kind === 'value' ? valueSummary(v.value) : '').join(' ')}`.toLowerCase().includes(query.toLowerCase())),
+  }), [sourceData, draftVariants, query])
+  const [selectedKey, setSelectedKey] = useState(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const [recordField, setRecordField] = useState(0)
+  const tableRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLElement>(null)
+  useSelectionSlide(listRef, '.selected')
+  const recordRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!data.rows.some(row => dimensionRowId(row) === selectedKey)) {
+      setSelectedKey(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
+    }
+  }, [data, selectedKey])
+  const items = useMemo(
+    () => organizeDimensionRows(data.rows, recordGroupsByFile, collapsedGroups),
+    [data.rows, recordGroupsByFile, collapsedGroups],
+  )
+  const visibleRows = useMemo(
+    () => items.flatMap(item => item.kind === 'row' ? [item.row] : []),
+    [items],
+  )
+  const selected = data.rows.find(row => dimensionRowId(row) === selectedKey) ?? data.rows[0]
+  const fields = [...new Set(data.rows.map(row => row.field))]
+  const showRowField = fields.length > 1
+  const showRowType = new Set(data.rows.map(row => row.coordinate.actual_type)).size > 1
+  const toggleGroup = (key: string) => setCollapsedGroups(current => {
+    const next = new Set(current)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
+
+  useEffect(() => {
+    if (!focusRequest) return
+    if (mode === 'table') tableRef.current?.focus({ preventScroll: true })
+    else listRef.current?.querySelector<HTMLElement>('.selected')?.focus({ preventScroll: true })
+    onFocusRequestConsumed?.(focusRequest)
+  }, [focusRequest, mode, onFocusRequestConsumed])
+
+  return (
+    <div className="dimension-table-view">
+      <ViewToolbar>
+        <BuiltinViewPicker views={['record', 'table']} active={mode} onSelect={onModeChange ?? (() => {})} />
+        <ViewSearchField value={query} onChange={setQuery} label="筛选维度记录" placeholder="筛选记录…" />
+        <span className="global-search-count">{data.rows.length} / {sourceData.rows.length}</span>
+        <button type="button" className="btn" onClick={() => setAddingVariant(true)}>添加变体</button>
+      </ViewToolbar>
+      {addingVariant && <TextInputDialog title="添加变体" message="输入变体名称；填写覆盖值后保存。"
+        placeholder="例如 ja 或 en" confirmLabel="添加" onClose={() => setAddingVariant(false)}
+        onConfirm={name => { setDraftVariants(current => [...new Set([...current, name])]); setAddingVariant(false) }} />}
+      <div ref={contentRef} className="view-container">
+      {mode === 'table' ? (
+        <DimensionGrid
+          data={data}
+          onWrite={onWrite}
+          onRenderCellText={onRenderCellText}
+          onParseCellText={onParseCellText}
+          rootRef={tableRef}
+          items={items}
+          collapsedGroups={collapsedGroups}
+          onToggleGroup={toggleGroup}
+          onRenameGroup={onRenameGroup}
+          onColorGroup={onColorGroup}
+          onExitLeft={onExitLeft}
+          onExitUp={onExitUp}
+        />
+      ) : (
+        <div className="dimension-record-layout">
+          <aside
+            className="dimension-record-list rv-sidebar"
+            aria-label="维度记录"
+            ref={listRef}
+            onKeyDown={event => {
+              if (!isDirection(event.key)) return
+              const index = Math.max(0, visibleRows.findIndex(row => dimensionRowId(row) === selectedKey))
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                onExitLeft?.()
+                return
+              }
+              if (event.key === 'ArrowRight') {
+                event.preventDefault()
+                recordRef.current?.focus({ preventScroll: true })
+                return
+              }
+              if (event.key === 'ArrowUp' && index === 0) {
+                event.preventDefault()
+                onExitUp?.()
+                return
+              }
+              if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+              event.preventDefault()
+              const next = Math.max(0, Math.min(visibleRows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))
+              const row = visibleRows[next]
+              if (!row) return
+              setSelectedKey(dimensionRowId(row))
+              requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(
+                `[data-record-index="${next}"]`,
+              )?.focus({ preventScroll: true }))
+            }}
+          >
+            {items.map(item => item.kind === 'group' ? (
+              <RecordGroupHeader
+                key={`group:${item.view.key}`}
+                name={item.view.group.name}
+                groupId={item.view.key}
+                count={item.view.rows.length}
+                collapsed={collapsedGroups.has(item.view.key)}
+                color={item.view.group.color}
+                className="dimension-record-group-header"
+                onToggle={() => toggleGroup(item.view.key)}
+                onRename={name => onRenameGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, name)}
+                onColorChange={color => onColorGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, color)}
+              />
+            ) : item.kind === 'ungrouped' ? (
+              <RecordUngroupedHeader key="ungrouped" count={item.rows.length} className="dimension-record-group-header" />
+            ) : (
+              <button
+                key={dimensionRowId(item.row)}
+                type="button"
+                className={`rv-sidebar-item ${dimensionRowId(item.row) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
+                style={recordGroupColorStyle(item.group?.color)}
+                data-record-index={visibleRows.indexOf(item.row)}
+                onClick={() => { setSelectedKey(dimensionRowId(item.row)); setRecordField(0) }}
+              >
+                {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.id}{showRowField ? ` · ${item.row.field}` : ''}
+              </button>
+            ))}
+          </aside>
+          <main
+            className="dimension-record-main"
+            ref={recordRef}
+            tabIndex={0}
+            onKeyDown={event => {
+              if (isNativeEditorTarget(event.target) || !isDirection(event.key)) return
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                listRef.current?.querySelector<HTMLElement>('.selected')?.focus({ preventScroll: true })
+                return
+              }
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault()
+                setRecordField(current => Math.max(0, Math.min(
+                  data.variants.length,
+                  current + (event.key === 'ArrowDown' ? 1 : -1),
+                )))
+                return
+              }
+              if (event.key === 'ArrowRight' || event.key === 'Enter') {
+                event.preventDefault()
+                focusDimensionEditor(recordRef.current, recordField)
+              }
+            }}
+          >
+            {selected ? <DimensionRecord row={selected} variants={data.variants} onWrite={onWrite} selectedField={recordField} onSelectField={setRecordField} /> : (
+              <div className="empty-hint">没有可显示的记录</div>
+            )}
+          </main>
+        </div>
+      )}
+      </div>
+    </div>
+  )
+}
+
+interface DimensionRange { rowStart: number; rowEnd: number; colStart: number; colEnd: number }
+
+function rangeCells(range: DimensionRange): DimensionCellSelection[] {
+  const cells: DimensionCellSelection[] = []
+  for (let r = range.rowStart; r <= range.rowEnd; r++) {
+    for (let c = range.colStart; c <= range.colEnd; c++) {
+      cells.push({ row: r, column: c })
+    }
+  }
+  return cells
+}
+
+function inRange(range: DimensionRange, row: number, column: number): boolean {
+  return row >= range.rowStart && row <= range.rowEnd && column >= range.colStart && column <= range.colEnd
+}
+
+// column 0 = key (readonly), column 1 = default (readonly), column 2+ = variants
+function isEditableColumn(column: number): boolean { return column >= 2 }
+
+function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootRef, onExitLeft, onExitUp, items, collapsedGroups, onToggleGroup, onRenameGroup, onColorGroup }: Pick<Props, 'data' | 'onWrite' | 'onRenderCellText' | 'onParseCellText' | 'onExitLeft' | 'onExitUp' | 'onRenameGroup' | 'onColorGroup'> & {
+  rootRef: React.RefObject<HTMLDivElement | null>
+  items: DimensionDisplayItem[]
+  collapsedGroups: ReadonlySet<string>
+  onToggleGroup: (key: string) => void
+}) {
+  useCellMotion(rootRef)
+  const [selectionActive, setSelectionActive] = useState(false)
+  useTableSelectionDismiss(rootRef, selectionActive ? 'value' : null, () => { setSelectionActive(false); setRangeEnd(null) })
+  const [anchor, setAnchor] = useState<DimensionCellSelection>({ row: 0, column: 0 })
+  const [rangeEnd, setRangeEnd] = useState<DimensionCellSelection | null>(null)
+  // inlineEdit: { row, column, initialText } — overlay syntax editor on that cell
+  const [inlineEdit, setInlineEdit] = useState<{ row: number; column: number; initialText: string } | null>(null)
+  const clipboardBusyRef = useRef(false)
+  const [clipboardError, setClipboardError] = useState<string | null>(null)
+
+  const columnCount = data.variants.length + 2
+  const visibleRows = useMemo(() => items.flatMap(item => item.kind === 'row' ? [item.row] : []), [items])
+  const rowIndexes = useMemo(() => new Map(visibleRows.map((row, index) => [row, index])), [visibleRows])
+  const displayIndexes = useMemo(() => new Map(items.flatMap((item, index) => item.kind === 'row' ? [[item.row, index] as const] : [])), [items])
+  // 维度表也只挂载可见行，分组标题与动态展开的字符串共用高度测量。
+  const virtualRowKey = useCallback((index: number) => {
+    const item = items[index]
+    return item.kind === 'row' ? dimensionRowId(item.row) : item.kind === 'group' ? `group:${item.view.key}` : 'ungrouped'
+  }, [items])
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => rootRef.current,
+    estimateSize: () => 40,
+    getItemKey: virtualRowKey,
+    overscan: 8,
+  })
+  const virtualRows = virtualizer.getVirtualItems()
+  const padBefore = virtualRows[0]?.start ?? 0
+  const padAfter = Math.max(0, virtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end ?? 0))
+  const revealFrame = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(revealFrame.current), [])
+  // 滚动和选区更新只读取已计算的列标志，不扫描全部维度行。
+  const showRowField = useMemo(() => data.rows.some(row => row.field !== data.rows[0]?.field), [data.rows])
+  const showRowType = useMemo(() => data.rows.some(row => row.coordinate.actual_type !== data.rows[0]?.coordinate.actual_type), [data.rows])
+
+  const selection = rangeEnd ?? anchor
+  const range: DimensionRange = rangeEnd ? {
+    rowStart: Math.min(anchor.row, rangeEnd.row),
+    rowEnd: Math.max(anchor.row, rangeEnd.row),
+    colStart: Math.min(anchor.column, rangeEnd.column),
+    colEnd: Math.max(anchor.column, rangeEnd.column),
+  } : { rowStart: anchor.row, rowEnd: anchor.row, colStart: anchor.column, colEnd: anchor.column }
+
+  const isRangeSelection = rangeEnd !== null && (rangeEnd.row !== anchor.row || rangeEnd.column !== anchor.column)
+
+  const select = (next: DimensionCellSelection, extend = false, reveal = true) => {
+    setSelectionActive(true)
+    if (extend) {
+      setRangeEnd(next)
+    } else {
+      setAnchor(next)
+      setRangeEnd(null)
+    }
+    cancelAnimationFrame(revealFrame.current)
+    if (!reveal) return
+    const displayIndex = visibleRows[next.row] && displayIndexes.get(visibleRows[next.row])
+    let attempts = 0
+    const revealCell = () => {
+      const cell = rootRef.current?.querySelector<HTMLElement>(
+        `[data-dimension-row="${next.row}"][data-dimension-column="${next.column}"]`,
+      )
+      if (cell && rootRef.current) revealTableCell(rootRef.current, cell)
+      else if (displayIndex !== undefined && attempts++ < 4) {
+        if (attempts === 1) virtualizer.scrollToIndex(displayIndex, { align: 'auto' })
+        revealFrame.current = requestAnimationFrame(revealCell)
+      }
+    }
+    revealFrame.current = requestAnimationFrame(revealCell)
+  }
+
+  // Collect all selected (row, variantIndex) pairs — only editable columns (col >= 2)
+  const selectedVariantCells = (): Array<{ row: DimensionFileRow; variantIndex: number; variant: string }> => {
+    return rangeCells(range).flatMap(({ row, column }) => {
+      if (!isEditableColumn(column)) return []
+      const r = visibleRows[row]
+      const variantIndex = column - 2
+      const variant = data.variants[variantIndex]
+      if (!r || !variant) return []
+      return [{ row: r, variantIndex, variant }]
+    })
+  }
+
+  const fieldPathForVariant = (row: DimensionFileRow, variant: string): FieldPathSegment[] =>
+    [fieldPathField(row.field), fieldPathField(variant)]
+
+  const propsFor = (rowIndex: number, column: number) => {
+    const row = visibleRows[rowIndex]
+    const variant = row.values[data.variants[column - 2]]
+    const value = column === 1 ? row.default_value : variant?.kind === 'value' ? variant.value : row.default_value
+    const complex = column > 0 && isComplexValue(presentationValue(value))
+    const props = cellProps(rowIndex, column, anchor, isRangeSelection, range, selectionActive)
+    return { ...props, 'data-table-cell-key': `${dimensionRowId(row)}:${column === 0 ? 'key' : column === 1 ? 'default' : data.variants[column - 2]}`,
+      className: `${props.className}${complex ? ' complex-cell' : ''}`,
+      onPointerDownCapture: (event: React.PointerEvent) => {
+        if (event.button !== 0) return
+        const target = event.target as HTMLElement
+        const editor = target.closest('input, textarea, select, button, [contenteditable="true"]')
+        const text = target.closest('textarea') as HTMLTextAreaElement | null
+        const wasSelected = selectionActive && !isRangeSelection && anchor.row === rowIndex && anchor.column === column
+        select({ row: rowIndex, column }, event.shiftKey, false)
+        // 首击选择、再次点击编辑；只读值和空白始终把方向键交给网格。
+        if (!editor || event.shiftKey || (text && (!wasSelected || text.readOnly))) {
+          event.preventDefault()
+          rootRef.current?.focus({ preventScroll: true })
+        }
+      },
+    }
+  }
+
+  return (
+    <div
+      className="dimension-table-scroll table-scroll"
+      onScrollCapture={event => { if (event.target === event.currentTarget) finishOffscreenDataEdit(event.currentTarget) }}
+      ref={rootRef}
+      tabIndex={0}
+      onKeyDown={async event => {
+        setSelectionActive(true)
+        if (isNativeEditorTarget(event.target)) return
+        const modified = event.ctrlKey || event.metaKey
+
+        // Ctrl+A: select all
+        if (modified && event.key.toLowerCase() === 'a') {
+          event.preventDefault()
+          if (visibleRows.length > 0) {
+            setAnchor({ row: 0, column: 2 })
+            setRangeEnd({ row: visibleRows.length - 1, column: columnCount - 1 })
+          }
+          return
+        }
+
+        // Ctrl+C: copy selected variant cells as a CFD matrix.
+        if (modified && event.key.toLowerCase() === 'c') {
+          event.preventDefault()
+          if (clipboardBusyRef.current) return
+          clipboardBusyRef.current = true
+          try {
+            const cells = selectedVariantCells()
+            if (cells.length === 0) return
+            const rowIndices = [...new Set(rangeCells(range).filter(c => isEditableColumn(c.column)).map(c => c.row))]
+            const colIndices = [...new Set(rangeCells(range).filter(c => isEditableColumn(c.column)).map(c => c.column))].sort((a, b) => a - b)
+            const matrix: string[][] = []
+            for (const ri of rowIndices) {
+              const row = visibleRows[ri]
+              if (!row) continue
+              const parts: string[] = []
+              for (const ci of colIndices) {
+                const variant = data.variants[ci - 2]
+                if (!variant) { parts.push('CfdClipboardMissing {}'); continue }
+                const state = row.values[variant]
+                let text = 'CfdClipboardMissing {}'
+                if (state?.kind === 'value') {
+                  if (onRenderCellText) {
+                    try { text = await onRenderCellText(row.coordinate, fieldPathForVariant(row, variant)) } catch { text = valueSummary(state.value) }
+                  } else {
+                    text = valueSummary(state.value)
+                  }
+                }
+                parts.push(text)
+              }
+              matrix.push(parts)
+            }
+            await writeClipboardText(serializeCfdMatrix(matrix))
+          } finally {
+            clipboardBusyRef.current = false
+          }
+          return
+        }
+
+        // Ctrl+V: paste a CFD matrix into selected variant cells.
+        if (modified && event.key.toLowerCase() === 'v') {
+          event.preventDefault()
+          if (!onParseCellText || clipboardBusyRef.current) return
+          clipboardBusyRef.current = true
+          try {
+            const text = await readClipboardText()
+            const rows = parseCfdClipboard(text)
+            const broadcast = rows.length === 1 && rows[0].length === 1
+            // Determine target cells: start from anchor, extend by paste size if single-cell selection
+            const targetColStart = Math.max(2, range.colStart)
+            const pasteColCount = rows[0]?.length ?? 1
+            const pasteRowCount = rows.length
+            const targetRowEnd = broadcast ? range.rowEnd : range.rowStart + pasteRowCount - 1
+            const targetColEnd = broadcast ? range.colEnd : targetColStart + pasteColCount - 1
+            const oneTarget = range.rowStart === range.rowEnd && targetColStart === range.colEnd
+            if (!broadcast && !oneTarget && (pasteRowCount !== range.rowEnd - range.rowStart + 1 || pasteColCount !== range.colEnd - targetColStart + 1)) throw new Error('复制区域与目标区域尺寸不匹配')
+            if (targetRowEnd >= visibleRows.length || targetColEnd >= columnCount) throw new Error('粘贴区域超出可见范围')
+            const writes: Array<() => Promise<void>> = []
+            for (let ri = range.rowStart; ri <= Math.min(targetRowEnd, visibleRows.length - 1); ri++) {
+              const row = visibleRows[ri]
+              if (!row) continue
+              for (let ci = targetColStart; ci <= Math.min(targetColEnd, columnCount - 1); ci++) {
+                const variant = data.variants[ci - 2]
+                if (!variant) continue
+                const sourceText = broadcast ? rows[0][0] : (rows[ri - range.rowStart]?.[ci - targetColStart] ?? '')
+                const state = row.values[variant] ?? { kind: 'missing' as const }
+                const capturedRow = row; const capturedVariant = variant; const capturedState = state
+                // 先解析整个区域，任何类型错误均在开始写入前返回。
+                const value = await onParseCellText(capturedRow.coordinate, fieldPathForVariant(capturedRow, capturedVariant), sourceText)
+                writes.push(() => onWrite(capturedRow, capturedVariant, capturedState, { kind: 'value', value }))
+              }
+            }
+            for (const write of writes) await write()
+            setClipboardError(null)
+          } catch (error) {
+            setClipboardError(error instanceof Error ? error.message : String(error))
+          } finally {
+            clipboardBusyRef.current = false
+          }
+          return
+        }
+
+        // Delete: reset selected variant cells to missing
+        if (event.key === 'Delete' && !modified) {
+          event.preventDefault()
+          const cells = selectedVariantCells()
+          await Promise.all(cells.map(({ row, variant }) => {
+            const state = row.values[variant] ?? { kind: 'missing' as const }
+            if (state.kind === 'missing') return Promise.resolve()
+            return onWrite(row, variant, state, { kind: 'missing' })
+          }))
+          return
+        }
+
+        // Enter / F2: open editor on current single cell
+        if ((event.key === 'Enter' || event.key === 'F2') && !modified) {
+          event.preventDefault()
+          if (isEditableColumn(selection.column)) {
+            const variant = data.variants[selection.column - 2]
+            const row = visibleRows[selection.row]
+            if (variant && row && onParseCellText) {
+              const state = row.values[variant]
+              let initialText = ''
+              if (state?.kind === 'value') {
+                if (onRenderCellText) {
+                  try { initialText = await onRenderCellText(row.coordinate, fieldPathForVariant(row, variant)) } catch { initialText = valueSummary(state.value) }
+                } else {
+                  initialText = valueSummary(state.value)
+                }
+              }
+              setInlineEdit({ row: selection.row, column: selection.column, initialText })
+            } else {
+              focusDimensionEditor(rootRef.current, selection.column, selection.row)
+            }
+          } else {
+            focusDimensionEditor(rootRef.current, selection.column, selection.row)
+          }
+          return
+        }
+
+        // Printable character: start replace-mode inline edit
+        if (!modified && event.key.length === 1 && isEditableColumn(selection.column) && onParseCellText) {
+          const row = visibleRows[selection.row]
+          const variant = data.variants[selection.column - 2]
+          if (row && variant) {
+            setInlineEdit({ row: selection.row, column: selection.column, initialText: event.key })
+          }
+          return
+        }
+
+        if (!isDirection(event.key)) return
+        if (event.key === 'ArrowLeft' && selection.column === 0 && !event.shiftKey) {
+          event.preventDefault()
+          onExitLeft?.()
+          return
+        }
+        if (event.key === 'ArrowUp' && selection.row === 0 && !event.shiftKey) {
+          event.preventDefault()
+          onExitUp?.()
+          return
+        }
+        event.preventDefault()
+        const next = moveDimensionCell(selection, event.key, visibleRows.length, columnCount)
+        select(next, event.shiftKey)
+      }}
+    >
+      {clipboardError && <div role="alert" className="table-cell-notice">{clipboardError}</div>}
+      <table className="dimension-table data-table">
+        <thead>
+          <tr>
+            <th className="sticky-key-column">键</th>
+            <th>default</th>
+            {data.variants.map(variant => <th key={variant}>{variant}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {padBefore > 0 && <tr aria-hidden><td colSpan={columnCount} style={{ height: padBefore, padding: 0, border: 0 }} /></tr>}
+          {virtualRows.map(virtualRow => {
+            const item = items[virtualRow.index]
+            return item.kind === 'group' ? (
+            <tr key={`group:${item.view.key}`} data-index={virtualRow.index} ref={virtualizer.measureElement} className="dimension-group-row">
+              <th colSpan={columnCount}>
+                <RecordGroupHeader
+                  name={item.view.group.name}
+                  groupId={item.view.key}
+                  count={item.view.rows.length}
+                  collapsed={collapsedGroups.has(item.view.key)}
+                  color={item.view.group.color}
+                  onToggle={() => onToggleGroup(item.view.key)}
+                  onRename={name => onRenameGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, name)}
+                  onColorChange={color => onColorGroup?.(item.view.ownerFilePath, item.view.settingsType, item.view.group.id, color)}
+                />
+              </th>
+            </tr>
+          ) : item.kind === 'ungrouped' ? (
+            <tr key="ungrouped" data-index={virtualRow.index} ref={virtualizer.measureElement} className="dimension-group-row">
+              <th colSpan={columnCount}><RecordUngroupedHeader count={item.rows.length} /></th>
+            </tr>
+          ) : (() => {
+            const rowIndex = rowIndexes.get(item.row)!
+            return (
+              <tr
+                key={dimensionRowId(item.row)}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                className={`table-row${item.group?.color ? ' has-group-color' : ''}`}
+                style={recordGroupColorStyle(item.group?.color)}
+              >
+                <td role="rowheader" {...propsFor(rowIndex, 0)}>
+                  {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.id}{showRowField ? ` · ${item.row.field}` : ''}
+                </td>
+                <td {...propsFor(rowIndex, 1)}><DimensionValueCell row={item.row} value={item.row.default_value} /></td>
+                {data.variants.map((variant, variantIndex) => {
+                  const colIndex = variantIndex + 2
+                  const isInline = inlineEdit?.row === rowIndex && inlineEdit.column === colIndex
+                  return (
+                    <td key={variant} {...propsFor(rowIndex, colIndex)}
+                      title={item.row.sources[variant] ?? '尚未覆盖'}>
+                      {isInline && onParseCellText ? (
+                        <DimensionInlineEditor
+                          row={item.row}
+                          variant={variant}
+                          initialText={inlineEdit.initialText}
+                          onWrite={onWrite}
+                          onParseCellText={onParseCellText}
+                          fieldPath={fieldPathForVariant(item.row, variant)}
+                          onDone={() => {
+                            setInlineEdit(null)
+                            requestAnimationFrame(() => rootRef.current?.focus({ preventScroll: true }))
+                          }}
+                        />
+                      ) : (
+                        <DimensionCellEditor row={item.row} variant={variant} onWrite={onWrite} />
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })()
+          })}
+          {padAfter > 0 && <tr aria-hidden><td colSpan={columnCount} style={{ height: padAfter, padding: 0, border: 0 }} /></tr>}
+        </tbody>
+      </table>
+      {data.rows.length === 0 && <div className="empty-hint">没有可显示的记录</div>}
+    </div>
+  )
+}
+
+function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField }: {
+  row: DimensionFileRow
+  variants: string[]
+  onWrite: Props['onWrite']
+  selectedField: number
+  onSelectField: (index: number) => void
+}) {
+  return (
+    <div className="dimension-record-card">
+      <CardHeader recordId={`${row.coordinate.id} · ${row.field}`} actualType={row.coordinate.actual_type} filePath={row.owner_file_path} />
+      <div className={`dimension-record-row readonly${selectedField === 0 ? ' keyboard-selected' : ''}`} data-dimension-record-field="0" onMouseDown={() => onSelectField(0)}>
+        <span>default</span>
+        <DimensionValueCell expanded row={row} value={row.default_value} />
+      </div>
+      {variants.map((variant, index) => (
+        <div className={`dimension-record-row${selectedField === index + 1 ? ' keyboard-selected' : ''}`} key={variant} data-dimension-record-field={index + 1} onMouseDown={() => onSelectField(index + 1)}>
+          <span>{variant}</span>
+          <DimensionCellEditor expanded row={row} variant={variant} onWrite={onWrite} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function cellProps(
+  row: number,
+  column: number,
+  anchor: DimensionCellSelection,
+  isRangeSelection: boolean,
+  range: DimensionRange,
+  active: boolean,
+) {
+  const isAnchor = anchor.row === row && anchor.column === column
+  const isSelected = active && (isRangeSelection ? inRange(range, row, column) : isAnchor)
+  return {
+    'data-dimension-row': row,
+    'data-dimension-column': column,
+    'data-table-cell-key': `${row}:${column}`,
+    className: [column === 0 ? 'sticky-key-column' : '',
+      isSelected ? 'selected-cell' : '', isSelected && isAnchor ? 'keyboard-selected' : '',
+      isSelected && row === range.rowStart ? 'range-top' : '', isSelected && row === range.rowEnd ? 'range-bottom' : '',
+      isSelected && column === range.colStart ? 'range-left' : '', isSelected && column === range.colEnd ? 'range-right' : '',
+    ].filter(Boolean).join(' '),
+  }
+}
+
+function isDirection(key: string): key is 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' {
+  return key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown'
+}
+
+function isNativeEditorTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target !== target.closest('.dimension-table-scroll, .dimension-record-main')
+    && (target.matches('input, textarea, select, button') || target.isContentEditable)
+}
+
+function focusDimensionEditor(root: HTMLElement | null, column: number, row?: number) {
+  if (!root) return
+  const cell = row === undefined
+    ? root.querySelector<HTMLElement>(`[data-dimension-record-field="${column}"]`)
+    : root.querySelector<HTMLElement>(`[data-dimension-row="${row}"][data-dimension-column="${column}"]`)
+  const editor = cell?.querySelector<HTMLElement>('input, textarea, select, button.dimension-value-missing')
+  editor?.focus({ preventScroll: true })
+  if (editor instanceof HTMLInputElement || editor instanceof HTMLTextAreaElement) editor.select()
+}
+
+function DimensionInlineEditor({ row, variant, initialText, onWrite, onParseCellText, fieldPath, onDone }: {
+  row: DimensionFileRow
+  variant: string
+  initialText: string
+  onWrite: Props['onWrite']
+  onParseCellText: NonNullable<Props['onParseCellText']>
+  fieldPath: FieldPathSegment[]
+  onDone: () => void
+}) {
+  const state = row.values[variant] ?? { kind: 'missing' as const }
+  const [draft, setDraft] = useState(initialText)
+  const [busy, setBusy] = useState(false)
+
+  const commit = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const value = await onParseCellText(row.coordinate, fieldPath, draft)
+      await onWrite(row, variant, state, { kind: 'value', value })
+      onDone()
+    } catch {
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <input
+      className="dimension-inline-input"
+      value={draft}
+      autoFocus
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        e.stopPropagation()
+        if (e.key === 'Enter') { e.preventDefault(); void commit() }
+        if (e.key === 'Escape') { e.preventDefault(); onDone() }
+      }}
+    />
+  )
+}
+
+export function DimensionCellEditor({ row, variant, onWrite, expanded = false }: {
+  expanded?: boolean
+  row: DimensionFileRow
+  variant: string
+  onWrite: Props['onWrite']
+}) {
+  const state = row.values[variant] ?? { kind: 'missing' as const }
+  const [creating, setCreating] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const commit = async (value: FieldValue) => {
+    setBusy(true)
+    try {
+      await onWrite(row, variant, state, { kind: 'value', value })
+      setCreating(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const effective = state.kind === 'value' ? state.value : row.default_value
+  const directString = effective.kind === 'string' || effective.kind === 'formatted_string'
+  const complex = ['object', 'dict', 'array', 'option_some'].includes(effective.kind)
+  if (state.kind === 'missing' && !directString && !complex) {
+    if (creating) {
+      return (
+        <div className={`dimension-cell-editor${busy ? ' busy' : ''}`}>
+          <InlineEditor
+            value={row.default_value}
+            onCommit={commit}
+            onCancel={() => setCreating(false)}
+          />
+        </div>
+      )
+    }
+    return (
+      <button
+        type="button"
+        className="dimension-value-missing"
+        onClick={() => setCreating(true)}
+        title="继承基础值；点击设置覆盖"
+        aria-label="设置覆盖"
+      >
+        ↳
+      </button>
+    )
+  }
+  return (
+    <div className={`dimension-cell-editor${busy ? ' busy' : ''}${state.kind === 'missing' ? ' inherited' : ''}`} aria-busy={busy}>
+      <span className="dimension-value-state" title={state.kind === 'missing' ? '继承基础值' : effective.kind === 'option_none' ? '显式空值' : '已覆盖基础值'} aria-label={state.kind === 'missing' ? '继承基础值' : effective.kind === 'option_none' ? '显式空值' : '已覆盖基础值'}>{state.kind === 'missing' ? '↳' : effective.kind === 'option_none' ? '∅' : '•'}</span>
+      {complex ? <DimensionValueCell expanded={expanded} row={row} value={effective} onCommit={commit} />
+        : <DirectEditor value={effective} onCommit={commit} />}
+      <button
+        type="button"
+        className="dimension-cell-clear"
+        onClick={async () => {
+          setBusy(true)
+          try {
+            await onWrite(row, variant, state, { kind: 'missing' })
+          } finally {
+            setBusy(false)
+          }
+        }}
+        disabled={busy || state.kind === 'missing'}
+        title="清除覆盖，恢复基础值"
+        aria-label="清除覆盖，恢复基础值"
+      >
+        <Icon name="undo" size={12} aria-hidden />
+      </button>
+    </div>
+  )
+}
+
+/** 维度只负责覆盖写入；值预览、结构化路径编辑和放大窗口复用主表格。 */
+function DimensionValueCell({ row, value, onCommit, expanded = false }: {
+  expanded?: boolean
+  row: DimensionFileRow; value: FieldValue; onCommit?: (value: FieldValue) => Promise<void>
+}) {
+  const [origin, setOrigin] = useState<MotionOrigin | null>(null)
+  const data = useMemo<FileRecords>(() => ({
+    revision: 0, file_path: row.owner_file_path, type_names: [row.coordinate.actual_type],
+    columns: [{ name: row.field, type_names: [row.coordinate.actual_type], max_summary_len: 0, content_metrics: {} }],
+    records: [{ coordinate: row.coordinate, display_path: row.owner_file_path, container_index: 0, container_size: 1,
+      fields: [{ name: row.field, value, missing: false, annotation: null }], field_index: { [row.field]: 0 },
+      field_summaries: {}, field_diagnostics: [], diagnostic_severity: null }],
+    capabilities: { can_edit_field: !!onCommit, can_edit_id: false, can_insert_record: false,
+      can_delete_record: false, can_reorder_records: false, requires_full_refresh_after_write: false },
+  }), [row, value, onCommit])
+  const path = [fieldPathField(row.field)]
+  const write = async (fieldPath: FieldPathSegment[], next: FieldValue) => {
+    const projected = projectFieldValue(data, row.coordinate, fieldPath, next)
+    if (projected.changed && projected.row) await onCommit?.(projected.row.fields[0].value)
+  }
+  return <>
+    {expanded ? <DataCardExpanded fields={data.records[0].fields} actualType={row.coordinate.actual_type}
+      coordinate={row.coordinate} filePath={row.owner_file_path} flattenSingleComplexField onEdit={onCommit ? write : undefined} />
+      : <EditableCell filePath={row.owner_file_path} coordinate={row.coordinate} fieldPath={path} value={value}
+      editable={!!onCommit} onCommit={onCommit} onEdit={onCommit ? write : undefined} onExpand={setOrigin} />}
+    <InspectorPanel modal open={!!origin} data={data} selection={valueSelection(row.owner_file_path, row.coordinate, path)}
+      origin={origin} readOnly={!onCommit} width={420} onWidthChange={() => {}} onClose={() => setOrigin(null)}
+      onWriteField={onCommit ? async (_file, _coordinate, fieldPath, next) => write(fieldPath, next) : undefined} />
+  </>
+}

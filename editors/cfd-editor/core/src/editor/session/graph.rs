@@ -48,10 +48,13 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         let is_collapsed = depth >= max_depth;
 
         // 深度折叠节点只需要身份与诊断，不能先转换整棵字段树再丢弃。
-        let fields = if is_collapsed { Vec::new() } else { record_fields(view.record, &ctx) };
-        let (field_diagnostics, diagnostic_severity) = diagnostics_for_record(
-            &session.diagnostics, &host_file, &coordinate,
-        );
+        let fields = if is_collapsed {
+            Vec::new()
+        } else {
+            record_fields(view.record, &ctx)
+        };
+        let (field_diagnostics, diagnostic_severity) =
+            diagnostics_for_record(&session.diagnostics, &host_file, &coordinate);
 
         nodes.entry(node_key.clone()).or_insert_with(|| GraphNode {
             coordinate: coordinate.clone(),
@@ -94,13 +97,19 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
     }
 }
 
-fn start_records<'a>(session: &'a EditorSession, file_path: &'a str) -> impl Iterator<Item = RecordCoordinate> + 'a {
+fn start_records<'a>(
+    session: &'a EditorSession,
+    file_path: &'a str,
+) -> impl Iterator<Item = RecordCoordinate> + 'a {
     session
         .queries()
         .record_views_in_file(file_path)
         .filter_map(|view| {
             let coordinate = view.coordinate;
-            session.queries().has_record_references(&coordinate).then_some(coordinate)
+            session
+                .queries()
+                .has_record_references(&coordinate)
+                .then_some(coordinate)
         })
 }
 

@@ -301,7 +301,7 @@ fn publish_workspace(
             },
             failure.message.clone(),
         ));
-        diagnostics.publication = Some(crate::PublicationReport::from_failure(&failure));
+        diagnostics.publication = Some(Box::new(crate::PublicationReport::from_failure(&failure)));
         diagnostics
     })?;
     let published = workspace

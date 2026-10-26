@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ReactFlow, Handle, Position, useReactFlow, type Node, type Edge, type NodeProps, applyNodeChanges } from '@xyflow/react'
-import { ShaderEdge } from '../../src/components/GraphView.edgeComponent'
+import { ShaderEdge } from '../../src/features/graph/components/GraphView.edgeComponent'
 import '@xyflow/react/dist/style.css'
 
 // 原型只使用公开的 Node.handles、measured 和受控节点更新；不读写框架私有 store。

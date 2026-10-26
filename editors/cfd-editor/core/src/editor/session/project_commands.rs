@@ -82,12 +82,12 @@ impl SessionStore {
             // 结构变更已经落盘，重载失败不能提示用户重复执行写入。
             error.kind = crate::editor::types::EditorErrorKind::Committed;
             error.code = "EDITOR-REFRESH".to_string();
-            error.publication = Some(coflow_runtime::PublicationReport {
+            error.publication = Some(Box::new(coflow_runtime::PublicationReport {
                 state: coflow_runtime::PersistenceState::Committed,
                 ..Default::default()
-            });
+            }));
             if let Ok(entry) = self.session(id) {
-                entry.state.write().recovery = error.publication.clone();
+                entry.state.write().recovery = error.publication.as_deref().cloned();
             }
             error
         })
@@ -108,12 +108,12 @@ impl SessionStore {
             // 结构变更已经落盘，重载失败不能提示用户重复执行写入。
             error.kind = crate::editor::types::EditorErrorKind::Committed;
             error.code = "EDITOR-REFRESH".to_string();
-            error.publication = Some(coflow_runtime::PublicationReport {
+            error.publication = Some(Box::new(coflow_runtime::PublicationReport {
                 state: coflow_runtime::PersistenceState::Committed,
                 ..Default::default()
-            });
+            }));
             if let Ok(entry) = self.session(id) {
-                entry.state.write().recovery = error.publication.clone();
+                entry.state.write().recovery = error.publication.as_deref().cloned();
             }
             error
         })
@@ -132,12 +132,12 @@ impl SessionStore {
             // 结构变更已经落盘，重载失败不能提示用户重复执行写入。
             error.kind = crate::editor::types::EditorErrorKind::Committed;
             error.code = "EDITOR-REFRESH".to_string();
-            error.publication = Some(coflow_runtime::PublicationReport {
+            error.publication = Some(Box::new(coflow_runtime::PublicationReport {
                 state: coflow_runtime::PersistenceState::Committed,
                 ..Default::default()
-            });
+            }));
             if let Ok(entry) = self.session(id) {
-                entry.state.write().recovery = error.publication.clone();
+                entry.state.write().recovery = error.publication.as_deref().cloned();
             }
             error
         })

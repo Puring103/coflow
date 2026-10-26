@@ -497,8 +497,9 @@ impl MutationFailedOp {
     }
 
     /// 保留发布与恢复事实，供宿主决定是否允许继续编辑。
+    #[must_use]
     pub fn publication(&self) -> Option<&crate::PublicationReport> {
-        self.source_diagnostics.publication.as_ref()
+        self.source_diagnostics.publication.as_deref()
     }
 
     pub(crate) fn into_source_diagnostics(self) -> DiagnosticSet {

@@ -89,14 +89,7 @@ fn unchanged_source_diagnostics_survive_validation_and_other_file_mutations() {
 #[test]
 fn disk_refresh_matches_full_generations_through_errors_membership_and_templates() {
     let root = tempfile::tempdir().expect("project");
-    std::fs::create_dir(root.path().join("data")).expect("data");
-    std::fs::write(
-        root.path().join("coflow.yaml"),
-        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
-    )
-    .expect("config");
-    std::fs::write(root.path().join("schema.cft"),
-        "table Item { name: string; value: float; parent: &Item; caption: string; check Valid { value >= 0.0; parent.name != \"\"; } }").expect("schema");
+    initialize_incremental_fixture(root.path());
     let a = root.path().join("data/a.cfd");
     let b = root.path().join("data/b.cfd");
     let c = root.path().join("data/c.cfd");
@@ -172,8 +165,16 @@ fn disk_refresh_matches_full_generations_through_errors_membership_and_templates
                     expected.record_references(&right.coordinate),
                     "references step {step}"
                 );
-                assert_eq!(actual.iter_record_references(&left.coordinate).collect::<Vec<_>>(), expected.record_references(&right.coordinate));
-                assert_eq!(actual.has_record_references(&left.coordinate), !expected.record_references(&right.coordinate).is_empty());
+                assert_eq!(
+                    actual
+                        .iter_record_references(&left.coordinate)
+                        .collect::<Vec<_>>(),
+                    expected.record_references(&right.coordinate)
+                );
+                assert_eq!(
+                    actual.has_record_references(&left.coordinate),
+                    !expected.record_references(&right.coordinate).is_empty()
+                );
             }
         }
         if step == 0 {
@@ -226,4 +227,15 @@ fn unchanged_disk_refresh_reuses_sources_and_preserves_existing_diagnostics() {
         session.queries().diagnostics().as_set(),
         full.queries().diagnostics().as_set()
     );
+}
+
+fn initialize_incremental_fixture(root: &std::path::Path) {
+    std::fs::create_dir(root.join("data")).expect("data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+    )
+    .expect("config");
+    std::fs::write(root.join("schema.cft"),
+        "table Item { name: string; value: float; parent: &Item; caption: string; check Valid { value >= 0.0; parent.name != \"\"; } }").expect("schema");
 }

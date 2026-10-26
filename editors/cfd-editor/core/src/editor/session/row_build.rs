@@ -109,15 +109,7 @@ pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str)
     for (row, container) in records.iter_mut().zip(row_containers) {
         row.container_size = container_counts.get(&container).copied().unwrap_or(1);
     }
-    let columns = columns
-        .into_iter()
-        .map(|(name, stats)| RecordColumn {
-            name,
-            type_names: stats.type_names.into_iter().collect(),
-            max_summary_len: stats.max_summary_len,
-            content_metrics: stats.content_metrics,
-        })
-        .collect();
+    let columns = record_columns(columns);
     let type_names = session
         .file_type_names
         .get(file_path)
@@ -333,6 +325,19 @@ fn summary_width(text: &str) -> f64 {
         }
     }
     width
+}
+
+// 将累计统计转换为对外列快照。
+fn record_columns(columns: Vec<(String, ColumnStats)>) -> Vec<RecordColumn> {
+    columns
+        .into_iter()
+        .map(|(name, stats)| RecordColumn {
+            name,
+            type_names: stats.type_names.into_iter().collect(),
+            max_summary_len: stats.max_summary_len,
+            content_metrics: stats.content_metrics,
+        })
+        .collect()
 }
 
 #[cfg(test)]

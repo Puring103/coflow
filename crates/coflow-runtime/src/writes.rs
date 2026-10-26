@@ -210,8 +210,8 @@ pub(crate) fn rebuild_after_mutation(
     impact: &MutationImpact,
     source_overrides: &[crate::DataSourceTextOverride],
     preloaded_sources: BTreeMap<std::path::PathBuf, crate::api::LoadedCfdSource>,
-) -> Result<crate::session_build::SessionBuildOutput, DiagnosticSet> {
-    crate::session_build::rebuild_project_session_from_generation(
+) -> Result<crate::sessions::session_build::SessionBuildOutput, DiagnosticSet> {
+    crate::sessions::session_build::rebuild_project_session_from_generation(
         session,
         impact,
         source_overrides,

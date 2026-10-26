@@ -1,6 +1,6 @@
 # 引擎核心性能基线与优化目标：2026-10-25
 
-状态：性能调查与待确认目标；本轮新增测量工具，没有实施生产引擎优化。容量目标为 **100,000 条记录**，重点覆盖高频编辑与批量更新。实施方案见 [核心引擎优化方案](../../development/engine-performance-plan.zh-CN.md)。
+状态：性能调查与待确认目标；本轮新增测量工具，没有实施生产引擎优化。容量目标为 **100,000 条记录**，重点覆盖高频编辑与批量更新。实施方案见 [增量代次契约](../../runtime-design/incremental-generations.md)。
 
 [原始样本与运行环境](engine-performance-2026-10-25.json) 保存全部新基准样本、现有 check 基准输出、进程工作集、运行脚本和源码/二进制哈希。
 
@@ -116,7 +116,7 @@
 主要源码入口：
 
 - [批量字段写入](../../../crates/coflow-runtime/src/cfd_loader/writer.rs)：write_field_batch。
-- [缓存重载与草稿收集](../../../crates/coflow-runtime/src/load.rs)：build_output_from_cache、build_partial_model。
+- [缓存重载与草稿收集](../../../crates/coflow-runtime/src/loading/load.rs)：build_output_from_cache、build_partial_model。
 - [规则规划](../../../crates/coflow-runtime/src/checks/planning.rs)：plan_selected_checks_with_limit、insert_statement_task。
 - [有效变化比较](../../../crates/coflow-runtime/src/checks/impact.rs)：with_model_changes。
 - [引用索引](../../../crates/coflow-model/src/indexes/relations.rs)：build_ref_indexes。

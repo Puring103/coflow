@@ -5,14 +5,14 @@ import type { FieldAnnotation } from '../../src/bindings/FieldAnnotation'
 import type { FieldCell } from '../../src/bindings/FieldCell'
 import type { GraphData } from '../../src/bindings/GraphData'
 import type { CollectionEdit } from '../../src/bindings/CollectionEdit'
-import { GraphView } from '../../src/components/GraphView'
-import { DataCardNode } from '../../src/components/DataCard'
+import { GraphView } from '../../src/features/graph/components/GraphView'
+import { DataCardNode } from '../../src/features/record-editing/components/DataCard'
 import type { ComponentProps } from 'react'
-import type { GraphRowGeometry } from '../../src/graph/rowGeometry'
-import { ObjectDraftHost } from '../../src/components/ObjectDraftHost'
-import { ShortNameContext } from '../../src/components/ShortNameContext'
-import { EditorLookupController } from '../../src/state/editorLookups'
-import { createMockLookups } from '../../src/mockLookups'
+import type { GraphRowGeometry } from '../../src/features/graph/layout/rowGeometry'
+import { ObjectDraftHost } from '../../src/features/record-editing/components/ObjectDraftHost'
+import { ShortNameContext } from '../../src/features/record-editing/components/ShortNameContext'
+import { EditorLookupController } from '../../src/features/workspace/state/editorLookups'
+import { createMockLookups } from '../../src/test-support/mockLookups'
 import { coordinateId, dictKeyPathText, type FieldPathSegment, type FieldValue } from '../../src/wire'
 import '../../src/style.css'
 
@@ -112,9 +112,9 @@ function Example() {
   const [compact, setCompact] = useState(params.has('compact'))
   const [graphVisible, setGraphVisible] = useState(true)
   const failWrites = useRef(false)
-  const update = (record: ReturnType<typeof coordinate>, path: FieldPathSegment[], change: (value: FieldValue) => FieldValue) => {
+  const update = (record: ReturnType<typeof coordinate>, path: FieldPathSegment[], change: (value: FieldValue) => FieldValue, inserted?: GraphData['nodes'][number]) => {
     setData(previous => {
-      const nodes = previous.nodes.map(node => node.coordinate.id !== record.id ? node : { ...node, fields: node.fields.map(field => path[0]?.kind === 'field' && path[0].value === field.name
+      const nodes = (inserted ? [...previous.nodes, inserted] : previous.nodes).map(node => node.coordinate.id !== record.id ? node : { ...node, fields: node.fields.map(field => path[0]?.kind === 'field' && path[0].value === field.name
         ? { ...field, value: replaceAt(field.value, path.slice(1), change) } : field) })
       const source = nodes.find(node => node.coordinate.id === 'source')!.fields.find(field => field.name === 'links')!.value
       const edges = source.kind === 'array' ? source.value.flatMap((value, index) => value.kind === 'ref' ? [{ source: coordinate('source'), target: coordinate(value.value), field_path: `links[${index}]` }] : []) : []
@@ -154,12 +154,20 @@ function Example() {
           onWriteField={editable ? write : undefined}
           onCollectionEdit={editable ? collection : undefined}
           onCreateRecordDraft={params.has('create') ? async actual_type => ({ actual_type, fields: [] }) : undefined}
-          onInsertRecord={params.has('create') ? async (id, actual_type, payload) => {
+          onCreateLinkedRecord={params.has('create') ? async input => {
+            const { id, actual_type, fields, source, field_path, reference, append } = input
             events.push({ kind: 'insert', id, actual_type })
-            setData(previous => ({ ...previous, revision: previous.revision + 1, nodes: [...previous.nodes, {
-              coordinate: { actual_type, id }, file_path: 'graph.cfd', in_focus_file: true, is_collapsed: false,
-              diagnostic_severity: null, field_diagnostics: [], fields: payload.kind === 'object' ? Object.entries(payload.value.fields).map(([name, value]) => ({ name, value, missing: false, annotation: annotation('string') })) : [],
-            }] }))
+            // 夹具与真实宿主共用事务入口：新节点和来源引用在同一快照中更新。
+            if (append) events.push({ kind: 'collection', record: source, path: field_path, operation: { kind: 'array_append', value: reference } })
+            else events.push({ kind: 'write', record: source, path: field_path, value: reference })
+            update(source, field_path, value => {
+              if (!append) return reference
+              if (value.kind !== 'array') throw new Error('fixture append requires an array')
+              return { ...value, value: [...value.value, reference] }
+            }, {
+              coordinate: { actual_type, id }, file_path: input.file, in_focus_file: true, is_collapsed: false,
+              diagnostic_severity: null, field_diagnostics: [], fields: fields.kind === 'object' ? Object.entries(fields.value.fields).map(([name, value]) => ({ name, value, missing: false, annotation: annotation('string') })) : [],
+            })
           } : undefined}
           onOpenRecord={(_file, record) => { events.push({ kind: 'open', record }) }} />}
       </div>

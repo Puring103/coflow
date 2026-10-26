@@ -1,11 +1,11 @@
-import { DiagnosticCenter } from './components/DiagnosticCenter'
-import { EditorErrorBoundary } from './components/EditorErrorBoundary'
-import { installGlobalErrorHandlers } from './diagnostics'
+import { DiagnosticCenter } from './features/diagnostics/components/DiagnosticCenter'
+import { EditorErrorBoundary } from './features/diagnostics/components/EditorErrorBoundary'
+import { installGlobalErrorHandlers } from './features/diagnostics/incidentReporter'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
-import App from './App'
-import { queryClient } from './queryClient'
+import App from './app/App'
+import { queryClient } from './app/queryClient'
 
 installGlobalErrorHandlers()
 

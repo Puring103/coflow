@@ -7,7 +7,7 @@ pub fn export_type<T: ts_rs::TS + 'static>(label: &str) {
             Ok(()) => return,
             // Windows 文件监听器可能短暂持有生成文件，仅对共享锁冲突做有界重试。
             Err(ts_rs::ExportError::Io(error))
-                if matches!(error.raw_os_error(), Some(5 | 32 | 33)) =>
+                if matches!(error.raw_os_error(), Some(5 | 32 | 33 | 1224)) =>
             {
                 let Some(delay) = delays.next() else {
                     panic!("export {label}: {error:?}");
@@ -36,7 +36,20 @@ pub fn normalize_generated_bindings(manifest_dir: &str) {
             normalized.push('\n');
         }
         if normalized != contents {
-            std::fs::write(path, normalized).expect("normalize generated binding");
+            // 文件监听器也可能映射已生成文件，规范化写入采用相同的有界重试。
+            let mut delays = [10, 20, 40, 80, 160, 320, 640].into_iter();
+            loop {
+                match std::fs::write(&path, &normalized) {
+                    Ok(()) => break,
+                    Err(error) if matches!(error.raw_os_error(), Some(5 | 32 | 33 | 1224)) => {
+                        let Some(delay) = delays.next() else {
+                            panic!("normalize generated binding {}: {error}", path.display());
+                        };
+                        std::thread::sleep(std::time::Duration::from_millis(delay));
+                    }
+                    Err(error) => panic!("normalize generated binding {}: {error}", path.display()),
+                }
+            }
         }
     }
 }

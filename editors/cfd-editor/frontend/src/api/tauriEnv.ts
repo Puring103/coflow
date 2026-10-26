@@ -1,4 +1,4 @@
-import { recordIncident } from '../diagnostics'
+import { recordIncident } from '../features/diagnostics/incidentReporter'
 import { invoke } from '@tauri-apps/api/core'
 import { fromIpc, toIpc } from '../wire'
 

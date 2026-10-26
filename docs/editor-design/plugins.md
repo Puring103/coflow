@@ -4,7 +4,7 @@
 
 插件作为可信前端模块运行，在编辑器提供的页面、数据视图、侧栏和类型展示位置扩展界面。窗口、活动栏、文档标签及内置视图由编辑器管理。
 
-插件的 `activate(host)` 接收 `EditorPluginHost`，包含三组接口：`register`、`events`、`data`。准确的 TypeScript 契约位于 [plugins/types.ts](../../editors/cfd-editor/frontend/src/plugins/types.ts)，宿主实现位于 [plugins/index.tsx](../../editors/cfd-editor/frontend/src/plugins/index.tsx)。
+插件的 `activate(host)` 接收 `EditorPluginHost`，包含三组接口：`register`、`events`、`data`。准确的 TypeScript 契约位于 [plugins/types.ts](../../editors/cfd-editor/frontend/src/features/plugins/runtime/types.ts)，宿主实现位于 [plugins/index.tsx](../../editors/cfd-editor/frontend/src/features/plugins/runtime/index.tsx)。
 
 每个插件具有唯一 ID，贡献具有插件内 ID。宿主组合两者形成全局贡献身份。内置插件、全局插件与项目插件使用同一宿主；内置插件随编辑器提供，始终启用。项目插件配置保存清单相对路径、启用状态和默认贡献；全局安装由 Tauri 宿主管理。
 

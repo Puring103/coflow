@@ -12,10 +12,11 @@
 ## 架构与运行时
 
 - [系统架构](architecture/overview.md)：模块边界、项目流水线与错误处理。
+- [仓库目录与模块组织](architecture/repository-layout.md)：源码归属、运行时分组、前端功能目录与测试资源。
 - [项目代次与领域术语](architecture/project-generations.md)：项目快照、编辑器代次、变更计划与产物发布。
 - [CLI 协议与执行设计](runtime-design/cli.md)：查询、结构化值、变更集、校验、事务与输出协议。
 - [路径与产物发布](runtime-design/paths-and-publication.md)：路径身份、Git 比较与生成文本等价。
-- [C# 生成与加载](language-design/02-api-runtime-design.zh-CN.md)：业务类型、描述符、引用、维度与模板加载。
+- [C# 生成与加载](codegen-design/csharp-runtime.zh-CN.md)：业务类型、描述符、引用、维度与模板加载。
 - [C# 与 Unity 接入](integration/csharp-unity.md)：应用引用、加载和读取示例。
 
 ## 编辑器
@@ -31,24 +32,18 @@
 - [插件接口](editor-design/plugins.md)：注册、事件、数据访问和展示出口。
 - [视觉规范](../assets/visual-style.md)：品牌、界面与图标的共同设计。
 
-## 工程维护
-
-- [日志与反馈实现契约](development/logging-and-feedback.zh-CN.md)：日志存储、错误状态、反馈导出与验证边界。
-- [日志、错误反馈与操作一致性计划](development/observability-and-error-handling-plan.zh-CN.md)：运行日志与错误链路审查、已复现问题、模块覆盖、实施状态与发布前验收矩阵。
-- [核心增量与超大图节点优化计划](development/incremental-graph-optimization-plan.zh-CN.md)：优化目标、分阶段方案、功能等价契约和验收矩阵。
-- [核心与前端性能审查](development/full-performance-audit.zh-CN.md)：当前实现的剩余热点、算法复杂度、微基准和优化优先级。
+## 工程规范
 
 - [质量要求](development/quality.md)：代码、诊断、测试、文档及检查职责。
 - [用户技能设计](development/skill-design.md)：任务边界、按需资料、实现依据与示例验证。
-- [复杂表格数据结构与渲染设计](development/editor-performance-review.zh-CN.md)：集中测量、投影与引用索引、预览窗口、共享注解协议及验证。
-- [编辑器性能与功能复核](development/editor-performance-audit.zh-CN.md)：预览高度边界、数据结构复核与后续算法优化候选。
-- [引擎核心性能优化方案](development/engine-performance-plan.zh-CN.md)：十万条记录与高频编辑的优化目标、已实施结构、增量安全边界和验收方式。
-- [引擎数据结构与算法复审](development/engine-performance-review.zh-CN.md)：集中引用实测、剩余复制与算法成本、正确性边界和后续优化顺序。
-- [引擎优化安全性与结构复核](development/engine-performance-safety-review.zh-CN.md)：功能边界、宿主一致性风险、模块依赖与底层优化顺序。
+- [日志与反馈实现契约](development/logging-and-feedback.zh-CN.md)：日志存储、错误状态、反馈导出与验证边界。
 - [发布流程](releasing.md)：版本、安装器、发布资产与更新签名。
 - [macOS 签名](releasing-macos-signing.md)：证书、公证和发布环境配置。
 - [VS Code 扩展](../editors/vscode-coflow/README.md)：语言服务接入和扩展开发。
 
-## 历史资料
+## 性能与测量
 
-[归档索引](archive/README.md) 保存旧实施计划、界面草图和历史性能测量，供追溯原始资料。
+- [增量代次与复用边界](runtime-design/incremental-generations.md)：输入批次、维度、检查、来源和发布契约。
+- [表格投影、尺寸测量与共享传输](editor-design/table-projection.md)：摘要、缓存、窗口、共享注解与失效规则。
+- [性能验证与优化候选](development/performance-validation.md)：测量协议、性能目标、待评估方向和基准工具。
+- [性能测量索引](archive/README.md)：带版本、环境与夹具的测量报告和原始样本。

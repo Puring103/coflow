@@ -490,7 +490,7 @@ impl SessionStore {
         coflow_runtime::publish_source(&path, expected_source, source).map_err(|diagnostics| {
             session.recovery = diagnostics
                 .publication
-                .as_ref()
+                .as_deref()
                 .filter(|report| report.requires_recovery())
                 .cloned();
             super::super::errors::api_diagnostics_to_editor_error(diagnostics)
@@ -511,7 +511,7 @@ impl SessionStore {
                     ..Default::default()
                 };
                 entry.state.write().recovery = Some(report.clone());
-                error.publication = Some(report);
+                error.publication = Some(Box::new(report));
                 error
             })
     }

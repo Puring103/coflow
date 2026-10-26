@@ -1,5 +1,5 @@
-use super::draft::{RecordDraftSource, ValueDraft};
 use super::dimension_inputs::{DimensionInputIndex, DimensionKey, PreparedDimensions};
+use super::draft::{RecordDraftSource, ValueDraft};
 use super::resolve::ValueResolver;
 use super::validate::Validator;
 use super::{
@@ -104,10 +104,24 @@ impl<'a> LazyDrafts<'a, '_> {
     fn dimension_entry(&self, key: &DimensionKey) -> Option<&LazyDimension<'a>> {
         self.dimensions.get(key)?;
         let host = key.0;
-        self.dimension_pages.get(host.index() / 512)?
+        self.dimension_pages
+            .get(host.index() / 512)?
             .get_or_init(|| (0..512).map(|_| OnceCell::new()).collect())
             .get(host.index() % 512)?
-            .get_or_init(|| self.dimensions.entries(host).map(|(key, input)| (key, LazyDimension { input, value: OnceCell::new() })).collect())
+            .get_or_init(|| {
+                self.dimensions
+                    .entries(host)
+                    .map(|(key, input)| {
+                        (
+                            key,
+                            LazyDimension {
+                                input,
+                                value: OnceCell::new(),
+                            },
+                        )
+                    })
+                    .collect()
+            })
             .get(key)
     }
 }
@@ -157,7 +171,8 @@ impl RecordDraftSource for LazyDrafts<'_, '_> {
         dimension: &DimensionName,
         variant: &VariantName,
     ) -> Option<&ValueDraft> {
-        let entry = self.dimension_entry(&(record, field.clone(), dimension.clone(), variant.clone()))?;
+        let entry =
+            self.dimension_entry(&(record, field.clone(), dimension.clone(), variant.clone()))?;
         entry
             .value
             .get_or_init(|| {
@@ -193,7 +208,7 @@ pub(super) fn rebuild(
     changed_fields: Option<&BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>>,
 ) -> Option<CfdModelBuildOutput> {
     let input_ranges = can_reuse_model(&builder, previous, changed)?;
-    let input_records_checked = input_ranges.iter().map(|range| range.len()).sum();
+    let input_records_checked = input_ranges.iter().map(ExactSizeIterator::len).sum();
     for input in &builder.dimension_values {
         builder
             .dimension_variants
@@ -213,23 +228,14 @@ pub(super) fn rebuild(
             .map(|_| OnceCell::new())
             .collect(),
         dimensions,
-        dimension_pages: (0..builder.records.len().div_ceil(512)).map(|_| OnceCell::new()).collect(),
+        dimension_pages: (0..builder.records.len().div_ceil(512))
+            .map(|_| OnceCell::new())
+            .collect(),
         diagnostics: RefCell::new(Vec::new()),
         validated: Cell::new(0),
         limits: builder.structural_limits,
     };
-    let mut seeds = Vec::new();
-    for id in changed {
-        let record = previous.record(*id)?;
-        if let Some(fields) = changed_fields.and_then(|changes| changes.get(id)) {
-            for field in fields {
-                schema.field(record.actual_type(), field)?;
-                seeds.push(TemplateField { record: *id, field: field.clone() });
-            }
-        } else {
-            seeds.extend(schema.full_fields(record.actual_type()).map(|field| TemplateField { record: *id, field: field.name.clone() }));
-        }
-    }
+    let seeds = template_seeds(schema, previous, changed, changed_fields)?;
     let mut affected = previous.template_dependencies.affected(&seeds);
     affected.extend(changed.iter().copied());
     let ResolvedIncremental {
@@ -239,7 +245,8 @@ pub(super) fn rebuild(
         reused_literal_fields,
     } = resolve_replacements(&builder, previous, schema, &drafts, &affected)?;
     let mut model = previous.clone();
-    let changed_records = apply_replacements(&mut model, &builder, &drafts, replacements, &input_ranges);
+    let changed_records =
+        apply_replacements(&mut model, &builder, &drafts, replacements, &input_ranges);
     model.input_manifest = builder.records.manifest().into();
     model.dimension_input_index = Some(Arc::new(drafts.dimensions.index.clone()));
     let context = SemanticContext(&model);
@@ -257,18 +264,7 @@ pub(super) fn rebuild(
             }
         }
     }
-    let mut dependencies = Arc::clone(&previous.template_dependencies);
-    for id in &affected {
-        let record = model.record(*id)?;
-        for field in schema.full_fields(record.actual_type()) {
-            let key = TemplateField { record: *id, field: field.name.clone() };
-            let old = dependencies.by_reader.get(&key).map(AsRef::as_ref);
-            let new = reads.get(&key);
-            if old == new || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty) { continue; }
-            Arc::make_mut(&mut dependencies).replace(key, new.cloned().unwrap_or_default());
-        }
-    }
-    model.template_dependencies = dependencies;
+    model.template_dependencies = update_template_dependencies(&model, schema, &affected, &reads)?;
     let mut refs = previous.refs.as_ref().clone();
     let rebuilt_ref_edges = refs.replace_hosts(
         changed_records
@@ -296,6 +292,66 @@ pub(super) fn rebuild(
         statistics,
         changed_records,
     })
+}
+
+// 只更新读集变化的字段关系，未变化的依赖集合继续与旧代次共享。
+fn update_template_dependencies(
+    model: &CfdDataModel,
+    schema: BuildSchema<'_>,
+    affected: &BTreeSet<CfdRecordHandle>,
+    reads: &TemplateReads,
+) -> Option<Arc<TemplateDependencies>> {
+    let mut dependencies = Arc::clone(&model.template_dependencies);
+    for id in affected {
+        let record = model.record(*id)?;
+        for field in schema.full_fields(record.actual_type()) {
+            let key = TemplateField {
+                record: *id,
+                field: field.name.clone(),
+            };
+            let old = dependencies.by_reader.get(&key).map(AsRef::as_ref);
+            let new = reads.get(&key);
+            if old == new
+                || old.is_none_or(BTreeSet::is_empty) && new.is_none_or(BTreeSet::is_empty)
+            {
+                continue;
+            }
+            Arc::make_mut(&mut dependencies).replace(key, new.cloned().unwrap_or_default());
+        }
+    }
+    Some(dependencies)
+}
+
+// 将直接变化字段转换为模板依赖起点，不扩大无关字段的失效范围。
+fn template_seeds(
+    schema: BuildSchema<'_>,
+    previous: &CfdDataModel,
+    changed: &[CfdRecordHandle],
+    changed_fields: Option<&BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>>,
+) -> Option<Vec<TemplateField>> {
+    let mut seeds = Vec::new();
+    for id in changed {
+        let record = previous.record(*id)?;
+        if let Some(fields) = changed_fields.and_then(|changes| changes.get(id)) {
+            for field in fields {
+                schema.field(record.actual_type(), field)?;
+                seeds.push(TemplateField {
+                    record: *id,
+                    field: field.clone(),
+                });
+            }
+        } else {
+            seeds.extend(
+                schema
+                    .full_fields(record.actual_type())
+                    .map(|field| TemplateField {
+                        record: *id,
+                        field: field.name.clone(),
+                    }),
+            );
+        }
+    }
+    Some(seeds)
 }
 
 // 身份与预算是复用已有句柄的前提，结构变化仍交给完整构建。
@@ -357,7 +413,9 @@ fn resolve_replacements(
             &mut diagnostics,
             builder.structural_limits,
         );
-        if !builder.dimension_variants.is_empty() { resolver.enable_literal_costs(); }
+        if !builder.dimension_variants.is_empty() {
+            resolver.enable_literal_costs();
+        }
         for id in affected {
             let old = previous.record(*id)?;
             let fields = resolver.resolve_record_fields(*id, None)?;
@@ -407,7 +465,7 @@ fn resolve_replacements(
                             target.variants.insert(
                                 variant.clone(),
                                 CfdDimensionValue {
-                                value: value.clone(),
+                                    value: value.clone(),
                                     origin: overlay.origin.clone(),
                                 },
                             );
@@ -467,7 +525,9 @@ fn apply_replacements(
         }
     }
     for key @ (host, field, _, variant) in &drafts.dimensions.changed {
-        let Some(entry) = drafts.dimensions.get(key) else { continue };
+        let Some(entry) = drafts.dimensions.get(key) else {
+            continue;
+        };
         let record = &records[host.index()];
         let origin_changed = record
             .dimension_fields

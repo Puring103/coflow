@@ -48,7 +48,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailur
                     restoration_failed: Vec::new(),
                     restoration_conflicts: Vec::new(),
                     restoration_errors: Vec::new(),
-                    retained_backups: Default::default(),
+                    retained_backups: std::collections::BTreeMap::new(),
                 }))
             }
             Err(e) => {
@@ -60,7 +60,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailur
                     restoration_failed: Vec::new(),
                     restoration_conflicts: Vec::new(),
                     restoration_errors: Vec::new(),
-                    retained_backups: Default::default(),
+                    retained_backups: std::collections::BTreeMap::new(),
                 }))
             }
         }
@@ -75,7 +75,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailur
                         restoration_failed: Vec::new(),
                         restoration_conflicts: Vec::new(),
                         restoration_errors: Vec::new(),
-                        retained_backups: Default::default(),
+                        retained_backups: std::collections::BTreeMap::new(),
                     }
                 })?,
             )
@@ -142,7 +142,7 @@ fn publish_with(
                 restoration_failed: Vec::new(),
                 restoration_conflicts: Vec::new(),
                 restoration_errors: Vec::new(),
-                retained_backups: Default::default(),
+                retained_backups: std::collections::BTreeMap::new(),
             }));
         }
     }
@@ -283,10 +283,8 @@ mod tests {
         assert_eq!(failure.restored, [] as [PathBuf; 0]);
         assert_eq!(failure.restoration_failed, vec![first.clone()]);
         assert_eq!(failure.restoration_conflicts, vec![first.clone()]);
-        let backup = failure
-            .retained_backups
-            .get(&first)
-            .expect("retained backup path");
+        assert!(failure.retained_backups.contains_key(&first));
+        let backup = &failure.retained_backups[&first];
         assert_eq!(fs::read(backup).unwrap(), b"old");
         assert_eq!(fs::read(first).unwrap(), b"external");
         assert_eq!(fs::read(root.path().join("second.cfd")).unwrap(), b"old");

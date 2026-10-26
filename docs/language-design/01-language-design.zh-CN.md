@@ -13,7 +13,7 @@ CFT 提供数据声明、默认值、字段维度及业务检查规则。CFD 提
 check 使用条件语句、when 和 all/any/none 量词，由共享运行时按请求执行并生成诊断。
 CLI 的 `coflow check --rules` 执行全部规则，`--rule` 选择具体规则，`coflow build` 在全部规则通过后生成代码；
 编辑器会话在加载与变更后执行对应规则。`coflow codegen` 负责代码生成。
-C# 加载直接构造生成类型，相关协议见 [生成类型与加载器](02-api-runtime-design.zh-CN.md)。
+C# 加载直接构造生成类型，相关协议见 [生成类型与加载器](../codegen-design/csharp-runtime.zh-CN.md)。
 
 字段省略只依据显式默认值，Option 表达值的空态。data、table 和 singleton 均可声明命名或匿名规则；
 规则按拥有路径定位内联对象，类型继承与规则声明顺序决定执行次序。记录业务身份统一为 id，模型代次索引使用 handle。

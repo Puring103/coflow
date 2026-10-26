@@ -1,6 +1,6 @@
 # 核心增量与超大图节点验收
 
-日期：2026-10-26。对应[实施计划](../../development/incremental-graph-optimization-plan.zh-CN.md)与[编辑器性能契约](../../editor-design/performance.md)。本轮交付不可变输入批次、维度索引共享、顶层字段依赖、图关系索引、独立端口几何、节点内部窗口化及布局请求合并。功能回归通过，量化性能目标部分达成。
+日期：2026-10-26。相关[增量代次契约](../../runtime-design/incremental-generations.md)与[编辑器性能契约](../../editor-design/performance.md)。本轮交付不可变输入批次、维度索引共享、顶层字段依赖、图关系索引、独立端口几何、节点内部窗口化及布局请求合并。功能回归通过，量化性能目标部分达成。
 
 ## 1. 环境与采样
 
