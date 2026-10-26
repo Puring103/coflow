@@ -19,6 +19,7 @@ ts-export = [
 ]
 
 [dependencies]
+tracing = "0.1"
 coflow-storage = { path = "../coflow-storage" }
 coflow-format = { path = "../coflow-format" }
 schemars = "0.8.22"

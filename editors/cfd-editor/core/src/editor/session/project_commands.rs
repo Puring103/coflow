@@ -74,10 +74,23 @@ impl SessionStore {
         kind: coflow_runtime::ProjectInputKind,
         path: &StdPath,
     ) -> Result<ProjectBootstrap, EditorError> {
+        self.session(id)?.state.read().ensure_writable()?;
         let yaml_path = self.project_action_context(id)?;
         coflow_runtime::add_project_input(&yaml_path, kind, path)
             .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
-        self.reload_session(id)
+        self.reload_session(id).map_err(|mut error| {
+            // 结构变更已经落盘，重载失败不能提示用户重复执行写入。
+            error.kind = crate::editor::types::EditorErrorKind::Committed;
+            error.code = "EDITOR-REFRESH".to_string();
+            error.publication = Some(coflow_runtime::PublicationReport {
+                state: coflow_runtime::PersistenceState::Committed,
+                ..Default::default()
+            });
+            if let Ok(entry) = self.session(id) {
+                entry.state.write().recovery = error.publication.clone();
+            }
+            error
+        })
     }
 
     pub fn create_project_file(
@@ -87,10 +100,23 @@ impl SessionStore {
         parent_path: &StdPath,
         file_name: &str,
     ) -> Result<ProjectBootstrap, EditorError> {
+        self.session(id)?.state.read().ensure_writable()?;
         let yaml_path = self.project_action_context(id)?;
         coflow_runtime::create_project_file(&yaml_path, kind, parent_path, file_name)
             .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
-        self.reload_session(id)
+        self.reload_session(id).map_err(|mut error| {
+            // 结构变更已经落盘，重载失败不能提示用户重复执行写入。
+            error.kind = crate::editor::types::EditorErrorKind::Committed;
+            error.code = "EDITOR-REFRESH".to_string();
+            error.publication = Some(coflow_runtime::PublicationReport {
+                state: coflow_runtime::PersistenceState::Committed,
+                ..Default::default()
+            });
+            if let Ok(entry) = self.session(id) {
+                entry.state.write().recovery = error.publication.clone();
+            }
+            error
+        })
     }
 
     pub fn delete_project_entry(
@@ -98,10 +124,23 @@ impl SessionStore {
         id: u32,
         path: &StdPath,
     ) -> Result<ProjectBootstrap, EditorError> {
+        self.session(id)?.state.read().ensure_writable()?;
         let yaml_path = self.project_action_context(id)?;
         coflow_runtime::delete_project_entry(&yaml_path, path)
             .map_err(|error| EditorError::project(super::build::diagnostic_messages(&error)))?;
-        self.reload_session(id)
+        self.reload_session(id).map_err(|mut error| {
+            // 结构变更已经落盘，重载失败不能提示用户重复执行写入。
+            error.kind = crate::editor::types::EditorErrorKind::Committed;
+            error.code = "EDITOR-REFRESH".to_string();
+            error.publication = Some(coflow_runtime::PublicationReport {
+                state: coflow_runtime::PersistenceState::Committed,
+                ..Default::default()
+            });
+            if let Ok(entry) = self.session(id) {
+                entry.state.write().recovery = error.publication.clone();
+            }
+            error
+        })
     }
 }
 

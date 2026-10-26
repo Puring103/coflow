@@ -52,7 +52,8 @@ describe('source save lifecycle', () => {
     model.edit('local')
     expect(await model.flush()).toBe(false)
     expect(model.state.base).toBe('local')
-    expect(await model.flush()).toBe(true)
+    expect(await model.flush()).toBe(false)
+    expect(model.state.recovery).toBe(true)
     expect(write).toHaveBeenCalledTimes(1)
   })
   it('accepts disk content only after explicit conflict resolution', () => {
@@ -80,4 +81,25 @@ describe('source save lifecycle', () => {
     unregister()
   })
 
+})
+
+it('recovers committed backend failures without rewriting or losing a newer draft', async () => {
+  let reject!: (error: unknown) => void
+  const write = vi.fn(() => new Promise<void>((_, fail) => { reject = fail }))
+  const saved = vi.fn()
+  const recover = vi.fn(async () => undefined)
+  const read = vi.fn(async () => 'saved')
+  const model = new SourceAutosave({ read, write, saved, recover, message: String })
+  model.receiveDisk('base'); model.edit('saved')
+  const saving = model.flush()
+  model.edit('newer')
+  reject({ kind: 'committed', message: 'refresh failed' })
+  expect(await saving).toBe(false)
+  expect(model.state).toMatchObject({ base: 'saved', text: 'newer', conflict: null, recovery: true })
+  expect(read).not.toHaveBeenCalled()
+  expect(await model.flush()).toBe(false)
+  expect(await model.recover()).toBe(true)
+  expect(write).toHaveBeenCalledTimes(1)
+  expect(saved).toHaveBeenCalledTimes(1)
+  expect(model.dirty).toBe(true)
 })

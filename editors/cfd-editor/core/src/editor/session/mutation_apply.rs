@@ -81,6 +81,12 @@ pub(crate) fn finalize_mutation(
     fallback: &str,
 ) -> Result<coflow_runtime::MutationReport, EditorError> {
     if !report.write_ok {
+        session.recovery = report
+            .failed
+            .iter()
+            .filter_map(|failure| failure.publication())
+            .find(|publication| publication.requires_recovery())
+            .cloned();
         return Err(mutation_report_to_editor_error(fallback, &report));
     }
     session.diagnostics = Diagnostics::from_queries(session.queries(), &session.project_root);

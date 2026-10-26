@@ -28,12 +28,12 @@ pub use project::{
     ProjectSearchMode, ProjectSearchResults,
 };
 pub use records::{
-    BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome, CollectionEdit,
-    ColumnContentMetrics, CreateRecordDraft, CreateRecordFieldDraft, DeleteRecordOutcome,
-    DeletedRecordSnapshot, DimensionFileRecords, DimensionFileRow, EnumVariantOption,
-    FieldAnnotation, FieldCell, FieldDiagnostic, FileRecords, InsertRecordOutcome, RecordColumn,
-    RecordRow, RenameRecordOutcome, ReorderRecordsOutcome, WriteDimensionValueOutcome,
-    WriteFieldOutcome,
+    BatchMutationOutcome, BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome,
+    CollectionEdit, ColumnContentMetrics, CreateLinkedRecordInput, CreateRecordDraft,
+    CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot, DimensionFileRecords,
+    DimensionFileRow, EnumVariantOption, FieldAnnotation, FieldCell, FieldDiagnostic, FileRecords,
+    InsertRecordOutcome, LinkedRecordOutcome, RecordColumn, RecordRow, RenameRecordOutcome,
+    ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };
 pub use records::{CreateFieldSource, CreateRequiredInput};
 pub use settings::{

@@ -124,6 +124,7 @@ impl SessionStore {
     ) -> Result<WriteDimensionValueOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let expected = match expected_value {
             DimensionValueState::Missing => DimensionValueExpectation::Missing,
             DimensionValueState::Value(value) => {

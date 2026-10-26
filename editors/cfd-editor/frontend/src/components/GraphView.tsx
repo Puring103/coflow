@@ -1,3 +1,4 @@
+import type { CreateLinkedRecordInput } from '../bindings/CreateLinkedRecordInput'
 import { motionRecordKey } from '../hooks/useMutationFeedback'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, memo, type PointerEvent as ReactPointerEvent } from 'react'
 import {
@@ -513,14 +514,13 @@ interface Props {
   ) => void
   /** 空白处新建节点时的字段草稿与插入通道，复用记录创建对话框。 */
   onCreateRecordDraft?: (actualType: string) => Promise<CreateRecordDraft>
-  onInsertRecord?: (recordId: string, actualType: string, fields: FieldValue) => Promise<void>
   /** 节点右键共用记录菜单所需的数据与操作。 */
   recordGroups?: readonly EditorRecordGroup[]
   onDropRecordIntoGroup?: (sources: readonly RecordCoordinate[], groupId: string) => void
   onRenameRecord?: (filePath: string, coordinate: RecordCoordinate, newId: string) => Promise<RecordRow | void>
   onDeleteRecord?: (filePath: string, coordinate: RecordCoordinate) => Promise<void>
   /** 将“新建节点 + 建立引用”合并成单步撤销。 */
-  runHistoryBatch?: (operation: () => Promise<void>) => Promise<void>
+  onCreateLinkedRecord?: (input: CreateLinkedRecordInput) => Promise<void>
   onExitLeft?: () => void
   onExitUp?: () => void
   onExitRight?: () => void
@@ -528,7 +528,7 @@ interface Props {
   onFirstRecordFocusConsumed?: (request: number) => void
 }
 
-export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompact, onSaveCompact, graphData, filePath, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onCreateRecordDraft, onInsertRecord, recordGroups, onDropRecordIntoGroup, onRenameRecord, onDeleteRecord, runHistoryBatch, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
+export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompact, onSaveCompact, graphData, filePath, activeType, enabledFieldsOverride, visibleCardFields, fileCapabilities, diagnostics, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onCollectionEdit, onDiagnosticBadgeClick, onCreateRecordDraft, recordGroups, onDropRecordIntoGroup, onRenameRecord, onDeleteRecord, onCreateLinkedRecord, onExitLeft, onExitUp, onExitRight, firstRecordFocusRequest, onFirstRecordFocusConsumed }: Props) {
   const lookups = useEditorLookups()
   const previousViews = useRef<GraphNodeView[]>([])
   const [selectedElement, setSelectedElement] = useState<GraphFocus>(null)
@@ -1751,7 +1751,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             placeholder="选择引用目标"
             options={[
               // 仅拖线到空白且具备记录创建通道时才提供“新建节点”，删除后补齐目标不改变落点语义。
-              ...(picker.flowPosition && onCreateRecordDraft && onInsertRecord
+              ...(picker.flowPosition && onCreateRecordDraft && onCreateLinkedRecord
                 ? [{ value: NEW_TARGET_OPTION, label: '＋ 新建节点', description: `新建 ${picker.targetType} 并连接` }]
                 : []),
               ...picker.targets.map((target, index) => ({ value: String(index), label: shortNameLabel(target.coordinate.id, target.short_name),
@@ -1773,26 +1773,21 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           />
         </div>
       )}
-      {newTarget && onCreateRecordDraft && onInsertRecord && (
+      {newTarget && onCreateRecordDraft && onCreateLinkedRecord && (
         <CreateRecordDialog
           actualType={newTarget.targetType}
           typeOptions={[]}
           existingIds={existingTargetIds}
           onCreateRecordDraft={onCreateRecordDraft}
           onInsertRecord={async (recordId, actualType, fields) => {
-            const create = async () => {
-              await onInsertRecord(recordId, actualType, fields)
-              // 记录新节点坐标，布局刷新后即可落在拖放位置。
-              retainedPositions.current.set(coordinateId({ actual_type: actualType, id: recordId }), newTarget.flowPosition)
-              setNewTarget(null)
-              await commitRelation(newTarget.nodeId, newTarget.portId, {
-                short_name: null,
-                file_path: filePath,
-                coordinate: { actual_type: actualType, id: recordId },
-              })
-            }
-            // 创建记录与建立引用合并成一步，Ctrl+Z 一次即可整体撤回。
-            await (runHistoryBatch ? runHistoryBatch(create) : create())
+            const node = currentNodeById.get(newTarget.nodeId)
+            const port = relations.get(newTarget.nodeId)?.byId.get(newTarget.portId)
+            if (!node || !port || !onCreateLinkedRecord) throw new Error('引用来源已变化，请重新选择连线起点')
+            await onCreateLinkedRecord({ file: filePath, id: recordId, actual_type: actualType, fields,
+              source_file: node.file_path, source: node.coordinate, field_path: port.path,
+              reference: relationValue(port, recordId), append: !!port.append })
+            retainedPositions.current.set(coordinateId({ actual_type: actualType, id: recordId }), newTarget.flowPosition)
+            setNewTarget(null)
           }}
           onClose={() => setNewTarget(null)}
         />

@@ -28,6 +28,7 @@ export function UpdateControl() {
         </span>
         <span className="sidebar-update-label">{updateLabel(state)}</span>
       </button>
+      {state.error && <p role="alert">更新失败：{state.error}</p>}
     </div>
   )
 }

@@ -49,6 +49,7 @@ pub(crate) use row_build::project_bootstrap;
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
 /// multi-reader access stay independent.
 pub struct EditorSession {
+    pub(crate) recovery: Option<coflow_runtime::PublicationReport>,
     pub project_root: std::path::PathBuf,
     /// Path to the project's `coflow.yaml` used by project actions and reloads.
     pub yaml_path: std::path::PathBuf,
@@ -83,6 +84,18 @@ impl std::fmt::Debug for EditorSession {
 }
 
 impl EditorSession {
+    pub(crate) fn ensure_writable(&self) -> Result<(), EditorError> {
+        if let Some(report) = &self.recovery {
+            let message = if report.state == coflow_runtime::PersistenceState::Committed {
+                "内容已保存，项目刷新未完成，请重新加载项目后再编辑"
+            } else {
+                "文件恢复未完成，请检查错误详情与保留备份，重新加载项目后再编辑"
+            };
+            return Err(EditorError::write(message).with_publication(Some(report.clone())));
+        }
+        Ok(())
+    }
+
     pub(crate) const fn queries(&self) -> ProjectQueries<'_> {
         self.engine.queries()
     }

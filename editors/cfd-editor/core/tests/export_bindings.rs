@@ -23,6 +23,10 @@ fn export_bindings() {
     export_type::<coflow_runtime::CreateFieldSource>("CreateFieldSource");
     export_type::<coflow_runtime::CreateRequiredInput>("CreateRequiredInput");
     export_type::<coflow_runtime::ProjectDiff>("ProjectDiff tree");
+    export_type::<coflow_runtime::MutationRequest>("MutationRequest");
+    export_type::<t::CreateLinkedRecordInput>("CreateLinkedRecordInput");
+    export_type::<t::LinkedRecordOutcome>("LinkedRecordOutcome");
+    export_type::<t::BatchMutationOutcome>("BatchMutationOutcome");
     export_type::<t::EditorError>("EditorError");
     export_type::<t::ProjectBootstrap>("ProjectBootstrap");
     export_type::<t::PluginSchemaType>("PluginSchemaType");

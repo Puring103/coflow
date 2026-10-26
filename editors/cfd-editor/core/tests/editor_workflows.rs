@@ -1406,3 +1406,116 @@ fn copy_directory(source: &Path, target: &Path) {
         }
     }
 }
+
+#[test]
+fn compound_editor_mutation_does_not_publish_its_first_step_when_second_step_fails() {
+    let root = project_directory("editor-atomic-mutation-");
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen:\n  - language: csharp\n    dir: generated\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schema.cft"),
+        "table Item { value: int = 0; }\n",
+    )
+    .unwrap();
+    let initial = "one: Item { value: 1 }\n";
+    fs::write(root.path().join("data.cfd"), initial).unwrap();
+    let store = SessionStore::new().unwrap();
+    let bootstrap = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap();
+    let input = cfd_editor_core::editor::CreateLinkedRecordInput {
+        file: "data.cfd".into(),
+        id: "two".into(),
+        actual_type: "Item".into(),
+        fields: CfdValue::Object(Box::new(
+            CfdObject::try_new("Item", BTreeMap::new()).unwrap(),
+        )),
+        source_file: "data.cfd".into(),
+        source: RecordCoordinate::try_new("Item", "one").unwrap(),
+        field_path: vec![CfdPathSegment::Field("value".into())],
+        reference: CfdValue::String("invalid integer".into()),
+        append: false,
+    };
+    assert!(store
+        .create_linked_record(bootstrap.session_id, input)
+        .is_err());
+    assert_eq!(
+        fs::read_to_string(root.path().join("data.cfd")).unwrap(),
+        initial
+    );
+    assert_eq!(
+        store
+            .get_file_records(bootstrap.session_id, "data.cfd")
+            .unwrap()
+            .revision,
+        bootstrap.revision
+    );
+}
+
+#[test]
+fn linked_record_creation_and_inverse_batch_publish_one_generation_each() {
+    let root = cyclic_reference_project();
+    let store = SessionStore::new().unwrap();
+    let bootstrap = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap();
+    let coordinate = RecordCoordinate::try_new("Quest", "advanced").unwrap();
+    let created = RecordCoordinate::try_new("Quest", "basic").unwrap();
+    let path = vec![CfdPathSegment::Field("prerequisite".into())];
+    let outcome = store
+        .create_linked_record(
+            bootstrap.session_id,
+            cfd_editor_core::editor::CreateLinkedRecordInput {
+                file: "data/quests.cfd".into(),
+                id: "basic".into(),
+                actual_type: "Quest".into(),
+                fields: CfdValue::Object(Box::new(
+                    CfdObject::try_new("Quest", BTreeMap::new()).unwrap(),
+                )),
+                source_file: "data/quests.cfd".into(),
+                source: coordinate.clone(),
+                field_path: path.clone(),
+                reference: CfdValue::OptionSome(Box::new(CfdValue::Ref(created.id.clone()))),
+                append: false,
+            },
+        )
+        .unwrap();
+    assert_eq!(outcome.revision, bootstrap.revision + 1);
+    assert_eq!(
+        store
+            .get_file_records(bootstrap.session_id, "data/quests.cfd")
+            .unwrap()
+            .records
+            .len(),
+        2
+    );
+    let undone = store
+        .apply_mutation_batch(
+            bootstrap.session_id,
+            vec![
+                coflow_runtime::MutationOp::SetField {
+                    record: coordinate,
+                    file: None,
+                    path,
+                    value: coflow_runtime::MutationValue::Cfd(outcome.old_value),
+                },
+                coflow_runtime::MutationOp::DeleteRecord {
+                    record: created,
+                    file: None,
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(undone.revision, outcome.revision + 1);
+    assert_eq!(
+        store
+            .get_file_records(bootstrap.session_id, "data/quests.cfd")
+            .unwrap()
+            .records
+            .len(),
+        1
+    );
+}

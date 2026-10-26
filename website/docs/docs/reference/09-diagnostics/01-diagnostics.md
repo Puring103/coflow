@@ -119,3 +119,18 @@ coflow check --rule Item::ValidPrice --explain --json
 命令响应使用 `protocol_version`、`command`、`status` 和 `result`，按需附带 `error_category`、`project`、`revision`、`data_scope` 和 `diagnostics`。`diagnostics_summary.total` 是实际诊断数，`returned` 是本次返回数，`truncated` 表示输出截断。
 
 退出码 0 表示完整成功，1 表示校验失败、状态不满足或结果不完整，2 表示请求错误，3 表示修订或前置条件冲突，4 表示 I/O 或执行失败。参数错误、冲突等情况需同时查看响应状态与结果，不能只检查 diagnostics 是否为空。完整协议见 [CLI 输出与退出状态](../08-cli.md#输出与退出状态)。
+
+
+## 编辑器日志与问题反馈
+
+编辑器中的“日志与反馈”可以在未打开项目时使用。遇到问题时：
+
+1. 查看最近问题，复制错误编号和详情。
+2. 选择“生成诊断预览”，检查内容后保存文件。默认不包含错误原文；如需提供错误文本和堆栈，可勾选对应选项，并在预览中移除不希望分享的内容。
+3. 点击“提交问题”，说明复现步骤、预期结果和实际结果，附上诊断文件。
+
+日志保存在本机，不会自动上传；“打开日志目录”可以查看日志文件。Windows 默认位于 `%LOCALAPPDATA%\Coflow\logs\editor`。日志有容量和保留期限限制，建议问题出现后及时导出。
+
+如果提示“内容已保存，但项目刷新失败”，请使用恢复或重新加载功能，不要重复创建或覆盖。若提示文件恢复未完成，请先查看详情中的受影响文件和保留备份，再重新加载项目。
+
+CLI 排查可先设置环境变量 `COFLOW_LOG=1`，日志写入本地 `Coflow/logs/cli`，不会改变标准输出。VS Code 可在“输出”面板选择 `Coflow Language Server` 查看语言服务错误。

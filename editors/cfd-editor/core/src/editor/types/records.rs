@@ -228,7 +228,10 @@ pub struct FieldAnnotation {
     #[cfg_attr(feature = "ts-export", ts(as = "Option<Vec<String>>", optional))]
     pub field_order: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[cfg_attr(feature = "ts-export", ts(as = "Option<BTreeMap<String, Self>>", optional))]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<BTreeMap<String, Self>>", optional)
+    )]
     pub children: BTreeMap<String, Self>,
 }
 
@@ -520,4 +523,49 @@ mod tests {
             Some(&serde_json::Value::Null)
         );
     }
+}
+
+/// 单次引擎事务的编辑器发布结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct BatchMutationOutcome {
+    pub revision: u32,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
+    pub renamed: Vec<(RecordCoordinate, RecordCoordinate)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct CreateLinkedRecordInput {
+    pub file: String,
+    pub id: String,
+    pub actual_type: String,
+    pub fields: CfdValue,
+    pub source_file: String,
+    pub source: RecordCoordinate,
+    pub field_path: Vec<coflow_runtime::CfdPathSegment>,
+    pub reference: CfdValue,
+    pub append: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct LinkedRecordOutcome {
+    pub revision: u32,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub affected_files: Vec<String>,
+    pub old_value: CfdValue,
+    pub new_value: CfdValue,
 }

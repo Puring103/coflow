@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 mod commands;
+mod diagnostics;
 mod events;
 mod open;
 mod plugin_manifest;
@@ -16,11 +17,11 @@ use cfd_editor_core::EditorHost;
 use tauri::Manager;
 
 use commands::{
-    add_project_input, build_project, build_project_status, check_project, close_language_document,
-    close_session, complete_language_document, create_project_file, create_record_draft,
-    delete_project_entry, delete_record, edit_collection, format_language_document,
-    get_dimension_file_records, get_dimension_value, get_enum_variants, get_file_records,
-    get_graph, get_plugin_records_by_type, get_plugin_schema, get_project_diff,
+    add_project_input, apply_mutation_batch, build_project, build_project_status, check_project,
+    close_language_document, close_session, complete_language_document, create_linked_record,
+    create_project_file, create_record_draft, delete_project_entry, delete_record, edit_collection,
+    format_language_document, get_dimension_file_records, get_dimension_value, get_enum_variants,
+    get_file_records, get_graph, get_plugin_records_by_type, get_plugin_schema, get_project_diff,
     get_project_settings, get_ref_targets, highlight_source_snapshot, init_project, insert_record,
     load_project, make_default_object, move_record, open_source_file, parse_cell_text,
     read_source_text, reload_session, rename_record_id, render_cell_text, search_records,
@@ -49,7 +50,11 @@ pub use plugins::{
 /// Returns a Tauri error if application setup, context generation, or the
 /// runtime event loop fails to start.
 pub fn run() -> tauri::Result<()> {
+    let diagnostics = diagnostics::Diagnostics(
+        coflow_observability::initialize("editor").map_err(|error| error.to_string()),
+    );
     tauri::Builder::default()
+        .manage(diagnostics)
         .plugin(tauri_plugin_dialog::init())
         // 桌面剪贴板通过原生接口访问，不触发 WebView 的站点授权弹窗。
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -57,11 +62,20 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let events = Arc::new(TauriEditorEventSink::new(app.handle().clone()));
-            let host = EditorHost::new(events).map_err(|err| err.to_string())?;
+            let host = EditorHost::new(events).map_err(|err| {
+                coflow_observability::tracing::error!(event = "host_initialization_failed", code = %err.code);
+                err.to_string()
+            })?;
             app.manage(host);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            diagnostics::diagnostic_snapshot,
+            diagnostics::open_log_directory,
+            diagnostics::open_feedback_page,
+            diagnostics::record_frontend_events,
+            create_linked_record,
+            apply_mutation_batch,
             load_project,
             init_project,
             close_session,

@@ -231,3 +231,11 @@ export async function transferRecord(
     targetIndex,
   })
 }
+
+export function applyMutationBatch(sessionId: number, ops: import('../bindings/MutationOp').MutationOp[]): Promise<import('../bindings/BatchMutationOutcome').BatchMutationOutcome> {
+  return invokeCommand('apply_mutation_batch', { sessionId, ops })
+}
+
+export function createLinkedRecord(sessionId: number, input: import('../bindings/CreateLinkedRecordInput').CreateLinkedRecordInput): Promise<import('../bindings/LinkedRecordOutcome').LinkedRecordOutcome> {
+  return invokeCommand('create_linked_record', { sessionId, input })
+}

@@ -15,7 +15,7 @@ pub(crate) async fn read_source_text(
     file_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<String, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("read_source_text", host, move |host| {
         host.sessions().read_source_text(session_id, &file_path)
     })
     .await
@@ -28,7 +28,7 @@ pub(crate) async fn highlight_source_snapshot(
     source: String,
     host: State<'_, EditorHost>,
 ) -> Result<LanguageDocumentState, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("highlight_source_snapshot", host, move |host| {
         host.sessions()
             .highlight_source_snapshot(session_id, &file_path, &source)
     })
@@ -43,7 +43,7 @@ pub(crate) async fn sync_language_document(
     version: i64,
     host: State<'_, EditorHost>,
 ) -> Result<LanguageDocumentState, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("sync_language_document", host, move |host| {
         host.sessions()
             .sync_language_document(session_id, &file_path, &source, version)
     })
@@ -57,7 +57,7 @@ pub(crate) async fn validate_source_text(
     source: String,
     host: State<'_, EditorHost>,
 ) -> Result<Vec<FlatDiagnostic>, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("validate_source_text", host, move |host| {
         host.sessions()
             .validate_source_text(session_id, &file_path, &source)
     })
@@ -73,7 +73,7 @@ pub(crate) async fn complete_language_document(
     position: LanguagePosition,
     host: State<'_, EditorHost>,
 ) -> Result<Vec<LanguageCompletion>, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("complete_language_document", host, move |host| {
         host.sessions()
             .complete_language_document(session_id, &file_path, &source, version, &position)
     })
@@ -88,7 +88,7 @@ pub(crate) async fn format_language_document(
     version: i64,
     host: State<'_, EditorHost>,
 ) -> Result<LanguageFormattingResult, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("format_language_document", host, move |host| {
         host.sessions()
             .format_language_document(session_id, &file_path, &source, version)
     })
@@ -101,7 +101,7 @@ pub(crate) async fn close_language_document(
     file_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("close_language_document", host, move |host| {
         host.sessions()
             .close_language_document(session_id, &file_path)
     })
@@ -116,7 +116,7 @@ pub(crate) async fn write_source_text(
     expected_source: String,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("write_source_text", host, move |host| {
         host.sessions()
             .write_source_text(session_id, &file_path, &source, &expected_source)
     })

@@ -18,6 +18,7 @@ pub struct PublishFailure {
     pub restoration_failed: Vec<PathBuf>,
     pub restoration_conflicts: Vec<PathBuf>,
     pub restoration_errors: Vec<(PathBuf, String)>,
+    pub retained_backups: std::collections::BTreeMap<PathBuf, PathBuf>,
 }
 
 fn contents(path: &std::path::Path) -> io::Result<Option<Vec<u8>>> {
@@ -47,6 +48,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailur
                     restoration_failed: Vec::new(),
                     restoration_conflicts: Vec::new(),
                     restoration_errors: Vec::new(),
+                    retained_backups: Default::default(),
                 }))
             }
             Err(e) => {
@@ -58,6 +60,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailur
                     restoration_failed: Vec::new(),
                     restoration_conflicts: Vec::new(),
                     restoration_errors: Vec::new(),
+                    retained_backups: Default::default(),
                 }))
             }
         }
@@ -72,6 +75,7 @@ pub fn publish(changes: &[FileChange]) -> Result<Vec<PathBuf>, Box<PublishFailur
                         restoration_failed: Vec::new(),
                         restoration_conflicts: Vec::new(),
                         restoration_errors: Vec::new(),
+                        retained_backups: Default::default(),
                     }
                 })?,
             )
@@ -129,6 +133,7 @@ fn publish_with(
                 .map_err(|error| (error.is_conflict(), error.to_string()))
         });
         if let Err((conflict, message)) = checked {
+            tracing::warn!(event = "publication_preflight_failed", conflict);
             return Err(Box::new(PublishFailure {
                 message,
                 conflict,
@@ -137,6 +142,7 @@ fn publish_with(
                 restoration_failed: Vec::new(),
                 restoration_conflicts: Vec::new(),
                 restoration_errors: Vec::new(),
+                retained_backups: Default::default(),
             }));
         }
     }
@@ -167,6 +173,13 @@ fn publish_with(
                     }
                 }
             }
+            tracing::error!(
+                event = "publication_failed",
+                conflict,
+                written_count = written.len(),
+                restored_count = restored.len(),
+                restoration_failed_count = restoration_failed.len()
+            );
             return Err(Box::new(PublishFailure {
                 message,
                 conflict: conflict || !restoration_conflicts.is_empty(),
@@ -175,6 +188,15 @@ fn publish_with(
                 restoration_failed,
                 restoration_conflicts,
                 restoration_errors,
+                retained_backups: staged
+                    .iter()
+                    .zip(paths)
+                    .filter_map(|(stage, path)| {
+                        stage
+                            .retained_backup()
+                            .map(|backup| (path.clone(), backup.to_path_buf()))
+                    })
+                    .collect(),
             }));
         }
         written.push(paths[index].clone());
@@ -261,6 +283,11 @@ mod tests {
         assert_eq!(failure.restored, [] as [PathBuf; 0]);
         assert_eq!(failure.restoration_failed, vec![first.clone()]);
         assert_eq!(failure.restoration_conflicts, vec![first.clone()]);
+        let backup = failure
+            .retained_backups
+            .get(&first)
+            .expect("retained backup path");
+        assert_eq!(fs::read(backup).unwrap(), b"old");
         assert_eq!(fs::read(first).unwrap(), b"external");
         assert_eq!(fs::read(root.path().join("second.cfd")).unwrap(), b"old");
     }

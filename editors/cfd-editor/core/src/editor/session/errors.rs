@@ -28,7 +28,9 @@ pub(crate) fn diagnostics_to_error(
             .map(|d| d.message.as_str())
             .collect::<Vec<_>>(),
     );
-    EditorError::new(kind, message).with_diagnostics(flat_views(diagnostics))
+    EditorError::new(kind, message)
+        .with_diagnostics(flat_views(diagnostics))
+        .with_publication(diagnostics.publication.clone())
 }
 
 #[expect(
@@ -72,4 +74,10 @@ pub(crate) fn mutation_report_to_editor_error(
         message
     })
     .with_diagnostics(diagnostics)
+    .with_publication(
+        report
+            .failed
+            .iter()
+            .find_map(|failure| failure.publication().cloned()),
+    )
 }

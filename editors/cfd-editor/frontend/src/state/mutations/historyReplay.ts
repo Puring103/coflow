@@ -136,9 +136,11 @@ export async function replayBatch(
 ): Promise<MutationResult<unknown>> {
   const entries = direction === 'undo' ? [...entry.entries].reverse() : entry.entries
   let result: MutationResult<unknown> = { status: 'committed', value: undefined }
+  let completed = 0
   for (const sub of entries) {
-    result = await replay(sub)
-    if (result.status !== 'committed') break
+    try { result = await replay(sub) } catch { result = { status: 'failed' } }
+    if (result.status !== 'committed') return completed ? { status: 'failed', completed } : result
+    completed += 1
   }
   return result
 }

@@ -19,6 +19,18 @@ mod diagnostics;
 mod skill_commands;
 
 fn main() -> ExitCode {
+    // 文件日志显式启用，绝不污染 JSON、格式化输出或 LSP 的标准输出。
+    let _logging = if std::env::var_os("COFLOW_LOG").is_some_and(|value| value == "1") {
+        match coflow_observability::initialize("cli") {
+            Ok(logging) => Some(logging),
+            Err(error) => {
+                eprintln!("无法初始化本机日志：{error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     let raw: Vec<_> = std::env::args_os().collect();
     let (invoked, json_output, pretty) = cli::invocation(&raw);
     let matches = match cli::command().try_get_matches_from(&raw) {
@@ -52,10 +64,13 @@ fn main() -> ExitCode {
             }
         };
     }
+    coflow_observability::tracing::info!(command, event = "command_started");
     let mut response = Response::new(&command);
     if let Err(error) = run(&command, &args, &mut response) {
+        coflow_observability::tracing::error!(command, event = "command_failed");
         response.fail(error);
     }
+    coflow_observability::tracing::info!(command, status = ?response.status, event = "command_finished");
     if command == "format"
         && args.flag("stdin")
         && !args.flag("check")

@@ -40,6 +40,8 @@ function backend(
   writeDimensionValue: EditorMutationBackend['writeDimensionValue'] = vi.fn(),
 ): EditorMutationBackend {
   return {
+    createLinkedRecord: vi.fn(),
+    applyMutationBatch: vi.fn(async () => ({ revision: 4, diagnostics: [], affected_files: ['data/items.cfd'], renamed: [] })),
     writeFields: vi.fn(),
     writeField,
     writeDimensionValue,
@@ -181,15 +183,16 @@ describe('EditorMutationController', () => {
     expect(history.getSnapshot().undo[0].kind).toBe('batch')
 
     await mutations.undo()
-    // 反向：先恢复引用，再删除记录。
-    expect(fakeBackend.writeField).toHaveBeenLastCalledWith(
-      1, coordinate, fieldPath, { kind: 'string', value: 'old' },
-    )
-    expect(fakeBackend.deleteRecord).toHaveBeenCalledWith(1, coordinate)
+    // 逆操作作为一个引擎事务提交，不逐条发布。
+    expect(fakeBackend.applyMutationBatch).toHaveBeenCalledWith(1, [
+      expect.objectContaining({ op: 'set_field', value: { kind: 'cfd', value: { kind: 'string', value: 'old' } } }),
+      expect.objectContaining({ op: 'delete_record', record: coordinate }),
+    ])
+    expect(fakeBackend.deleteRecord).not.toHaveBeenCalled()
     expect(history.getSnapshot().undo).toHaveLength(0)
 
     await mutations.redo()
-    expect(fakeBackend.insertRecord).toHaveBeenCalledTimes(2)
+    expect(fakeBackend.applyMutationBatch).toHaveBeenCalledTimes(2)
     expect(history.getSnapshot().undo).toHaveLength(1)
   })
   it('records a batch field edit as one atomic undo and redo step', async () => {
@@ -938,4 +941,19 @@ describe('EditorMutationController', () => {
     editRequest.resolve(writeOutcome(3, 'old', 'latest'))
     await edit
   })
+})
+
+it('rejects failed record insertion so callers preserve their draft', async () => {
+  const fake = backend(vi.fn())
+  fake.insertRecord = vi.fn(async () => { throw new Error('permission denied') })
+  const port: EditorMutationPort = {
+    currentGeneration: () => ({ sessionId: 1, revision: 1 }),
+    publish: vi.fn(async () => committed(undefined)), rebindCoordinate: vi.fn(),
+    recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+  }
+  const history = new MutationHistoryController()
+  const mutations = new EditorMutationController(fake, port, history)
+  await expect(mutations.insertRecord('data/items.cfd', 'item', 'Item', { kind: 'object', value: { actual_type: 'Item', fields: {} } })).rejects.toThrow('操作未完成')
+  expect(port.publish).not.toHaveBeenCalled()
+  expect(history.getSnapshot().undo).toHaveLength(0)
 })

@@ -19,7 +19,7 @@ pub(crate) async fn load_project(
     yaml_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("load_project", host, move |host| {
         host.load_project(&PathBuf::from(yaml_path))
     })
     .await
@@ -30,7 +30,10 @@ pub(crate) async fn init_project(
     dir: String,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
-    run_host_command(host, move |host| host.init_project(&PathBuf::from(dir))).await
+    run_host_command("init_project", host, move |host| {
+        host.init_project(&PathBuf::from(dir))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -38,7 +41,10 @@ pub(crate) async fn close_session(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| host.close_session(session_id)).await
+    run_host_command("close_session", host, move |host| {
+        host.close_session(session_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -46,7 +52,10 @@ pub(crate) async fn reload_session(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
-    run_host_command(host, move |host| host.reload_session(session_id)).await
+    run_host_command("reload_session", host, move |host| {
+        host.reload_session(session_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -57,7 +66,7 @@ pub(crate) async fn add_project_input(
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
     let kind = project_input_kind(&kind)?;
-    run_host_command(host, move |host| {
+    run_host_command("add_project_input", host, move |host| {
         host.sessions()
             .add_project_input(session_id, kind, &PathBuf::from(path))
     })
@@ -83,7 +92,7 @@ pub(crate) async fn create_project_file(
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
     let kind = project_input_kind(&kind)?;
-    run_host_command(host, move |host| {
+    run_host_command("create_project_file", host, move |host| {
         host.sessions()
             .create_project_file(session_id, kind, Path::new(&parent_path), &file_name)
     })
@@ -96,7 +105,7 @@ pub(crate) async fn delete_project_entry(
     path: String,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectBootstrap, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("delete_project_entry", host, move |host| {
         host.sessions()
             .delete_project_entry(session_id, Path::new(&path))
     })
@@ -108,7 +117,7 @@ pub(crate) async fn get_project_settings(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("get_project_settings", host, move |host| {
         host.sessions().get_project_settings(session_id)
     })
     .await
@@ -120,7 +129,7 @@ pub(crate) async fn get_dimension_file_records(
     file_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<DimensionFileRecords, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("get_dimension_file_records", host, move |host| {
         host.sessions()
             .get_dimension_file_records(session_id, &file_path)
     })
@@ -134,7 +143,7 @@ pub(crate) async fn set_graph_positions(
     positions: BTreeMap<String, [f64; 2]>,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_graph_positions", host, move |host| {
         host.sessions()
             .set_graph_positions(session_id, view_key, positions)
     })
@@ -148,7 +157,7 @@ pub(crate) async fn set_graph_compact_mode(
     compact: bool,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_graph_compact_mode", host, move |host| {
         host.sessions()
             .set_graph_compact_mode(session_id, view_key, compact)
     })
@@ -163,7 +172,7 @@ pub(crate) async fn set_default_table_column_widths(
     widths: BTreeMap<String, f64>,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_default_table_column_widths", host, move |host| {
         host.sessions()
             .set_default_table_column_widths(session_id, file_path, actual_type, widths)
     })
@@ -179,7 +188,7 @@ pub(crate) async fn set_table_row_heights(
     view_id: String,
     heights: BTreeMap<String, f64>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_table_row_heights", host, move |host| {
         host.sessions()
             .set_table_row_heights(session_id, file_path, actual_type, view_id, heights)
     })
@@ -193,7 +202,7 @@ pub(crate) async fn set_short_name_field(
     field: Option<String>,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_short_name_field", host, move |host| {
         host.sessions()
             .set_short_name_field(session_id, actual_type, field)
     })
@@ -208,7 +217,7 @@ pub(crate) async fn set_view_order(
     order: Vec<String>,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_view_order", host, move |host| {
         host.sessions()
             .set_view_order(session_id, file_path, actual_type, order)
     })
@@ -223,7 +232,7 @@ pub(crate) async fn set_views(
     views: Vec<ViewConfig>,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_views", host, move |host| {
         host.sessions()
             .set_views(session_id, file_path, actual_type, views)
     })
@@ -239,7 +248,7 @@ pub(crate) async fn set_view_column_widths(
     widths: BTreeMap<String, f64>,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_view_column_widths", host, move |host| {
         host.sessions()
             .set_view_column_widths(session_id, file_path, actual_type, view_id, widths)
     })
@@ -254,7 +263,7 @@ pub(crate) async fn set_record_groups(
     groups: Vec<EditorRecordGroup>,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_record_groups", host, move |host| {
         host.sessions()
             .set_record_groups(session_id, file_path, actual_type, groups)
     })
@@ -267,7 +276,7 @@ pub(crate) async fn set_workspace(
     workspace: EditorWorkspaceState,
     host: State<'_, EditorHost>,
 ) -> Result<EditorProjectSettings, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_workspace", host, move |host| {
         host.sessions().set_workspace(session_id, workspace)
     })
     .await
@@ -278,7 +287,10 @@ pub(crate) async fn check_project(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<String, EditorError> {
-    run_host_command(host, move |host| host.sessions().check_project(session_id)).await
+    run_host_command("check_project", host, move |host| {
+        host.sessions().check_project(session_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -286,7 +298,10 @@ pub(crate) async fn build_project(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<String, EditorError> {
-    run_host_command(host, move |host| host.sessions().build_project(session_id)).await
+    run_host_command("build_project", host, move |host| {
+        host.sessions().build_project(session_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -294,7 +309,7 @@ pub(crate) async fn build_project_status(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<bool, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("build_project_status", host, move |host| {
         host.sessions().build_project_status(session_id)
     })
     .await
@@ -305,7 +320,10 @@ pub(crate) async fn get_project_diff(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectDiff, EditorError> {
-    run_host_command(host, move |host| host.sessions().project_diff(session_id)).await
+    run_host_command("get_project_diff", host, move |host| {
+        host.sessions().project_diff(session_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -314,7 +332,7 @@ pub(crate) async fn open_source_file(
     file_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("open_source_file", host, move |host| {
         let path = host.sessions().source_file_path(session_id, &file_path)?;
         open_path(&path)
     })

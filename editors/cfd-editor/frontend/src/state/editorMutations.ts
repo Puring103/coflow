@@ -1,3 +1,8 @@
+import type { CreateLinkedRecordInput } from '../bindings/CreateLinkedRecordInput'
+import type { LinkedRecordOutcome } from '../bindings/LinkedRecordOutcome'
+import { historyOperations } from './mutations/atomicHistory'
+import type { MutationOp } from '../bindings/MutationOp'
+import type { BatchMutationOutcome } from '../bindings/BatchMutationOutcome'
 import type { CollectionEdit } from '../bindings/CollectionEdit'
 import type { DeleteRecordOutcome } from '../bindings/DeleteRecordOutcome'
 import type { BatchWriteFieldInput } from '../bindings/BatchWriteFieldInput'
@@ -34,6 +39,8 @@ import {
 import { replayBatch, replayEntry, type ReplayDriver } from './mutations/historyReplay'
 
 export interface EditorMutationBackend {
+  createLinkedRecord: (sessionId: number, input: CreateLinkedRecordInput) => Promise<LinkedRecordOutcome>
+  applyMutationBatch: (sessionId: number, ops: MutationOp[]) => Promise<BatchMutationOutcome>
   writeFields: (
     sessionId: number,
     writes: BatchWriteFieldInput[],
@@ -395,25 +402,39 @@ export class EditorMutationController {
     )))
   }
 
+  async createLinkedRecord(input: CreateLinkedRecordInput): Promise<void> {
+    const result = await this.enqueueMutation(superseded(), () => this.execute(
+      '新建并连线失败', input.file,
+      sessionId => this.backend.createLinkedRecord(sessionId, input), undefined,
+      outcome => this.history.record({ kind: 'batch', revision: outcome.revision, entries: [
+        { kind: 'insert', revision: outcome.revision, filePath: input.file, coordinate: { actual_type: input.actual_type, id: input.id }, fields: cloneValue(input.fields) },
+        { kind: 'field', revision: outcome.revision, filePath: input.source_file, coordinate: input.source, fieldPath: input.field_path, oldValue: outcome.old_value, newValue: outcome.new_value },
+      ] }),
+    ))
+    if (result.status !== 'committed') throw new Error('新建与连线未完成，草稿已保留，请查看错误详情')
+  }
+
   async insertRecord(
     filePath: string,
     recordId: string,
     actualType: string,
     fields: FieldValue,
   ): Promise<void> {
-    await this.enqueueMutation(undefined, () => this.insertRecordInternal(
+    const result = await this.enqueueMutation(superseded(), () => this.insertRecordInternal(
       filePath,
       recordId,
       actualType,
       fields,
       { recordHistory: true },
     ))
+    if (result.status !== "committed") throw new Error("操作未完成，当前输入已保留。请查看错误详情，处理后重试。")
   }
 
   async deleteRecord(filePath: string, coordinate: RecordCoordinate): Promise<void> {
-    await this.enqueueMutation(undefined, () => (
+    const result = await this.enqueueMutation(superseded(), () => (
       this.deleteRecordInternal(filePath, coordinate, { recordHistory: true })
     ))
+    if (result.status !== "committed") throw new Error("操作未完成，当前输入已保留。请查看错误详情，处理后重试。")
   }
 
   async swapRecords(
@@ -421,12 +442,13 @@ export class EditorMutationController {
     first: RecordCoordinate,
     second: RecordCoordinate,
   ): Promise<void> {
-    await this.enqueueMutation(undefined, () => this.swapRecordsInternal(
+    const result = await this.enqueueMutation(superseded(), () => this.swapRecordsInternal(
       filePath,
       first,
       second,
       { recordHistory: true },
     ))
+    if (result.status !== "committed") throw new Error("操作未完成，当前输入已保留。请查看错误详情，处理后重试。")
   }
 
   async moveRecord(
@@ -434,12 +456,13 @@ export class EditorMutationController {
     coordinate: RecordCoordinate,
     targetIndex: number,
   ): Promise<void> {
-    await this.enqueueMutation(undefined, () => this.moveRecordInternal(
+    const result = await this.enqueueMutation(superseded(), () => this.moveRecordInternal(
       filePath,
       coordinate,
       targetIndex,
       { recordHistory: true },
     ))
+    if (result.status !== "committed") throw new Error("操作未完成，当前输入已保留。请查看错误详情，处理后重试。")
   }
 
   async transferRecord(
@@ -448,13 +471,14 @@ export class EditorMutationController {
     coordinate: RecordCoordinate,
     targetIndex: number,
   ): Promise<void> {
-    await this.enqueueMutation(undefined, () => this.transferRecordInternal(
+    const result = await this.enqueueMutation(superseded(), () => this.transferRecordInternal(
       sourceFile,
       destinationFile,
       coordinate,
       targetIndex,
       { recordHistory: true },
     ))
+    if (result.status !== "committed") throw new Error("操作未完成，当前输入已保留。请查看错误详情，处理后重试。")
   }
 
   /** 把一次用户操作中的多条写入合并为单步撤销/重做。 */
@@ -515,9 +539,24 @@ export class EditorMutationController {
   }
 
   private async runBatch(entry: BatchEditEntry, direction: 'undo' | 'redo'): Promise<MutationResult<unknown>> {
-    return replayBatch(entry, direction, sub => (
+    const operations = await historyOperations(entry, direction)
+    if (operations) {
+      const fallbackFile = operations.find(operation => 'file' in operation && operation.file)
+      const file = fallbackFile && 'file' in fallbackFile ? fallbackFile.file ?? '' : ''
+      return this.executeWithPendingFieldReplay(() => this.execute('批量历史回放失败', file,
+        sessionId => this.backend.applyMutationBatch(sessionId, operations), undefined,
+        outcome => { for (const [oldCoordinate, newCoordinate] of outcome.renamed) this.applyRename(file, oldCoordinate, newCoordinate) },
+      ))
+    }
+    const result = await replayBatch(entry, direction, sub => (
       direction === 'undo' ? this.undoEntry(sub) : this.redoEntry(sub)
     ))
+    if (result.status === 'failed' && result.completed) {
+      const identity = this.port.currentGeneration()
+      if (identity) this.port.reportError(identity.sessionId, '批量操作部分完成',
+        `已完成 ${result.completed} 个子操作，未完成部分保留在历史中；重试只执行剩余部分。`, identity.revision)
+    }
+    return result
   }
 
   private enqueueMutation<T>(supersededValue: T, operation: () => Promise<T>): Promise<T> {

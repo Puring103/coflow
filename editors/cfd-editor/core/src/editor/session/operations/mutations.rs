@@ -34,6 +34,7 @@ impl SessionStore {
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         write_field_in_session(&mut session, coordinate, field_path, new_value)
     }
 
@@ -44,6 +45,7 @@ impl SessionStore {
     ) -> Result<BatchWriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let mut seen = std::collections::HashSet::new();
         let targets = writes
             .iter()
@@ -125,6 +127,7 @@ impl SessionStore {
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let current = session
             .queries()
             .field_value(&coordinate.actual_type, &coordinate.id, field_path)
@@ -181,6 +184,7 @@ impl SessionStore {
             .collect();
 
         let mut session = session_lock.write();
+        session.ensure_writable()?;
         let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
@@ -214,6 +218,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let mut session = session_lock.write();
+        session.ensure_writable()?;
         let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
             MutationRequest {
@@ -268,6 +273,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let mut session = session_lock.write();
+        session.ensure_writable()?;
         let deleted_snapshot = snapshot_record_before_delete(&session, coordinate);
         let file_path = deleted_snapshot
             .as_ref()
@@ -314,6 +320,7 @@ impl SessionStore {
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let file_path = reorder_file_path(&session, first)?;
         let report = coflow_runtime::commands::apply_project_mutation(
             &mut session.engine,
@@ -346,6 +353,7 @@ impl SessionStore {
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let file_path = reorder_file_path(&session, coordinate)?;
         let old_index = record_container_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
@@ -385,6 +393,7 @@ impl SessionStore {
     ) -> Result<ReorderRecordsOutcome, EditorError> {
         let entry = self.session(id)?;
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let source_file = reorder_file_path(&session, coordinate)?;
         let old_index = record_type_index(&session, coordinate).ok_or_else(|| {
             EditorError::not_found(format!(
@@ -413,6 +422,110 @@ impl SessionStore {
             affected_files: report.affected_files,
             old_index: Some(old_index),
             new_index: Some(target_index),
+        })
+    }
+}
+
+impl SessionStore {
+    /// 将复合数据操作整体校验、暂存、发布，失败不推进任何历史条目。
+    pub fn apply_mutation_batch(
+        &self,
+        id: u32,
+        ops: Vec<MutationOp>,
+    ) -> Result<crate::editor::types::BatchMutationOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry.state.write();
+        session.ensure_writable()?;
+        let report = coflow_runtime::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops,
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
+        let report = finalize_mutation(&mut session, report, "批量编辑失败")?;
+        Ok(crate::editor::types::BatchMutationOutcome {
+            revision: session.revisions.current(),
+            renamed: report
+                .applied
+                .iter()
+                .filter_map(|op| op.outcome.renamed.clone())
+                .collect(),
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+        })
+    }
+}
+
+impl SessionStore {
+    /// 新建目标与建立引用必须在同一事务中，连线失败时不能留下孤立的新记录。
+    pub fn create_linked_record(
+        &self,
+        id: u32,
+        input: crate::editor::types::CreateLinkedRecordInput,
+    ) -> Result<crate::editor::types::LinkedRecordOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let mut session = entry.state.write();
+        session.ensure_writable()?;
+        let old_value = session
+            .queries()
+            .field_value(
+                &input.source.actual_type,
+                &input.source.id,
+                &input.field_path,
+            )
+            .cloned()
+            .ok_or_else(|| EditorError::not_found("引用来源字段不存在，请刷新图谱后重试"))?;
+        let new_value = if input.append {
+            apply_collection_edit(
+                old_value.clone(),
+                CollectionEdit::ArrayAppend {
+                    value: Some(input.reference),
+                },
+                None,
+            )?
+        } else {
+            input.reference
+        };
+        let CfdValue::Object(fields) = input.fields else {
+            return Err(EditorError::write("新记录字段必须为对象"));
+        };
+        let report = coflow_runtime::commands::apply_project_mutation(
+            &mut session.engine,
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![
+                    MutationOp::InsertRecord {
+                        file: input.file,
+                        actual_type: input.actual_type,
+                        id: input.id,
+                        fields: MutationFields::Cfd(
+                            fields
+                                .fields
+                                .into_iter()
+                                .map(|(key, value)| (key.to_string(), value))
+                                .collect(),
+                        ),
+                        materialization: DefaultMaterialization::Minimal,
+                    },
+                    MutationOp::SetField {
+                        record: input.source,
+                        file: Some(input.source_file),
+                        path: input.field_path,
+                        value: MutationValue::Cfd(new_value.clone()),
+                    },
+                ],
+            },
+        )
+        .map_err(api_diagnostics_to_editor_error)?;
+        let report = finalize_mutation(&mut session, report, "新建并连线失败")?;
+        Ok(crate::editor::types::LinkedRecordOutcome {
+            revision: session.revisions.current(),
+            diagnostics: report.diagnostics,
+            affected_files: report.affected_files,
+            old_value,
+            new_value,
         })
     }
 }

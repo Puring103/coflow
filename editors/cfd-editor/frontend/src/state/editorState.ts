@@ -12,7 +12,7 @@ export type { GenerationIdentity } from './core-identity'
 export type MutationResult<T = void> =
   | { status: 'committed'; value: T }
   | { status: 'superseded' }
-  | { status: 'failed' }
+  | { status: 'failed'; completed?: number }
 
 export const committed = <T>(value: T): MutationResult<T> => ({ status: 'committed', value })
 export const superseded = (): MutationResult<never> => ({ status: 'superseded' })
@@ -255,6 +255,7 @@ export class MutationHistoryController {
   private readonly listeners = new Set<() => void>()
   private queue: Promise<void> = Promise.resolve()
   private epoch = 0
+  private historyVersion = 0
   private batchDepth = 0
   private batchEntries: EditEntry[] = []
 
@@ -266,6 +267,7 @@ export class MutationHistoryController {
   }
 
   clear(): void {
+    this.historyVersion += 1
     this.epoch += 1
     this.batchDepth = 0
     this.batchEntries = []
@@ -305,6 +307,7 @@ export class MutationHistoryController {
   }
 
   private recordDirect(entry: EditEntry): void {
+    this.historyVersion += 1
     const undo = [...this.snapshot.undo, entry]
     undo.sort((left, right) => left.revision - right.revision)
     this.publish({ undo, redo: [], busy: this.snapshot.busy })
@@ -339,6 +342,7 @@ export class MutationHistoryController {
     const entry = source[source.length - 1]
     if (!entry) return superseded()
 
+    const version = this.historyVersion
     this.publish({ ...this.snapshot, busy: true })
     let result: MutationResult<unknown>
     try {
@@ -348,16 +352,29 @@ export class MutationHistoryController {
     }
 
     const currentSource = direction === 'undo' ? this.snapshot.undo : this.snapshot.redo
-    const topIsUnchanged = currentSource[currentSource.length - 1] === entry
-    if (result.status === 'committed' && topIsUnchanged) {
+    // 坐标重绑定会创建新对象，但不会改变历史顺序或条目身份。
+    const topIsUnchanged = version === this.historyVersion && currentSource.length === source.length
+    const reboundEntry = currentSource[currentSource.length - 1]
+    if (result.status === 'failed' && result.completed && topIsUnchanged && reboundEntry.kind === 'batch') {
+      // 历史只保留尚未执行的子操作，已提交部分移到另一栈，禁止重试重复写入。
+      const count = result.completed
+      const entries = reboundEntry.entries
+      const done = direction === 'undo' ? entries.slice(-count) : entries.slice(0, count)
+      const remaining = direction === 'undo' ? entries.slice(0, -count) : entries.slice(count)
+      const completedEntry: BatchEditEntry = { ...reboundEntry, entries: done }
+      const remainingEntry: BatchEditEntry = { ...reboundEntry, entries: remaining }
+      this.publish(direction === 'undo'
+        ? { undo: [...this.snapshot.undo.slice(0, -1), remainingEntry], redo: [...this.snapshot.redo, completedEntry], busy: false }
+        : { undo: [...this.snapshot.undo, completedEntry], redo: [...this.snapshot.redo.slice(0, -1), remainingEntry], busy: false })
+    } else if (result.status === 'committed' && topIsUnchanged) {
       this.publish(direction === 'undo'
         ? {
             undo: this.snapshot.undo.slice(0, -1),
-            redo: [...this.snapshot.redo, entry],
+            redo: [...this.snapshot.redo, reboundEntry],
             busy: false,
           }
         : {
-            undo: [...this.snapshot.undo, entry],
+            undo: [...this.snapshot.undo, reboundEntry],
             redo: this.snapshot.redo.slice(0, -1),
             busy: false,
           })

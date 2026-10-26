@@ -28,37 +28,36 @@ pub(crate) fn session_capabilities_for_file(
 pub(crate) fn build_session(
     yaml_path_in: &std::path::Path,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
-    let project = Project::open_schema_only(Some(yaml_path_in)).map_err(|err| {
-        EditorError::project(prefixed_diagnostics("failed to open project", &err))
-    })?;
+    let project = Project::open_schema_only(Some(yaml_path_in))
+        .map_err(|err| super::errors::project_diagnostics_to_editor_error(&err))?;
     let yaml_path = project.config_path().to_path_buf();
     let project_root = project.root_dir().to_path_buf();
     let schema_files = project
         .schema_sources()
-        .map_err(|err| {
-            EditorError::project(prefixed_diagnostics("failed to discover schema", &err))
-        })?
+        .map_err(|err| super::errors::project_diagnostics_to_editor_error(&err))?
         .into_iter()
         .map(|source| source.module_id)
         .collect();
     let runtime = Runtime::new();
     let server = coflow_lsp::EmbeddedLsp::new(project.clone());
     let mut schema_runtime = ProjectRuntime::new(project);
-    let _ = schema_runtime.refresh();
-    let schema_session = schema_runtime
-        .into_latest_attempt()
-        .ok_or_else(|| EditorError::project("failed to build project schema".to_string()))?;
+    let schema_error = schema_runtime.refresh().err();
+    let schema_session = schema_runtime.into_latest_attempt().ok_or_else(|| {
+        schema_error.as_ref().map_or_else(
+            || EditorError::project("无法建立项目 schema，会话初始化未完成"),
+            super::errors::project_diagnostics_to_editor_error,
+        )
+    })?;
     let engine = runtime
         .open_write_session_from_schema(schema_session)
-        .map_err(|err| {
-            EditorError::project(prefixed_diagnostics("failed to build project", &err))
-        })?;
+        .map_err(|err| super::errors::project_diagnostics_to_editor_error(&err))?;
     let file_tree = engine.queries().file_tree();
     let (file_type_names, file_type_counts, type_display_names) = type_navigation(engine.queries());
     let diagnostics = diagnostics_from_store(engine.queries(), &project_root);
 
     Ok((
         EditorSession {
+            recovery: None,
             project_root,
             yaml_path,
             engine,
@@ -116,13 +115,4 @@ pub(crate) fn diagnostic_messages(diagnostics: &DiagnosticSet) -> String {
         .map(|diagnostic| format!("[{}] {}", diagnostic.code, diagnostic.message))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn prefixed_diagnostics(prefix: &str, diagnostics: &DiagnosticSet) -> String {
-    let messages = diagnostic_messages(diagnostics);
-    if messages.is_empty() {
-        prefix.to_string()
-    } else {
-        format!("{prefix}: {messages}")
-    }
 }

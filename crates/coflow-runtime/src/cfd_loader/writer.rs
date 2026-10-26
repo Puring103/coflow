@@ -26,7 +26,6 @@ use crate::api::{
 };
 use crate::data_model::RecordOrigin;
 use coflow_language::cfd::{parse_cfd, CfdAst, CfdSyntaxDiagnostic};
-use coflow_staging::{StagedChange, StagedFile, StagedRemoval};
 use patch::{
     append_record_source, apply_unset_field_patch, delete_record_span, find_record,
     reorder_record_spans, replace_spans, serialize_record, validate_record_id,
@@ -283,38 +282,28 @@ fn ensure_parse_ok(
 fn publish_workspace(
     workspace: &mut WriteWorkspace,
 ) -> Result<Vec<crate::PublishedFile>, DiagnosticSet> {
-    let mut staged = Vec::with_capacity(workspace.files.len());
-    for (path, file) in &workspace.files {
-        staged.push(if file.deleted {
-            WorkspaceStagedChange::Delete(StagedRemoval::create(path))
-        } else {
-            WorkspaceStagedChange::Write(
-                StagedFile::create(path, file.original.clone(), file.current.as_bytes())
-                    .map_err(|error| writer_staging_error(&error))?,
-            )
-        });
-    }
-    for change in &staged {
-        StagedChange::verify(change).map_err(|error| writer_staging_error(&error))?;
-    }
-    for index in 0..staged.len() {
-        let result = match &mut staged[index] {
-            WorkspaceStagedChange::Write(change) => change.publish(),
-            WorkspaceStagedChange::Delete(change) => change.publish(),
-        };
-        if let Err(error) = result {
-            let mut diagnostics = writer_staging_error(&error);
-            for committed in staged[..=index].iter_mut().rev() {
-                if let Err(error) = StagedChange::restore(committed) {
-                    diagnostics.extend(writer_staging_error(&error));
-                }
-            }
-            return Err(diagnostics);
-        }
-    }
-    for source in &mut staged {
-        source.finish();
-    }
+    // 所有宿主共用发布编排；恢复失败保留完整文件回执。
+    let changes = workspace
+        .files
+        .iter()
+        .map(|(path, file)| coflow_staging::transaction::FileChange {
+            path: path.clone(),
+            before: file.original.clone(),
+            after: (!file.deleted).then(|| file.current.as_bytes().to_vec()),
+        })
+        .collect::<Vec<_>>();
+    coflow_staging::transaction::publish(&changes).map_err(|failure| {
+        let mut diagnostics = DiagnosticSet::one(diag(
+            if failure.conflict {
+                "WRITE-CONFLICT"
+            } else {
+                "CFD-WRITE"
+            },
+            failure.message.clone(),
+        ));
+        diagnostics.publication = Some(crate::PublicationReport::from_failure(&failure));
+        diagnostics
+    })?;
     let published = workspace
         .files
         .iter()
@@ -327,55 +316,6 @@ fn publish_workspace(
         .collect();
     workspace.files.clear();
     Ok(published)
-}
-
-enum WorkspaceStagedChange {
-    Write(StagedFile),
-    Delete(StagedRemoval),
-}
-
-impl StagedChange for WorkspaceStagedChange {
-    fn verify(&self) -> Result<(), coflow_staging::StagingError> {
-        match self {
-            Self::Write(change) => change.verify(),
-            Self::Delete(change) => change.verify(),
-        }
-    }
-
-    fn publish(&mut self) -> Result<(), coflow_staging::StagingError> {
-        match self {
-            Self::Write(change) => change.publish(),
-            Self::Delete(change) => change.publish(),
-        }
-    }
-
-    fn restore(&mut self) -> Result<(), coflow_staging::StagingError> {
-        match self {
-            Self::Write(change) => change.restore(),
-            Self::Delete(change) => change.restore(),
-        }
-    }
-
-    fn finish(&mut self) {
-        match self {
-            Self::Write(change) => change.finish(),
-            Self::Delete(change) => change.finish(),
-        }
-    }
-}
-
-fn writer_staging_error(error: &coflow_staging::StagingError) -> DiagnosticSet {
-    if error.is_conflict() {
-        DiagnosticSet::one(diag(
-            "WRITE-CONFLICT",
-            format!(
-                "source `{}` changed while the mutation was prepared",
-                error.path().display()
-            ),
-        ))
-    } else {
-        DiagnosticSet::one(diag("CFD-WRITE", error.to_string()))
-    }
 }
 
 fn line_column(source: &str, byte_offset: usize) -> (usize, usize) {

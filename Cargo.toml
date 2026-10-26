@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [workspace]
 members = [
+    "crates/coflow-observability",
     "crates/coflow-storage",
     "crates/coflow-format",
     "crates/coflow-language",
@@ -62,6 +63,7 @@ dbg_macro = "warn"
 redundant_pub_crate = "allow"
 
 [dependencies]
+coflow-observability = { path = "crates/coflow-observability" }
 atomicwrites = "0.4.4"
 clap = { version = "4", features = ["derive"] }
 coflow-format = { path = "crates/coflow-format" }

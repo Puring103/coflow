@@ -19,7 +19,12 @@ use ts_rs::TS;
 )]
 pub struct EditorError {
     pub kind: EditorErrorKind,
+    pub code: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub publication: Option<coflow_runtime::PublicationReport>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub diagnostics: Vec<FlatDiagnostic>,
 }
@@ -45,9 +50,20 @@ impl EditorError {
     #[must_use]
     pub fn new(kind: EditorErrorKind, message: impl Into<String>) -> Self {
         Self {
+            code: match kind {
+                EditorErrorKind::Session => "EDITOR-SESSION",
+                EditorErrorKind::Project => "EDITOR-PROJECT",
+                EditorErrorKind::Write => "EDITOR-WRITE",
+                EditorErrorKind::Committed => "EDITOR-REFRESH",
+                EditorErrorKind::NotFound => "EDITOR-NOT-FOUND",
+                EditorErrorKind::Other => "EDITOR-INTERNAL",
+            }
+            .to_string(),
             kind,
             message: message.into(),
             diagnostics: Vec::new(),
+            publication: None,
+            error_id: None,
         }
     }
 
@@ -77,7 +93,19 @@ impl EditorError {
     }
 
     #[must_use]
+    pub fn with_publication(
+        mut self,
+        publication: Option<coflow_runtime::PublicationReport>,
+    ) -> Self {
+        self.publication = publication;
+        self
+    }
+
+    #[must_use]
     pub fn with_diagnostics(mut self, diagnostics: Vec<FlatDiagnostic>) -> Self {
+        if let Some(first) = diagnostics.first() {
+            self.code = first.code.clone();
+        }
         self.diagnostics = diagnostics;
         self
     }

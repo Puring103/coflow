@@ -27,7 +27,10 @@ const CFT_SEMANTIC_TOKENS_LEGEND = new vscode.SemanticTokensLegend(
   ["declaration", "reference", "path", "record", "schema"]
 );
 
+let outputChannel;
 function activate(context) {
+  outputChannel = vscode.window.createOutputChannel("Coflow Language Server");
+  context.subscriptions.push(outputChannel);
   const selector = [{ language: "cft" }, { language: "cfd" }];
   const diagnostics = new CftDiagnostics(context);
   context.subscriptions.push(
@@ -53,7 +56,7 @@ function activate(context) {
   );
 }
 
-function deactivate() {}
+function deactivate() { outputChannel = undefined; }
 
 class CftCompletionProvider {
   constructor(diagnostics) {
@@ -496,6 +499,7 @@ class CftLspSession {
     this.child.stdout.on("data", (chunk) => this.handleStdout(chunk));
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk) => {
+      outputChannel?.append(String(chunk).slice(-MAX_LSP_STDERR_LENGTH));
       this.lastStderr = appendBoundedText(
         this.lastStderr,
         chunk,

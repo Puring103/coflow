@@ -92,7 +92,14 @@ export function isEditorError(err: unknown): err is EditorError {
 }
 
 export function errorMessage(err: unknown): string {
-  if (isEditorError(err)) return err.message
+  if (isEditorError(err)) {
+    const state = err.publication?.state
+    const guidance = state === 'partial' || state === 'unknown'
+      ? '文件恢复未完成，请在日志与反馈中检查受影响文件和保留备份，重新加载后再编辑。'
+      : err.kind === 'committed' ? '内容已保存，但项目刷新失败，请重新加载项目，不要重复执行写入。'
+      : state === 'restored' ? '本次已写入的文件已恢复，可处理原因后重试。' : ''
+    return [err.message, guidance, err.error_id ? `错误编号：${err.error_id}` : ''].filter(Boolean).join(' ')
+  }
   if (err instanceof Error) return err.message
   if (typeof err === 'string') return err
   try {

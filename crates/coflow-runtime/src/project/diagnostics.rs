@@ -9,6 +9,7 @@ pub(super) fn project_diagnostics_to_set(
     diagnostics: Vec<ProjectDiagnostic>,
 ) -> DiagnosticSet {
     DiagnosticSet {
+        publication: None,
         diagnostics: diagnostics
             .into_iter()
             .map(|diagnostic| project_diagnostic(config_path, diagnostic))

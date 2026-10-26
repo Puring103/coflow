@@ -44,7 +44,7 @@ pub(crate) async fn install_project_frontend_plugin(
     manifest_path: String,
     host: State<'_, EditorHost>,
 ) -> Result<FrontendPluginBundle, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("install_project_frontend_plugin", host, move |host| {
         let project_root = host.sessions().project_root_for(session_id)?;
         install_project_frontend_plugin_bundle(&project_root, &PathBuf::from(manifest_path))
     })
@@ -56,7 +56,7 @@ pub(crate) async fn list_project_frontend_plugins(
     session_id: u32,
     host: State<'_, EditorHost>,
 ) -> Result<ProjectFrontendPlugins, EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("list_project_frontend_plugins", host, move |host| {
         let project_root = host.sessions().project_root_for(session_id)?;
         let config = read_project_plugins(&project_root)?;
         Ok(project_frontend_plugins(&project_root, config))
@@ -70,7 +70,7 @@ pub(crate) async fn uninstall_project_frontend_plugin(
     id: String,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("uninstall_project_frontend_plugin", host, move |host| {
         let project_root = host.sessions().project_root_for(session_id)?;
         remove_project_frontend_plugin(&project_root, &id)
     })
@@ -84,7 +84,7 @@ pub(crate) async fn set_project_frontend_plugin_enabled(
     enabled: bool,
     host: State<'_, EditorHost>,
 ) -> Result<(), EditorError> {
-    run_host_command(host, move |host| {
+    run_host_command("set_project_frontend_plugin_enabled", host, move |host| {
         let project_root = host.sessions().project_root_for(session_id)?;
         update_project_frontend_plugin_enabled(&project_root, &id, enabled)
     })

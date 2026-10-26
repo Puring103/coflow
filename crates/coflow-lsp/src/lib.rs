@@ -107,6 +107,7 @@ impl PendingRequest {
 /// Returns an error when reading LSP messages, parsing JSON, handling a request,
 /// or writing a response fails.
 pub fn run(project: Project) -> Result<bool, String> {
+    tracing::info!(event = "lsp_started");
     let (events_tx, events_rx) = mpsc::channel();
     spawn_input_reader(events_tx.clone());
     let validation_worker = ValidationWorker::spawn(events_tx);

@@ -19,6 +19,7 @@ struct ExecutableMutation {
 
 impl ProjectSession {
     /// Prepare, stage, and atomically publish a mutation request.
+    #[tracing::instrument(skip_all, fields(operation = "mutation", op_count = request.ops.len()))]
     pub fn apply_mutation<F>(
         &mut self,
         request: MutationRequest,
@@ -27,6 +28,7 @@ impl ProjectSession {
     where
         F: FnOnce(&Self, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
     {
+        tracing::info!(event = "mutation_plan_started");
         let (planned, mut failed, write_ok, stopped) = plan_mutations(self, request);
         if stopped || planned.is_empty() {
             return report_without_publish(self, write_ok, failed);
@@ -180,6 +182,10 @@ where
         .flat_map(|applied| applied.outcome.diagnostics.flat_diagnostics())
         .collect::<Vec<_>>();
     diagnostics.extend(new_session.diagnostics.flat_diagnostics());
+    tracing::info!(
+        event = "mutation_publish_started",
+        file_count = written_files.len()
+    );
     let published_files = match writer.publish() {
         Ok(files) => files,
         Err(diagnostics) => {
@@ -190,6 +196,11 @@ where
         }
     };
     *session = new_session;
+    tracing::warn!(
+        event = "mutation_not_published",
+        failure_count = failed.len(),
+        write_ok
+    );
     failed.sort_by_key(|failure| failure.index);
     let check_ok = write_ok
         && diagnostics
@@ -336,7 +347,17 @@ fn report_without_publish(
     write_ok: bool,
     mut failed: Vec<MutationFailedOp>,
 ) -> MutationReport {
+    tracing::warn!(
+        event = "mutation_not_published",
+        failure_count = failed.len(),
+        write_ok
+    );
     failed.sort_by_key(|failure| failure.index);
+    let written_files = failed
+        .iter()
+        .filter_map(MutationFailedOp::publication)
+        .flat_map(|report| report.written_files.iter().cloned())
+        .collect();
     MutationReport {
         write_ok,
         check_ok: false,
@@ -344,7 +365,7 @@ fn report_without_publish(
         applied: Vec::new(),
         failed,
         affected_files: Vec::new(),
-        written_files: Vec::new(),
+        written_files,
         published_files: Vec::new(),
         diagnostics: session.diagnostics.flat_diagnostics(),
     }

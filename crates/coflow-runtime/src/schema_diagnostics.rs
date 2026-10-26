@@ -24,6 +24,7 @@ pub fn diagnostic_set_from_cft(
     paths: &BTreeMap<String, String>,
 ) -> DiagnosticSet {
     DiagnosticSet {
+        publication: None,
         diagnostics: diagnostics
             .into_iter()
             .map(|diagnostic| diagnostic_from_cft(diagnostic, sources, paths))

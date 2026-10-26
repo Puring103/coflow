@@ -40,6 +40,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
     write: (text, expected) => api.writeSourceText(sessionId, filePath, text, expected),
     saved: (result: ProjectBootstrap) => onSavedRef.current(result),
     message: errorMessage,
+    recover: () => api.reloadSession(sessionId),
   }), [sessionId, filePath])
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot)
   const { text: source, saving, error } = state
@@ -79,7 +80,7 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
   }, [controller, filePath, revision, sessionId])
 
   useEffect(() => registerSourceSave({
-    pending: () => api.isTauri && (controller.dirty || controller.state.conflict !== null),
+    pending: () => api.isTauri && (controller.dirty || controller.state.recovery || controller.state.conflict !== null),
     flush: controller.flush,
   }), [controller])
 
@@ -137,8 +138,8 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
         if (validationRequest.current === request) {
           setValidationDiagnostics(next.filter(item => diagnosticBelongsToFile(item, filePath)))
         }
-      }).catch(() => {
-        // LSP diagnostics remain available when project-level validation cannot run.
+      }).catch(error => {
+        if (validationRequest.current === request) setLanguageError(`项目校验暂不可用：${errorMessage(error)}`)
       })
     }, 450)
     return () => window.clearTimeout(timer)
@@ -182,7 +183,8 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
         <button onClick={() => controller.useDisk()}>使用磁盘内容</button>
         <button onClick={() => { void controller.keepLocal() }}>保留本地并覆盖</button>
       </div>}
-      {error && state.conflict === null && <button onClick={() => { void save() }}>重试保存</button>}
+      {state.recovery && <button onClick={() => { void controller.recover() }}>恢复项目（不重复保存）</button>}
+      {error && !state.recovery && state.conflict === null && <button onClick={() => { void save() }}>重试保存</button>}
       <div className="source-editor-main" onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !readOnly && api.isTauri && !error) void controller.flush()
       }}>

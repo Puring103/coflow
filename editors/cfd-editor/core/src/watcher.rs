@@ -253,31 +253,16 @@ fn is_relevant_event(event: &Event) -> bool {
 }
 
 fn is_ignored_path(path: &Path) -> bool {
+    // 输入根由项目配置确定，不能因绝对路径的祖先名为 build/target 而丢弃事件。
     path.components().any(|component| {
         let name = component.as_os_str().to_string_lossy();
-        if name.starts_with(".atomicwrite")
+        name.starts_with(".atomicwrite")
             || (name.starts_with('.')
                 && (name.contains(".coflow-staging-") || name.contains(".coflow-backup-")))
-        {
-            return true;
-        }
-        matches!(
-            name.as_ref(),
-            ".git"
-                | ".coflow"
-                | ".idea"
-                | ".vscode"
-                | "node_modules"
-                | "target"
-                | "dist"
-                | "build"
-                | ".next"
-                | ".nuxt"
-                | ".svelte-kit"
-                | "coverage"
-                | ".DS_Store"
-                | "editor-setting"
-        )
+            || matches!(
+                name.as_ref(),
+                ".coflow" | ".git" | "editor-setting" | ".DS_Store"
+            )
     })
 }
 
@@ -396,5 +381,20 @@ mod tests {
             ]
         );
         std::fs::remove_dir_all(&temp).expect("remove temp directory");
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn configured_inputs_under_build_named_ancestors_are_relevant() {
+        assert!(!is_ignored_path(Path::new(
+            "C:/build/project/target/items.cfd"
+        )));
+        assert!(!is_ignored_path(Path::new("/external/dist/schema.cft")));
+        assert!(is_ignored_path(Path::new(
+            "/project/.items.cfd.coflow-staging-1"
+        )));
     }
 }

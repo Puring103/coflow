@@ -38,6 +38,11 @@ impl ProjectFileUpdate {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct MutationRequest {
     #[serde(default = "default_true")]
     pub stop_on_write_error: bool,
@@ -46,6 +51,11 @@ pub struct MutationRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub enum MutationOp {
     InsertRecord {
         file: String,
@@ -148,6 +158,11 @@ pub(crate) struct DimensionSourceCoordinate {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub enum DimensionValueExpectation {
     #[default]
     Any,
@@ -157,22 +172,40 @@ pub enum DimensionValueExpectation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub enum MutationValue {
-    Json(Value),
+    Json(#[cfg_attr(feature = "ts-export", ts(type = "unknown"))] Value),
     Cfd(CfdValue),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub enum MutationFields {
     #[default]
     Empty,
-    Json(BTreeMap<String, Value>),
+    Json(
+        #[cfg_attr(feature = "ts-export", ts(type = "Record<string, unknown>"))]
+        BTreeMap<String, Value>,
+    ),
     Cfd(BTreeMap<String, CfdValue>),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub enum DefaultMaterialization {
     #[default]
     Minimal,
@@ -461,6 +494,11 @@ impl MutationFailedOp {
             diagnostics,
             source_diagnostics,
         }
+    }
+
+    /// 保留发布与恢复事实，供宿主决定是否允许继续编辑。
+    pub fn publication(&self) -> Option<&crate::PublicationReport> {
+        self.source_diagnostics.publication.as_ref()
     }
 
     pub(crate) fn into_source_diagnostics(self) -> DiagnosticSet {

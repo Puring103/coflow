@@ -1,3 +1,4 @@
+import { recordIncident } from './diagnostics'
 import { useContentMotion } from './hooks/useContentMotion'
 import { useMutationFeedback } from './hooks/useMutationFeedback'
 import { cellMotionOrigin, type MotionOrigin } from './utils/motion'
@@ -280,6 +281,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     return () => { cancelled = true }
   }, [referenceTarget, project?.revision, project?.session_id, generation, setFileDataCache])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  useEffect(() => { if (errorMsg) recordIncident('editor', errorMsg) }, [errorMsg])
   const {
     settings: projectSettings,
     setSettings: setProjectSettings,
@@ -372,7 +374,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     }
   }, [generation, lookups, projectSettings?.short_name_fields, setProjectSettings])
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
-  const [buildPending, setBuildPending] = useState(false)
+  const [buildPending, setBuildPending] = useState<boolean | null>(null)
 
   useEffect(() => {
     const showNotice = (event: Event) => setErrorMsg((event as CustomEvent<string>).detail)
@@ -1299,6 +1301,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       return true
     },
     reportError: (sessionId, prefix, error, expectedRevision) => {
+      if (isEditorError(error) && (error.publication?.state === 'partial' || error.publication?.state === 'unknown')) setRecoverySession(sessionId)
       reportSessionError(sessionId, prefix, error, expectedRevision)
     },
     optimisticWriteField,
@@ -1555,12 +1558,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const redo = useCallback(async () => {
     await mutations.redo()
   }, [mutations])
-
-  // 图视图“新建节点+建立引用”走同一条历史记录，一次撤销整体回退。
-  const runHistoryBatch = useCallback(
-    (operation: () => Promise<void>) => mutations.withHistoryBatch(operation),
-    [mutations],
-  )
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -2752,8 +2749,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         <div className="topbar-right">
           {project && (
             <button className="btn btn-icon build-action" onClick={runBuild} disabled={!api.isTauri || projectAction !== null}
-              aria-label={buildPending ? '构建项目，有待生成的变更' : '构建项目'}
-              title={!api.isTauri ? '构建仅在桌面编辑器中可用' : buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}>
+              aria-label={buildPending === null ? '构建状态未知' : buildPending ? '构建项目，有待生成的变更' : '构建项目'}
+              title={!api.isTauri ? '构建仅在桌面编辑器中可用' : buildPending === null ? '构建状态未知，可手动构建' : buildPending ? '生成内容已变更，需要重新构建' : '构建项目'}>
               <Icon name={projectAction === 'build' ? 'refresh' : 'build'} size={17} className={projectAction === 'build' ? 'icon-spin' : undefined} />
               {buildPending && <span className="build-pending-indicator" aria-hidden />}
             </button>
@@ -3180,13 +3177,11 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                         focusDiagnosticForAnchor(file, coordinate.id, coordinate.actual_type, fieldPath)
                       }
                       onCreateRecordDraft={tableOnCreateRecordDraft}
-                      onInsertRecord={(recordId, actualType, fields) =>
-                        insertRecord(currentRoute.file, recordId, actualType, fields)}
                       recordGroups={recordGroups}
                       onDropRecordIntoGroup={dropRecordIntoGroup}
                       onRenameRecord={renameRecord}
                       onDeleteRecord={(file, coordinate) => deleteRecords(file, [coordinate])}
-                      runHistoryBatch={runHistoryBatch}
+                      onCreateLinkedRecord={input => mutations.createLinkedRecord(input)}
                       onExitLeft={focusFileTree}
                       onExitUp={focusDocumentSearch}
                       onExitRight={focusInspector}

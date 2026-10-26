@@ -1,0 +1,7 @@
+.diagnostic-center { position: fixed; right: 12px; bottom: 8px; z-index: 10000; font-size: 12px; }
+.diagnostic-center section { width: min(620px, 90vw); max-height: 75vh; overflow: auto; padding: 16px; background: var(--bg-primary, #20242c); color: var(--text-primary, #eee); border: 1px solid #888; border-radius: 8px; box-shadow: 0 8px 32px #0006; }
+.diagnostic-center header { display: flex; justify-content: space-between; }
+.diagnostic-center button, .diagnostic-center a { margin: 4px; }
+.diagnostic-center label { display: block; margin: 8px 0; }
+.diagnostic-center textarea { width: 100%; min-height: 180px; font-family: monospace; }
+.diagnostic-center pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }

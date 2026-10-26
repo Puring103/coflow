@@ -1,3 +1,6 @@
+import { recordIncident } from '../diagnostics'
+import { flushSourceChanges } from '../state/sourceAutosave'
+import { flushDataEdits } from '../state/editSession'
 import { getVersion } from '@tauri-apps/api/app'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type Update } from '@tauri-apps/plugin-updater'
@@ -49,6 +52,7 @@ export function useUpdater() {
           }
         : { ...current, phase: 'up-to-date', availableVersion: undefined })
     } catch (error) {
+      recordIncident("updater", error)
       setState(current => showError
         ? { ...current, phase: 'error', error: updateErrorMessage(error) }
         : { ...current, phase: 'idle' })
@@ -78,7 +82,9 @@ export function useUpdater() {
     let total: number | undefined
     setState(current => ({ ...current, phase: 'downloading', progress: 0, error: undefined }))
     try {
-      await update.downloadAndInstall(event => {
+      if (!await flushDataEdits()) throw new Error("数据编辑尚未成功保存，请处理后重试更新")
+      if (!await flushSourceChanges()) throw new Error("有未保存内容或项目尚未恢复，请处理后再安装更新")
+      await update.download(event => {
         if (event.event === 'Started') {
           total = event.data.contentLength
         } else if (event.event === 'Progress') {
@@ -89,9 +95,13 @@ export function useUpdater() {
           setState(current => ({ ...current, progress }))
         }
       })
+      if (!await flushDataEdits()) throw new Error("数据编辑尚未成功保存，请处理后重试更新")
+      if (!await flushSourceChanges()) throw new Error('更新已下载，但有未保存内容；请保存后重试安装')
+      await update.install()
       setState(current => ({ ...current, phase: 'restarting', progress: 100 }))
       await relaunch()
     } catch (error) {
+      recordIncident("updater", error)
       setState(current => ({
         ...current,
         phase: 'error',

@@ -1,3 +1,4 @@
+import { recordIncident } from '../diagnostics'
 import type { ElkNode } from 'elkjs/lib/elk-api'
 import { getLayoutEngine, terminateLayoutEngine } from './elkEngine'
 import type { Position } from './metrics'
@@ -11,6 +12,7 @@ const layoutRequests = new Map<number, {
 }>()
 
 function failAllPending(error: Error): void {
+  recordIncident("graph_layout_timeout", error)
   terminateLayoutEngine()
   for (const [id, pending] of layoutRequests) {
     clearTimeout(pending.timeout)
@@ -42,6 +44,7 @@ export async function runGraphLayoutInWorker(
         { x: (node.x ?? 0) - minX, y: node.y ?? 0 },
       ])))
     }).catch((error: unknown) => {
+      recordIncident("graph_layout", error)
       const pending = layoutRequests.get(id)
       if (!pending) return
       clearTimeout(timeout)

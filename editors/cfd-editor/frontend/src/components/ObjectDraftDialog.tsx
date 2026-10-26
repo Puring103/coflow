@@ -107,6 +107,8 @@ export function ObjectDraftDialog({
     setSaving(true)
     try {
       await onConfirm(buildObjectPayload(draft, values, dirty))
+    } catch (error) {
+      setLoadError(errorText(error))
     } finally {
       setSaving(false)
     }

@@ -146,6 +146,7 @@ pub(super) fn cfd_error_to_diagnostics(
     diagnostics: CfdTextDiagnostics,
 ) -> DiagnosticSet {
     DiagnosticSet {
+        publication: None,
         diagnostics: diagnostics
             .diagnostics
             .into_iter()

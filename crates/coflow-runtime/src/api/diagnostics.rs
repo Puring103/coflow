@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticSet {
     pub diagnostics: Vec<Diagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication: Option<crate::PublicationReport>,
 }
 
 impl DiagnosticSet {
@@ -13,6 +15,7 @@ impl DiagnosticSet {
     pub fn empty() -> Self {
         Self {
             diagnostics: Vec::new(),
+            publication: None,
         }
     }
 
@@ -20,6 +23,7 @@ impl DiagnosticSet {
     pub fn one(diagnostic: Diagnostic) -> Self {
         Self {
             diagnostics: vec![diagnostic],
+            publication: None,
         }
     }
 
@@ -34,6 +38,9 @@ impl DiagnosticSet {
 
     pub fn extend(&mut self, other: Self) {
         self.diagnostics.extend(other.diagnostics);
+        if other.publication.is_some() {
+            self.publication = other.publication;
+        }
     }
 
     pub fn push(&mut self, diagnostic: Diagnostic) {
@@ -76,7 +83,10 @@ impl fmt::Display for DiagnosticSet {
 
 impl From<Vec<Diagnostic>> for DiagnosticSet {
     fn from(diagnostics: Vec<Diagnostic>) -> Self {
-        Self { diagnostics }
+        Self {
+            diagnostics,
+            publication: None,
+        }
     }
 }
 
@@ -367,6 +377,7 @@ pub(crate) fn map_diagnostics_with_origin_lookup(
 ) -> DiagnosticSet {
     let mapped = crate::data_model::map_diagnostics(diagnostics, resolve);
     DiagnosticSet {
+        publication: None,
         diagnostics: mapped
             .into_iter()
             .map(|d| Diagnostic {

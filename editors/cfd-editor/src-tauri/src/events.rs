@@ -19,10 +19,24 @@ impl EditorEventSink for TauriEditorEventSink {
         // 主机层只负责把核心事件名映射为 Tauri 事件，不承载编辑器业务逻辑。
         match event {
             EditorEvent::ProjectReloaded(payload) => {
-                let _ = self.app.emit(PROJECT_RELOADED_EVENT, payload);
+                if self.app.emit(PROJECT_RELOADED_EVENT, payload).is_err() {
+                    coflow_observability::tracing::error!(
+                        event = "event_delivery_failed",
+                        name = PROJECT_RELOADED_EVENT
+                    );
+                }
             }
             EditorEvent::ProjectWatchError(payload) => {
-                let _ = self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload);
+                coflow_observability::tracing::warn!(
+                    event = "project_watch_error",
+                    session_id = payload.session_id
+                );
+                if self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload).is_err() {
+                    coflow_observability::tracing::error!(
+                        event = "event_delivery_failed",
+                        name = PROJECT_WATCH_ERROR_EVENT
+                    );
+                }
             }
         }
     }

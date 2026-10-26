@@ -1,3 +1,4 @@
+import { replayBatch } from './mutations/historyReplay'
 import { describe, expect, it, vi } from 'vitest'
 import {
   committed,
@@ -261,4 +262,33 @@ describe('MutationHistoryController', () => {
     expect(history.getSnapshot().undo).toHaveLength(0)
     expect(history.getSnapshot().redo).toHaveLength(1)
   })
+})
+
+it('advances renamed history after coordinate rebinding during undo', async () => {
+  const history = new MutationHistoryController()
+  history.record(fieldEntry('new'))
+  await history.undo(async () => {
+    history.rebind({ actual_type: 'Item', id: 'new' }, { actual_type: 'Item', id: 'old' })
+    return committed(undefined)
+  })
+  expect(history.getSnapshot().undo).toHaveLength(0)
+  expect(history.getSnapshot().redo).toHaveLength(1)
+  expect(history.getSnapshot().redo[0]).toMatchObject({ coordinate: { id: 'old' } })
+})
+it('retains only unfinished batch entries after a partial replay', async () => {
+  const history = new MutationHistoryController()
+  history.record({ kind: 'batch', revision: 2, entries: [fieldEntry('first'), fieldEntry('second')] })
+  const applied: string[] = []
+  await history.undo(async entry => {
+    if (entry.kind !== 'batch') throw new Error('expected batch')
+    return replayBatch(entry, 'undo', async sub => {
+      if (sub.kind !== 'field') throw new Error('expected field')
+      if (sub.coordinate.id === 'first') return failed()
+      applied.push(sub.coordinate.id)
+      return committed(undefined)
+    })
+  })
+  expect(applied).toEqual(['second'])
+  expect(history.getSnapshot().undo[0]).toMatchObject({ entries: [{ coordinate: { id: 'first' } }] })
+  expect(history.getSnapshot().redo[0]).toMatchObject({ entries: [{ coordinate: { id: 'second' } }] })
 })

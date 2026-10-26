@@ -33,6 +33,8 @@
 
 ## 工程维护
 
+- [日志与反馈实现契约](development/logging-and-feedback.zh-CN.md)：日志存储、错误状态、反馈导出与验证边界。
+- [日志、错误反馈与操作一致性计划](development/observability-and-error-handling-plan.zh-CN.md)：运行日志与错误链路审查、已复现问题、模块覆盖、实施状态与发布前验收矩阵。
 - [核心增量与超大图节点优化计划](development/incremental-graph-optimization-plan.zh-CN.md)：优化目标、分阶段方案、功能等价契约和验收矩阵。
 - [核心与前端性能审查](development/full-performance-audit.zh-CN.md)：当前实现的剩余热点、算法复杂度、微基准和优化优先级。
 

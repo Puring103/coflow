@@ -1,6 +1,7 @@
 export const normalizeSource = (text: string) => text.replace(/\r\n?/g, '\n')
 
 export interface SourceSaveState {
+  recovery: boolean
   loaded: boolean
   text: string
   base: string
@@ -11,7 +12,7 @@ export interface SourceSaveState {
 
 /** 只持有当前编辑文档；写入串行化，成功后推进磁盘基线。 */
 export class SourceAutosave<T> {
-  state: SourceSaveState = { loaded: false, text: '', base: '', saving: false, conflict: null, error: null }
+  state: SourceSaveState = { recovery: false, loaded: false, text: '', base: '', saving: false, conflict: null, error: null }
   private listeners = new Set<() => void>()
   private flight: Promise<boolean> | null = null
   constructor(private io: {
@@ -19,6 +20,7 @@ export class SourceAutosave<T> {
     write: (text: string, expected: string) => Promise<T>
     saved: (result: T) => Promise<void> | void
     message: (error: unknown) => string
+    recover?: () => Promise<T>
   }) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   snapshot = () => this.state
@@ -50,20 +52,38 @@ export class SourceAutosave<T> {
   }
   flush = (): Promise<boolean> => {
     if (this.flight) return this.flight
+    if (this.state.recovery) return Promise.resolve(false)
     if (this.state.conflict !== null) return Promise.resolve(false)
     if (!this.dirty) return Promise.resolve(true)
     this.flight = this.save().finally(() => { this.flight = null })
     return this.flight
+  }
+  async recover(): Promise<boolean> {
+    if (!this.io.recover) return false
+    try {
+      const result = await this.io.recover()
+      await this.io.saved(result)
+      this.update({ recovery: false, error: null })
+      return true
+    } catch (error) { this.fail(error); return false }
   }
   private async save(): Promise<boolean> {
     this.update({ saving: true, error: null })
     try {
       while (this.dirty) {
         const text = this.state.text
-        const result = await this.io.write(text, this.state.base)
+        let result: T
+        try { result = await this.io.write(text, this.state.base) } catch (error) {
+          if (error && typeof error === "object" && "kind" in error && error.kind === "committed") {
+            // 后端已确认落盘：推进基线，保留写入期间产生的新草稿，只恢复会话。
+            this.update({ base: text, recovery: true, error: "内容已保存，但项目刷新失败。请恢复项目后继续编辑。" })
+            return false
+          }
+          throw error
+        }
         this.update({ base: text })
         // 保存后的 UI 刷新失败不能被当成磁盘写入失败或再次写入。
-        try { await this.io.saved(result) } catch (error) { this.fail(error); return false }
+        try { await this.io.saved(result) } catch (error) { this.update({ recovery: true }); this.fail(error); return false }
       }
       return true
     } catch (error) {

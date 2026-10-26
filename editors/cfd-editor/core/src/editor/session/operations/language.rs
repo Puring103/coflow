@@ -7,10 +7,8 @@ use crate::editor::types::{
     EditorError, LanguageCompletion, LanguageDiagnostic, LanguageDocumentState,
     LanguageFormattingResult, LanguagePosition, LanguageRange, LanguageTextEdit, ProjectBootstrap,
 };
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use coflow_runtime::{DataSourceTextOverride, FlatDiagnostic, ProjectRuntime, SchemaTextOverride};
 use serde_json::{json, Value};
-use std::io::Write;
 
 fn has_extension(path: &str, expected: &str) -> bool {
     std::path::Path::new(path)
@@ -467,6 +465,7 @@ impl SessionStore {
         let entry = self.session(id)?;
         // 串行化本会话的源码保存与表格写入，比较精确的磁盘基线后再落盘。
         let mut session = entry.state.write();
+        session.ensure_writable()?;
         let current = std::fs::read_to_string(&path).map_err(|error| {
             EditorError::write(format!("failed to read {}: {error}", path.display()))
         })?;
@@ -488,11 +487,14 @@ impl SessionStore {
                 .map_err(super::super::errors::api_diagnostics_to_editor_error)?;
         }
         // CFD 源码允许保存尚未修正的语法，重新加载负责发布诊断。
-        AtomicFile::new(&path, AllowOverwrite)
-            .write(|file| file.write_all(source.as_bytes()))
-            .map_err(|error| {
-                EditorError::write(format!("failed to write {}: {error}", path.display()))
-            })?;
+        coflow_runtime::publish_source(&path, expected_source, source).map_err(|diagnostics| {
+            session.recovery = diagnostics
+                .publication
+                .as_ref()
+                .filter(|report| report.requires_recovery())
+                .cloned();
+            super::super::errors::api_diagnostics_to_editor_error(diagnostics)
+        })?;
         session.commit_internal_write(&[coflow_runtime::PublishedFile::from_content(
             path.clone(),
             Some(source.as_bytes()),
@@ -502,6 +504,14 @@ impl SessionStore {
             .map_err(|mut error| {
                 // 磁盘已提交，前端必须恢复会话而不能再次执行这次保存。
                 error.kind = crate::editor::types::EditorErrorKind::Committed;
+                error.code = "EDITOR-REFRESH".to_string();
+                let report = coflow_runtime::PublicationReport {
+                    state: coflow_runtime::PersistenceState::Committed,
+                    written_files: vec![coflow_runtime::path_to_slash(&path)],
+                    ..Default::default()
+                };
+                entry.state.write().recovery = Some(report.clone());
+                error.publication = Some(report);
                 error
             })
     }

@@ -121,9 +121,14 @@ impl PreparedCodeRelease {
     }
 
     pub(crate) fn publish(self) -> Result<(), DiagnosticSet> {
-        self.publish_detailed()
-            .map(|_| ())
-            .map_err(|failure| failure.diagnostics)
+        self.publish_detailed().map(|_| ()).map_err(|failure| {
+            let mut diagnostics = failure.diagnostics;
+            diagnostics.publication = failure
+                .publication
+                .as_deref()
+                .map(crate::PublicationReport::from_failure);
+            diagnostics
+        })
     }
 
     pub(crate) fn publish_detailed(self) -> Result<Vec<PathBuf>, ArtifactPublicationFailure> {
@@ -188,6 +193,7 @@ impl From<coflow_staging::StagingError> for ArtifactPublicationFailure {
                 restoration_failed: Vec::new(),
                 restoration_conflicts: Vec::new(),
                 restoration_errors: Vec::new(),
+                retained_backups: Default::default(),
             })),
         }
     }

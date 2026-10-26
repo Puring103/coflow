@@ -86,6 +86,10 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, StagingError> {
 }
 
 pub trait StagedChange {
+    /// 恢复失败时向宿主提供仍保留的备份，禁止猜测临时文件名。
+    fn retained_backup(&self) -> Option<&Path> {
+        None
+    }
     /// Verifies the destination but does not modify it.
     ///
     /// # Errors
@@ -162,6 +166,9 @@ impl StagedFile {
 }
 
 impl StagedChange for StagedFile {
+    fn retained_backup(&self) -> Option<&Path> {
+        self.backup.as_deref()
+    }
     fn verify(&self) -> Result<(), StagingError> {
         if read_optional(&self.path)? == self.expected {
             Ok(())
@@ -267,6 +274,9 @@ impl StagedDirectory {
 }
 
 impl StagedChange for StagedDirectory {
+    fn retained_backup(&self) -> Option<&Path> {
+        self.backup.as_deref()
+    }
     fn verify(&self) -> Result<(), StagingError> {
         self.original.verify(&self.path)?;
         if self.path.exists() && !self.path.is_dir() {
@@ -352,6 +362,9 @@ impl StagedRemoval {
 }
 
 impl StagedChange for StagedRemoval {
+    fn retained_backup(&self) -> Option<&Path> {
+        self.backup.as_deref()
+    }
     fn verify(&self) -> Result<(), StagingError> {
         Ok(())
     }
@@ -520,10 +533,14 @@ fn directory_contents(root: &Path) -> Result<DirectoryContents, StagingError> {
 
 fn finish_staged(backup: Option<PathBuf>, directory: bool) {
     if let Some(backup) = backup {
-        if directory {
-            let _ = fs::remove_dir_all(backup);
+        let result = if directory {
+            fs::remove_dir_all(backup)
         } else {
-            let _ = fs::remove_file(backup);
+            fs::remove_file(backup)
+        };
+        if let Err(error) = result {
+            // 清理失败不改变已提交事实，避免用户重复执行写入。
+            tracing::warn!(event = "backup_cleanup_failed", io_kind = ?error.kind());
         }
     }
 }
