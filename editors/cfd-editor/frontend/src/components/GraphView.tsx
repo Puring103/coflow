@@ -1,3 +1,4 @@
+import { motionRecordKey } from '../hooks/useMutationFeedback'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, memo, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap, ConnectionLineType, SelectionMode,
@@ -324,6 +325,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
       ref={rootRef}
       className={`graph-node${compact ? ' compact' : ''}${gn.in_focus_file ? ' focused' : ' dim'}${selected ? ' selected' : ''}`}
       data-nodeid={gn.id}
+      data-motion-record={motionRecordKey(gn.file_path, gn.coordinate)}
       data-geometry-pending={geometry.pendingCount}
       style={{'--node-color': typeColor(gn.actual_type), height: geometry.height} as React.CSSProperties}
       onPointerDownCapture={event => beginPointerInteraction(event.target)}

@@ -1,3 +1,4 @@
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ViewTab } from '../state/views'
@@ -15,8 +16,10 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
   onCreate?: () => void
   onDelete?: (id: string) => void
   onEdit?: (id: string) => void
-  onReorder: (ids: string[]) => void
+  onReorder?: (ids: string[]) => void
 }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useSelectionSlide(rootRef, '[role="tab"][aria-selected="true"]')
   const drag = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null)
   const suppressClick = useRef(false)
   const [preview, setPreview] = useState<{ tab: ViewTab; x: number; y: number } | null>(null)
@@ -40,7 +43,7 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
     return () => { window.removeEventListener('pointerdown', close, true); window.removeEventListener('keydown', escape); window.removeEventListener('wheel', close, true) }
   }, [menu])
   const displayTabs = order ? [...tabs].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)) : tabs
-  return <div className="view-picker" role="tablist" aria-label="视图"
+  return <div ref={rootRef} className="view-picker" role="tablist" aria-label="视图"
       onPointerMove={event => {
         const state = drag.current
         if (!state) return
@@ -67,10 +70,10 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
       onPointerUp={event => {
         suppressClick.current = drag.current?.moved ?? false
         drag.current = null
-        if (orderRef.current) onReorder(orderRef.current)
+        if (orderRef.current) onReorder?.(orderRef.current)
         orderRef.current = null
         setPreview(null)
-        event.currentTarget.releasePointerCapture(event.pointerId)
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
       }}
       onPointerCancel={() => { drag.current = null; orderRef.current = null; setOrder(null); setPreview(null) }}
 >
@@ -79,7 +82,7 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
       onPointerEnter={() => onPreview?.(tab)} onFocus={() => onPreview?.(tab)}
       data-view-id={tab.id} aria-selected={!activePluginKey && tab.id === activeId}
       onPointerDown={event => {
-        if (event.button !== 0) return
+        if (event.button !== 0 || !onReorder) return
         suppressClick.current = false
         drag.current = { id: tab.id, x: event.clientX, y: event.clientY, moved: false }
 
@@ -89,7 +92,7 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
         onSelect(tab)
       }}
       onKeyDown={event => {
-        if (!event.altKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+        if (!onReorder || !event.altKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return
         event.preventDefault()
         const ids = tabs.map(item => item.id)
         const index = ids.indexOf(tab.id)
@@ -98,7 +101,7 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
         ;[ids[index], ids[next]] = [ids[next], ids[index]]
         onReorder(ids)
       }}
-      title={`${tab.name}（拖动排序）`}>
+      title={onReorder ? `${tab.name}（拖动排序）` : tab.name}>
       <Icon name={tab.kind === 'source' ? 'code' : tab.kind} size={14} /><span>{tab.name}</span>
     </button>)}
     {plugins.map(item => <button key={item.key} className="btn view-picker-tab" role="tab" aria-selected={item.key === activePluginKey} onClick={() => onSelectPlugin(item.key)}><Icon name="extensions" size={14} /><span>{item.title}</span></button>)}
@@ -109,4 +112,13 @@ export function ViewPicker({ tabs, activeId, plugins, activePluginKey, onSelect,
       {tabs.some(tab => tab.id === menu.id && !tab.isDefault) && <button className="ctx-item" role="menuitem" onClick={() => { onDelete?.(menu.id); setMenu(null) }}><Icon name="trash" size={14} />删除视图</button>}
     </div>, document.body)}
   </div>
+}
+
+/** 固定业务视图使用同一标签组件，只省略自定义视图管理与排序入口。 */
+export function BuiltinViewPicker<T extends 'table' | 'record' | 'source'>({ views, active, onSelect }: {
+  views: readonly T[]; active: T; onSelect: (view: T) => void
+}) {
+  const names = { table: '表格', record: '记录', source: '源码' }
+  return <ViewPicker tabs={views.map(kind => ({ id: kind, kind, name: names[kind], isDefault: true }))}
+    activeId={active} plugins={[]} onSelect={tab => onSelect(tab.id as T)} onSelectPlugin={() => {}} />
 }

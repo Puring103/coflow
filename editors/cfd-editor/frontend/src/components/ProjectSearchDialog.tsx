@@ -1,3 +1,4 @@
+import { useSurfaceExit } from '../hooks/useSurfaceExit'
 import { useEffect, useRef } from 'react'
 import type { ComponentProps } from 'react'
 import { PluginContributionMount } from '../plugins'
@@ -13,6 +14,8 @@ export function ProjectSearchDialog({ open, onClose, contribution, context }: {
   context: MountProps['context']
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const exit = useSurfaceExit(ref, open)
+  const dismiss = () => { void exit(onClose) }
   useEffect(() => {
     const dialog = ref.current
     if (!dialog) return
@@ -23,15 +26,15 @@ export function ProjectSearchDialog({ open, onClose, contribution, context }: {
   }, [open])
   return <dialog ref={ref} className="project-search-dialog" aria-labelledby="project-search-title"
     onKeyDownCapture={event => {
-      if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); onClose() }
+      if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); dismiss() }
     }}
-    onCancel={onClose} onClose={() => { if (!ref.current?.open) onClose() }} onClick={event => {
+    onCancel={event => { event.preventDefault(); dismiss() }} onClose={() => { if (!ref.current?.open) onClose() }} onClick={event => {
       if (event.target !== event.currentTarget) return
       const rect = event.currentTarget.getBoundingClientRect()
-      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose()
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dismiss()
     }}>
     <header className="project-search-heading"><Icon name="search" size={17} /><strong id="project-search-title">全局搜索</strong>
-      <span>查找项目中的记录与字段值</span><button className="btn btn-icon" title="关闭（Esc）" aria-label="关闭全局搜索" onClick={onClose}><Icon name="close" size={16} /></button></header>
+      <span>查找项目中的记录与字段值</span><button className="btn btn-icon" title="关闭（Esc）" aria-label="关闭全局搜索" onClick={dismiss}><Icon name="close" size={16} /></button></header>
     <PluginContributionMount contribution={contribution} context={context} className="project-search-content" />
     <footer className="project-search-footer"><span>↑ ↓ 选择结果 · Enter 打开</span><span>Esc 关闭</span></footer>
   </dialog>

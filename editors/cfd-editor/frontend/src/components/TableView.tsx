@@ -1,3 +1,7 @@
+import { useTableSelectionDismiss } from '../hooks/useTableSelectionDismiss'
+import { useCellMotion } from '../hooks/useCellMotion'
+import { motionRecordKey } from '../hooks/useMutationFeedback'
+import { cellMotionOrigin, emphasize, type MotionOrigin } from '../utils/motion'
 import { TableExpansionContext, TableExpansionStore, useTableExpansion, previewRowCount, previewWindow } from './tableExpansion'
 import { DataFillContext } from '../state/dataFillContext'
 import { observeCellSize } from './cellSizeObserver'
@@ -60,7 +64,7 @@ import { CreateRecordDialog } from './CreateRecordDialog'
 import { ConfirmDialog, TextInputDialog } from './ActionDialog'
 import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
-import { ScalarValueInput } from './ScalarValueInput'
+import { ScalarValueInput, ScalarValuePreview } from './ScalarValueInput'
 import { visibilityScrollDelta } from '../state/scrollVisibility'
 import { fieldMetadataTitle } from '../utils/fieldMetadata'
 import {
@@ -141,7 +145,7 @@ function cachedColumnPrep<T>(data: FileRecords, key: string, compute: () => T): 
 interface Props {
   rowHeights?: Record<string, number | undefined>
   onRowHeightsChange?: (heights: Record<string, number>) => void
-  onExpandCell?: (coordinate: RecordCoordinate, path: FieldPathSegment[] | null, origin: DOMRect) => void
+  onExpandCell?: (coordinate: RecordCoordinate, path: FieldPathSegment[] | null, origin: MotionOrigin) => void
   data: FileRecords
   activeType: string
   readOnly?: boolean
@@ -206,6 +210,8 @@ interface Props {
 
 export interface TableRowPresentation {
   id: string
+  /** 对比行有独立展示身份，业务记录身份用于标题和插件上下文。 */
+  coordinate?: RecordCoordinate
   version: 'HEAD' | '当前'
   change: 'added' | 'deleted' | 'modified'
   changedFields: ReadonlySet<string>
@@ -234,6 +240,10 @@ interface TableContextMenu {
 
 export const TableView = memo(function TableView({ rowHeights, onRowHeightsChange, onExpandCell, data, activeType, readOnly, diagnostics, searchQuery, keyOnlySearch = false, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
   const expansionStore = useMemo(() => new TableExpansionStore(), [data.file_path, activeType])
+  const [pendingRecordReveal, setPendingRecordReveal] = useState<{ filePath: string; coordinate: RecordCoordinate } | null>(null)
+  const [pendingRemoval, setPendingRemoval] = useState<{ filePath: string; deleted: Set<string>; next?: RecordCoordinate } | null>(null)
+  const pendingEmphasis = useRef<string | null>(null)
+  useEffect(() => { setPendingRecordReveal(null); setPendingRemoval(null); pendingEmphasis.current = null }, [data.file_path, activeType])
   const [localRowHeights, setLocalRowHeights] = useState<Record<string, number>>({})
   useEffect(() => { setLocalRowHeights(Object.fromEntries(Object.entries(rowHeights ?? {}).filter((entry): entry is [string, number] => entry[1] !== undefined))) }, [rowHeights])
   const rowHeightsRef = useRef(localRowHeights)
@@ -268,22 +278,8 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
   const [scrollWidthFloor, setScrollWidthFloor] = useState<number | null>(null)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (selection?.kind !== 'value') return
-    // 选区外点击在捕获阶段清除；详情与菜单仍属于当前编辑上下文。
-    const dismiss = (event: PointerEvent) => {
-      const target = event.target
-      if (!(target instanceof Element)) return
-      if (target.closest('.inspector-panel, .searchable-select-menu, .context-menu, .reference-panel')) return
-      const cell = target.closest('[data-table-cell-key]')
-      if (cell && tableScrollRef.current?.contains(cell)) return
-      onClearSelection?.()
-      const focused = document.activeElement
-      if (focused instanceof HTMLElement && tableScrollRef.current?.contains(focused)) focused.blur()
-    }
-    document.addEventListener('pointerdown', dismiss, true)
-    return () => document.removeEventListener('pointerdown', dismiss, true)
-  }, [selection?.kind, onClearSelection])
+  useCellMotion(tableScrollRef)
+  useTableSelectionDismiss(tableScrollRef, selection?.kind ?? null, () => onClearSelection?.())
   const columnSizingRef = useRef(columnSizing)
   const columnResizeRef = useRef<{
     pointerId: number
@@ -460,7 +456,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
       let keyWidth = measure('Key') + PLAIN_CHROME + 12 /* sort caret */
       for (const record of snapshot.records) {
         if (recordActualType(record) !== activeType) continue
-        keyWidth = Math.max(keyWidth, measureMono(recordId(record)) + PLAIN_CHROME + BADGE_ROOM + 18 /* 拖动手柄与间距 */)
+        keyWidth = Math.max(keyWidth, measureMono(rowPresentationRef.current?.(record, record.container_index)?.coordinate?.id ?? recordId(record)) + PLAIN_CHROME + BADGE_ROOM + 18 /* 拖动手柄与间距 */)
         // 已达到自动列宽上限，后续记录不再影响布局。
         if (keyWidth >= 500) break
       }
@@ -528,7 +524,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
           return (
             <span className={`cell-key-wrap${rowSev ? ' has-diag' : ''}`}>
               <Icon name="grip" size={13} className="record-drag-handle" aria-hidden />
-              <span className="cell-key" title="双击打开记录详情">{highlightSearchText(info.getValue(), highlightQueryRef.current)}</span>
+              <span className="cell-key" title="双击打开记录详情">{highlightSearchText(rowPresentationRef.current?.(info.row.original, info.row.index)?.coordinate?.id ?? info.getValue(), highlightQueryRef.current)}</span>
               {(rowSev === 'error' || rowSev === 'warning') && (
                 <DiagBadge
                   severity={rowSev}
@@ -627,15 +623,6 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
               )
             }
             const comparison = rowPresentationRef.current?.(row.original, row.index)
-            if (comparison?.expandedPaths && comparison.changedFields.has(name) && isComplexValue(f.value)) {
-              // 复杂单元格沿用记录详情的字段树；前后版本共享展开状态。
-              return <div className="table-diff-detail">
-                <DataCardCompact value={presentationValue(f.value)} annotation={f.annotation}
-                  pathPrefix={name} fieldPath={[fieldPathField(name)]}
-                  expandedPaths={comparison.expandedPaths} onRowToggle={comparison.onToggleExpandedPath}
-                  diffChangedPaths={comparison.changedPaths} />
-              </div>
-            }
             const readOnlyFromSchema = cellReadOnly(f)
             const cellEditable = canEdit && !readOnlyFromSchema
             const title = readOnlyFromSchema
@@ -653,10 +640,13 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 ) : <EditableCell
                   onExpand={onExpandCellRef.current ? origin => onExpandCellRef.current?.(row.original.coordinate, [fieldPathField(name)], origin) : undefined}
                   filePath={filePath}
-                  coordinate={row.original.coordinate}
+                  coordinate={comparison?.coordinate ?? row.original.coordinate}
                   fieldPath={[fieldPathField(name)]}
                   value={f.value}
                   editable={cellEditable}
+                  expandedPaths={comparison?.expandedPaths}
+                  onRowToggle={comparison?.onToggleExpandedPath}
+                  diffChangedPaths={comparison?.changedPaths}
                   annotation={f.annotation}
                   refTargetType={cellRefTargetType(f)}
                   enumType={cellEnumType(f)}
@@ -920,7 +910,12 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
         verticalTarget,
       )
 
-      if (columnId === 'id') return
+      const emphasizeArrival = () => {
+        if (pendingEmphasis.current !== key) return
+        pendingEmphasis.current = null
+        emphasize(cell)
+      }
+      if (columnId === 'id') { emphasizeArrival(); return }
       // Respect the sticky key column and reveal the whole selected range when
       // it fits. Otherwise keep the focused cell visible.
       const keyCol = scroller.querySelector<HTMLElement>('thead .sticky-key-column')
@@ -937,6 +932,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
         { start: visibleLeft, end: visibleRight },
         horizontalTarget,
       )
+      emphasizeArrival()
     }
     revealFrameRef.current = requestAnimationFrame(reveal)
   }
@@ -948,6 +944,38 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     tableScrollRef.current?.focus({ preventScroll: true })
     revealTableSelection(selection)
   }, [focusRequest])
+
+  useEffect(() => {
+    if (!pendingRecordReveal) return
+    if (pendingRecordReveal.filePath !== data.file_path) { setPendingRecordReveal(null); return }
+    const target = pendingRecordReveal.coordinate
+    if (!data.records.some(row => sameCoordinate(row.coordinate, target))) return
+    setPendingRecordReveal(null)
+    if (!visibleRowIndexes.has(coordinateId(target))) {
+      setCellNotice('记录已创建，当前筛选或分组隐藏了该记录')
+      return
+    }
+    // 等待真实记录进入视图后再选中和定位，不等待或播放虚拟行高度动画。
+    pendingEmphasis.current = tableCellKey(target, 'id')
+    pointerCellKeyRef.current = null
+    onSelectRecord?.(target, 'replace', visibleCoordinates)
+    tableScrollRef.current?.focus({ preventScroll: true })
+    revealTableSelection(recordSelection(data.file_path, target))
+  }, [pendingRecordReveal, data, visibleRowIndexes])
+
+  useEffect(() => {
+    if (!pendingRemoval) return
+    if (pendingRemoval.filePath !== data.file_path) { setPendingRemoval(null); return }
+    if (data.records.some(row => pendingRemoval.deleted.has(coordinateId(row.coordinate)))) return
+    setPendingRemoval(null)
+    // 只有刷新后的数据证实删除成功，才把焦点交给相邻记录。
+    const next = pendingRemoval.next
+    if (next && visibleRowIndexes.has(coordinateId(next))) {
+      onSelectRecord?.(next, 'replace', visibleCoordinates)
+      revealTableSelection(recordSelection(data.file_path, next))
+    } else onClearSelection?.()
+    tableScrollRef.current?.focus({ preventScroll: true })
+  }, [pendingRemoval, data, visibleRowIndexes])
 
   // 鼠标选择保持点击位置稳定；仅键盘或外部定位负责滚动，拖选由边缘滚动负责。
   const selectionKeyForReveal = selection
@@ -1209,7 +1237,11 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
               try {
                 if (selection.kind === 'record') {
                   if (shortcut === 'x') throw new Error('不支持剪切整条记录')
-                  const coordinates = recordSelectionCoordinates(selection)
+                  const coordinates = recordSelectionCoordinates(selection).map(coordinate => {
+                    if (!rowPresentation) return coordinate
+                    const row = data.records.find(record => sameCoordinate(record.coordinate, coordinate))
+                    return row ? rowPresentation(row, row.container_index)?.coordinate ?? coordinate : coordinate
+                  })
                   await writeClipboardText(serializeRecordRefsAsCfd(coordinates))
                 } else {
                   const matrix = selectionCellMatrix(selection, visibleCoordinates, allFieldNames)
@@ -1540,6 +1572,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                     key={row.id}
                     data-index={vr.index}
                     data-coordinate-id={coordinateId(row.original.coordinate)}
+                    data-motion-record={motionRecordKey(data.file_path, row.original.coordinate)}
                     data-record-drop-kind="record"
                     ref={rowVirtualizer.measureElement}
                     className={`table-row${selectionMatchesRecord(selection ?? null, data.file_path, row.original.coordinate) ? ' selected' : ''}${item.group?.color ? ' has-group-color' : ''}${rowSev ? ' table-row-' + rowSev : ''}${comparison ? ` table-diff-row table-diff-${comparison.change}${comparison.groupStart ? ' table-diff-group-start' : ''}` : ''}`}
@@ -1623,7 +1656,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                             if ((event.target as HTMLElement).closest('button, input, textarea, select, a, .table-row-resizer, .dc-row-foldout, .dc-row-field, [contenteditable="true"]')) return
                             if (cell.column.id !== 'id' && !event.currentTarget.classList.contains('complex-cell')) return
                             event.stopPropagation()
-                            onExpandCellRef.current?.(row.original.coordinate, cell.column.id === 'id' ? null : [fieldPathField(cell.column.id)], event.currentTarget.getBoundingClientRect())
+                            onExpandCellRef.current?.(row.original.coordinate, cell.column.id === 'id' ? null : [fieldPathField(cell.column.id)], cellMotionOrigin(event.currentTarget))
                           }}
                           onPointerDownCapture={event => {
                             if (event.button !== 0) return
@@ -1766,6 +1799,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
             if (insertAfterRow && onMoveRecord) {
               await onMoveRecord({ actual_type: type, id: key}, insertAfterRow.container_index + 1)
             }
+            setPendingRecordReveal({ filePath: data.file_path, coordinate: { actual_type: type, id: key } })
           }}
           onClose={() => setShowNewRecord(false)}
         />
@@ -1838,8 +1872,13 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
           danger
           onClose={() => setRecordAction(null)}
           onConfirm={async () => {
+            const deleted = new Set(recordAction.records.map(coordinateId))
+            const visible = visibleCoordinates.filter(coordinate => !deleted.has(coordinateId(coordinate)))
+            const index = visibleCoordinates.findIndex(coordinate => deleted.has(coordinateId(coordinate)))
+            const next = visible[Math.min(Math.max(index, 0), visible.length - 1)]
             await onDeleteRecords(recordAction.records)
             setRecordAction(null)
+            setPendingRemoval({ filePath: data.file_path, deleted, next })
           }}
         />
       )}
@@ -1883,7 +1922,8 @@ function CellSyntaxEditor({
 }
 
 interface EditableCellProps {
-  onExpand?: (origin: DOMRect) => void
+  diffChangedPaths?: ReadonlySet<string>
+  onExpand?: (origin: MotionOrigin) => void
   expandedPaths?: ReadonlySet<string>
   onRowToggle?: (path: string, expanded: boolean) => void
   onEdit?: (path: FieldPathSegment[], next: FieldValue) => void
@@ -1954,16 +1994,16 @@ export function EditableCell(props: EditableCellProps) {
     onDoubleClick={props.onExpand ? event => {
       if ((event.target as HTMLElement).closest('button, input, textarea, select, a, .dc-row-foldout, .dc-row-field, [contenteditable="true"]')) return
       event.stopPropagation()
-      props.onExpand?.(event.currentTarget.getBoundingClientRect())
+      props.onExpand?.(cellMotionOrigin(event.currentTarget))
     } : undefined}>
     <div ref={viewportRef} className="cell-complex-viewport"><div ref={contentRef} className="cell-complex-content">{content}</div></div>
     {overflow && <span className="cell-complex-overflow" aria-hidden>…</span>}
-    {props.onExpand && <button type="button" className="cell-expand-button" aria-label="放大编辑单元格" title="放大编辑（也可双击空白处）" onMouseDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); props.onExpand?.(event.currentTarget.closest('.cell-complex-preview')!.getBoundingClientRect()) }}><Icon name="expand" size={11}/></button>}
+    {props.onExpand && <button type="button" className="cell-expand-button" aria-label="放大编辑单元格" title="放大编辑（也可双击空白处）" onMouseDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); props.onExpand?.(cellMotionOrigin(event.currentTarget)) }}><Icon name="expand" size={11}/></button>}
   </div>
 }
 
 function EditableCellBuiltIn({
-  coordinate, value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished, fieldPath, onEdit, expandedPaths, onRowToggle,
+  coordinate, value, editable, annotation, refTargetType, enumType, enumIsFlag, nullable, highlightQuery, onCommit, onEditingFinished, fieldPath, onEdit, expandedPaths, onRowToggle, diffChangedPaths,
 }: EditableCellProps) {
   const previewRows = useContext(TablePreviewRows)
   const expansion = useTableExpansion(coordinateId(coordinate))
@@ -1984,6 +2024,10 @@ function EditableCellBuiltIn({
 
   if (canEdit && (shownValue.kind === 'string' || shownValue.kind === 'formatted_string' || shownValue.kind === 'int' || shownValue.kind === 'float')) {
     return <ScalarValueInput value={shownValue} onCommit={commitValue!} />
+  }
+
+  if (!canEdit && (shownValue.kind === 'string' || shownValue.kind === 'formatted_string' || shownValue.kind === 'int' || shownValue.kind === 'float')) {
+    return <ScalarValuePreview value={shownValue} />
   }
 
   // Bool: checkbox, always visible
@@ -2034,6 +2078,7 @@ function EditableCellBuiltIn({
   return (
     <div className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}>
       <DataCardCompact
+        diffChangedPaths={diffChangedPaths}
         previewRows={previewRows}
         value={shownValue}
         fieldPath={fieldPath}

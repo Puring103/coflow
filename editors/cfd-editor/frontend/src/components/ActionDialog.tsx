@@ -1,3 +1,4 @@
+import { useSurfaceExit } from '../hooks/useSurfaceExit'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 
@@ -40,12 +41,14 @@ function ActionDialog({ title, message, confirmLabel, danger, busy, onConfirm, o
   input?: React.ReactNode
 }) {
   const dialogRef = useRef<HTMLElement>(null)
+  const exit = useSurfaceExit(dialogRef)
+  const dismiss = () => { if (!busy) void exit(onClose) }
   useEffect(() => {
     dialogRef.current?.querySelector<HTMLElement>('input, select, button')?.focus()
   }, [])
   return (
     <div className="create-record-backdrop" role="presentation" onMouseDown={event => {
-      if (event.target === event.currentTarget && !busy) onClose()
+      if (event.target === event.currentTarget && !busy) dismiss()
     }}>
       <section
         ref={dialogRef}
@@ -54,13 +57,13 @@ function ActionDialog({ title, message, confirmLabel, danger, busy, onConfirm, o
         aria-modal="true"
         aria-label={title}
         onKeyDown={event => {
-          if (event.key === 'Escape' && !busy) onClose()
+          if (event.key === 'Escape' && !busy) dismiss()
           if (event.key === 'Enter' && (!input || value) && !busy) void onConfirm(value)
         }}
       >
         <header className="action-dialog-header">
           <strong>{title}</strong>
-          <button className="btn-icon" onClick={onClose} disabled={busy} aria-label={`关闭${title}`}>
+          <button className="btn-icon" onClick={dismiss} disabled={busy} aria-label={`关闭${title}`}>
             <Icon name="close" size={14} />
           </button>
         </header>
@@ -69,7 +72,7 @@ function ActionDialog({ title, message, confirmLabel, danger, busy, onConfirm, o
           {input}
         </div>
         <footer className="create-record-actions">
-          <button className="btn" onClick={onClose} disabled={busy}>取消</button>
+          <button className="btn" onClick={dismiss} disabled={busy}>取消</button>
           <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={() => void onConfirm(value)} disabled={busy || (!!input && !value)}>
             {busy ? '处理中...' : confirmLabel}
           </button>

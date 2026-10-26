@@ -1,3 +1,4 @@
+import { useSurfaceExit } from '../hooks/useSurfaceExit'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { CreateRecordDraft } from '../bindings/CreateRecordDraft'
 import type { CreateRecordFieldDraft } from '../bindings/CreateRecordFieldDraft'
@@ -56,6 +57,9 @@ export function ObjectDraftDialog({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
+  const surfaceRef = useRef<HTMLElement>(null)
+  const exit = useSurfaceExit(surfaceRef)
+  const dismiss = () => { if (!saving) void exit(onClose) }
 
   useEffect(() => {
     if (!actualType) return
@@ -114,9 +118,10 @@ export function ObjectDraftDialog({
     <div
       className="create-record-backdrop"
       role="presentation"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+      onMouseDown={e => { if (e.target === e.currentTarget) dismiss() }}
     >
       <section
+        ref={surfaceRef}
         className="create-record-dialog"
         role="dialog"
         aria-modal="true"
@@ -124,12 +129,12 @@ export function ObjectDraftDialog({
         onMouseDown={e => e.stopPropagation()}
         // 弹窗内的点击不能触发表格清空选择，否则会强制关闭正在使用的下拉框。
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+        onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); dismiss() } }}
       >
         <header className="create-record-card-header" style={{ '--node-color': typeColorValue } as CSSProperties}>
           <div className="gn-color-bar" />
           <h2>{title}</h2>
-          <button className="btn-icon create-record-close" onClick={onClose} aria-label={`关闭 ${title}`}>
+          <button className="btn-icon create-record-close" onClick={dismiss} aria-label={`关闭 ${title}`}>
             <Icon name="close" size={14} />
           </button>
         </header>
@@ -177,7 +182,7 @@ export function ObjectDraftDialog({
         )}
 
         <footer className="create-record-actions">
-          <button className="btn" onClick={onClose} disabled={saving}>取消</button>
+          <button className="btn" onClick={dismiss} disabled={saving}>取消</button>
           <button className="btn btn-primary" onClick={submit} disabled={!canSubmit}>
             {saving ? '保存中...' : confirmLabel}
           </button>

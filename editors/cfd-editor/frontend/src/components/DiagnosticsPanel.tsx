@@ -1,3 +1,4 @@
+import { revealAndEmphasize } from '../utils/motion'
 import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { diagnosticDisplayMessage, diagnosticKey, type DiagnosticItem } from '../wire'
 import type { DiagnosticTarget } from '../bindings/DiagnosticTarget'
@@ -47,9 +48,8 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
   const panelRef = useRef<HTMLDivElement>(null)
   const resizeRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const flashTimer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(flashTimer.current), [])
-  const [flashKey, setFlashKey] = useState<string | null>(null)
+  const cancelHighlight = useRef<(() => void) | undefined>(undefined)
+  useEffect(() => () => cancelHighlight.current?.(), [])
 
   const errors   = diagnostics.filter(d => d.severity === 'error').length
   const warnings = diagnostics.filter(d => d.severity === 'warning').length
@@ -106,15 +106,9 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
     const el = listRef.current?.querySelector<HTMLElement>(
       `[data-diag-key="${cssEscape(focus.key)}"]`,
     )
-    if (el) {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      setFlashKey(focus.key)
-      window.clearTimeout(flashTimer.current)
-      flashTimer.current = window.setTimeout(() => {
-        setFlashKey(prev => (prev === focus.key ? null : prev))
-      }, 1600)
-      onFocusConsumed?.()
-      return
+    if (el && listRef.current) {
+      cancelHighlight.current?.()
+      cancelHighlight.current = revealAndEmphasize(el, listRef.current)
     }
     onFocusConsumed?.()
   }, [focus, diagnostics, onFocusConsumed, collapsed, severity, onlyCurrentFile])
@@ -200,7 +194,7 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
               return (
                 <div
                   key={`${key}:${i}`}
-                  className={`diag-item ${d.severity}${flashKey === key ? ' focused' : ''}`}
+                  className={`diag-item ${d.severity}`}
                   role="listitem"
                   data-diag-key={key}
                 >

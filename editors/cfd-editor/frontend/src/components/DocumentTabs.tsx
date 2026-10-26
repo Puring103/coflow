@@ -1,3 +1,4 @@
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
 import { useEffect, useRef, useState } from 'react'
 import type { ProjectBootstrap } from '../bindings/ProjectBootstrap'
 import type { DimensionInfo } from '../bindings/DimensionInfo'
@@ -45,6 +46,7 @@ export function DocumentTabs({
   const [menuOpen, setMenuOpen] = useState(false)
   const [overflowing, setOverflowing] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  useSelectionSlide(scrollRef, '[role="tab"][aria-selected="true"]')
   const menuRef = useRef<HTMLDivElement>(null)
   const visible = workspaceTabs.length > 0 || pluginTabs.length > 0 || gitDiffOpen
 

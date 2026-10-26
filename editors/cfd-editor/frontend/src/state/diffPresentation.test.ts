@@ -53,7 +53,7 @@ describe('shared diff presentation', () => {
     const projected = projectTable(diff, 'data.cfd', 'Item')
     for (const row of projected.data.records) expect(projected.presentations.get(row)?.expandedPaths).toEqual(paths)
     const html = renderToStaticMarkup(createElement(RecordView, {
-      data: { ...projected.data, records: [projected.data.records[1]] }, coordinate,
+      data: { ...projected.data, records: [{ ...projected.data.records[1], coordinate: projected.presentations.get(projected.data.records[1])!.coordinate! }] }, coordinate,
       readOnly: true, hideRecordList: true, onOpenRecord() {}, expandedPaths: paths,
     }))
     expect(html).toContain('属性')

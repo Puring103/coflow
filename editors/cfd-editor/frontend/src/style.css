@@ -909,48 +909,9 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   flex-direction: column;
   background: var(--bg-1);
 }
-.dimension-table-meta {
-  height: var(--h-toolbar);
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: var(--fs-ui);
-}
-.dimension-table-meta strong { color: var(--text); font-weight: 600; }
-.dimension-table-meta span { margin-left: auto; color: var(--text-mute); }
 .dimension-table-scroll { flex: 1; min-height: 0; overflow: auto; }
 .dimension-table { border-collapse: separate; border-spacing: 0; min-width: 100%; width: max-content; }
-.dimension-table th, .dimension-table td {
-  height: 32px;
-  min-width: 150px;
-  padding: 4px 10px;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  font-size: var(--fs-ui);
-  font-weight: 400;
-  white-space: nowrap;
-}
-.dimension-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--bg-2);
-  color: var(--text-dim);
-  font-weight: 600;
-}
-.dimension-table tbody th {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: var(--bg-1);
-  color: var(--text-key);
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-}
-.dimension-table tbody tr:hover td, .dimension-table tbody tr:hover th { background: var(--bg-3); }
+.dimension-table th, .dimension-table td { min-width: 150px; }
 .dimension-table .dimension-group-row th {
   position: static;
   min-width: 0;
@@ -1010,14 +971,6 @@ input, textarea, [contenteditable="true"] { user-select: text; }
 .dimension-table tbody tr.has-group-color:hover td, .dimension-table tbody tr.has-group-color:hover th {
   background: color-mix(in srgb, var(--record-group-color) 14%, var(--bg-2));
 }
-.dimension-table .keyboard-selected {
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-1));
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.dimension-table .range-selected {
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-1));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
-}
 .dimension-inline-input {
   width: 100%;
   height: 24px;
@@ -1028,13 +981,6 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   color: var(--text);
   font-size: var(--fs-ui);
   outline: none;
-}
-.dimension-table tbody tr.has-group-color .keyboard-selected {
-  background: color-mix(
-    in srgb,
-    var(--accent) 14%,
-    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-1))
-  );
 }
 .dimension-value-missing {
   width: 100%;
@@ -1084,48 +1030,8 @@ input, textarea, [contenteditable="true"] { user-select: text; }
   border-right: 1px solid var(--border);
   background: var(--bg-2);
 }
-.dimension-record-list > button {
-  width: 100%;
-  height: 30px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-  font-size: var(--fs-ui);
-  text-align: left;
-  cursor: pointer;
-}
-.dimension-record-list > button:hover { background: var(--bg-3); color: var(--text); }
-.dimension-record-list > button.has-group-color {
-  background: color-mix(in srgb, var(--record-group-color) 9%, var(--bg-2));
-}
-.dimension-record-list > button.has-group-color:hover {
-  background: color-mix(in srgb, var(--record-group-color) 15%, var(--bg-2));
-}
-.dimension-record-list > button.selected {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--text);
-}
-.dimension-record-list > button.has-group-color.selected {
-  background: color-mix(
-    in srgb,
-    var(--accent) 16%,
-    color-mix(in srgb, var(--record-group-color) 9%, var(--bg-2))
-  );
-}
 .dimension-record-main { flex: 1; min-width: 0; overflow: auto; padding: 14px 18px; }
 .dimension-record-card { max-width: 760px; border-top: 1px solid var(--border); }
-.dimension-record-card header {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-key);
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
-}
 .dimension-record-row {
   min-height: 38px;
   display: grid;
@@ -2451,7 +2357,7 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   min-width: 168px;
   padding: 4px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-  animation: editor-menu-in var(--motion-fast) ease-out;
+  animation: editor-fade-in var(--motion-feedback) linear;
   transform-origin: top left;
 }
 .ctx-sep {
@@ -2807,6 +2713,8 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   caret-color: var(--text);
 }
 .cell-string-input.focused .cell-string-textarea { color: var(--text); }
+/* 未聚焦时由预览独占占位文字，避免浏览器占位文字叠加形成重影。 */
+.cell-string-input:not(.focused) .cell-string-textarea::placeholder { color: transparent; }
 .cell-string-textarea[aria-invalid="true"] { box-shadow: inset 0 -1px var(--red); }
 .string-value-error { display: block; color: var(--red); font-size: var(--fs-sm); white-space: normal; }
 .rich-text-suggestions {
@@ -3426,16 +3334,6 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   border-color: color-mix(in srgb, var(--yellow) 55%, var(--border-strong));
 }
 
-/* Brief flash when a diagnostic jump targets a row: scrollIntoView + pulse. */
-@keyframes dc-row-flash-pulse {
-  0%   { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 28%, transparent); }
-  100% { box-shadow: inset 3px 0 0 transparent; background: transparent; }
-}
-.dc-row-flash {
-  animation: dc-row-flash-pulse 1.6s ease-out;
-  border-radius: var(--radius-sm);
-}
-
 /* Corner badge shown on any element with a record- or field-level diagnostic.
  * The nearest positioned ancestor (a table td, a dc-row, the gn-header, a
  * rv-sidebar-item, etc.) provides the anchor. The badge is a tiny pill in the
@@ -3505,24 +3403,6 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   white-space: nowrap;
 }
 .dc-null-wrap .dc-null { display: inline; }
-
-/* Focused item in the diagnostics panel (post-click flash). */
-@keyframes diag-item-flash {
-  0%   { background: color-mix(in srgb, var(--accent) 32%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
-  100% { background: transparent; box-shadow: inset 3px 0 0 transparent; }
-}
-.diag-item.focused {
-  animation: diag-item-flash 1.6s ease-out;
-}
-
-/* Record-level jump: flash the CardHeader. */
-@keyframes gn-header-flash {
-  0%   { background: color-mix(in srgb, var(--accent) 32%, var(--bg-3)); }
-  100% { background: var(--bg-3); }
-}
-.gn-header-flash {
-  animation: gn-header-flash 1.6s ease-out;
-}
 
 /* TableView cell tinting */
 .dc-cell-diag-error {
@@ -5002,7 +4882,7 @@ input.searchable-select.searchable-select-reference,
 .dc-inspector-compact .dc-row-structure:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .dc-inspector-compact .dc-row-value:focus-within { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 0 -1px var(--accent); }
 .numeric-value-input { font-variant-numeric: tabular-nums; }
-.data-table td:not(.complex-cell) .numeric-value-input { text-align: right; }
+.data-table td:not(.complex-cell) .numeric-value-input { text-align: left; }
 .numeric-value-input textarea { text-align: inherit; }
 /* 选择控件保留可辨识的颜色，默认移除厚重底色，悬停与聚焦再强调操作区域。 */
 .dc-inspector-compact .dc-pill-wrap:not(.dc-pill-wrap-ref) { background-color: transparent; border-color: transparent; }
@@ -5029,9 +4909,10 @@ input.searchable-select.searchable-select-reference,
 .table-row-resizer { position: absolute; bottom: -2px; left: 0; right: 0; height: 5px; z-index: 4; cursor: row-resize; touch-action: none; }
 .table-row-resizer:hover, .table-row-resizer:focus-visible { background: var(--accent); outline: none; }
 .inspector-modal-backdrop { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px; background: #0005; }
-.inspector-panel.inspector-modal { width: min(960px, calc(100vw - 48px)) !important; height: min(780px, calc(100vh - 48px)); border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-1); box-shadow: 0 24px 80px #0005; transform-origin: top left; outline: none; }
+.inspector-panel.inspector-modal { background: var(--bg-1); outline: none; }
 .inspector-modal .inspector-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .inspector-modal .inspector-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-modal .inspector-title { text-transform: none; letter-spacing: normal; color: var(--text-dim); }
 .inspector-modal .cell-string-preview { max-height: 80px; }
 
 .cell-complex-preview.overflowing .cell-complex-viewport { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
@@ -5065,31 +4946,60 @@ input.searchable-select.searchable-select-reference,
 /* 展开正文覆盖原底边上的拖动柄；输入与选中不使用位移动效。 */
 .data-table td:not(.complex-cell).selected-cell:has(.cell-string-input)::after { display: none; }
 
-/* 动效按用途分工：菜单快速显现、独立窗口轻量抬起、提示柔和进入。 */
-:root { --motion-fast: 110ms; --motion-normal: 180ms; --motion-ease: cubic-bezier(.2,.8,.2,1); }
-.context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div {
-  animation: editor-menu-in var(--motion-fast) ease-out;
+/* 动效参数按信息用途统一；脚本通过 motionToken 读取同一组变量。 */
+:root {
+  --motion-feedback: 80ms;
+  --motion-enter: 100ms;
+  --motion-expand: 180ms;
+  --motion-exit: 120ms;
+  --motion-layout: 140ms;
+  --motion-emphasis: 1000ms;
+  --motion-enter-ease: cubic-bezier(.2,0,0,1);
+  --motion-exit-ease: cubic-bezier(.4,0,1,1);
+  --motion-layout-ease: cubic-bezier(.4,0,.2,1);
 }
-.create-record-backdrop, .help-overlay, .reference-panel-overlay { animation: editor-fade-in var(--motion-fast) ease-out; }
-.create-record-dialog, .help-box, .reference-panel, .view-discard-dialog[open], .project-search-dialog[open] {
-  animation: editor-window-in var(--motion-normal) var(--motion-ease);
+.context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div,
+.editor-settings[open] > div {
+  animation: editor-fade-in var(--motion-feedback) linear;
 }
-.project-action-toast { animation: editor-notice-in 200ms var(--motion-ease); }
+.create-record-backdrop, .help-overlay, .reference-panel-overlay { animation: editor-fade-in var(--motion-enter) linear; }
+.create-record-dialog, .help-box, .view-discard-dialog[open], .project-search-dialog[open] {
+  animation: editor-window-in var(--motion-enter) var(--motion-enter-ease);
+}
+.project-action-toast { animation: editor-window-in var(--motion-enter) var(--motion-enter-ease); }
 .btn, .ctx-item, .view-picker-tab, .tree-item, .reference-open {
-  transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition: background-color var(--motion-feedback) linear, border-color var(--motion-feedback) linear, color var(--motion-feedback) linear;
 }
-/* 拖动与表格编辑即时跟随指针，不给几何尺寸或正文添加过渡。 */
-.app .layout-navigation { transition-timing-function: var(--motion-ease); }
-.app .diag-panel { transition-timing-function: var(--motion-ease); }
-@keyframes editor-menu-in { from { opacity: 0; } to { opacity: 1; } }
+/* 高频选区和预览立即到达最终几何，只对表面做轻量反馈。 */
+.cell-complex-content, .cell-string-preview { transition: box-shadow var(--motion-feedback) linear; }
+.app .layout-navigation { transition: width var(--motion-layout) var(--motion-layout-ease), flex-basis var(--motion-layout) var(--motion-layout-ease); }
+.app .diag-panel { transition: height var(--motion-layout) var(--motion-layout-ease); }
+.app .layout-navigation.resizing, .app .diag-panel.resizing { transition: none; }
+.dc-fold-arrow > svg { transition: transform 120ms var(--motion-enter-ease); }
+.dc-row-foldout[aria-expanded="true"] .dc-fold-arrow > svg { transform: rotate(90deg); }
+/* 外壳绝对定位，尺寸动画不会改变居中基准；正文只裁切、不缩放。 */
+.inspector-motion-shell {
+  position: absolute; left: max(24px, calc((100vw - 1040px) / 2)); top: max(24px, calc((100vh - 800px) / 2));
+  width: min(1040px, calc(100vw - 48px)); height: min(800px, calc(100vh - 48px));
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-1); box-shadow: 0 24px 80px #0005;
+}
+.inspector-motion-shell > .inspector-panel.inspector-modal {
+  width: 100%; height: 100%; max-width: none; border: 0; border-radius: inherit; box-shadow: none;
+}
+.inspector-motion-notice { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 4px; background: var(--bg-1); color: var(--text); }
+.motion-target { outline: 1px solid var(--accent); outline-offset: -1px; }
+dialog::backdrop { transition: opacity var(--motion-exit) linear; }
+dialog[data-motion-exiting="true"]::backdrop { opacity: 0; }
 @keyframes editor-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes editor-window-in { from { opacity: 0; transform: translateY(4px) scale(.985); } to { opacity: 1; transform: none; } }
-@keyframes editor-notice-in { from { opacity: 0; translate: 0 5px; } to { opacity: 1; translate: 0 0; } }
+@keyframes editor-window-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div,
-  .create-record-backdrop, .help-overlay, .reference-panel-overlay, .create-record-dialog, .help-box,
+  .editor-settings[open] > div, .create-record-backdrop, .help-overlay, .reference-panel-overlay, .create-record-dialog, .help-box,
   .reference-panel, .view-discard-dialog[open], .project-search-dialog[open], .project-action-toast { animation: none; }
-  .btn, .ctx-item, .view-picker-tab, .tree-item, .reference-open, .cell-expand-button { transition: none; }
+  .btn, .ctx-item, .view-picker-tab, .tree-item, .reference-open, .cell-expand-button,
+  .cell-complex-content, .cell-string-preview, .dc-fold-arrow > svg,
+  .tree-heading-chev, .app .layout-navigation, .app .diag-panel { transition: none; }
+  dialog::backdrop { transition: none; }
 }
 
 /* 编辑与预览保持一致的最大展开范围，原底边拖动柄留在展开表面下面。 */
@@ -5103,7 +5013,7 @@ input.searchable-select.searchable-select-reference,
 }
 
 /* 放大编辑直接呈现字段树，顶栏只保留操作。 */
-.inspector-head.inspector-head-minimal { min-height: 32px; height: 32px; justify-content: flex-end; padding: 4px 10px; border-bottom: 0; background: transparent; }
+.inspector-head.inspector-head-minimal { min-height: 32px; height: 32px; justify-content: space-between; padding: 4px 10px; border-bottom: 0; background: transparent; }
 .dc-root-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 28px; padding: 2px 8px; }
 .dc-root-actions:empty { display: none; }
 .dc-root-actions .dc-collection-add { visibility: visible; opacity: 1; }
@@ -5116,7 +5026,7 @@ input.searchable-select.searchable-select-reference,
 .dc-row-structure[data-list-item="true"] .dc-row-label-text { font: inherit; color: var(--text); font-weight: 500; }
 .dc-item-position { min-width: 18px; text-align: right; color: var(--text-mute); font-size: 10px; font-weight: 400; opacity: .5; }
 .dc-row-field[data-list-item="true"] > .dc-row-label { display: none; }
-.dc-row-field[data-list-item="true"] > .dc-row-value { grid-column: 1 / 3; padding-left: calc(18px + min(var(--dc-indent, 0px), 48px)); }
+.dc-row-field[data-list-item="true"] > .dc-row-value { grid-column: 2; }
 .dc-inspector-compact .dc-row-structure[data-list-item="true"] { grid-template-columns: minmax(56px, 38%) minmax(0, 1fr) 24px; }
 .dc-inspector-compact .dc-row-structure[data-list-item="true"] > .dc-row-actions { display: flex; padding: 1px 2px; }
 .dc-inspector-compact .dc-row-structure[data-list-item="true"] > .dc-row-actions > :not(.dc-item-position) { display: none; }
@@ -5128,7 +5038,6 @@ input.searchable-select.searchable-select-reference,
 .dc-inspector .dc-row.keyboard-selected > .dc-row-actions { background: transparent; align-self: stretch; }
 
 /* 放大窗口延续 Inspect 的两列属性布局，用外围留白区分窗口而非拉大行距。 */
-.inspector-panel.inspector-modal { width: min(1040px, calc(100vw - 48px)) !important; height: min(800px, calc(100vh - 48px)); border-radius: 8px; }
 .inspector-modal .inspector-body { padding: 0 16px 16px; }
 .inspector-modal .dc-inspector { border: 0; }
 .inspector-modal .dc-inspector .dc-row { min-height: 32px; grid-template-columns: minmax(140px, 36%) minmax(0, 1fr) 40px; border-bottom-color: color-mix(in srgb, var(--border) 40%, transparent); }
@@ -5181,3 +5090,73 @@ input.searchable-select.searchable-select-reference,
 .dc-inspector-compact .dc-row > .dc-row-value { padding-left: 8px; }
 .dc-inspector .dc-row-value-inner.editable { margin-left: 0; padding-left: 0; }
 .dc-inspector .dc-row-value-inner > .dc-input-flat { margin-left: 0; padding-left: 0; }
+
+/* 摘要收起后仍预留引用胶囊的高度，标题行不会随内部内容改变尺寸。 */
+.dc-inspector .dc-row-structure > .dc-row-value > .dc-row-value-inner { min-height: 24px; }
+
+/* 标签选中即时生效，短淡入提示当前导航目标。 */
+[role="tab"] { transition: background-color var(--motion-feedback) linear, color var(--motion-feedback) linear, border-color var(--motion-feedback) linear; }
+@media (prefers-reduced-motion: reduce) {
+  [role="tab"] { transition: none; }
+}
+
+/* 表格正文的字号不能覆盖嵌套摘要；引用列表与父字段共用值轨道。 */
+.app .data-table .dc-inspector .vc { font-family: inherit; font-size: 12px; line-height: 1.5; }
+.dc-inspector .dc-row.dc-row-field[data-list-item="true"] { grid-template-columns: minmax(120px, 34%) minmax(0, 1fr) 68px; }
+.dc-inspector-compact .dc-row.dc-row-field[data-list-item="true"] { grid-template-columns: minmax(56px, 38%) minmax(0, 1fr) 24px; }
+
+/* 底色单独移动，选中行自身不产生位移。 */
+[data-motion-selection] { position: relative; isolation: isolate; background: transparent !important; }
+.app [data-motion-selection]::before { content: ''; display: block !important; position: absolute; inset: 0; width: auto; height: auto; border-radius: inherit; background: var(--selection-fill) !important; transform-origin: top left; pointer-events: none; z-index: -1; }
+
+.inspector-modal .dc-inspector .dc-row.dc-row-field[data-list-item="true"] { grid-template-columns: minmax(140px, 36%) minmax(0, 1fr) 40px; }
+/* 仅选中底色允许跨行移动，文字仍由标签自身裁切。 */
+.file-tree [data-motion-selection] { overflow: visible; }
+
+/* 主题色由 CSS 实时解析，初始挂载与主题切换不缓存浏览器默认背景。 */
+.activity-bar { --selection-fill: var(--bg-4); }
+.file-tree { --selection-fill: color-mix(in srgb, var(--accent) 16%, transparent); }
+.data-table td:not(.complex-cell) { vertical-align: top; text-align: left; }
+.data-table td:not(.complex-cell) .cell-edit-wrap { align-items: flex-start; justify-content: flex-start; }
+.cell-selection-motion { position: fixed; pointer-events: none; border: 1px solid var(--accent); box-sizing: border-box; z-index: 20; }
+[data-cell-motion]::after { visibility: hidden; }
+[data-cell-motion] .cell-string-preview, [data-cell-motion] .cell-complex-content { outline-color: transparent !important; }
+
+/* 字段树左侧留出只选中单元格的走廊，折叠命中区从内容边缘开始。 */
+.cell-complex-content .dc-inspector-compact { margin-left: 14px; --cell-label-inset: 10px; }
+/* 简单列表没有标签列，原位预览与放大编辑共用这一布局。 */
+.dc-inspector .dc-row.dc-row-field[data-list-item="true"],
+.inspector-modal .dc-inspector .dc-row.dc-row-field[data-list-item="true"] { grid-template-columns: 0 minmax(0, 1fr) 24px; }
+.document-tabs { --selection-fill: var(--bg-1); }
+.view-picker { --selection-fill: var(--bg-4); }
+.document-tabs [data-motion-selection], .view-picker [data-motion-selection] { overflow: visible; animation: none; }
+.record-row-preview { padding: 0; border-radius: 3px; overflow: hidden; opacity: .9; }
+.record-row-preview .data-table { width: 100%; height: 100%; }
+.record-row-preview .table-row { display: block; height: 100%; }
+.record-row-dragging { opacity: .3; }
+.record-row-preview { display: block; max-width: none; margin: 0; min-width: 0; min-height: 0; }
+.record-drag-count { position: absolute; right: 8px; top: 8px; padding: 3px 6px; background: var(--bg-4); border-radius: 4px; }
+
+/* 选中底色仅由独立移动层绘制，禁止背景过渡叠加造成两端闪亮。 */
+.app [data-motion-selection] { transition-property: color, border-color; }
+.app [data-motion-selection]::before { transform: var(--selection-offset, none); }
+.cell-selection-motion { border-width: 2px; }
+
+.source-search-actions { order: 7; display: flex; align-items: center; gap: 2px; }
+.source-search-actions .btn { width: 26px; height: 28px; padding: 0; }
+.cm-text-search-match { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.cm-text-search-current { background: color-mix(in srgb, var(--accent) 40%, transparent); outline: 1px solid var(--accent); }
+
+.dimension-record-list { --selection-fill: var(--bg-4); }
+
+.dimension-table-view > .view-container, .git-diff-mode > .view-container { display: flex; flex-direction: column; min-width: 0; }
+
+.rv-sidebar { --selection-fill: var(--bg-4); }
+
+/* 记录列表可由原生按钮或 option 容器承载，共用同一视觉表面。 */
+button.rv-sidebar-item { width: 100%; border-top: 0; border-right: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+button.rv-sidebar-item:hover { background: var(--bg-3); }
+button.rv-sidebar-item.selected { background: var(--bg-4); }
+
+/* 选中状态不能覆盖冻结键列的定位，否则横向导航会把键列移出视口。 */
+.table-row td.sticky-key-column.selected-cell { position: sticky; }

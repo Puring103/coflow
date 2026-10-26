@@ -21,6 +21,9 @@ import { fetchSourceText } from '../editorQueries'
 import { queryClient } from '../queryClient'
 
 interface Props {
+  searchQuery?: string
+  searchStep?: number
+  onSearchStatus?: (current: number, total: number) => void
   sessionId: number
   revision: number
   filePath: string
@@ -29,7 +32,7 @@ interface Props {
   focus?: { range: TextRange | null; tick: number } | null
 }
 
-export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSaved, focus = null }: Props) {
+export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSaved, focus = null, searchQuery = '', searchStep = 0, onSearchStatus }: Props) {
   const onSavedRef = useRef(onSaved)
   onSavedRef.current = onSaved
   const controller = useMemo(() => new SourceAutosave({
@@ -185,6 +188,9 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
       }}>
         <CfdCodeEditor
           value={source}
+          searchQuery={searchQuery}
+          searchStep={searchStep}
+          onSearchStatus={onSearchStatus}
           onChange={next => {
             controller.edit(next)
             setValidationDiagnostics([])

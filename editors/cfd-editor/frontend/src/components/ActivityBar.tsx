@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
 import type { PluginRegistrySnapshot } from '../plugins'
 import { Icon } from './Icon'
 
@@ -18,6 +20,8 @@ export function ActivityBar({
   onSelectFiles,
   onSelectChanges,
 }: Props) {
+  const root = useRef<HTMLElement>(null)
+  useSelectionSlide(root, '.activity-btn.active')
   const sidebars = (builtIn: boolean) => registry.sidebars
     .filter(sidebar => registry.plugins.some(plugin => (
       plugin.id === sidebar.pluginId && (plugin.origin === 'built-in') === builtIn
@@ -39,7 +43,7 @@ export function ActivityBar({
     })
 
   return (
-    <nav className="activity-bar" role="toolbar" aria-label="活动栏">
+    <nav ref={root} className="activity-bar" role="toolbar" aria-label="活动栏">
       <button
         className={`activity-btn activity-planner${activePane === 'files' ? ' active' : ''}`}
         title="文件"

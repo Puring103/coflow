@@ -12,20 +12,20 @@ describe('Git Diff available views and tree', () => {
   it('hides semantic views for a selected source-only file even when another file has records', () => {
     const diff: ProjectDiff = { ...emptyDiff, files: [{ path: 'schema.cft', change: 'modified', before: '', after: '', patch: '' }], records: [{ coordinate: { actual_type: 'Item', id: 'one' }, change: 'added', after: { file_path: 'data/items.cfd', values: [] }, fields: [] }] }
     const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes, loading: false, error: null, selection: { filePath: 'schema.cft', typeName: null, coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
-    expect(html).not.toContain('>记录</button>')
-    expect(html).not.toContain('>表格</button>')
+    expect(html).not.toContain('>记录</span></button>')
+    expect(html).not.toContain('>表格</span></button>')
     expect(html).toContain('aria-selected="true"')
-    expect(html).toContain('源码</button>')
+    expect(html).toContain('源码</span></button>')
   })
 
   it('defaults singleton diffs to the shared table view', () => {
     const diff: ProjectDiff = { ...emptyDiff, records: [{ coordinate: { actual_type: 'Settings', id: 'only' }, change: 'modified', before: { file_path: 'data/settings.cfd', values: [] }, after: { file_path: 'data/settings.cfd', values: [] }, fields: [] }] }
     const singletonTypes = { 'data/settings.cfd': [{ name: 'Settings', display_name: 'Settings', record_count: 1, is_singleton: true, dimension_fields: {} }] }
     const html = renderToStaticMarkup(createElement(GitDiffMode, { diff, sessionId: 1, fileTypes: singletonTypes, loading: false, error: null, selection: { filePath: 'data/settings.cfd', typeName: 'Settings', coordinate: null }, onSelectionChange() {}, onRefresh() {} }))
-    expect(html).toContain('>记录</button>')
-    expect(html).toContain('>表格</button>')
+    expect(html).toContain('>记录</span></button>')
+    expect(html).toContain('>表格</span></button>')
     expect(html).toContain('table-view-comparison')
-    expect(html).toContain('>源码</button>')
+    expect(html).toContain('>源码</span></button>')
   })
 
   it('restores deleted paths and preserves the main tree dimension grouping', () => {

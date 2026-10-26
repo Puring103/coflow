@@ -1,3 +1,4 @@
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
 import { useRef, useState, useEffect, createContext, useContext } from 'react'
 import type { FileTreeNode } from '../bindings/FileTreeNode'
 import type { FileTypeOption } from '../bindings/FileTypeOption'
@@ -222,6 +223,7 @@ function countSourceFiles(nodes: FileTreeNode[]): number {
 
 export function FileTree({ groups: suppliedGroups, fileBadge, readOnly, nodes, dimensions, fileTypes, selectedDimension, onSelectDimension, selectedFile, selectedType, onSelectFile, onExitRight, onOpenSourceFile, onAddInput, onCreateRecord, onCreateFile, onDeleteEntry }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
+  useSelectionSlide(rootRef, '[aria-selected="true"]')
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed())
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; path?: string; typeName?: string; group?: 'schema' | 'data'

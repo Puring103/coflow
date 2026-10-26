@@ -1,3 +1,5 @@
+import { FoldoutBody } from './FoldoutBody'
+import { revealAndEmphasize, scrollContainer } from '../utils/motion'
 import { fieldRowPresentation } from '../value/rowPresentation'
 import { GraphRowWindowContext, WindowedItems, WindowedAuxRow } from '../graph/rowWindow'
 import { observeSummary } from './summaryMeasurement'
@@ -100,7 +102,6 @@ export function CardHeader({
   onRename,
   diagSeverity,
   onDiagBadgeClick,
-  highlight,
 }: {
   recordId: string
   shortName?: string
@@ -112,7 +113,6 @@ export function CardHeader({
   diagSeverity?: 'error' | 'warning' | null
   onDiagBadgeClick?: () => void
   /** When true, the header briefly pulses (record-level diagnostic jump). */
-  highlight?: boolean
 }) {
   const color = typeColor(actualType)
   const shortNameSettings = useContext(ShortNameContext)
@@ -128,7 +128,7 @@ export function CardHeader({
   }
 
   return (
-    <div className={`gn-header${highlight ? ' gn-header-flash' : ''}`} style={{ '--node-color': color } as CSSProperties}>
+    <div className="gn-header" style={{ '--node-color': color } as CSSProperties}>
       <div className="gn-color-bar" />
       {editing ? (
         <input
@@ -513,53 +513,26 @@ export function DataCardExpanded({
   const inspectorRef = useRef<HTMLDivElement>(null)
   const pointerField = useRef<string | null>(null)
 
+  const cancelHighlight = useRef<(() => void) | undefined>(undefined)
+  useEffect(() => () => cancelHighlight.current?.(), [filePath, coordinate?.id, coordinate?.actual_type])
   useEffect(() => {
     if (!highlightField) return
-    const root = inspectorRef.current
-    if (!root) return
-    const exact = root.querySelector<HTMLElement>(
-      `.dc-row[data-field-path="${CSS.escape(highlightField)}"]`,
-    )
-    const top = highlightField.match(/^[^.[]+/)?.[0]
-    const fallback = top
-      ? root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
-      : null
-    const target = exact ?? fallback
-    if (target) {
-      target.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      target.classList.add('dc-row-flash')
-      const t = setTimeout(() => target.classList.remove('dc-row-flash'), 1600)
-      onHighlightConsumed?.()
-      return () => clearTimeout(t)
-    }
-    // Target not yet in the DOM — auto-expand along the path is likely still
-    // rendering. Defer to a microtask; if it still isn't there, retry a few
-    // times before giving up so nested foldouts have a chance to mount.
+    cancelHighlight.current?.()
     let attempts = 0
-    let raf = 0
-    const retry = () => {
-      const nowRoot = inspectorRef.current
-      if (!nowRoot) return
-      const hit = nowRoot.querySelector<HTMLElement>(
-        `.dc-row[data-field-path="${CSS.escape(highlightField)}"]`,
-      ) ?? (top
-        ? nowRoot.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
-        : null)
-      if (hit) {
-        hit.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        hit.classList.add('dc-row-flash')
-        setTimeout(() => hit.classList.remove('dc-row-flash'), 1600)
-        onHighlightConsumed?.()
-        return
-      }
-      if (++attempts >= 6) {
-        onHighlightConsumed?.()
-        return
-      }
-      raf = requestAnimationFrame(retry)
+    let frame = 0
+    const reveal = () => {
+      const root = inspectorRef.current
+      if (!root) return
+      const exact = root.querySelector<HTMLElement>(`.dc-row[data-field-path="${CSS.escape(highlightField)}"]`)
+      // 自动展开的后代挂载完成后才定位，避免先闪父字段再跳到子字段。
+      if (!exact && ++attempts < 6) { frame = requestAnimationFrame(reveal); return }
+      const top = highlightField.match(/^[^.[]+/)?.[0]
+      const target = exact ?? (top ? root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`) : null)
+      if (target) cancelHighlight.current = revealAndEmphasize(target, scrollContainer(target))
+      onHighlightConsumed?.()
     }
-    raf = requestAnimationFrame(retry)
-    return () => cancelAnimationFrame(raf)
+    frame = requestAnimationFrame(reveal)
+    return () => cancelAnimationFrame(frame)
   }, [highlightField, onHighlightConsumed])
 
   const autoExpandSet = useMemo(() => {
@@ -1838,6 +1811,7 @@ function ExpandableRow({
   const itemLabel = firstField ? firstField.annotation?.label ?? firstField.name : ''
   const autoExpandPaths = useContext(AutoExpandCtx)
   const controlledExpansion = useContext(ControlledExpansionCtx)
+  const graphWindow = useContext(GraphRowWindowContext)
   const nodeRelations = useContext(NodeRelationsCtx)
   const fixedExpanded = !!pathKey && !!nodeRelations?.expandedPaths.has(pathKey)
   const appendAtEnd = value.kind === 'array' && !!nodeRelations?.appendPaths.has(JSON.stringify(fieldPath))
@@ -1922,7 +1896,7 @@ function ExpandableRow({
         <div className="dc-row-label">
           {leading}
           <span className="dc-fold-arrow">
-            {!fixedExpanded && <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />}
+            {!fixedExpanded && <Icon name="chevron-right" size={11} />}
           </span>
           <span className="dc-row-label-text" title={fieldLabelTitle(label, fieldName, description)}>{listItem ? itemLabel : label}</span>
           {concreteTypeControl}
@@ -1952,8 +1926,7 @@ function ExpandableRow({
           <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
         </div>
       </div>
-      {expanded && (
-        <div className="dc-group-body">
+      <FoldoutBody expanded={!!expanded} immediate={!!graphWindow}>
           <ComplexValueChildren
             value={value}
             depth={depth + 1}
@@ -1976,8 +1949,7 @@ function ExpandableRow({
               />
             </div></WindowedAuxRow>
           )}
-        </div>
-      )}
+      </FoldoutBody>
     </div>
   )
 }

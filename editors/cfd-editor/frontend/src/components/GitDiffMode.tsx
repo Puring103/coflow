@@ -1,3 +1,11 @@
+import { textSearchMatches } from '../code/textSearch'
+import { InspectorPanel } from './InspectorPanel'
+import { BuiltinViewPicker } from './ViewPicker'
+import { ViewToolbar, ViewSearchField } from './ViewToolbar'
+import { useContentMotion } from '../hooks/useContentMotion'
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
+import { type MotionOrigin } from '../utils/motion'
+import { valueSelection, recordSelection } from '../state/editorSelection'
 import { columnContentMetrics } from './TableView.support'
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
@@ -162,11 +170,18 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
     return ['table', 'record', 'source']
   }, [diff?.semantic_available, activeFilePath, isSourceFile, recordsForView.length])
 
+  const [queries, setQueries] = useState({ source: '', records: '' })
+  const [searchStep, setSearchStep] = useState(0)
   const [view, setView] = useState<GitDiffView>('table')
   // 源码文件的临时显示不覆盖数据视图偏好，切回数据时仍默认表格。
   const clampedView = availableViews.includes(view) ? view : (availableViews[0] ?? 'source')
+  const queryKind = clampedView === 'source' ? 'source' : 'records'
+  const query = queries[queryKind]
+  const setQuery = (value: string) => setQueries(current => ({ ...current, [queryKind]: value }))
   // 记录/表格视图共用的字段过滤开关，默认仅显示修改字段。
   const [changedOnly, setChangedOnly] = useState(true)
+  const contentRef = useRef<HTMLDivElement>(null)
+  useContentMotion(contentRef, JSON.stringify([activeFilePath, clampedView, activeDimension, activeTypeName]))
 
   // 项目加载失败时仍允许切换标签，但不能读取会话或显示旧项目的差异。
   if (sessionId === null) return <ModeMessage text="请先成功打开项目后查看 Git 变更" onRefresh={onRefresh} />
@@ -176,15 +191,26 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
   if (!activeFilePath) return <ModeMessage text="没有可显示的变化文件" onRefresh={onRefresh} />
 
   const activeFile = index.fileByPath.get(activeFilePath) ?? diff.files.find(file => file.path === activeFilePath) ?? null
+  const searchTotal = textSearchMatches(activeFile?.before ?? '', query).length + textSearchMatches(activeFile?.after ?? '', query).length
+  const searchCurrent = searchTotal ? ((searchStep % searchTotal) + searchTotal) % searchTotal + 1 : 0
   return (
     <section className="git-diff-mode git-diff-selectable">
-      <header className="git-diff-mode-toolbar">
+      <ViewToolbar className="git-diff-mode-toolbar">
         <span className="git-diff-head">HEAD {diff.head_oid.slice(0, 12)}</span>
-        <div className="document-view-tabs git-diff-view-tabs" role="tablist" aria-label="Git Diff 视图">
-          {availableViews.includes('record') && <DiffTab view="record" active={clampedView} onSelect={setView} icon="record" label="记录" />}
-          {availableViews.includes('table') && <DiffTab view="table" active={clampedView} onSelect={setView} icon="table" label="表格" />}
-          {availableViews.includes('source') && <DiffTab view="source" active={clampedView} onSelect={setView} icon="code" label="源码" />}
-        </div>
+        <BuiltinViewPicker views={availableViews} active={clampedView} onSelect={setView} />
+        <ViewSearchField value={query} onChange={value => { setQuery(value); setSearchStep(0) }}
+          label={clampedView === 'source' ? '搜索对比文本' : '筛选变化记录'} placeholder={clampedView === 'source' ? '搜索本文件文本…' : '筛选记录…'}
+          onKeyDown={event => {
+            if (event.key === 'Escape') setQuery('')
+            if (event.key === 'Enter' && clampedView === 'source') { event.preventDefault(); setSearchStep(step => step + (event.shiftKey ? -1 : 1)) }
+          }} />
+        {clampedView === 'source' && <>
+          <span className="global-search-count" aria-live="polite">{searchCurrent} / {searchTotal}</span>
+          <div className="source-search-actions">
+            <button className="btn btn-icon" aria-label="上一个匹配" disabled={!searchTotal} onClick={() => setSearchStep(step => step - 1)}><Icon name="arrow-left" size={14} /></button>
+            <button className="btn btn-icon" aria-label="下一个匹配" disabled={!searchTotal} onClick={() => setSearchStep(step => step + 1)}><Icon name="chevron-right" size={14} /></button>
+          </div>
+        </>}
         {activeDimension && changedTypes.length > 1 && <select aria-label="对比类型" value={activeTypeName ?? ''}
           onChange={event => onSelectionChange({ filePath: activeFilePath, dimension: activeDimension, typeName: event.target.value, coordinate: null })}>
           {changedTypes.map(name => <option key={name} value={name}>{typeOptions.find(type => type.name === name)?.display_name ?? name}</option>)}
@@ -196,42 +222,28 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
         <button className="btn btn-icon" onClick={onRefresh} disabled={loading} title="刷新 Git Diff" aria-label="刷新 Git Diff">
           <Icon name="refresh" size={14} aria-hidden />
         </button>
-      </header>
+      </ViewToolbar>
+      <div ref={contentRef} className="view-container">
       {clampedView === 'record' ? (
-        <RecordDiffView records={recordsForView} selection={selection} onSelectionChange={onSelectionChange} changedOnly={changedOnly} />
+        <RecordDiffView search={query} records={recordsForView} selection={selection} onSelectionChange={onSelectionChange} changedOnly={changedOnly} />
       ) : clampedView === 'table' ? (
-        <TableComparison diff={diff} dimension={activeDimension} filePath={activeFilePath} actualType={activeTypeName ?? ''} changedOnly={changedOnly} />
+        <TableComparison search={query} diff={diff} dimension={activeDimension} filePath={activeFilePath} actualType={activeTypeName ?? ''} changedOnly={changedOnly} />
       ) : (
-        <SourceComparison file={activeFile} sessionId={sessionId} />
+        <SourceComparison file={activeFile} sessionId={sessionId} searchQuery={query} searchStep={searchStep} />
       )}
+      </div>
     </section>
   )
 }
 
-function DiffTab({ view, active, onSelect, icon, label, disabled = false }: {
-  view: GitDiffView
-  active: GitDiffView
-  onSelect(view: GitDiffView): void
-  icon: 'record' | 'table' | 'code'
-  label: string
-  disabled?: boolean
-}) {
-  return (
-    <button className={`tab-btn tab-view${active === view ? ' active' : ''}`} role="tab" aria-selected={active === view} disabled={disabled} onClick={() => onSelect(view)}>
-      <Icon name={icon} size={13} aria-hidden />
-      {label}
-    </button>
-  )
-}
-
 // 记录视图左侧只列变化记录（支持搜索定位），右侧并排显示选中记录的 HEAD/当前对比。
-function RecordDiffView({ records, selection, onSelectionChange, changedOnly }: {
+function RecordDiffView({ search, records, selection, onSelectionChange, changedOnly }: {
+  search: string
   records: ProjectRecordDiff[]
   selection: GitDiffSelection
   onSelectionChange(selection: GitDiffSelection): void
   changedOnly: boolean
 }) {
-  const [search, setSearch] = useState('')
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return records
@@ -266,21 +278,20 @@ function RecordDiffView({ records, selection, onSelectionChange, changedOnly }: 
     else paths.delete(path)
     setExpansion({ record: activeRecord, paths })
   }
+  const listRef = useRef<HTMLDivElement>(null)
+  useSelectionSlide(listRef, '[aria-selected="true"]')
   const comparisonRef = useRef<HTMLDivElement>(null)
   useDiffRowAlignment(comparisonRef, activeRecord)
   if (records.length === 0) return <div className="git-diff-message centered">没有可显示的记录变化</div>
   return (
     <div className="git-record-diff">
       <aside className="git-record-list" aria-label="变化记录">
-        <div className="git-record-list-search">
-          <input type="search" placeholder="搜索变化记录" value={search} onChange={event => setSearch(event.target.value)} aria-label="搜索变化记录" />
-        </div>
-        <div className="git-record-list-items" role="listbox" aria-label="变化记录列表">
+        <div ref={listRef} className="git-record-list-items rv-sidebar" role="listbox" aria-label="变化记录列表">
           {filtered.map(record => {
             const selected = !!activeRecord && sameCoordinate(activeRecord.coordinate, record.coordinate)
             return (
               <button key={coordinateId(record.coordinate)} role="option" aria-selected={selected}
-                className={`git-record-list-item${selected ? ' selected' : ''}`}
+                className={`rv-sidebar-item git-record-list-item${selected ? ' selected' : ''}`}
                 onClick={() => onSelectionChange({ ...selection, coordinate: record.coordinate })}>
                 <span className="tree-item-label" title={`${record.coordinate.actual_type}.${record.coordinate.id}`}>{record.coordinate.actual_type}.{record.coordinate.id}</span>
                 <ChangeMark change={record.change} />
@@ -341,7 +352,8 @@ function RecordPane({ label, snapshot, record, changedPaths, visibleTopFields, e
 }
 
 // 表格 diff——新增/删除单行（整行绿/红），修改显示两行（先原本 HEAD，后修改后当前），变化单元格深黄高亮。
-function TableComparison({ diff, dimension, filePath, actualType, changedOnly }: {
+function TableComparison({ search, diff, dimension, filePath, actualType, changedOnly }: {
+  search: string
   diff: ProjectDiff
   dimension?: string | null
   filePath: string | null
@@ -349,6 +361,8 @@ function TableComparison({ diff, dimension, filePath, actualType, changedOnly }:
   changedOnly: boolean
 }) {
   const [selection, setSelection] = useState<EditorSelection | null>(null)
+  const [expandedCell, setExpandedCell] = useState<{ data: FileRecords; selection: EditorSelection; origin: MotionOrigin } | null>(null)
+  useEffect(() => setExpandedCell(null), [filePath, actualType, dimension])
   const projected = useMemo(
     () => projectTable(diff, filePath, actualType, dimension),
     [diff, filePath, actualType, dimension],
@@ -382,6 +396,7 @@ function TableComparison({ diff, dimension, filePath, actualType, changedOnly }:
     <div className="git-table-comparison">
     <TableView
       data={projected.data}
+      searchQuery={search}
       activeType={actualType}
       readOnly
       selection={selection}
@@ -391,23 +406,39 @@ function TableComparison({ diff, dimension, filePath, actualType, changedOnly }:
       visibleColumns={visible}
       onOpenRecord={() => {}}
       rowPresentation={rowPresentation}
+      onExpandCell={(coordinate, path, origin) => {
+        const row = projected.data.records.find(item => sameCoordinate(item.coordinate, coordinate))
+        if (!row) return
+        const original = projected.presentations.get(row)!.coordinate!
+        setSelection(path ? valueSelection(projected.data.file_path, coordinate, path) : recordSelection(projected.data.file_path, coordinate))
+        setExpandedCell({ data: { ...projected.data, records: [{ ...row, coordinate: original }] },
+          selection: path ? valueSelection(projected.data.file_path, original, path) : recordSelection(projected.data.file_path, original), origin })
+      }}
     />
+    <InspectorPanel modal open={!!expandedCell} data={expandedCell?.data ?? null} selection={expandedCell?.selection ?? null}
+      origin={expandedCell?.origin} readOnly width={420} onWidthChange={() => {}} onClose={() => setExpandedCell(null)} />
     </div>
   )
 }
 
-function SourceComparison({ file, sessionId }: { file: ProjectFileDiff | null, sessionId: number }) {
+function SourceComparison({ file, sessionId, searchQuery, searchStep }: { file: ProjectFileDiff | null, sessionId: number, searchQuery: string, searchStep: number }) {
+  const beforeCount = textSearchMatches(file?.before ?? '', searchQuery).length
+  const total = beforeCount + textSearchMatches(file?.after ?? '', searchQuery).length
+  const current = total ? ((searchStep % total) + total) % total : -1
   const decorations = useMemo(() => file ? sourceLineDecorations(file.patch) : { before: [], after: [] }, [file])
   if (!file) return <div className="git-diff-message centered">没有可显示的源码变化</div>
   return (
     <div className={`git-source-comparison ${file.change}`}>
-      <SourcePane sessionId={sessionId} filePath={file.path} label="HEAD" source={file.before} missing="HEAD 中不存在" decorations={decorations.before} />
-      <SourcePane sessionId={sessionId} filePath={file.path} label="当前工作区" source={file.after} missing="当前工作区中不存在" decorations={decorations.after} />
+      <SourcePane searchQuery={searchQuery} searchStep={current} searchActive={current >= 0 && current < beforeCount} sessionId={sessionId} filePath={file.path} label="HEAD" source={file.before} missing="HEAD 中不存在" decorations={decorations.before} />
+      <SourcePane searchQuery={searchQuery} searchStep={current - beforeCount} searchActive={current >= beforeCount} sessionId={sessionId} filePath={file.path} label="当前工作区" source={file.after} missing="当前工作区中不存在" decorations={decorations.after} />
     </div>
   )
 }
 
-function SourcePane({ label, source, missing, decorations, sessionId, filePath }: {
+function SourcePane({ label, source, missing, decorations, sessionId, filePath, searchQuery, searchStep, searchActive }: {
+  searchActive: boolean
+  searchQuery: string
+  searchStep: number
   sessionId: number
   filePath: string
   label: string
@@ -433,7 +464,7 @@ function SourcePane({ label, source, missing, decorations, sessionId, filePath }
       <header>{label}{error && <span className="error" title={error}>高亮加载失败</span>}</header>
       {source === undefined
         ? <div className="git-source-missing">{missing}</div>
-        : <CfdCodeEditor value={source} onChange={() => {}} readOnly semanticTokens={highlight?.source === source && highlight.filePath === filePath ? highlight.tokens : []} lineDecorations={decorations} />}
+        : <CfdCodeEditor searchActive={searchActive} searchQuery={searchQuery} searchStep={searchStep} value={source} onChange={() => {}} readOnly semanticTokens={highlight?.source === source && highlight.filePath === filePath ? highlight.tokens : []} lineDecorations={decorations} />}
     </section>
   )
 }
@@ -547,10 +578,13 @@ export function projectTable(diff: ProjectDiff, filePath: string | null, actualT
   }
   const file = filePath ?? rows[0]?.display_path ?? ''
   const columns = columnsFor(rows, actualType)
-  const sizedRows = rows.map((row, index) => ({ ...row, container_index: index, container_size: rows.length }))
+  const sizedRows = rows.map((row, index) => ({ ...row,
+    coordinate: { ...row.coordinate, id: presentations.get(row)!.id },
+    container_index: index, container_size: rows.length,
+  }))
   // 行元数据使用对象身份关联，替换容器位置时同步重建索引。
   const sizedPresentations = new Map<RecordRow, TableRowPresentation>()
-  rows.forEach((row, index) => sizedPresentations.set(sizedRows[index]!, presentations.get(row)!))
+  rows.forEach((row, index) => sizedPresentations.set(sizedRows[index]!, { ...presentations.get(row)!, coordinate: row.coordinate }))
   return {
     data: { revision: diff.target_revision, file_path: file, type_names: actualType ? [actualType] : [], columns, records: sizedRows, capabilities: READ_ONLY_CAPABILITIES },
     presentations: sizedPresentations,

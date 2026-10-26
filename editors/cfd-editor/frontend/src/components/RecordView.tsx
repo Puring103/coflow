@@ -1,3 +1,6 @@
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
+import { motionRecordKey } from '../hooks/useMutationFeedback'
+import { revealAndEmphasize } from '../utils/motion'
 import { defaultValueForClear } from '../state/selectionKeyboard'
 import { parseCfdClipboard, pasteCellAtRecordPath, planPaste } from '../state/clipboard'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
@@ -135,6 +138,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const [insertAfterRecord, setInsertAfterRecord] = useState(false)
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
+  useSelectionSlide(sidebarRef, '.rv-sidebar-item.selected')
   const mainRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -167,12 +171,17 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 
   useEffect(() => setSelectedActionPathWire(null), [expansionOwner])
 
-  // Record-level highlight burns off after the header flashes — the child
-  // DataCardExpanded only clears the highlight for field-level jumps.
+  const cancelHighlight = useRef<(() => void) | undefined>(undefined)
+  useEffect(() => () => cancelHighlight.current?.(), [expansionOwner])
   useEffect(() => {
     if (highlightField !== RECORD_HIGHLIGHT_SENTINEL) return
-    const t = setTimeout(() => onHighlightConsumed?.(), 1600)
-    return () => clearTimeout(t)
+    const root = mainRef.current
+    const header = root?.querySelector<HTMLElement>('.gn-header')
+    if (root && header) {
+      cancelHighlight.current?.()
+      cancelHighlight.current = revealAndEmphasize(header, root)
+    }
+    onHighlightConsumed?.()
   }, [highlightField, onHighlightConsumed])
 
   const diagnosticIndex = useMemo(
@@ -485,6 +494,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 
       <div
         className="rv-main"
+        data-motion-record={motionRecordKey(data.file_path, record.coordinate)}
         ref={mainRef}
         tabIndex={0}
         onKeyDown={batchRecords ? undefined : recordKeyboard.onKeyDown}
@@ -556,7 +566,6 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           onRename={canRename ? async (next) => { await onRenameRecord!(record.coordinate, next) } : undefined}
           diagSeverity={rowSeverity(record)}
           onDiagBadgeClick={onDiagnosticBadgeClick ? () => onDiagnosticBadgeClick(record.coordinate, null) : undefined}
-          highlight={highlightField === RECORD_HIGHLIGHT_SENTINEL}
         />
         <div className="rv-search-bar">
           <Icon name="search" size={13} className="rv-search-icon" aria-hidden />

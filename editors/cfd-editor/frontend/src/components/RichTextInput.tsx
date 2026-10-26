@@ -270,7 +270,7 @@ export function RichTextInput({ value, onValueChange, onKeyDown, onSelect, onFoc
         onPointerDown={event => {
           const input = inputRef.current
           const preview = previewRef.current
-          if (!input || !preview || event.button !== 0) return
+          if (!input || !preview || event.button !== 0 || event.defaultPrevented) return
           // 展开预览仍属于原单元格，按点击字形进入同一个输入节点。
           const range = document.caretRangeFromPoint(event.clientX, event.clientY)
           const offset = range && preview.contains(range.startContainer) ? range.startOffset : value.length

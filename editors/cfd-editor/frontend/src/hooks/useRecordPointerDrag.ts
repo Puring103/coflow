@@ -45,6 +45,11 @@ export function useRecordPointerDrag(options: Options) {
     const selectSourceOnDrag = sources.length === 1 && sources[0] === source.coordinate
     const startX = event.clientX
     const startY = event.clientY
+    const sourceRow = sourceElement.closest<HTMLTableRowElement>('tr')
+    const rowBounds = sourceRow?.getBoundingClientRect()
+    const viewportBounds = root.getBoundingClientRect()
+    const previewLeft = rowBounds ? Math.max(viewportBounds.left, rowBounds.left) : startX
+    const previewWidth = rowBounds ? Math.min(viewportBounds.right, rowBounds.right) - previewLeft : 0
     let dragging = false
     let dropTarget: HTMLElement | null = null
     let insertTarget: HTMLElement | null = null
@@ -59,6 +64,7 @@ export function useRecordPointerDrag(options: Options) {
     const cleanup = () => {
       clearDropTarget()
       sourceElement.classList.remove('record-dragging')
+      sourceRow?.classList.remove('record-row-dragging')
       document.body.classList.remove('record-drag-active')
       preview?.remove()
       preview = null
@@ -76,7 +82,34 @@ export function useRecordPointerDrag(options: Options) {
       preview = document.createElement('div')
       preview.className = 'record-drag-preview'
       const label = sourceElement.dataset.recordLabel || sourceId
-      preview.textContent = sources.length > 1 ? `${label} 等 ${sources.length} 条记录` : label
+      if (sourceRow && rowBounds) {
+        // 只复制当前可见行的展示内容；副本不可交互，真实记录仍由原有落点逻辑移动。
+        preview.classList.add('app', 'record-row-preview')
+        preview.inert = true
+        preview.setAttribute('aria-hidden', 'true')
+        preview.style.width = `${previewWidth}px`
+        preview.style.height = `${rowBounds.height}px`
+        const table = document.createElement('table')
+        table.className = 'data-table'
+        const body = document.createElement('tbody')
+        const clone = sourceRow.cloneNode(true) as HTMLTableRowElement
+        clone.classList.remove('record-row-dragging')
+        clone.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+        for (let index = 0; index < sourceRow.cells.length; index++) {
+          const rect = sourceRow.cells[index].getBoundingClientRect()
+          const cell = clone.cells[index]
+          Object.assign(cell.style, { position: 'absolute', left: `${rect.left - previewLeft}px`, top: '0', width: `${rect.width}px`, height: `${rect.height}px`, boxSizing: 'border-box' })
+          cell.removeAttribute('data-cell-motion')
+        }
+        body.append(clone); table.append(body); preview.append(table)
+        sourceRow.classList.add('record-row-dragging')
+        if (sources.length > 1) {
+          const count = document.createElement('span')
+          count.className = 'record-drag-count'
+          count.textContent = `${sources.length} 条记录`
+          preview.append(count)
+        }
+      } else preview.textContent = sources.length > 1 ? `${label} 等 ${sources.length} 条记录` : label
       document.body.appendChild(preview)
     }
     const updateDropTarget = (clientX: number, clientY: number) => {
@@ -120,8 +153,8 @@ export function useRecordPointerDrag(options: Options) {
       }
       moveEvent.preventDefault()
       if (preview) {
-        preview.style.left = `${moveEvent.clientX + 12}px`
-        preview.style.top = `${moveEvent.clientY + 12}px`
+        preview.style.left = `${sourceRow ? previewLeft + moveEvent.clientX - startX : moveEvent.clientX + 12}px`
+        preview.style.top = `${rowBounds ? rowBounds.top + moveEvent.clientY - startY : moveEvent.clientY + 12}px`
       }
       updateDropTarget(moveEvent.clientX, moveEvent.clientY)
     }

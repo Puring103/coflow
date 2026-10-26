@@ -271,7 +271,7 @@ test('dynamic and complex heights match an ordinary complete card before and aft
     const source = page.locator('.graph-node[data-nodeid="Item::source"]')
     await source.locator('.dc-row[data-field-path="values"]').click()
     const compare = async () => {
-      await page.waitForFunction(() => window.graphFlow.getNode('Item::source').data.geometry.pendingCount === 0)
+      await page.waitForFunction(() => window.graphFlow.getNode('Item::source').data.geometry.pendingCount === 0 && document.querySelector('.full-reference').getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'))
       await settle()
       const result = await page.evaluate(() => {
         const geometry = window.graphFlow.getNode('Item::source').data.geometry
@@ -302,7 +302,7 @@ test('foreign array deletion ends an old draft and rejected writes remain editab
   await page.evaluate(() => window.graphHarness.setData(previous => ({ ...previous, revision: previous.revision + 1, nodes: previous.nodes.map(node => node.coordinate.id !== 'source' ? node : {
     ...node, fields: node.fields.map(field => field.name !== 'values' ? field : { ...field, value: { ...field.value, value: field.value.value.slice(1) } }),
   }) })))
-  await settle()
+  await page.waitForFunction(() => document.querySelector('.graph-node[data-nodeid="Item::source"] .dc-row[data-field-path="values[0]"] textarea')?.value === '文字 1\n第二行文字 1')
   assert.equal(await editor.inputValue(), '文字 1\n第二行文字 1')
   assert.equal(await page.evaluate(() => window.graphHarness.events.length), 0)
   await page.evaluate(() => window.graphHarness.setFailWrites(true))

@@ -1,6 +1,10 @@
+import { useContentMotion } from './hooks/useContentMotion'
+import { useMutationFeedback } from './hooks/useMutationFeedback'
+import { cellMotionOrigin, type MotionOrigin } from './utils/motion'
 import type { RefTarget } from './bindings/RefTarget'
 import { ReferencePanel } from './components/ReferencePanel'
-import { ViewPicker } from './components/ViewPicker'
+import { ViewToolbar, ViewSearchField } from './components/ViewToolbar'
+import { BuiltinViewPicker, ViewPicker } from './components/ViewPicker'
 import { createMockLookups } from './mockLookups'
 import { Menu } from './components/Menu'
 import { ProjectSearchDialog } from './components/ProjectSearchDialog'
@@ -113,6 +117,7 @@ import {
   updateValueSelection,
   valueSelection,
   RECORD_HIGHLIGHT_SENTINEL,
+  selectedCellCount,
   type SelectedCells,
   type EditorSelection,
   type RecordSelectionMode,
@@ -519,6 +524,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     try { localStorage.setItem('cfd-editor-active-pane', activePane) } catch { /* quota */ }
   }, [activePane])
   const [documentSearch, setDocumentSearch] = useState('')
+  const [sourceSearch, setSourceSearch] = useState({ file: '', query: '', step: 0 })
+  const [sourceSearchStatus, setSourceSearchStatus] = useState({ file: '', current: 0, total: 0 })
   const [keyOnlySearch, setKeyOnlySearch] = useState(false)
   const [collapsedRecordGroups, setCollapsedRecordGroups] = useState<Set<string>>(() => new Set())
   const recordGroupIdSequence = useRef(0)
@@ -561,7 +568,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   // Right-side inspector panel: table cells select one value, while the Key
   // column and graph nodes select the whole record.
   const [inspectorDialogOpen, setInspectorDialogOpen] = useState(false)
-  const [inspectorOrigin, setInspectorOrigin] = useState<DOMRect | null>(null)
+  const [inspectorOrigin, setInspectorOrigin] = useState<MotionOrigin | null>(null)
+  useMutationFeedback(historySnapshot, inspectorOrigin, inspectorDialogOpen)
   const [inspectorSelection, setInspectorSelection] = useState<EditorSelection | null>(null)
   const inspectorCoord = useMemo(() => inspectorSelection
     ? { file: inspectorSelection.filePath, coordinate: inspectorSelection.coordinate }
@@ -586,6 +594,12 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     setInspectorDialogOpen(false)
     setInspectorOrigin(null)
   }, [])
+
+  const clearWorkspaceSelection = useCallback(() => {
+    if (deferDataNavigation(clearWorkspaceSelection)) return
+    setInspectorSelection(null)
+    closeInspector()
+  }, [closeInspector])
 
   const navigateWorkspaceTab = useCallback((
     tab: WorkspaceTab,
@@ -1569,11 +1583,6 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         setActivePluginPageKey(null)
         setActivePane('changes')
       }
-      // Ctrl+F 只负责当前文档筛选；项目搜索快捷键由内置插件注册。
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'f') {
-        e.preventDefault()
-        documentSearchRef.current?.focus()
-      }
       // `?` only toggles help when not focused inside a text-editing control,
       // otherwise typing `?` into inputs/search boxes would steal focus.
       if (e.key === '?' && !isNativeEditorTarget(e.target, false)) setShowHelp(v => !v)
@@ -1688,6 +1697,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   const activeViewKind = activePluginView
     ? 'plugin'
     : currentRoute?.view
+  useContentMotion(viewContainerRef, JSON.stringify([activeWorkspaceTabId, currentRoute?.viewId, activeViewKind]))
   const activeRecordCoordinate = useMemo(() => (
     currentRoute?.view === 'record'
       ? currentRoute.coordinate
@@ -2202,14 +2212,19 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     )
     target?.focus({ preventScroll: true })
   }, [])
+  const currentInspectorOrigin = useCallback(() => {
+    if (inspectorSelection?.kind !== 'value' || selectedCellCount(inspectorValueCells) !== 1) return null
+    const cells = viewContainerRef.current?.querySelectorAll<HTMLElement>('.table-scroll td.selected-cell')
+    return cells?.length === 1 ? cellMotionOrigin(cells[0]) : null
+  }, [inspectorSelection, inspectorValueCells])
   const focusInspector = useCallback(() => {
-    setInspectorOrigin(null)
+    if (!inspectorDialogOpen) setInspectorOrigin(currentInspectorOrigin())
     setInspectorDialogOpen(true)
     requestAnimationFrame(() => {
       document.querySelector<HTMLElement>('.inspector-panel:not(.collapsed) .inspector-body')
         ?.focus({ preventScroll: true })
     })
-  }, [])
+  }, [currentInspectorOrigin, inspectorDialogOpen])
   const focusFirstRecord = useCallback(() => {
     setFirstRecordFocusRequest(request => request + 1)
   }, [])
@@ -2327,10 +2342,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     setFileActionDialog({ kind: 'delete', path })
   }, [])
   const tableOnEnterInspector = useCallback(() => {
-    setInspectorOrigin(null)
+    setInspectorOrigin(currentInspectorOrigin())
     setInspectorDialogOpen(true)
     setInspectorFocusRequest(request => request + 1)
-  }, [])
+  }, [currentInspectorOrigin])
   const inspectorOnExitKeyboardNavigation = useCallback(() => {
     if (currentRoute?.view === 'table') setTableFocusRequest(request => request + 1)
     else focusActiveView()
@@ -2361,7 +2376,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       await api.setTableRowHeights(identity.sessionId, file, type, view, heights)
     }).catch(error => { if (generation.currentSession() === identity.sessionId) setErrorMsg(`保存行高失败：${errorMessage(error)}`) })
   }, [currentRoute?.file, activeType, resolvedView?.id, generation, setProjectSettings])
-  const tableOnExpandCell = useCallback((coordinate: RecordCoordinate, path: FieldPathSegment[] | null, origin: DOMRect) => {
+  const tableOnExpandCell = useCallback((coordinate: RecordCoordinate, path: FieldPathSegment[] | null, origin: MotionOrigin) => {
     if (!currentRoute) return
     if (deferDataNavigation(() => tableOnExpandCell(coordinate, path, origin))) return
     setInspectorSelection(path ? valueSelection(currentRoute.file, coordinate, path) : recordSelection(currentRoute.file, coordinate))
@@ -2621,6 +2636,55 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     onReorder={ids => {
       if (activeFile) saveViewOrder(activeFile, activeType, ids)
     }} />
+
+  const renderRecordSearch = () => {
+    if (!currentRoute || !activeFileData) return null
+    return <>
+      <ViewSearchField inputRef={documentSearchRef} placeholder="筛选记录…" label="筛选当前类型"
+        value={documentSearch} onChange={setDocumentSearch} onKeyDown={e => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); focusFirstRecord() }
+          else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) { e.preventDefault(); focusFileTree() }
+        }}>
+      <button className="key-only-toggle" aria-label="只搜索键" aria-pressed={keyOnlySearch}
+        title={keyOnlySearch ? '只搜索键：已开启' : '只搜索键：未开启，当前搜索所有字段（含嵌套）'}
+        onClick={() => setKeyOnlySearch(value => !value)}><Icon name="key" size={14} /></button>
+      </ViewSearchField>
+
+      <span
+        className="global-search-count"
+        title={documentSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
+      >
+        {matchedCount} / {typeCount}
+      </span>
+      {(
+        <div className="record-edit-actions">
+          <button className="btn btn-primary btn-icon" title="新增记录" aria-label="新增记录"
+            disabled={readOnly || !activeFileData.capabilities.can_insert_record || !activeType}
+            onClick={() => void createRecordFromTree(currentRoute.file, activeType)}>
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+      )}
+  </>
+  }
+
+  const sourceQuery = sourceSearch.file === currentRoute?.file ? sourceSearch.query : ''
+  const sourceStep = sourceSearch.file === currentRoute?.file ? sourceSearch.step : 0
+  const sourceStatus = sourceSearchStatus.file === currentRoute?.file ? sourceSearchStatus : { current: 0, total: 0 }
+  const changeSourceQuery = (query: string) => setSourceSearch({ file: currentRoute?.file ?? '', query, step: 0 })
+  const moveSourceMatch = (direction: number) => setSourceSearch({ file: currentRoute?.file ?? '', query: sourceQuery, step: sourceStep + direction })
+  const renderSourceSearch = () => <>
+    <ViewSearchField inputRef={documentSearchRef} label="搜索本文件文本" placeholder="搜索本文件文本…"
+      value={sourceQuery} onChange={changeSourceQuery} onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); moveSourceMatch(event.shiftKey ? -1 : 1) }
+        else if (event.key === 'Escape') { event.preventDefault(); changeSourceQuery('') }
+      }} />
+    <span className="global-search-count" aria-live="polite">{sourceQuery ? sourceStatus.current : 0} / {sourceQuery ? sourceStatus.total : 0}</span>
+    <div className="source-search-actions">
+      <button className="btn btn-icon" aria-label="上一个匹配" title="上一个匹配（Shift+Enter）" disabled={!sourceQuery || !sourceStatus.total} onClick={() => moveSourceMatch(-1)}><Icon name="arrow-left" size={14} /></button>
+      <button className="btn btn-icon" aria-label="下一个匹配" title="下一个匹配（Enter）" disabled={!sourceQuery || !sourceStatus.total} onClick={() => moveSourceMatch(1)}><Icon name="chevron-right" size={14} /></button>
+    </div>
+  </>
 
   return (
     <ShortNameContext.Provider value={{ fields: projectSettings?.short_name_fields ?? {}, setField: shortNameSaving ? undefined : saveShortNameField }}>
@@ -2886,37 +2950,17 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           />
           {!gitDiffActive && !activePluginPage && currentRoute && (activeSchemaFile || activeFileData || activeDimensionData) && (
             activeSchemaFile ? (
-              <div className="view-tabs-row">
-                <div className="document-view-tabs" role="tablist" aria-label="视图">
-                  <button
-                    className="tab-btn tab-view active"
-                    role="tab"
-                    aria-selected="true"
-                  >
-                    <Icon name="code" size={13} aria-hidden />
-                    源码
-                  </button>
-                </div>
-              </div>
-            ) : activeDimensionData ? (
-              <div className="view-tabs-row">
-                <div className="document-view-tabs" role="tablist" aria-label="视图">
-                  {(['record', 'table'] as const).map(view => (
-                    <button
-                      key={view}
-                      className={`tab-btn tab-view${dimensionView === view ? ' active' : ''}`}
-                      role="tab"
-                      aria-selected={dimensionView === view}
-                      onClick={() => setDimensionView(view)}
-                    >
-                      <Icon name={view} size={13} aria-hidden />
-                      {view === 'table' ? '表格' : '记录'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : activeFileData && (activeViewKind === 'source' || activeViewKind === 'plugin') ? (
-              <div className="view-toolbar">{renderViewPicker()}</div>
+              <ViewToolbar className="source-search-toolbar">
+                <BuiltinViewPicker views={['source']} active="source" onSelect={() => {}} />
+                {renderSourceSearch()}
+              </ViewToolbar>
+            ) : activeDimensionData ? null
+            : activeFileData ? (
+              // 文件内各视图共用同一工具栏节点，切换源码不会重建标签和中断选中底色。
+              <ViewToolbar className={activeViewKind === 'plugin' ? 'view-toolbar' : ''}>
+                {renderViewPicker()}
+                {activeViewKind === 'source' ? renderSourceSearch() : activeViewKind !== 'plugin' && renderRecordSearch()}
+              </ViewToolbar>
             ) : null
           )}
           <Suspense fallback={<ViewLoading />}>
@@ -2950,6 +2994,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 sessionId={project.session_id}
                 revision={project.revision}
                 filePath={currentRoute.file}
+                searchQuery={sourceQuery}
+                searchStep={sourceStep}
+                onSearchStatus={(current, total) => setSourceSearchStatus({ file: currentRoute.file, current, total })}
                 readOnly={activeSchemaFile ? recoveryRequired : readOnly}
                 onSaved={refreshFromBootstrap}
                 focus={sourceDiagnosticFocus?.file === currentRoute.file ? sourceDiagnosticFocus : null}
@@ -2957,6 +3004,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             </div>
           ) : currentRoute && selectedDimensionData ? (
             <DimensionTableView
+              onModeChange={setDimensionView}
               key={activeWorkspaceTabId}
               data={selectedDimensionData}
               mode={dimensionView}
@@ -2986,53 +3034,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               {/* Record search bar — shared by structured views. */}
               <div className="structured-view-content">
               <div className="structured-view-main">
-              {activeViewKind !== 'source' && activeViewKind !== 'plugin' && <div className="global-search-bar">
-                {renderViewPicker()}
-                <div className="record-search">
-                <Icon name="search" size={13} className="global-search-icon" aria-hidden />
-                <input
-                  ref={documentSearchRef}
-                  placeholder="筛选记录…"
-                  value={documentSearch}
-                  onChange={e => setDocumentSearch(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      focusFirstRecord()
-                    } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
-                      e.preventDefault()
-                      focusFileTree()
-                    }
-                  }}
-                  aria-label="筛选当前类型"
-                  role="searchbox"
-                />
-                {documentSearch && (
-                  <button className="rv-clear-search" onClick={() => setDocumentSearch('')} aria-label="清除搜索">
-                    <Icon name="close" size={13} aria-hidden />
-                  </button>
-                )}
-                <button className="key-only-toggle" aria-label="只搜索键" aria-pressed={keyOnlySearch}
-                  title={keyOnlySearch ? '只搜索键：已开启' : '只搜索键：未开启，当前搜索所有字段（含嵌套）'}
-                  onClick={() => setKeyOnlySearch(value => !value)}><Icon name="key" size={14} /></button>
-                </div>
 
-                <span
-                  className="global-search-count"
-                  title={documentSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
-                >
-                  {matchedCount} / {typeCount}
-                </span>
-                {(
-                  <div className="record-edit-actions">
-                    <button className="btn btn-primary btn-icon" title="新增记录" aria-label="新增记录"
-                      disabled={readOnly || !activeFileData.capabilities.can_insert_record || !activeType}
-                      onClick={() => void createRecordFromTree(currentRoute.file, activeType)}>
-                      <Icon name="plus" size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>}
 
               <div className="view-container" ref={viewContainerRef}>
                 {activeViewKind === 'plugin' && activePluginView && pluginViewContext && (
@@ -3069,7 +3071,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                     onValueSelectionCellsChange={tableOnValueSelectionCellsChange}
                     onRenderCellText={tableOnRenderCellText}
                     onParseCellText={tableOnParseCellText}
-                    onClearSelection={closeInspector}
+                    onClearSelection={clearWorkspaceSelection}
                     onOpenRecord={tableOnOpenRecord}
                     onWriteField={tableOnWriteField}
                     onWriteFieldBatch={tableOnWriteFieldBatch}
@@ -3170,7 +3172,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                       diagnostics={project?.diagnostics}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
                       onSelectRecord={openInspector}
-                      onClearSelection={closeInspector}
+                      onClearSelection={clearWorkspaceSelection}
                       selectedCoordinate={inspectorCoord}
                       onWriteField={writeField}
                       onCollectionEdit={editCollection}
@@ -3366,7 +3368,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         recordId={referenceTarget.coordinate.id}
         actualType={referenceTarget.coordinate.actual_type}
         title={referenceTarget.short_name ?? referenceTarget.coordinate.id}
-        canGoBack={referenceHistory.length > 1}
+        depth={referenceHistory.length}
         onBack={() => setReferenceHistory(current => current.slice(0, -1))}
         onClose={() => setReferenceHistory([])}
         onNavigate={() => { navigateReference(referenceTarget.coordinate.actual_type, referenceTarget.coordinate.id); setReferenceHistory([]) }}>

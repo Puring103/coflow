@@ -109,3 +109,13 @@ export function ScalarValueInput({ value, onCommit, label, autoFocus = false }: 
     {error && <span className="string-value-error" role="alert">{error}</span>}
   </span>
 }
+
+/** 只读快照复用相同的预览、溢出测量和选择表面，但不注册写入会话。 */
+export function ScalarValuePreview({ value }: {
+  value: FieldValue & { kind: 'string' | 'formatted_string' | 'int' | 'float' }
+}) {
+  return <span className={`string-value-input${value.kind === 'int' || value.kind === 'float' ? ' numeric-value-input' : ''}`}>
+    <RichTextInput cell rows={1} readOnly className="cell-string-textarea" value={plainFieldValueText(value)}
+      onValueChange={() => {}} aria-label={value.kind === 'int' || value.kind === 'float' ? '数值（只读）' : '字符串（只读）'} />
+  </span>
+}

@@ -1,3 +1,4 @@
+import { textSearchMatches } from '../code/textSearch'
 import { autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, completionKeymap, startCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language'
@@ -204,8 +205,22 @@ const semanticTokenField = StateField.define<DecorationSet>({
   provide: field => EditorView.decorations.from(field),
 })
 
+const setSearchMarks = StateEffect.define<DecorationSet>()
+const searchMarks = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(setSearchMarks)) return effect.value
+    return value.map(transaction.changes)
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
 interface Props {
   value: string
+  searchQuery?: string
+  searchStep?: number
+  searchActive?: boolean
+  onSearchStatus?: (current: number, total: number) => void
   onChange: (value: string) => void
   onSave?: () => void
   readOnly?: boolean
@@ -223,6 +238,10 @@ interface Props {
 
 export function CfdCodeEditor({
   value,
+  searchQuery = '',
+  searchStep = 0,
+  searchActive = true,
+  onSearchStatus,
   onChange,
   onSave,
   readOnly = false,
@@ -239,6 +258,9 @@ export function CfdCodeEditor({
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const previousSearch = useRef<{ query: string; step: number; active: boolean } | null>(null)
+  const onSearchStatusRef = useRef(onSearchStatus)
+  onSearchStatusRef.current = onSearchStatus
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
   const onCompleteRef = useRef(onComplete)
@@ -292,6 +314,7 @@ export function CfdCodeEditor({
           baseHighlightPlugin,
           semanticTokenField,
           lineDecorationField,
+          searchMarks,
           editableRangeField,
           EditorState.transactionFilter.of(transaction => {
             const range = transaction.startState.field(editableRangeField)
@@ -395,6 +418,22 @@ export function CfdCodeEditor({
       })
     }
   }, [value])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const navigate = previousSearch.current?.query !== searchQuery || previousSearch.current?.step !== searchStep || previousSearch.current?.active !== searchActive
+    previousSearch.current = { query: searchQuery, step: searchStep, active: searchActive }
+    const matches = textSearchMatches(view.state.doc.toString(), searchQuery)
+    const current = searchActive && matches.length ? ((searchStep % matches.length) + matches.length) % matches.length : -1
+    const decorations = Decoration.set(matches.map((match, index) => Decoration.mark({
+      class: index === current ? 'cm-text-search-match cm-text-search-current' : 'cm-text-search-match',
+    }).range(match.from, match.to)))
+    // 搜索只更新高亮和滚动，不抢走搜索框焦点，也不改动编辑选区与撤销历史。
+    view.dispatch({ effects: [setSearchMarks.of(decorations), ...(navigate && current >= 0
+      ? [EditorView.scrollIntoView(matches[current].from, { y: 'nearest' })] : [])] })
+    onSearchStatusRef.current?.(current + 1, matches.length)
+  }, [searchQuery, searchStep, searchActive, value])
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setEditableRange.of(editableRange) })

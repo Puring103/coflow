@@ -1,3 +1,16 @@
+import { revealTableCell } from '../utils/tableViewport'
+import { useTableSelectionDismiss } from '../hooks/useTableSelectionDismiss'
+import { EditableCell } from './TableView'
+import { InspectorPanel } from './InspectorPanel'
+import type { FileRecords } from '../bindings/FileRecords'
+import { valueSelection } from '../state/editorSelection'
+import { projectFieldValue } from '../state/fieldProjection'
+import type { MotionOrigin } from '../utils/motion'
+import { ViewToolbar, ViewSearchField } from './ViewToolbar'
+import { BuiltinViewPicker } from './ViewPicker'
+import { useCellMotion } from '../hooks/useCellMotion'
+import { useContentMotion } from '../hooks/useContentMotion'
+import { useSelectionSlide } from '../hooks/useSelectionSlide'
 import { readClipboardText, writeClipboardText } from '../api/clipboard'
 import { finishOffscreenDataEdit } from '../state/editSession'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -8,10 +21,10 @@ import type { EditorProjectSettings } from '../bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from '../bindings/EditorRecordGroup'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { FieldPathSegment, FieldValue } from '../wire'
-import { coordinateId, fieldPathField } from '../wire'
+import { coordinateId, fieldPathField, isComplexValue, presentationValue } from '../wire'
 import { summaryOf as valueSummary } from '../value/fieldValue'
 import { parseCfdClipboard, serializeCfdMatrix } from '../state/clipboard'
-import { DataCardCompact, DirectEditor, InlineEditor } from './DataCard'
+import { CardHeader, DataCardExpanded, DirectEditor, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
 import { TextInputDialog } from './ActionDialog'
 import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from './RecordGroupHeader'
@@ -19,6 +32,7 @@ import { RecordGroupHeader, RecordUngroupedHeader, recordGroupColorStyle } from 
 interface Props {
   data: DimensionFileRecords
   mode: 'table' | 'record'
+  onModeChange?: (mode: 'table' | 'record') => void
   recordGroupsByFile?: EditorProjectSettings['record_groups']
   onRenameGroup?: (filePath: string, actualType: string, groupId: string, name: string) => void
   onColorGroup?: (filePath: string, actualType: string, groupId: string, color: string | null) => void
@@ -120,6 +134,7 @@ export function moveDimensionCell(
 export function DimensionTableView({
   data: sourceData,
   mode,
+  onModeChange,
   recordGroupsByFile = {},
   onRenameGroup,
   onColorGroup,
@@ -131,17 +146,22 @@ export function DimensionTableView({
   focusRequest = 0,
   onFocusRequestConsumed,
 }: Props) {
+  const [query, setQuery] = useState('')
+  const contentRef = useRef<HTMLDivElement>(null)
+  useContentMotion(contentRef, `${sourceData.file_path}:${mode}`)
   const [addingVariant, setAddingVariant] = useState(false)
   const [draftVariants, setDraftVariants] = useState<string[]>([])
   // 新变体先作为当前文件的待填列，首次填值时与覆盖文件一起持久化。
   const data = useMemo(() => ({ ...sourceData,
     variants: [...new Set([...sourceData.variants, ...draftVariants])],
-  }), [sourceData, draftVariants])
+    rows: sourceData.rows.filter(row => !query || `${row.coordinate.actual_type}.${row.coordinate.id} ${row.field} ${valueSummary(row.default_value)} ${Object.values(row.values).map(v => v?.kind === 'value' ? valueSummary(v.value) : '').join(' ')}`.toLowerCase().includes(query.toLowerCase())),
+  }), [sourceData, draftVariants, query])
   const [selectedKey, setSelectedKey] = useState(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const [recordField, setRecordField] = useState(0)
   const tableRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLElement>(null)
+  useSelectionSlide(listRef, '.selected')
   const recordRef = useRef<HTMLElement>(null)
   useEffect(() => {
     if (!data.rows.some(row => dimensionRowId(row) === selectedKey)) {
@@ -175,14 +195,16 @@ export function DimensionTableView({
 
   return (
     <div className="dimension-table-view">
-      <div className="dimension-table-meta">
-        <strong>{fields.join(', ')}</strong>
-        <span>{data.rows.length} 条</span>
+      <ViewToolbar>
+        <BuiltinViewPicker views={['record', 'table']} active={mode} onSelect={onModeChange ?? (() => {})} />
+        <ViewSearchField value={query} onChange={setQuery} label="筛选维度记录" placeholder="筛选记录…" />
+        <span className="global-search-count">{data.rows.length} / {sourceData.rows.length}</span>
         <button type="button" className="btn" onClick={() => setAddingVariant(true)}>添加变体</button>
-      </div>
+      </ViewToolbar>
       {addingVariant && <TextInputDialog title="添加变体" message="输入变体名称；填写覆盖值后保存。"
         placeholder="例如 ja 或 en" confirmLabel="添加" onClose={() => setAddingVariant(false)}
         onConfirm={name => { setDraftVariants(current => [...new Set([...current, name])]); setAddingVariant(false) }} />}
+      <div ref={contentRef} className="view-container">
       {mode === 'table' ? (
         <DimensionGrid
           data={data}
@@ -201,7 +223,7 @@ export function DimensionTableView({
       ) : (
         <div className="dimension-record-layout">
           <aside
-            className="dimension-record-list"
+            className="dimension-record-list rv-sidebar"
             aria-label="维度记录"
             ref={listRef}
             onKeyDown={event => {
@@ -252,7 +274,7 @@ export function DimensionTableView({
               <button
                 key={dimensionRowId(item.row)}
                 type="button"
-                className={`${dimensionRowId(item.row) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
+                className={`rv-sidebar-item ${dimensionRowId(item.row) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
                 style={recordGroupColorStyle(item.group?.color)}
                 data-record-index={visibleRows.indexOf(item.row)}
                 onClick={() => { setSelectedKey(dimensionRowId(item.row)); setRecordField(0) }}
@@ -292,6 +314,7 @@ export function DimensionTableView({
           </main>
         </div>
       )}
+      </div>
     </div>
   )
 }
@@ -321,6 +344,9 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   collapsedGroups: ReadonlySet<string>
   onToggleGroup: (key: string) => void
 }) {
+  useCellMotion(rootRef)
+  const [selectionActive, setSelectionActive] = useState(false)
+  useTableSelectionDismiss(rootRef, selectionActive ? 'value' : null, () => { setSelectionActive(false); setRangeEnd(null) })
   const [anchor, setAnchor] = useState<DimensionCellSelection>({ row: 0, column: 0 })
   const [rangeEnd, setRangeEnd] = useState<DimensionCellSelection | null>(null)
   // inlineEdit: { row, column, initialText } — overlay syntax editor on that cell
@@ -353,7 +379,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const showRowField = useMemo(() => data.rows.some(row => row.field !== data.rows[0]?.field), [data.rows])
   const showRowType = useMemo(() => data.rows.some(row => row.coordinate.actual_type !== data.rows[0]?.coordinate.actual_type), [data.rows])
 
-  const selection = anchor
+  const selection = rangeEnd ?? anchor
   const range: DimensionRange = rangeEnd ? {
     rowStart: Math.min(anchor.row, rangeEnd.row),
     rowEnd: Math.max(anchor.row, rangeEnd.row),
@@ -364,6 +390,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const isRangeSelection = rangeEnd !== null && (rangeEnd.row !== anchor.row || rangeEnd.column !== anchor.column)
 
   const select = (next: DimensionCellSelection, extend = false, reveal = true) => {
+    setSelectionActive(true)
     if (extend) {
       setRangeEnd(next)
     } else {
@@ -378,7 +405,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
       const cell = rootRef.current?.querySelector<HTMLElement>(
         `[data-dimension-row="${next.row}"][data-dimension-column="${next.column}"]`,
       )
-      if (cell) cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      if (cell && rootRef.current) revealTableCell(rootRef.current, cell)
       else if (displayIndex !== undefined && attempts++ < 4) {
         if (attempts === 1) virtualizer.scrollToIndex(displayIndex, { align: 'auto' })
         revealFrame.current = requestAnimationFrame(revealCell)
@@ -402,13 +429,38 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
   const fieldPathForVariant = (row: DimensionFileRow, variant: string): FieldPathSegment[] =>
     [fieldPathField(row.field), fieldPathField(variant)]
 
+  const propsFor = (rowIndex: number, column: number) => {
+    const row = visibleRows[rowIndex]
+    const variant = row.values[data.variants[column - 2]]
+    const value = column === 1 ? row.default_value : variant?.kind === 'value' ? variant.value : row.default_value
+    const complex = column > 0 && isComplexValue(presentationValue(value))
+    const props = cellProps(rowIndex, column, anchor, isRangeSelection, range, selectionActive)
+    return { ...props, 'data-table-cell-key': `${dimensionRowId(row)}:${column === 0 ? 'key' : column === 1 ? 'default' : data.variants[column - 2]}`,
+      className: `${props.className}${complex ? ' complex-cell' : ''}`,
+      onPointerDownCapture: (event: React.PointerEvent) => {
+        if (event.button !== 0) return
+        const target = event.target as HTMLElement
+        const editor = target.closest('input, textarea, select, button, [contenteditable="true"]')
+        const text = target.closest('textarea') as HTMLTextAreaElement | null
+        const wasSelected = selectionActive && !isRangeSelection && anchor.row === rowIndex && anchor.column === column
+        select({ row: rowIndex, column }, event.shiftKey, false)
+        // 首击选择、再次点击编辑；只读值和空白始终把方向键交给网格。
+        if (!editor || event.shiftKey || (text && (!wasSelected || text.readOnly))) {
+          event.preventDefault()
+          rootRef.current?.focus({ preventScroll: true })
+        }
+      },
+    }
+  }
+
   return (
     <div
-      className="dimension-table-scroll"
+      className="dimension-table-scroll table-scroll"
       onScrollCapture={event => { if (event.target === event.currentTarget) finishOffscreenDataEdit(event.currentTarget) }}
       ref={rootRef}
       tabIndex={0}
       onKeyDown={async event => {
+        setSelectionActive(true)
         if (isNativeEditorTarget(event.target)) return
         const modified = event.ctrlKey || event.metaKey
 
@@ -568,10 +620,10 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
       }}
     >
       {clipboardError && <div role="alert" className="table-cell-notice">{clipboardError}</div>}
-      <table className="dimension-table">
+      <table className="dimension-table data-table">
         <thead>
           <tr>
-            <th>键</th>
+            <th className="sticky-key-column">键</th>
             <th>default</th>
             {data.variants.map(variant => <th key={variant}>{variant}</th>)}
           </tr>
@@ -606,18 +658,18 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
                 key={dimensionRowId(item.row)}
                 data-index={virtualRow.index}
                 ref={virtualizer.measureElement}
-                className={item.group?.color ? 'has-group-color' : undefined}
+                className={`table-row${item.group?.color ? ' has-group-color' : ''}`}
                 style={recordGroupColorStyle(item.group?.color)}
               >
-                <th scope="row" {...cellProps(rowIndex, 0, anchor, isRangeSelection, range, select)}>
+                <td role="rowheader" {...propsFor(rowIndex, 0)}>
                   {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.id}{showRowField ? ` · ${item.row.field}` : ''}
-                </th>
-                <td {...cellProps(rowIndex, 1, anchor, isRangeSelection, range, select)}><DataCardCompact value={item.row.default_value} /></td>
+                </td>
+                <td {...propsFor(rowIndex, 1)}><DimensionValueCell row={item.row} value={item.row.default_value} /></td>
                 {data.variants.map((variant, variantIndex) => {
                   const colIndex = variantIndex + 2
                   const isInline = inlineEdit?.row === rowIndex && inlineEdit.column === colIndex
                   return (
-                    <td key={variant} {...cellProps(rowIndex, colIndex, anchor, isRangeSelection, range, select)}
+                    <td key={variant} {...propsFor(rowIndex, colIndex)}
                       title={item.row.sources[variant] ?? '尚未覆盖'}>
                       {isInline && onParseCellText ? (
                         <DimensionInlineEditor
@@ -659,15 +711,15 @@ function DimensionRecord({ row, variants, onWrite, selectedField, onSelectField 
 }) {
   return (
     <div className="dimension-record-card">
-      <header><strong>{row.coordinate.actual_type}.{row.coordinate.id} · {row.field}</strong></header>
+      <CardHeader recordId={`${row.coordinate.id} · ${row.field}`} actualType={row.coordinate.actual_type} filePath={row.owner_file_path} />
       <div className={`dimension-record-row readonly${selectedField === 0 ? ' keyboard-selected' : ''}`} data-dimension-record-field="0" onMouseDown={() => onSelectField(0)}>
         <span>default</span>
-        <DataCardCompact value={row.default_value} />
+        <DimensionValueCell expanded row={row} value={row.default_value} />
       </div>
       {variants.map((variant, index) => (
         <div className={`dimension-record-row${selectedField === index + 1 ? ' keyboard-selected' : ''}`} key={variant} data-dimension-record-field={index + 1} onMouseDown={() => onSelectField(index + 1)}>
           <span>{variant}</span>
-          <DimensionCellEditor row={row} variant={variant} onWrite={onWrite} />
+          <DimensionCellEditor expanded row={row} variant={variant} onWrite={onWrite} />
         </div>
       ))}
     </div>
@@ -680,19 +732,19 @@ function cellProps(
   anchor: DimensionCellSelection,
   isRangeSelection: boolean,
   range: DimensionRange,
-  onSelect: (selection: DimensionCellSelection, extend?: boolean, reveal?: boolean) => void,
+  active: boolean,
 ) {
   const isAnchor = anchor.row === row && anchor.column === column
-  const isSelected = isRangeSelection ? inRange(range, row, column) : isAnchor
+  const isSelected = active && (isRangeSelection ? inRange(range, row, column) : isAnchor)
   return {
     'data-dimension-row': row,
     'data-dimension-column': column,
-    className: isSelected ? (isAnchor ? 'keyboard-selected' : 'range-selected') : undefined,
-    onMouseDown: (e: React.MouseEvent) => {
-      if (e.button !== 0) return
-      if (e.shiftKey) e.preventDefault()
-      onSelect({ row, column }, e.shiftKey, false)
-    },
+    'data-table-cell-key': `${row}:${column}`,
+    className: [column === 0 ? 'sticky-key-column' : '',
+      isSelected ? 'selected-cell' : '', isSelected && isAnchor ? 'keyboard-selected' : '',
+      isSelected && row === range.rowStart ? 'range-top' : '', isSelected && row === range.rowEnd ? 'range-bottom' : '',
+      isSelected && column === range.colStart ? 'range-left' : '', isSelected && column === range.colEnd ? 'range-right' : '',
+    ].filter(Boolean).join(' '),
   }
 }
 
@@ -759,7 +811,8 @@ function DimensionInlineEditor({ row, variant, initialText, onWrite, onParseCell
   )
 }
 
-export function DimensionCellEditor({ row, variant, onWrite }: {
+export function DimensionCellEditor({ row, variant, onWrite, expanded = false }: {
+  expanded?: boolean
   row: DimensionFileRow
   variant: string
   onWrite: Props['onWrite']
@@ -779,7 +832,8 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
   }
   const effective = state.kind === 'value' ? state.value : row.default_value
   const directString = effective.kind === 'string' || effective.kind === 'formatted_string'
-  if (state.kind === 'missing' && !directString) {
+  const complex = ['object', 'dict', 'array', 'option_some'].includes(effective.kind)
+  if (state.kind === 'missing' && !directString && !complex) {
     if (creating) {
       return (
         <div className={`dimension-cell-editor${busy ? ' busy' : ''}`}>
@@ -806,7 +860,8 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
   return (
     <div className={`dimension-cell-editor${busy ? ' busy' : ''}${state.kind === 'missing' ? ' inherited' : ''}`} aria-busy={busy}>
       <span className="dimension-value-state" title={state.kind === 'missing' ? '继承基础值' : effective.kind === 'option_none' ? '显式空值' : '已覆盖基础值'} aria-label={state.kind === 'missing' ? '继承基础值' : effective.kind === 'option_none' ? '显式空值' : '已覆盖基础值'}>{state.kind === 'missing' ? '↳' : effective.kind === 'option_none' ? '∅' : '•'}</span>
-      <DirectEditor value={effective} onCommit={commit} />
+      {complex ? <DimensionValueCell expanded={expanded} row={row} value={effective} onCommit={commit} />
+        : <DirectEditor value={effective} onCommit={commit} />}
       <button
         type="button"
         className="dimension-cell-clear"
@@ -826,4 +881,35 @@ export function DimensionCellEditor({ row, variant, onWrite }: {
       </button>
     </div>
   )
+}
+
+/** 维度只负责覆盖写入；值预览、结构化路径编辑和放大窗口复用主表格。 */
+function DimensionValueCell({ row, value, onCommit, expanded = false }: {
+  expanded?: boolean
+  row: DimensionFileRow; value: FieldValue; onCommit?: (value: FieldValue) => Promise<void>
+}) {
+  const [origin, setOrigin] = useState<MotionOrigin | null>(null)
+  const data = useMemo<FileRecords>(() => ({
+    revision: 0, file_path: row.owner_file_path, type_names: [row.coordinate.actual_type],
+    columns: [{ name: row.field, type_names: [row.coordinate.actual_type], max_summary_len: 0, content_metrics: {} }],
+    records: [{ coordinate: row.coordinate, display_path: row.owner_file_path, container_index: 0, container_size: 1,
+      fields: [{ name: row.field, value, missing: false, annotation: null }], field_index: { [row.field]: 0 },
+      field_summaries: {}, field_diagnostics: [], diagnostic_severity: null }],
+    capabilities: { can_edit_field: !!onCommit, can_edit_id: false, can_insert_record: false,
+      can_delete_record: false, can_reorder_records: false, requires_full_refresh_after_write: false },
+  }), [row, value, onCommit])
+  const path = [fieldPathField(row.field)]
+  const write = async (fieldPath: FieldPathSegment[], next: FieldValue) => {
+    const projected = projectFieldValue(data, row.coordinate, fieldPath, next)
+    if (projected.changed && projected.row) await onCommit?.(projected.row.fields[0].value)
+  }
+  return <>
+    {expanded ? <DataCardExpanded fields={data.records[0].fields} actualType={row.coordinate.actual_type}
+      coordinate={row.coordinate} filePath={row.owner_file_path} flattenSingleComplexField onEdit={onCommit ? write : undefined} />
+      : <EditableCell filePath={row.owner_file_path} coordinate={row.coordinate} fieldPath={path} value={value}
+      editable={!!onCommit} onCommit={onCommit} onEdit={onCommit ? write : undefined} onExpand={setOrigin} />}
+    <InspectorPanel modal open={!!origin} data={data} selection={valueSelection(row.owner_file_path, row.coordinate, path)}
+      origin={origin} readOnly={!onCommit} width={420} onWidthChange={() => {}} onClose={() => setOrigin(null)}
+      onWriteField={onCommit ? async (_file, _coordinate, fieldPath, next) => write(fieldPath, next) : undefined} />
+  </>
 }

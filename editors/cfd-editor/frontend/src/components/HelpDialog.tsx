@@ -1,3 +1,4 @@
+import { useSurfaceExit } from '../hooks/useSurfaceExit'
 import { useEffect, useRef } from 'react'
 import { Icon } from './Icon'
 import './HelpDialog.css'
@@ -9,6 +10,8 @@ interface Props {
 
 export function HelpDialog({ open, onClose }: Props) {
   const boxRef = useRef<HTMLDivElement>(null)
+  const exit = useSurfaceExit(boxRef, open)
+  const dismiss = () => { void exit(onClose) }
   const returnFocusRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -37,20 +40,21 @@ export function HelpDialog({ open, onClose }: Props) {
     window.addEventListener('keydown', trapFocus)
     return () => {
       window.removeEventListener('keydown', trapFocus)
-      returnFocusRef.current?.focus()
+      returnFocusRef.current?.focus({ preventScroll: true })
       returnFocusRef.current = null
     }
   }, [open])
 
   if (!open) return null
   return (
-    <div className="help-overlay" onClick={onClose}>
+    <div className="help-overlay" onClick={dismiss}>
       <div
         className="help-box"
         ref={boxRef}
         role="dialog"
         aria-modal="true"
         aria-label="键盘快捷键"
+        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); dismiss() } }}
         onClick={event => event.stopPropagation()}
       >
         <h3><Icon name="help" size={16} />键盘快捷键</h3>
@@ -83,7 +87,7 @@ export function HelpDialog({ open, onClose }: Props) {
           </tbody>
         </table>
         <div className="help-actions">
-          <button className="btn btn-outlined" onClick={onClose}>关闭</button>
+          <button className="btn btn-outlined" onClick={dismiss}>关闭</button>
         </div>
       </div>
     </div>
