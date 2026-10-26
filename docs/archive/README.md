@@ -4,6 +4,7 @@
 
 | 资料 | 类型 | 当前对应文档 |
 | --- | --- | --- |
+| [核心增量与超大图节点验收](benchmarks/incremental-graph-acceptance-2026-10-26.md) | 不可变批次、字段依赖、完整端口几何、窗口化与生产基准；含未达性能项 | [增量与图优化计划](../development/incremental-graph-optimization-plan.zh-CN.md) |
 | [全路径审查微基准](benchmarks/full-performance-audit-2026-10-26.json) | 选区集合索引与不可变值身份比较的局部算法对照 | [核心与前端性能审查](../development/full-performance-audit.zh-CN.md) |
 | [表格尺寸预算优化验收](benchmarks/table-size-budget-2026-10-26.md) | 可见高度预算、主动适配、列区间共享与滚动复测 | [性能约束](../editor-design/performance.md) |
 | [复杂表格优化验收](benchmarks/complex-table-optimized-2026-10-26.md) | 集中测量、复杂列窗口、共享描述与生产构建复测 | [复杂表格设计](../development/editor-performance-review.zh-CN.md) |

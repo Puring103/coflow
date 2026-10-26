@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-26T06:12:49.6001650Z",
+  "ref": "9fcdbc2c529b3fee8563ffc120fea51868ab979c",
+  "baseline_sha256": "F3CE4A7CCC028E262822FF173B169E8AB6C27B910DC1E5CBF45C6245A718FA4E",
+  "current_sha256": "C30812D2178940B93F5C6F1F83B86A99496DC9EC773BA28671862AEE3E698578",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "protocol": "Serial Release processes, deterministic 100-file/20-field fixture. Raw mutation sample count 219: example warmup 1 plus first 19 discarded gives 20 warmups and 200 retained samples. Ten fresh-session cold samples in round 0; later rounds 1. Working-set monitor at 100ms; cold process peak captured at data_open_stats, includes schema and all fresh-session opens. Additional batch run has only 3 samples, not stable P95.",
+  "runs": [
+    {
+      "label": "baseline",
+      "round": 0,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3673276416,
+      "peak_working_set_bytes": 6484111360,
+      "stderr": ""
+    },
+    {
+      "label": "current",
+      "round": 0,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3674034176,
+      "peak_working_set_bytes": 6485590016,
+      "stderr": ""
+    },
+    {
+      "label": "baseline",
+      "round": 1,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r1-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672727552,
+      "peak_working_set_bytes": 6484795392,
+      "stderr": ""
+    },
+    {
+      "label": "current",
+      "round": 1,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r1-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3673436160,
+      "peak_working_set_bytes": 6486220800,
+      "stderr": ""
+    },
+    {
+      "label": "baseline",
+      "round": 2,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r2-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672838144,
+      "peak_working_set_bytes": 6484631552,
+      "stderr": ""
+    },
+    {
+      "label": "current",
+      "round": 2,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r2-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672981504,
+      "peak_working_set_bytes": 6485766144,
+      "stderr": ""
+    },
+    {
+      "label": "baseline",
+      "round": 0,
+      "records": 10000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-10000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 419348480,
+      "peak_working_set_bytes": 662827008,
+      "stderr": ""
+    },
+    {
+      "label": "current",
+      "round": 0,
+      "records": 10000,
+      "batches": "1",
+      "raw": "incremental-graph-current-10000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 412471296,
+      "peak_working_set_bytes": 663568384,
+      "stderr": ""
+    },
+    {
+      "label": "baseline",
+      "round": 0,
+      "records": 100000,
+      "batches": "1000",
+      "raw": "incremental-graph-baseline-100000-1000-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672387584,
+      "peak_working_set_bytes": 7780691968,
+      "stderr": ""
+    },
+    {
+      "label": "current",
+      "round": 0,
+      "records": 100000,
+      "batches": "1000",
+      "raw": "incremental-graph-current-100000-1000-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672891392,
+      "peak_working_set_bytes": 7781466112,
+      "stderr": ""
+    }
+  ]
+}

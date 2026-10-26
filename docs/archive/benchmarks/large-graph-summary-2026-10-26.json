@@ -1,0 +1,112 @@
+{
+  "first": {
+    "samples": 30,
+    "p50_ms": 876.9499999284744,
+    "p95_ms": 891.9000000953674,
+    "p99_ms": null,
+    "min_ms": 855.9000000953674,
+    "max_ms": 895.5999999046326
+  },
+  "navigation": {
+    "samples": 30,
+    "p50_ms": 885.6410999999989,
+    "p95_ms": 898.6782000000021,
+    "p99_ms": null,
+    "min_ms": 862.8324000000002,
+    "max_ms": 899.6614
+  },
+  "steady": [
+    {
+      "round": 0,
+      "samples": 488,
+      "p50_ms": 50,
+      "p95_ms": 150,
+      "p99_ms": 199.89999999999782,
+      "min_ms": 13.799999999999955,
+      "max_ms": 216.70000000000073,
+      "long_tasks": 189,
+      "max_long_task_ms": 221,
+      "max_rows": 43,
+      "max_edges": 132
+    },
+    {
+      "round": 1,
+      "samples": 483,
+      "p50_ms": 50,
+      "p95_ms": 150.10000000000036,
+      "p99_ms": 200.10000000000036,
+      "min_ms": 13.600000047683693,
+      "max_ms": 233.39999999999964,
+      "long_tasks": 186,
+      "max_long_task_ms": 225,
+      "max_rows": 42,
+      "max_edges": 137
+    },
+    {
+      "round": 2,
+      "samples": 485,
+      "p50_ms": 50,
+      "p95_ms": 166.5,
+      "p99_ms": 200,
+      "min_ms": 12.900000047683761,
+      "max_ms": 216.70000000000073,
+      "long_tasks": 191,
+      "max_long_task_ms": 213,
+      "max_rows": 44,
+      "max_edges": 135
+    }
+  ],
+  "updates": [
+    {
+      "samples": 1000,
+      "p50_ms": 54.5,
+      "p95_ms": 70,
+      "p99_ms": 81.5,
+      "min_ms": 26.199999809265137,
+      "max_ms": 89.5,
+      "gc_heap_before": {
+        "usedSize": 36340220,
+        "totalSize": 39006208,
+        "embedderHeapUsedSize": 2771944,
+        "backingStorageSize": 1112088
+      },
+      "gc_heap_after": {
+        "usedSize": 46864464,
+        "totalSize": 49405952,
+        "embedderHeapUsedSize": 2822368,
+        "backingStorageSize": 1272222
+      },
+      "errors": []
+    }
+  ],
+  "lifecycle": {
+    "items": 100,
+    "warmups": 2,
+    "cycles": 20,
+    "heaps": [
+      {
+        "cycle": 2,
+        "usedSize": 9682948,
+        "totalSize": 10887168,
+        "embedderHeapUsedSize": 7447144,
+        "backingStorageSize": 565759
+      },
+      {
+        "cycle": 12,
+        "usedSize": 11278732,
+        "totalSize": 12197888,
+        "embedderHeapUsedSize": 7523872,
+        "backingStorageSize": 563908
+      },
+      {
+        "cycle": 22,
+        "usedSize": 11408232,
+        "totalSize": 12197888,
+        "embedderHeapUsedSize": 7497792,
+        "backingStorageSize": 563908
+      }
+    ],
+    "errors": []
+  },
+  "errors": []
+}

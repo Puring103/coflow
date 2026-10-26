@@ -42,6 +42,8 @@ Rust 在构建文件记录快照的同一次遍历中，按实际类型汇总列
 
 ## 验证
 
+图专项生产基准位于 `editors/cfd-editor/frontend/tests/browser/graph-acceptance.mjs`，覆盖首屏、连续平移缩放、密集边、复杂行、十万项压力、连续更新和视图回收。采样协议、原始数据与未达性能项见[核心增量与超大图节点验收](../archive/benchmarks/incremental-graph-acceptance-2026-10-26.md)。
+
 生产构建基准位于 `editors/cfd-editor/frontend/tests/browser/performance.mjs`。基准同时覆盖窄表、宽表、Inspector 和百万单元格选区。滚动报告帧间隔与浏览器脚本/布局耗时；全选端到端计时包含两次动画帧等待，不能解释为纯 CPU 时间。
 
 后端大工程基准使用 `editors/cfd-editor/core/examples/perf_smoke.rs`，与浏览器基准串行运行。功能回归覆盖编辑光标、独立单元格展开、粘贴、剪切失败保护，以及横向虚拟化期间的草稿和焦点保持。

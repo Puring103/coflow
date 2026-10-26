@@ -1,0 +1,1632 @@
+{
+  "method": "P50 is the arithmetic median; P95/P99 use nearest rank. Raw 219 mutation samples discard first 19; example warmup 1 gives 20 warmups and 200 retained samples. Three-sample batches report median/range only. Fresh-session cold data opens share process, filesystem and code caches. External process working set includes all memory, not just model allocations.",
+  "runs": [
+    {
+      "label": "baseline",
+      "round": 0,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3673276416,
+      "peak_working_set_bytes": 6484111360,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 10,
+          "p50_ms": 0.12514999999999998,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1207,
+          "max_ms": 0.2202,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 10,
+          "p50_ms": 0.4629,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4371,
+          "max_ms": 0.594,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 10,
+          "p50_ms": 6669.302,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 5840.3879,
+          "max_ms": 11167.758600000001,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0602,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0588,
+          "max_ms": 0.0663,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 34.3459,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 33.936,
+          "max_ms": 34.4169,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 39.3981,
+          "p95_ms": 79.9992,
+          "p99_ms": 96.97840000000001,
+          "min_ms": 36.2601,
+          "max_ms": 106.4126,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 0,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3674034176,
+      "peak_working_set_bytes": 6485590016,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 10,
+          "p50_ms": 0.11915,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.116,
+          "max_ms": 0.1571,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 10,
+          "p50_ms": 0.44325000000000003,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4313,
+          "max_ms": 0.6879,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 10,
+          "p50_ms": 11166.70195,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 10361.6508,
+          "max_ms": 11363.333900000001,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.1287,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.12380000000000001,
+          "max_ms": 0.1367,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 59.145,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 58.3021,
+          "max_ms": 59.3018,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 65.8524,
+          "p95_ms": 73.608,
+          "p99_ms": 79.4628,
+          "min_ms": 42.0973,
+          "max_ms": 79.8386,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "identity_records_checked": 100000,
+            "origin_records_checked": 100000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 2000000,
+            "reused_literal_fields": 0,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "identity_records_checked": 1000,
+            "origin_records_checked": 1000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20,
+            "reused_literal_fields": 0,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "baseline",
+      "round": 1,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r1-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672727552,
+      "peak_working_set_bytes": 6484795392,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1463,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1463,
+          "max_ms": 0.1463,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.5005,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.5005,
+          "max_ms": 0.5005,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 5983.656599999999,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 5983.656599999999,
+          "max_ms": 5983.656599999999,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0613,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0591,
+          "max_ms": 0.066,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 33.5478,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 32.791599999999995,
+          "max_ms": 34.5721,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 38.274699999999996,
+          "p95_ms": 42.130599999999994,
+          "p99_ms": 44.303000000000004,
+          "min_ms": 37.3091,
+          "max_ms": 46.4715,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 1,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r1-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3673436160,
+      "peak_working_set_bytes": 6486220800,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.3488,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.3488,
+          "max_ms": 0.3488,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.4522,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4522,
+          "max_ms": 0.4522,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 5976.4283000000005,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 5976.4283000000005,
+          "max_ms": 5976.4283000000005,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0668,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0628,
+          "max_ms": 0.07239999999999999,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 29.6527,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 29.1953,
+          "max_ms": 30.290999999999997,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 36.6546,
+          "p95_ms": 78.9438,
+          "p99_ms": 123.0336,
+          "min_ms": 32.0257,
+          "max_ms": 334.5522,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "identity_records_checked": 100000,
+            "origin_records_checked": 100000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 2000000,
+            "reused_literal_fields": 0,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "identity_records_checked": 1000,
+            "origin_records_checked": 1000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20,
+            "reused_literal_fields": 0,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "baseline",
+      "round": 2,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r2-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672838144,
+      "peak_working_set_bytes": 6484631552,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1324,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1324,
+          "max_ms": 0.1324,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.7232999999999999,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.7232999999999999,
+          "max_ms": 0.7232999999999999,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 6034.727099999999,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 6034.727099999999,
+          "max_ms": 6034.727099999999,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0688,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.063,
+          "max_ms": 0.0789,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 33.6768,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 33.0868,
+          "max_ms": 33.7735,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 40.140299999999996,
+          "p95_ms": 85.3122,
+          "p99_ms": 91.67450000000001,
+          "min_ms": 35.698,
+          "max_ms": 96.7823,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 2,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r2-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672981504,
+      "peak_working_set_bytes": 6485766144,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1503,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1503,
+          "max_ms": 0.1503,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.4658,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4658,
+          "max_ms": 0.4658,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 6005.3661,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 6005.3661,
+          "max_ms": 6005.3661,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.073,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.07150000000000001,
+          "max_ms": 0.1227,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 30.2106,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 29.4152,
+          "max_ms": 30.5343,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 34.084,
+          "p95_ms": 37.756699999999995,
+          "p99_ms": 39.5019,
+          "min_ms": 31.7398,
+          "max_ms": 51.1452,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "identity_records_checked": 100000,
+            "origin_records_checked": 100000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 2000000,
+            "reused_literal_fields": 0,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "identity_records_checked": 1000,
+            "origin_records_checked": 1000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20,
+            "reused_literal_fields": 0,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "baseline",
+      "round": 0,
+      "records": 10000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-10000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 419348480,
+      "peak_working_set_bytes": 662827008,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1338,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1338,
+          "max_ms": 0.1338,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.4208,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4208,
+          "max_ms": 0.4208,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 524.1373,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 524.1373,
+          "max_ms": 524.1373,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.052500000000000005,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.051,
+          "max_ms": 0.0603,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 18.110500000000002,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 16.8928,
+          "max_ms": 21.983099999999997,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 12.620049999999999,
+          "p95_ms": 17.2019,
+          "p99_ms": 19.525199999999998,
+          "min_ms": 11.4336,
+          "max_ms": 35.1541,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 10000,
+            "records_validated": 10000,
+            "records_materialized": 10000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 20000,
+            "check_roots_executed": 40001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 9999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 0,
+      "records": 10000,
+      "batches": "1",
+      "raw": "incremental-graph-current-10000-1-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 412471296,
+      "peak_working_set_bytes": 663568384,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1404,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1404,
+          "max_ms": 0.1404,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.5757,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.5757,
+          "max_ms": 0.5757,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 512.9946,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 512.9946,
+          "max_ms": 512.9946,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.048,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0457,
+          "max_ms": 0.048600000000000004,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 17.0955,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 16.013199999999998,
+          "max_ms": 17.806099999999997,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 13.34855,
+          "p95_ms": 15.1187,
+          "p99_ms": 16.1532,
+          "min_ms": 11.4131,
+          "max_ms": 19.619899999999998,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 10000,
+            "records_validated": 10000,
+            "identity_records_checked": 10000,
+            "origin_records_checked": 10000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 200000,
+            "reused_literal_fields": 0,
+            "records_materialized": 10000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 20000,
+            "check_roots_executed": 40001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "identity_records_checked": 100,
+            "origin_records_checked": 100,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20,
+            "reused_literal_fields": 0,
+            "records_materialized": 1,
+            "records_reused": 9999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "baseline",
+      "round": 0,
+      "records": 100000,
+      "batches": "1000",
+      "raw": "incremental-graph-baseline-100000-1000-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672387584,
+      "peak_working_set_bytes": 7780691968,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1452,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1452,
+          "max_ms": 0.1452,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.4666,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4666,
+          "max_ms": 0.4666,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 6436.412200000001,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 6436.412200000001,
+          "max_ms": 6436.412200000001,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0607,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0589,
+          "max_ms": 0.06820000000000001,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 37.369,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 36.9107,
+          "max_ms": 37.4125,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples": 3,
+          "p50_ms": 86.84450000000001,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 86.30300000000001,
+          "max_ms": 89.97109999999999,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples": 3,
+          "p50_ms": 3743.5293,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 3738.3165,
+          "max_ms": 3882.8853,
+          "warmups": 1
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 0,
+            "records_validated": 1000,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 0,
+      "records": 100000,
+      "batches": "1000",
+      "raw": "incremental-graph-current-100000-1000-r0-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672891392,
+      "peak_working_set_bytes": 7781466112,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1406,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1406,
+          "max_ms": 0.1406,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.43370000000000003,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.43370000000000003,
+          "max_ms": 0.43370000000000003,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 6303.215899999999,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 6303.215899999999,
+          "max_ms": 6303.215899999999,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0598,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0594,
+          "max_ms": 0.064,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 30.5355,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 29.7159,
+          "max_ms": 31.0308,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1000_grouped",
+          "samples": 3,
+          "p50_ms": 83.403,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 82.714,
+          "max_ms": 90.474,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1000_interleaved",
+          "samples": 3,
+          "p50_ms": 3720.557,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 3720.5132,
+          "max_ms": 3784.7911,
+          "warmups": 1
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "identity_records_checked": 100000,
+            "origin_records_checked": 100000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 2000000,
+            "reused_literal_fields": 0,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1000,
+            "identity_records_checked": 1000,
+            "origin_records_checked": 1000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20000,
+            "reused_literal_fields": 0,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1000_interleaved_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 100,
+            "draft_records_collected": 0,
+            "records_validated": 1000,
+            "identity_records_checked": 100000,
+            "origin_records_checked": 100000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20000,
+            "reused_literal_fields": 0,
+            "records_materialized": 1000,
+            "records_reused": 99000,
+            "ref_edges_rebuilt": 2000,
+            "check_roots_executed": 4000,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 3,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r3-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3673747456,
+      "peak_working_set_bytes": 6484238336,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 10,
+          "p50_ms": 0.13555,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.12029999999999999,
+          "max_ms": 0.258,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 10,
+          "p50_ms": 0.6175999999999999,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.408,
+          "max_ms": 1.0452000000000001,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 10,
+          "p50_ms": 9248.44085,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 6137.424099999999,
+          "max_ms": 15108.1878,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.1254,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1242,
+          "max_ms": 0.1331,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 59.4741,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 58.8084,
+          "max_ms": 66.47210000000001,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 3,
+          "p50_ms": 59.4677,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 57.6823,
+          "max_ms": 67.8621,
+          "warmups": 1
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "identity_records_checked": 100000,
+            "origin_records_checked": 100000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 2000000,
+            "reused_literal_fields": 0,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "identity_records_checked": 1000,
+            "origin_records_checked": 1000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20,
+            "reused_literal_fields": 0,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "baseline",
+      "round": 3,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r3-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672702976,
+      "peak_working_set_bytes": 6484127744,
+      "stderr": "",
+      "files": 100,
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 10,
+          "p50_ms": 0.1193,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1149,
+          "max_ms": 0.14730000000000001,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 10,
+          "p50_ms": 0.39645,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.3806,
+          "max_ms": 0.4395,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 10,
+          "p50_ms": 10513.1934,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 6103.548199999999,
+          "max_ms": 11075.9949,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.12769999999999998,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.125,
+          "max_ms": 0.1358,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 71.3158,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 71.0892,
+          "max_ms": 76.7195,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 3,
+          "p50_ms": 76.2444,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 74.0254,
+          "max_ms": 80.16420000000001,
+          "warmups": 1
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 100,
+            "sources_reloaded": 0,
+            "draft_records_collected": 100000,
+            "records_validated": 100000,
+            "records_materialized": 100000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 200000,
+            "check_roots_executed": 400001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 99999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "baseline",
+      "round": 4,
+      "records": 10000,
+      "files": 10,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-10000-1-r4-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 417312768,
+      "peak_working_set_bytes": 674000896,
+      "stderr": "",
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.1424,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.1424,
+          "max_ms": 0.1424,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.4344,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.4344,
+          "max_ms": 0.4344,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 509.8184,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 509.8184,
+          "max_ms": 509.8184,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.06380000000000001,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0612,
+          "max_ms": 0.07160000000000001,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 18.648,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 17.063399999999998,
+          "max_ms": 18.718700000000002,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 30.69025,
+          "p95_ms": 32.8311,
+          "p99_ms": 37.521899999999995,
+          "min_ms": 28.938399999999998,
+          "max_ms": 52.1748,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 10,
+            "sources_reloaded": 0,
+            "draft_records_collected": 10000,
+            "records_validated": 10000,
+            "records_materialized": 10000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 20000,
+            "check_roots_executed": 40001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "records_materialized": 1,
+            "records_reused": 9999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    },
+    {
+      "label": "current",
+      "round": 4,
+      "records": 10000,
+      "files": 10,
+      "batches": "1",
+      "raw": "incremental-graph-current-10000-1-r4-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 417341440,
+      "peak_working_set_bytes": 672952320,
+      "stderr": "",
+      "metrics": [
+        {
+          "metric": "project_open",
+          "samples": 1,
+          "p50_ms": 0.14889999999999998,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.14889999999999998,
+          "max_ms": 0.14889999999999998,
+          "warmups": 1
+        },
+        {
+          "metric": "schema_compile",
+          "samples": 1,
+          "p50_ms": 0.46299999999999997,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.46299999999999997,
+          "max_ms": 0.46299999999999997,
+          "warmups": 1
+        },
+        {
+          "metric": "data_open",
+          "samples": 1,
+          "p50_ms": 508.7072,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 508.7072,
+          "max_ms": 508.7072,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_same_text",
+          "samples": 3,
+          "p50_ms": 0.0922,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 0.0674,
+          "max_ms": 0.17450000000000002,
+          "warmups": 1
+        },
+        {
+          "metric": "validate_one_field",
+          "samples": 3,
+          "p50_ms": 17.1725,
+          "p95_ms": null,
+          "p99_ms": null,
+          "min_ms": 16.6143,
+          "max_ms": 17.3589,
+          "warmups": 1
+        },
+        {
+          "metric": "mutate_1_grouped",
+          "samples": 200,
+          "p50_ms": 30.067950000000003,
+          "p95_ms": 32.1497,
+          "p99_ms": 37.7421,
+          "min_ms": 28.049500000000002,
+          "max_ms": 38.1957,
+          "warmups": 20
+        }
+      ],
+      "stats": [
+        {
+          "metric": "data_open_stats",
+          "stats": {
+            "sources_resolved": 10,
+            "sources_reloaded": 0,
+            "draft_records_collected": 10000,
+            "records_validated": 10000,
+            "identity_records_checked": 10000,
+            "origin_records_checked": 10000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 200000,
+            "reused_literal_fields": 0,
+            "records_materialized": 10000,
+            "records_reused": 0,
+            "ref_edges_rebuilt": 20000,
+            "check_roots_executed": 40001,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        },
+        {
+          "metric": "mutate_1_grouped_stats",
+          "stats": {
+            "sources_resolved": 0,
+            "sources_reloaded": 1,
+            "draft_records_collected": 0,
+            "records_validated": 1,
+            "identity_records_checked": 1000,
+            "origin_records_checked": 1000,
+            "dimension_inputs_checked": 0,
+            "resolved_root_fields": 20,
+            "reused_literal_fields": 0,
+            "records_materialized": 1,
+            "records_reused": 9999,
+            "ref_edges_rebuilt": 2,
+            "check_roots_executed": 4,
+            "dimension_sources_planned": 0,
+            "dimension_sources_written": 0
+          }
+        }
+      ],
+      "verified": true
+    }
+  ],
+  "pooled": {
+    "baseline": {
+      "samples": 600,
+      "p50_ms": 39.4132,
+      "p95_ms": 79.0268,
+      "p99_ms": 90.4247,
+      "min_ms": 35.698,
+      "max_ms": 106.4126
+    },
+    "current": {
+      "samples": 600,
+      "p50_ms": 37.81975,
+      "p95_ms": 70.8155,
+      "p99_ms": 97.0304,
+      "min_ms": 31.7398,
+      "max_ms": 334.5522
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{"mode":"pipeline","samples":10,"warmups":1,"allocator":"mimalloc","timing":"closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"}
+{"records":100000,"files":100,"fields":20,"source_bytes":54267780,"mutation_field":"name","update_samples":3}
+{"metric":"project_open","samples_ms":[0.14730000000000001,0.1258,0.1228,0.11649999999999999,0.1291,0.1197,0.1149,0.1178,0.1189,0.116],"median_ms":0.1197,"min_ms":0.1149,"max_ms":0.14730000000000001,"p95_ms":null}
+{"metric":"schema_compile","samples_ms":[0.4395,0.40850000000000003,0.4385,0.3976,0.3934,0.38670000000000004,0.386,0.3806,0.4042,0.39530000000000004],"median_ms":0.3976,"min_ms":0.3806,"max_ms":0.4395,"p95_ms":null}
+{"metric":"data_open","samples_ms":[10066.9559,11063.1349,11075.9949,8634.341299999998,9529.477,6103.548199999999,7619.4892,10994.6172,10990.012200000001,10959.4309],"median_ms":10959.4309,"min_ms":6103.548199999999,"max_ms":11075.9949,"p95_ms":null}
+{"metric":"data_open_stats","stats":{"sources_resolved":100,"sources_reloaded":0,"draft_records_collected":100000,"records_validated":100000,"records_materialized":100000,"records_reused":0,"ref_edges_rebuilt":200000,"check_roots_executed":400001,"dimension_sources_planned":0,"dimension_sources_written":0}}
+{"metric":"validate_same_text","samples_ms":[0.1358,0.12769999999999998,0.125],"median_ms":0.12769999999999998,"min_ms":0.125,"max_ms":0.1358,"p95_ms":null}
+{"metric":"validate_one_field","samples_ms":[76.7195,71.3158,71.0892],"median_ms":71.3158,"min_ms":71.0892,"max_ms":76.7195,"p95_ms":null}
+{"metric":"mutate_1_grouped","samples_ms":[80.16420000000001,74.0254,76.2444],"median_ms":76.2444,"min_ms":74.0254,"max_ms":80.16420000000001,"p95_ms":null}
+{"metric":"mutate_1_grouped_stats","stats":{"sources_resolved":0,"sources_reloaded":1,"draft_records_collected":0,"records_validated":1,"records_materialized":1,"records_reused":99999,"ref_edges_rebuilt":2,"check_roots_executed":4,"dimension_sources_planned":0,"dimension_sources_written":0}}
+{"verification":"fresh_reload_matches_all_values_and_no_diagnostics"}

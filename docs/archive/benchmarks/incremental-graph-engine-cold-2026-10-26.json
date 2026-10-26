@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-26T06:22:06.7476072Z",
+  "ref": "9fcdbc2c529b3fee8563ffc120fea51868ab979c",
+  "baseline_sha256": "F3CE4A7CCC028E262822FF173B169E8AB6C27B910DC1E5CBF45C6245A718FA4E",
+  "current_sha256": "C30812D2178940B93F5C6F1F83B86A99496DC9EC773BA28671862AEE3E698578",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "protocol": "Serial Release processes, deterministic 100-file/20-field fixture. Raw mutation sample count 219: example warmup 1 plus first 19 discarded gives 20 warmups and 200 retained samples. Ten fresh-session cold samples in round 0; later rounds 1. Working-set monitor at 100ms; cold process peak captured at data_open_stats, includes schema and all fresh-session opens. Additional batch run has only 3 samples, not stable P95.",
+  "runs": [
+    {
+      "label": "current",
+      "round": 3,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-current-100000-1-r3-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3673747456,
+      "peak_working_set_bytes": 6484238336,
+      "stderr": ""
+    },
+    {
+      "label": "baseline",
+      "round": 3,
+      "records": 100000,
+      "batches": "1",
+      "raw": "incremental-graph-baseline-100000-1-r3-2026-10-26.ndjson",
+      "cold_peak_working_set_bytes": 3672702976,
+      "peak_working_set_bytes": 6484127744,
+      "stderr": ""
+    }
+  ]
+}

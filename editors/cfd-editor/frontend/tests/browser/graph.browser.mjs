@@ -249,30 +249,32 @@ test('complex Option objects and special dictionary keys keep expansion and stru
   }
 })
 
-test('readonly dynamic heights match an ordinary complete card before and after typography invalidation', async () => {
-  await openFixture('items=60&kind=strings&reference')
-  const source = page.locator('.graph-node[data-nodeid="Item::source"]')
-  await source.locator('.dc-row[data-field-path="values"]').click()
-  const compare = async () => {
-    await page.waitForFunction(() => window.graphFlow.getNode('Item::source').data.geometry.pendingCount === 0)
-    await settle()
-    const result = await page.evaluate(() => {
-      const geometry = window.graphFlow.getNode('Item::source').data.geometry
-      const card = document.querySelector('.full-reference .dc-node-card')
-      const origin = card.getBoundingClientRect().top
-      const differences = [...card.querySelectorAll('.dc-row[data-field-path-wire]')].map(row => {
-        const rect = row.getBoundingClientRect()
-        return { path: row.dataset.fieldPath, diff: Math.abs(geometry.center(row.dataset.fieldPath) - geometry.headerHeight - geometry.borderTop - (rect.top - origin + rect.height / 2)) }
+test('dynamic and complex heights match an ordinary complete card before and after typography invalidation', async () => {
+  for (const query of ['kind=strings', 'kind=objects', 'kind=dict', 'kind=objects&editable']) {
+    await openFixture(`items=60&${query}&reference`)
+    const source = page.locator('.graph-node[data-nodeid="Item::source"]')
+    await source.locator('.dc-row[data-field-path="values"]').click()
+    const compare = async () => {
+      await page.waitForFunction(() => window.graphFlow.getNode('Item::source').data.geometry.pendingCount === 0)
+      await settle()
+      const result = await page.evaluate(() => {
+        const geometry = window.graphFlow.getNode('Item::source').data.geometry
+        const card = document.querySelector('.full-reference .dc-node-card')
+        const origin = card.getBoundingClientRect().top
+        const differences = [...card.querySelectorAll('.dc-row[data-field-path-wire]')].map(row => {
+          const rect = row.getBoundingClientRect()
+          return { path: row.dataset.fieldPath, diff: Math.abs(geometry.center(row.dataset.fieldPath) - geometry.headerHeight - geometry.borderTop - (rect.top - origin + rect.height / 2)) }
+        })
+        return { height: Math.abs(card.getBoundingClientRect().height - geometry.bodyHeight), differences }
       })
-      return { height: Math.abs(card.getBoundingClientRect().height - geometry.bodyHeight), differences }
-    })
-    assert.ok(result.height <= 1 && result.differences.every(row => row.diff <= 1), JSON.stringify(result))
+      assert.ok(result.height <= 1 && result.differences.every(row => row.diff <= 1), JSON.stringify(result))
+    }
+    await compare()
+    await page.evaluate(() => { document.body.style.fontSize = '16px'; document.fonts.dispatchEvent(new Event('loadingdone')) })
+    await compare()
+    if (!query.includes('editable')) assert.equal(await source.locator('textarea, input').count(), 0)
+    assert.deepEqual(errors, [])
   }
-  await compare()
-  await page.evaluate(() => { document.body.style.fontSize = '16px'; document.fonts.dispatchEvent(new Event('loadingdone')) })
-  await compare()
-  assert.equal(await source.locator('textarea, input').count(), 0)
-  assert.deepEqual(errors, [])
 })
 
 test('foreign array deletion ends an old draft and rejected writes remain editable', async () => {

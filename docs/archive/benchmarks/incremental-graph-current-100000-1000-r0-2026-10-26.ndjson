@@ -1,0 +1,13 @@
+{"mode":"pipeline","samples":1,"warmups":1,"allocator":"mimalloc","timing":"closure body and internal drops included; returned output drop excluded; previous output dropped before next sample"}
+{"records":100000,"files":100,"fields":20,"source_bytes":54267780,"mutation_field":"name","update_samples":3}
+{"metric":"project_open","samples_ms":[0.1406],"median_ms":0.1406,"min_ms":0.1406,"max_ms":0.1406,"p95_ms":null}
+{"metric":"schema_compile","samples_ms":[0.43370000000000003],"median_ms":0.43370000000000003,"min_ms":0.43370000000000003,"max_ms":0.43370000000000003,"p95_ms":null}
+{"metric":"data_open","samples_ms":[6303.215899999999],"median_ms":6303.215899999999,"min_ms":6303.215899999999,"max_ms":6303.215899999999,"p95_ms":null}
+{"metric":"data_open_stats","stats":{"sources_resolved":100,"sources_reloaded":0,"draft_records_collected":100000,"records_validated":100000,"identity_records_checked":100000,"origin_records_checked":100000,"dimension_inputs_checked":0,"resolved_root_fields":2000000,"reused_literal_fields":0,"records_materialized":100000,"records_reused":0,"ref_edges_rebuilt":200000,"check_roots_executed":400001,"dimension_sources_planned":0,"dimension_sources_written":0}}
+{"metric":"validate_same_text","samples_ms":[0.064,0.0594,0.0598],"median_ms":0.0598,"min_ms":0.0594,"max_ms":0.064,"p95_ms":null}
+{"metric":"validate_one_field","samples_ms":[30.5355,31.0308,29.7159],"median_ms":30.5355,"min_ms":29.7159,"max_ms":31.0308,"p95_ms":null}
+{"metric":"mutate_1000_grouped","samples_ms":[90.474,83.403,82.714],"median_ms":83.403,"min_ms":82.714,"max_ms":90.474,"p95_ms":null}
+{"metric":"mutate_1000_grouped_stats","stats":{"sources_resolved":0,"sources_reloaded":1,"draft_records_collected":0,"records_validated":1000,"identity_records_checked":1000,"origin_records_checked":1000,"dimension_inputs_checked":0,"resolved_root_fields":20000,"reused_literal_fields":0,"records_materialized":1000,"records_reused":99000,"ref_edges_rebuilt":2000,"check_roots_executed":4000,"dimension_sources_planned":0,"dimension_sources_written":0}}
+{"metric":"mutate_1000_interleaved","samples_ms":[3784.7911,3720.5132,3720.557],"median_ms":3720.557,"min_ms":3720.5132,"max_ms":3784.7911,"p95_ms":null}
+{"metric":"mutate_1000_interleaved_stats","stats":{"sources_resolved":0,"sources_reloaded":100,"draft_records_collected":0,"records_validated":1000,"identity_records_checked":100000,"origin_records_checked":100000,"dimension_inputs_checked":0,"resolved_root_fields":20000,"reused_literal_fields":0,"records_materialized":1000,"records_reused":99000,"ref_edges_rebuilt":2000,"check_roots_executed":4000,"dimension_sources_planned":0,"dimension_sources_written":0}}
+{"verification":"fresh_reload_matches_all_values_and_no_diagnostics"}
