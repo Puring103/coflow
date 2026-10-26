@@ -4,6 +4,41 @@
 mod common;
 use common::*;
 
+#[test]
+fn unrelated_dimension_contexts_reuse_literal_costs_without_resolving_value_trees() {
+    let schema = compile_schema("table Item { values: [Option<[int]>]; count: int; }");
+    let build = |variants| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("a", "Item", [("values", value(&schema, "[Option<[int]>]", "[Some([1 | 2 | 3]) | None]")), ("count", 4_i64.into())]);
+        for index in 0..variants {
+            builder.add_dimension_variant(DimensionName::new("mode").unwrap(), VariantName::new(format!("v{index}")).unwrap());
+        }
+        builder.build_partial().unwrap()
+    };
+    let one = build(1);
+    let many = build(20);
+    assert_eq!(one.statistics.resolved_root_fields, 2);
+    assert_eq!(many.statistics.resolved_root_fields, 2);
+    assert_eq!(many.statistics.reused_literal_fields, 40);
+    assert_eq!(one.model.record_count(), many.model.record_count());
+}
+
+#[test]
+fn reused_literal_budget_replays_precise_failure_after_a_larger_dimension_override() {
+    let schema = compile_schema(r#"table Item { @dimension("mode") a: [int]; z: [int]; }"#);
+    let build = |nodes| {
+        let mut builder = CfdDataModel::builder(&schema).with_structural_limits(StructuralLimits::new(10, nodes, 100));
+        builder.add_record("a", "Item", [("a", LoadedValueDraft::Array(vec![])), ("z", LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into(), 3_i64.into()]))]);
+        builder.add_dimension_value_draft(overlay("Item", "a", "a", "mode", "large", LoadedValueDraft::Array(vec![1_i64.into(), 2_i64.into()])));
+        builder.build()
+    };
+    build(8).unwrap();
+    let diagnostics = build(7).unwrap_err();
+    let diagnostic = diagnostic_with_code(&diagnostics, CfdErrorCode::DataStructureLimitExceeded);
+    assert_eq!(diagnostic.primary.as_ref().unwrap().path, CfdPath::root().field("z").index(2));
+    assert_eq!(diagnostic.message, "data value exceeds structural nodes limit 7 (observed 8) (dimension `mode`, variant `large`)");
+}
+
 fn value(schema: &CftSchema, ty: &str, source: &str) -> LoadedValueDraft {
     let cell_value::ParsedCell::Value(value) = cell_value::parse_cell(schema, ty, source).unwrap()
     else {

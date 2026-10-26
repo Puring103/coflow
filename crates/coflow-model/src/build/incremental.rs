@@ -1,4 +1,5 @@
 use super::draft::{RecordDraftSource, ValueDraft};
+use super::dimension_inputs::{DimensionInputIndex, DimensionKey, PreparedDimensions};
 use super::resolve::ValueResolver;
 use super::validate::Validator;
 use super::{
@@ -71,8 +72,6 @@ impl TemplateDependencies {
     }
 }
 
-type DimensionKey = (CfdRecordHandle, FieldName, DimensionName, VariantName);
-
 struct LazyDimension<'a> {
     input: &'a DimensionValueDraft,
     value: OnceCell<Option<ValueDraft>>,
@@ -80,15 +79,29 @@ struct LazyDimension<'a> {
 
 /// 只暂存本轮真正访问过的已验证草稿，不在模型里永久保留第三份完整数据树。
 type DraftPage = Box<[OnceCell<Option<Box<RecordDraft>>>]>;
+type DimensionPage<'a> = Box<[OnceCell<BTreeMap<DimensionKey, LazyDimension<'a>>>]>;
 
 struct LazyDrafts<'a, 'input> {
     schema: BuildSchema<'a>,
     inputs: &'a RecordInputs<'input>,
     records: Vec<OnceCell<DraftPage>>,
-    dimensions: BTreeMap<DimensionKey, LazyDimension<'a>>,
+    dimensions: PreparedDimensions<'a>,
+    dimension_pages: Vec<OnceCell<DimensionPage<'a>>>,
     diagnostics: RefCell<Vec<CfdDiagnostic>>,
     validated: Cell<usize>,
     limits: StructuralLimits,
+}
+
+impl<'a> LazyDrafts<'a, '_> {
+    fn dimension_entry(&self, key: &DimensionKey) -> Option<&LazyDimension<'a>> {
+        self.dimensions.get(key)?;
+        let host = key.0;
+        self.dimension_pages.get(host.index() / 512)?
+            .get_or_init(|| (0..512).map(|_| OnceCell::new()).collect())
+            .get(host.index() % 512)?
+            .get_or_init(|| self.dimensions.entries(host).map(|(key, input)| (key, LazyDimension { input, value: OnceCell::new() })).collect())
+            .get(key)
+    }
 }
 
 impl RecordDraftSource for LazyDrafts<'_, '_> {
@@ -136,9 +149,7 @@ impl RecordDraftSource for LazyDrafts<'_, '_> {
         dimension: &DimensionName,
         variant: &VariantName,
     ) -> Option<&ValueDraft> {
-        let entry =
-            self.dimensions
-                .get(&(record, field.clone(), dimension.clone(), variant.clone()))?;
+        let entry = self.dimension_entry(&(record, field.clone(), dimension.clone(), variant.clone()))?;
         entry
             .value
             .get_or_init(|| {
@@ -185,7 +196,7 @@ pub(super) fn rebuild(
         return None;
     }
     let schema = BuildSchema::new(builder.schema);
-    let dimensions = prepare_dimensions(&builder, previous, schema)?;
+    let dimensions = DimensionInputIndex::prepare(&builder, previous, schema)?;
     let drafts = LazyDrafts {
         schema,
         inputs: &builder.records,
@@ -193,6 +204,7 @@ pub(super) fn rebuild(
             .map(|_| OnceCell::new())
             .collect(),
         dimensions,
+        dimension_pages: (0..builder.records.len().div_ceil(512)).map(|_| OnceCell::new()).collect(),
         diagnostics: RefCell::new(Vec::new()),
         validated: Cell::new(0),
         limits: builder.structural_limits,
@@ -201,10 +213,13 @@ pub(super) fn rebuild(
     let ResolvedIncremental {
         records: replacements,
         reads,
+        resolved_root_fields,
+        reused_literal_fields,
     } = resolve_replacements(&builder, previous, schema, &drafts, &affected)?;
     let mut model = previous.clone();
     let changed_records = apply_replacements(&mut model, &builder, &drafts, replacements, &input_ranges);
     model.input_manifest = builder.records.manifest().into();
+    model.dimension_input_index = Some(Arc::new(drafts.dimensions.index.clone()));
     let context = SemanticContext(&model);
     for id in &affected {
         let record = model.record(*id)?;
@@ -240,6 +255,9 @@ pub(super) fn rebuild(
     );
     model.refs = Arc::new(refs);
     let statistics = CfdModelBuildStats {
+        resolved_root_fields,
+        reused_literal_fields,
+        dimension_inputs_checked: drafts.dimensions.checked,
         identity_records_checked: input_records_checked,
         origin_records_checked: input_records_checked,
         validated_records: drafts.validated.get(),
@@ -287,49 +305,11 @@ fn can_reuse_model(
     Some(ranges)
 }
 
-fn prepare_dimensions<'a>(
-    builder: &'a CfdModelBuilder<'_>,
-    previous: &CfdDataModel,
-    schema: BuildSchema<'_>,
-) -> Option<BTreeMap<DimensionKey, LazyDimension<'a>>> {
-    let mut dimensions = BTreeMap::new();
-    for input in &builder.dimension_values {
-        let host =
-            previous.lookup_assignable(builder.schema, &input.source_type, &input.source_id)?;
-        let owner = previous.record(host)?;
-        let field = schema.field(owner.actual_type(), &input.field)?;
-        if field
-            .dimension
-            .as_ref()
-            .is_none_or(|binding| binding.dimension != input.dimension)
-        {
-            return None;
-        }
-        let key = (
-            host,
-            input.field.clone(),
-            input.dimension.clone(),
-            input.variant.clone(),
-        );
-        if dimensions
-            .insert(
-                key,
-                LazyDimension {
-                    input,
-                    value: OnceCell::new(),
-                },
-            )
-            .is_some()
-        {
-            return None;
-        }
-    }
-    Some(dimensions)
-}
-
 struct ResolvedIncremental {
     records: BTreeMap<CfdRecordHandle, CfdRecord>,
     reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    resolved_root_fields: usize,
+    reused_literal_fields: usize,
 }
 
 // 所有受影响记录与维度先求值成功，再发布到新代次，失败时不修改旧快照。
@@ -343,6 +323,8 @@ fn resolve_replacements(
     let mut replacements = BTreeMap::<CfdRecordHandle, CfdRecord>::new();
     let mut diagnostics = Vec::new();
     let reads;
+    let resolved_root_fields;
+    let reused_literal_fields;
     {
         let mut resolver = ValueResolver::new(
             &schema,
@@ -351,6 +333,7 @@ fn resolve_replacements(
             &mut diagnostics,
             builder.structural_limits,
         );
+        if !builder.dimension_variants.is_empty() { resolver.enable_literal_costs(); }
         for id in affected {
             let old = previous.record(*id)?;
             let fields = resolver.resolve_record_fields(*id, None)?;
@@ -400,8 +383,8 @@ fn resolve_replacements(
                             target.variants.insert(
                                 variant.clone(),
                                 CfdDimensionValue {
-                                    value: value.clone(),
-                                    origin: overlay.input.origin.clone(),
+                                value: value.clone(),
+                                    origin: overlay.origin.clone(),
                                 },
                             );
                         }
@@ -412,6 +395,8 @@ fn resolve_replacements(
         }
         let reference_diagnostics = resolver.take_reference_diagnostics();
         reads = resolver.take_reads();
+        resolved_root_fields = resolver.resolved_root_fields;
+        reused_literal_fields = resolver.reused_literal_fields;
         // 任意新诊断交由全量构建统一归并，包括预算、循环、维度及可编辑错误，避免漏旧标签。
         if !reference_diagnostics.is_empty() {
             return None;
@@ -423,6 +408,8 @@ fn resolve_replacements(
     Some(ResolvedIncremental {
         records: replacements,
         reads,
+        resolved_root_fields,
+        reused_literal_fields,
     })
 }
 
@@ -455,13 +442,14 @@ fn apply_replacements(
             Arc::make_mut(&mut records[index]).origin = input.origin.clone();
         }
     }
-    for ((host, field, _, variant), entry) in &drafts.dimensions {
+    for key @ (host, field, _, variant) in &drafts.dimensions.changed {
+        let Some(entry) = drafts.dimensions.get(key) else { continue };
         let record = &records[host.index()];
         let origin_changed = record
             .dimension_fields
             .get(field)
             .and_then(|values| values.variants.get(variant))
-            .is_some_and(|value| value.origin != entry.input.origin);
+            .is_some_and(|value| value.origin != entry.origin);
         if origin_changed {
             // 维度来源同样与值分离，位置刷新只复制相关字段的索引和共享值指针。
             let record = Arc::make_mut(&mut records[host.index()]);
@@ -469,7 +457,7 @@ fn apply_replacements(
                 .get_mut(field)
                 .and_then(|values| values.variants.get_mut(variant))
             {
-                value.origin = entry.input.origin.clone();
+                value.origin = entry.origin.clone();
             }
         }
     }

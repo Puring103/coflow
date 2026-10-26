@@ -3,8 +3,8 @@ use crate::api::{
 };
 use crate::cfd_loader::CfdLoader;
 use crate::data_model::{
-    CfdDataModel, CfdDiagnostics, CfdInputBatch, CfdModelBuildStats, CfdPath, CfdPathSegment, CfdRecordHandle,
-    DimensionValueDraft, LoadedRecordDraft, RecordOrigin,
+    CfdDataModel, CfdDiagnostics, CfdDimensionInputBatch, CfdInputBatch, CfdModelBuildStats, CfdPath, CfdPathSegment, CfdRecordHandle,
+    LoadedRecordDraft, RecordOrigin,
 };
 use crate::project::Project;
 use coflow_language::cft::{CftSchema, DimensionName, VariantName};
@@ -62,7 +62,7 @@ struct CachedSourceBatch {
     entry: CfdSourceEntry,
     source: Arc<str>,
     records: CfdInputBatch<LoadedRecordDraft>,
-    dimension_values: Arc<[DimensionValueDraft]>,
+    dimension_values: CfdDimensionInputBatch,
     dimension_variants: Arc<[(DimensionName, VariantName)]>,
     diagnostics: Arc<DiagnosticSet>,
     loaded: bool,
@@ -112,7 +112,7 @@ impl SourceDataCache {
                 },
                 source: Arc::from(""),
                 records: CfdInputBatch::default(),
-                dimension_values: Arc::default(),
+                dimension_values: CfdDimensionInputBatch::default(),
                 dimension_variants: Arc::default(),
                 diagnostics: Arc::default(),
                 loaded: false,
@@ -460,7 +460,7 @@ pub(crate) fn reload_project_data_from_cache_with_preloaded(
             }
             Err(err) => {
                 batch.records = CfdInputBatch::default();
-                batch.dimension_values = Arc::default();
+                batch.dimension_values = CfdDimensionInputBatch::default();
                 batch.dimension_variants = Arc::default();
                 batch.diagnostics = Arc::new(err);
                 batch.loaded = false;
@@ -541,7 +541,7 @@ fn load_resolved_sources(
                     entry,
                     source: Arc::from(""),
                     records: CfdInputBatch::default(),
-                    dimension_values: Arc::default(),
+                    dimension_values: CfdDimensionInputBatch::default(),
                     dimension_variants: Arc::default(),
                     diagnostics: Arc::new(err),
                     loaded: false,
@@ -645,7 +645,7 @@ impl SourceDataCache {
                 }
             }
             offset += current.records.len();
-            if !Arc::ptr_eq(&current.dimension_values, &old.dimension_values) {
+            if !current.dimension_values.same_generation(&old.dimension_values) {
                 // 覆盖的增删和目标变化同时影响旧、新宿主；来源位置由模型独立刷新。
                 let values_equal = current.dimension_values.len() == old.dimension_values.len()
                     && current
@@ -712,7 +712,7 @@ fn model_builder<'a>(
         .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
     for batch in &source_data.batches {
         builder.add_input_batch(&batch.records);
-        builder.add_borrowed_dimension_value_drafts(batch.dimension_values.iter());
+        builder.add_dimension_input_batch(&batch.dimension_values);
         for (dimension, variant) in batch.dimension_variants.iter() {
             builder.add_dimension_variant(dimension.clone(), variant.clone());
         }
@@ -908,7 +908,7 @@ fn build_partial_model(
             for &index in &candidates { builder.add_borrowed_record(records[index]); }
         }
         for batch in &source_data.batches {
-            builder.add_borrowed_dimension_value_drafts(batch.dimension_values.iter());
+            builder.add_dimension_input_batch(&batch.dimension_values);
             for (dimension, variant) in batch.dimension_variants.iter() {
                 builder.add_dimension_variant(dimension.clone(), variant.clone());
             }
@@ -1027,6 +1027,9 @@ const fn record_model_work(
         .saturating_add(model.validated_records);
     statistics.identity_records_checked = statistics.identity_records_checked.saturating_add(model.identity_records_checked);
     statistics.origin_records_checked = statistics.origin_records_checked.saturating_add(model.origin_records_checked);
+    statistics.dimension_inputs_checked = statistics.dimension_inputs_checked.saturating_add(model.dimension_inputs_checked);
+    statistics.resolved_root_fields = statistics.resolved_root_fields.saturating_add(model.resolved_root_fields);
+    statistics.reused_literal_fields = statistics.reused_literal_fields.saturating_add(model.reused_literal_fields);
     statistics.records_materialized = statistics
         .records_materialized
         .saturating_add(model.materialized_records);

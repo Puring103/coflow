@@ -30,6 +30,10 @@ struct ResolvedMemo {
     shape: MaterializedShape,
 }
 
+/// 仅缓存纯字面量根的真实求值成本，不缓存模板结果或跨上下文 memo。
+#[derive(Debug, Default)]
+pub(super) struct LiteralFieldCosts(BTreeMap<ValueNode, MaterializedShape>);
+
 impl ValueNode {
     fn field(&self, name: &FieldName) -> Self {
         Self {
@@ -73,6 +77,12 @@ pub(super) struct ValueResolver<'a, 'schema, S: RecordDraftSource + ?Sized> {
     budget_exhausted: bool,
     root_record: CfdRecordHandle,
     reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    literal_costs: LiteralFieldCosts,
+    trace_depth: u64,
+    trace_template: bool,
+    cache_literal_costs: bool,
+    pub(super) resolved_root_fields: usize,
+    pub(super) reused_literal_fields: usize,
 }
 
 impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
@@ -99,6 +109,12 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             budget_exhausted: false,
             root_record: CfdRecordHandle::new(0),
             reads: BTreeMap::new(),
+            literal_costs: LiteralFieldCosts::default(),
+            trace_depth: 0,
+            trace_template: false,
+            cache_literal_costs: false,
+            resolved_root_fields: 0,
+            reused_literal_fields: 0,
         }
     }
 
@@ -135,6 +151,10 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
     pub(super) fn take_reads(&mut self) -> BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>> {
         std::mem::take(&mut self.reads)
     }
+
+    pub(super) fn take_literal_costs(&mut self) -> LiteralFieldCosts { std::mem::take(&mut self.literal_costs) }
+    pub(super) fn set_literal_costs(&mut self, costs: LiteralFieldCosts) { self.literal_costs = costs }
+    pub(super) fn enable_literal_costs(&mut self) { self.cache_literal_costs = true }
 
     pub(super) fn diagnostic_count(&self) -> usize {
         self.diagnostics.len()
@@ -179,6 +199,36 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         let mut out = BTreeMap::new();
         let mut complete = true;
         for (name, value) in fields {
+            let top = parent.path.segments.is_empty() && parent.record == self.root_record;
+            let selected_dimension = parent.context.as_ref().map(|(dimension, _)| dimension);
+            let retain = !top || selected_dimension.is_none_or(|dimension| self.schema.field(owner.actual_type.as_str(), name)
+                .and_then(|field| field.dimension.as_ref()).is_some_and(|binding| &binding.dimension == dimension));
+            // 纯值根本来只计一个节点，可直接计费，无需克隆未保留的值。
+            if top && !retain && matches!(value, ValueDraft::Value(_)) && self.dimension_override(parent, name).is_none() {
+                if self.enter_node(cursor, &parent.field(name), StructureKind::DataValue).is_none() { complete = false; }
+                self.reused_literal_fields += 1;
+                continue;
+            }
+            let cost_key = (top && self.cache_literal_costs).then(|| {
+                let mut key = parent.field(name);
+                if self.dimension_override(parent, name).is_none() { key.context = None }
+                key
+            });
+            if top && !retain && !self.budget_exhausted {
+                if let Some(cost) = cost_key.as_ref().and_then(|key| self.literal_costs.0.get(key)).copied() {
+                    let before = self.budget.clone();
+                    // 复用仍按原根的真实节点/深度计费；失败后恢复并正常求值，保留精确诊断位置。
+                    if self.budget.check_additional_depth(cursor, StructureKind::DataValue, cost.depth)
+                        .and_then(|()| self.budget.charge_nodes(StructureKind::DataValue, cost.nodes)).is_ok() {
+                        self.reused_literal_fields += 1;
+                        continue;
+                    }
+                    self.budget = before;
+                }
+            }
+            let nodes_before = self.budget.nodes_used();
+            let errors_before = self.reference_diagnostics.len();
+            if top { self.trace_depth = cursor.depth(); self.trace_template = false; self.resolved_root_fields += 1; }
             let selected = self.dimension_override(parent, name).cloned();
             let value = selected.as_ref().unwrap_or(value);
             let Some(value) =
@@ -187,7 +237,13 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
                 complete = false;
                 continue;
             };
-            out.insert(name.clone(), value);
+            if let Some(cost_key) = cost_key.filter(|_| !self.trace_template && self.reference_diagnostics.len() == errors_before) {
+                let nodes = self.budget.nodes_used().saturating_sub(nodes_before);
+                if nodes > 1 {
+                    self.literal_costs.0.insert(cost_key, MaterializedShape { nodes, depth: self.trace_depth.saturating_sub(cursor.depth()) });
+                }
+            }
+            if retain { out.insert(name.clone(), value); }
         }
         (out, complete && self.diagnostics.len() == diagnostic_start)
     }
@@ -350,6 +406,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         owner: &RecordDraft,
         owner_node: &ValueNode,
     ) -> Option<CfdValue> {
+        self.trace_template = true;
         let mut rendered = String::new();
         for segment in &value.segments {
             match segment {
@@ -596,7 +653,7 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
         }
         let result = self.budget.enter(parent, kind, 1);
         match result {
-            Ok(cursor) => Some(cursor),
+            Ok(cursor) => { self.trace_depth = self.trace_depth.max(cursor.depth()); Some(cursor) },
             Err(error) => {
                 self.push_budget_error(error.to_string(), node);
                 None

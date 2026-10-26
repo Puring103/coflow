@@ -5,7 +5,52 @@ mod common;
 use common::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use coflow_model::CfdInputBatch;
+use coflow_model::{CfdDimensionInputBatch, CfdInputBatch};
+
+#[test]
+fn shared_dimension_batches_reindex_only_changed_overlays_and_refresh_origins() {
+    let schema = compile_schema("table Source { @localized name: string; }");
+    let records = CfdInputBatch::from((0..1030).map(|index| LoadedRecordDraft::new(
+        format!("a{index}"), "Source", [("name", "base".into())],
+    )).collect::<Vec<_>>());
+    let value = |index, text, line| {
+        let mut value = overlay(text, origin(line));
+        value.source_id = RecordId::new(format!("a{index}")).unwrap();
+        value
+    };
+    let single = CfdDimensionInputBatch::from(vec![value(0, "first", 0)]);
+    let many = CfdDimensionInputBatch::from((1..1030).map(|index| value(index, "other", index)).collect::<Vec<_>>());
+    let build = |single: &CfdDimensionInputBatch, old: Option<&CfdDataModel>, changed: bool| {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_input_batch(&records).add_dimension_input_batch(single).add_dimension_input_batch(&many);
+        builder.add_dimension_variant(DimensionName::new("language").unwrap(), VariantName::new("ja").unwrap());
+        match old {
+            Some(old) => builder.try_build_partial_incremental(old, &if changed { vec![id(old, "Source", "a0")] } else { vec![] }).unwrap(),
+            None => builder.build_partial().unwrap(),
+        }
+    };
+    let first = build(&single, None, false);
+    let updated_input = CfdDimensionInputBatch::from(vec![value(0, "second", 4)]);
+    let updated = build(&updated_input, Some(&first.model), true);
+    assert_eq!(updated.statistics.dimension_inputs_checked, 1);
+    assert_eq!(updated.model, build(&updated_input, None, false).model);
+    let moved_input = CfdDimensionInputBatch::from(vec![value(0, "second", 200)]);
+    let moved = build(&moved_input, Some(&updated.model), false);
+    assert_eq!(moved.statistics.dimension_inputs_checked, 1);
+    assert_eq!(moved.statistics.materialized_records, 0);
+    assert_eq!(moved.model, build(&moved_input, None, false).model);
+    let unchanged = build(&moved_input, Some(&moved.model), false);
+    assert_eq!(unchanged.statistics.dimension_inputs_checked, 0);
+    let empty = CfdDimensionInputBatch::default();
+    let removed = build(&empty, Some(&moved.model), true);
+    assert_eq!(removed.model, build(&empty, None, false).model);
+    assert_eq!(removed.statistics.dimension_inputs_checked, 0);
+    assert_eq!(first.model.record(id(&first.model, "Source", "a0")).unwrap().dimension_field("name").unwrap().variants["ja"].origin, origin(0));
+    // 同一不可变批次重复注册也必须保留完整构建的重复覆盖诊断。
+    let mut duplicate = CfdDataModel::builder(&schema);
+    duplicate.add_input_batch(&records).add_dimension_input_batch(&many).add_dimension_input_batch(&many);
+    assert!(duplicate.try_build_partial_incremental(&removed.model, &[]).is_none());
+}
 
 #[test]
 fn immutable_batches_limit_identity_and_origin_checks_to_changed_input() {

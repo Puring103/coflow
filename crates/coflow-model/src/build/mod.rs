@@ -1,5 +1,8 @@
 mod context;
 mod defaults;
+mod dimension_inputs;
+pub use dimension_inputs::CfdDimensionInputBatch;
+pub(crate) use dimension_inputs::DimensionInputIndex;
 mod draft;
 mod incremental;
 mod inputs;
@@ -36,6 +39,7 @@ pub struct CfdModelBuilder<'a> {
     schema: &'a CftSchema,
     records: RecordInputs<'a>,
     dimension_values: Vec<DraftInput<'a, DimensionValueDraft>>,
+    dimension_batches: Vec<&'a CfdDimensionInputBatch>,
     dimension_variants: BTreeMap<DimensionName, BTreeSet<VariantName>>,
     structural_limits: StructuralLimits,
 }
@@ -71,6 +75,9 @@ pub struct CfdModelBuildOutput {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CfdModelBuildStats {
+    pub resolved_root_fields: usize,
+    pub reused_literal_fields: usize,
+    pub dimension_inputs_checked: usize,
     pub identity_records_checked: usize,
     pub origin_records_checked: usize,
     pub validated_records: usize,
@@ -87,6 +94,7 @@ impl<'a> CfdModelBuilder<'a> {
             schema,
             records: RecordInputs::default(),
             dimension_values: Vec::new(),
+            dimension_batches: Vec::new(),
             dimension_variants: BTreeMap::new(),
             structural_limits: StructuralLimits::default(),
         }
@@ -176,6 +184,14 @@ impl<'a> CfdModelBuilder<'a> {
         self
     }
 
+    pub fn add_dimension_input_batch(&mut self, batch: &'a CfdDimensionInputBatch) -> &mut Self {
+        self.dimension_batches.push(batch);
+        for (dimension, variant) in &batch.variants {
+            self.dimension_variants.entry(dimension.clone()).or_default().insert(variant.clone());
+        }
+        self
+    }
+
     /// Builds a validated in-memory data model from source-neutral drafts.
     ///
     /// # Errors
@@ -199,6 +215,9 @@ impl<'a> CfdModelBuilder<'a> {
     /// Returns diagnostics when invalid input cannot be represented without
     /// dropping records or values.
     pub fn build_partial(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+        let dimension_batches = self.dimension_batches.clone();
+        let unbatched_dimensions = !self.dimension_values.is_empty();
+        self.dimension_values.extend(dimension_batches.iter().flat_map(|batch| batch.iter().map(DraftInput::Borrowed)));
         // 变体来自已选 CFD，空覆盖块同样声明可供选择的变体。
         for value in &self.dimension_values {
             self.dimension_variants
@@ -215,6 +234,13 @@ impl<'a> CfdModelBuilder<'a> {
         )
         .build()?;
         output.model.dimension_variants = self.dimension_variants.into();
+        if !unbatched_dimensions && output.model.incremental_ready {
+            let mut inputs = CfdModelBuilder::new(self.schema);
+            inputs.dimension_batches = dimension_batches;
+            if let Some(prepared) = DimensionInputIndex::prepare(&inputs, &output.model, BuildSchema::new(self.schema)) {
+                output.model.dimension_input_index = Some(Arc::new(prepared.index));
+            }
+        }
         Ok(output)
     }
 
@@ -240,6 +266,9 @@ pub(crate) struct ModelCompiler<'a> {
     editable_diagnostics: Vec<CfdDiagnostic>,
     structural_limits: StructuralLimits,
     template_reads: BTreeMap<CfdRecordHandle, BTreeSet<CfdRecordHandle>>,
+    literal_field_costs: resolve::LiteralFieldCosts,
+    resolved_root_fields: usize,
+    reused_literal_fields: usize,
 }
 
 impl<'a> ModelCompiler<'a> {
@@ -259,6 +288,9 @@ impl<'a> ModelCompiler<'a> {
             editable_diagnostics: Vec::new(),
             structural_limits,
             template_reads: BTreeMap::new(),
+            literal_field_costs: resolve::LiteralFieldCosts::default(),
+            resolved_root_fields: 0,
+            reused_literal_fields: 0,
         }
     }
 
@@ -354,11 +386,15 @@ impl<'a> ModelCompiler<'a> {
                 template_dependencies: Arc::new(TemplateDependencies::new(self.template_reads)),
                 incremental_ready: self.editable_diagnostics.is_empty(),
                 input_manifest: input_manifest.into(),
+                dimension_input_index: None,
                 structural_limits: self.structural_limits,
                 schema_compilation: self.schema.cft().compilation_id(),
             },
             diagnostics: CfdDiagnostics::new(self.editable_diagnostics),
             statistics: CfdModelBuildStats {
+                resolved_root_fields: self.resolved_root_fields,
+                reused_literal_fields: self.reused_literal_fields,
+                dimension_inputs_checked: validated_dimension_values.len(),
                 identity_records_checked: record_count,
                 origin_records_checked: record_count,
                 validated_records: drafts.len(),
@@ -416,6 +452,7 @@ impl<'a> ModelCompiler<'a> {
             &mut self.diagnostics,
             self.structural_limits,
         );
+        if !self.dimension_variants.is_empty() { resolver.enable_literal_costs(); }
         for (index, draft) in drafts.iter().enumerate() {
             let record_id = CfdRecordHandle::new(index);
             let Some(fields) = resolver.resolve_record_fields(record_id, None) else {
@@ -438,6 +475,9 @@ impl<'a> ModelCompiler<'a> {
         self.editable_diagnostics
             .extend(resolver.take_reference_diagnostics());
         merge_reads(&mut self.template_reads, resolver.take_reads());
+        self.resolved_root_fields += resolver.resolved_root_fields;
+        self.reused_literal_fields += resolver.reused_literal_fields;
+        self.literal_field_costs = resolver.take_literal_costs();
         records
     }
 
@@ -622,6 +662,8 @@ impl<'a> ModelCompiler<'a> {
                 self.structural_limits,
             );
             resolver.set_dimension_values(validated);
+            resolver.enable_literal_costs();
+            resolver.set_literal_costs(std::mem::take(&mut self.literal_field_costs));
             // 对全部已发现单维上下文完整求值，未标注维度的模板也可能经引用受覆盖影响。
             // 每条记录共享一次结构预算，不预计算维度组合的笛卡尔积。
             for (dimension, variants) in &self.dimension_variants {
@@ -686,6 +728,8 @@ impl<'a> ModelCompiler<'a> {
                 }
             }
             merge_reads(&mut self.template_reads, resolver.take_reads());
+            self.resolved_root_fields += resolver.resolved_root_fields;
+            self.reused_literal_fields += resolver.reused_literal_fields;
         }
         for (start, end, dimension, variant) in diagnostic_contexts {
             attach_dimension_context(
