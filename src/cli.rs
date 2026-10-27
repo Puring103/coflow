@@ -2,22 +2,9 @@ use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use coflow_runtime::automation::{Arguments, Failure, Result};
 use serde_json::{json, Value};
 
-#[derive(Debug)]
-pub(crate) struct SelfUpdateArgs {
-    pub check: bool,
-    pub yes: bool,
-}
-
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) struct InitResult {
     pub config_path: String,
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-pub(crate) struct SelfUpdateResult {
-    pub current_version: String,
-    pub latest_version: String,
-    pub update_available: bool,
-    pub updated: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub(crate) struct CommandParameter {
@@ -95,7 +82,6 @@ fn output_schema(target: Option<&str>) -> schemars::schema::RootSchema {
     use coflow_runtime::automation::response_schema_of;
     match target {
         Some("init") => response_schema_of::<Option<InitResult>>(),
-        Some("self-update") => response_schema_of::<Option<SelfUpdateResult>>(),
         Some("skill.install" | "skill.uninstall" | "skill.status") => {
             response_schema_of::<Option<crate::skill_commands::SkillReport>>()
         }
@@ -629,11 +615,6 @@ pub(crate) fn command() -> Command {
                     leaf("status", "Inspect installed skills", &["global"]),
                 ],
             ),
-            leaf(
-                "self-update",
-                "Check or install CLI updates",
-                &["check yes"],
-            ),
         ]);
     configure(root, "")
 }
@@ -935,7 +916,7 @@ fn writes(command: &Command, name: &str) -> bool {
         .any(|argument| argument.get_id() == "dry-run")
         || matches!(
             name,
-            "init" | "build" | "skill.install" | "skill.uninstall" | "self-update"
+            "init" | "build" | "skill.install" | "skill.uninstall"
         )
 }
 
@@ -1004,11 +985,7 @@ fn parameter(command: &Command, name: &str, argument: &Arg) -> CommandParameter 
                 .map(str::to_string)
                 .collect()
         },
-        requires_any: if name == "self-update" && ["json", "pretty"].contains(&id) {
-            vec!["check".into(), "yes".into()]
-        } else {
-            Vec::new()
-        },
+        requires_any: Vec::new(),
         value_constraints: parameter_constraints(name, id),
         conditional_defaults: if name == "diff" && id == "base" {
             vec![json!({"when_present":"input","value":null})]
@@ -1122,9 +1099,6 @@ fn example(command: &Command, name: &str) -> String {
                 parameters.insert(argument.as_str());
             }
         }
-    }
-    if name == "self-update" {
-        parameters.insert("check");
     }
     if command
         .get_arguments()

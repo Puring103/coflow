@@ -276,7 +276,6 @@ coflow lsp --project <project>
 coflow skill install -g
 coflow skill status -g
 coflow skill uninstall -g
-coflow self-update
 ```
 
 ## 完整命令与参数
@@ -957,16 +956,6 @@ coflow self-update
 
 `--global`（`-g`）选择全局安装；省略时操作项目内的安装。
 
-### `self-update`
-
-检查或安装 CLI 更新。
-
-| 参数 | 要求 | 取值与默认值 |
-| --- | --- | --- |
-| `--check` | 可选 | 开关 |
-| `--yes` | 可选 | 开关 |
-
-`--check` 仅查询更新；`--yes` 安装时跳过交互确认。
 
 ## 参数说明
 
@@ -1028,7 +1017,6 @@ coflow self-update
 | `--language` | format 标准输入语言，cft 或 cfd |
 | `--check` | 只检查状态，不写入；format/codegen 中与 --dry-run 互斥 |
 | `--global` / `-g` | skills 操作使用全局目录 |
-| `--yes` | self-update 安装更新时跳过交互确认 |
 
 `--metrics` 支持 `count`、`min`、`max`、`sum`、`mean`、`quantiles`、`some`、`none`、`empty_count`、`length_distribution`、`length_min`、`length_max`。指标需与字段类型匹配；Option 层通过 `--option-layer` 选择。分位数按 nearest-rank 计算。
 

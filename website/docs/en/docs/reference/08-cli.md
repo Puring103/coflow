@@ -276,7 +276,6 @@ coflow lsp --project <project>
 coflow skill install -g
 coflow skill status -g
 coflow skill uninstall -g
-coflow self-update
 ```
 
 ## Complete command and parameter reference
@@ -957,16 +956,6 @@ Inspect companion skill installation status.
 
 `--global` (`-g`) selects global installation; omission uses the project installation.
 
-### `self-update`
-
-Check for or install CLI updates.
-
-| Parameter | Requirement | Values and defaults |
-| --- | --- | --- |
-| `--check` | Optional | Switch |
-| `--yes` | Optional | Switch |
-
-`--check` only checks for updates; `--yes` skips interactive installation confirmation.
 
 ## Parameter descriptions
 
@@ -1028,7 +1017,6 @@ The same-named parameters have the meanings below. Command tables above determin
 | `--language` | Stdin formatting language, cft or cfd |
 | `--check` | Check status without writing; exclusive with --dry-run in format/codegen |
 | `--global` / `-g` | Global skill directory |
-| `--yes` | Skip interactive self-update installation confirmation |
 
 Metrics: `count`, `min`, `max`, `sum`, `mean`, `quantiles`, `some`, `none`, `empty_count`, `length_distribution`, `length_min`, `length_max`. Metrics must match field type. Select the Option layer with `--option-layer`. Quantiles use nearest-rank.
 

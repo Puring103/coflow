@@ -38,7 +38,6 @@
 - [用户技能设计](development/skill-design.md)：任务边界、按需资料、实现依据与示例验证。
 - [日志与反馈实现契约](development/logging-and-feedback.zh-CN.md)：日志存储、错误状态、反馈导出与验证边界。
 - [发布流程](releasing.md)：版本、安装器、发布资产与更新签名。
-- [macOS 签名](releasing-macos-signing.md)：证书、公证和发布环境配置。
 - [VS Code 扩展](../editors/vscode-coflow/README.md)：语言服务接入和扩展开发。
 
 ## 性能与测量

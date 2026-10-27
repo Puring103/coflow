@@ -10,7 +10,7 @@
 cargo install --git https://github.com/Puring103/coflow.git coflow
 ```
 
-安装、更新和平台选择沿用用户任务范围；发现能力差异时说明所需能力与当前版本。Windows 更新通过安装器；`self-update` 的平台支持由当前 CLI 确定。
+安装、更新和平台选择沿用用户任务范围；发现能力差异时说明所需能力与当前版本。Windows 更新通过安装器。
 
 项目命令显式使用 `--project <目录或 coflow.yaml>`。省略时从当前目录向父目录寻找配置，容易误选父项目。没有项目时 `coflow init <目录>` 创建配置和目录；新类型设计需要配套 CFT 与 CFD，init 本身不提供业务记录。
 

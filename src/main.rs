@@ -264,18 +264,6 @@ fn run(command: &str, args: &Arguments, response: &mut Response) -> Result<()> {
             response.result = coflow_runtime::automation::explain(args.require("code")?)?;
             return Ok(());
         }
-        "self-update" => {
-            if args.flag("json") && !args.flag("check") && !args.flag("yes") {
-                return Err(Failure::request(
-                    "self-update --json requires --check or --yes",
-                ));
-            }
-            response.result = self_update_command::run(&cli::SelfUpdateArgs {
-                check: args.flag("check"),
-                yes: args.flag("yes"),
-            })?;
-            return Ok(());
-        }
         command if command.starts_with("skill.") => {
             let path = args.get("project").map(Path::new);
             let report = match (command, args.flag("global")) {
