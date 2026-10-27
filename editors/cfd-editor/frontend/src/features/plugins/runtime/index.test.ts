@@ -186,7 +186,8 @@ describe('editor plugin registry', () => {
     await Promise.resolve()
 
     expect(second).toHaveBeenCalledOnce()
-    expect(reportError).toHaveBeenCalledWith(expect.stringContaining('listener failed'))
+    expect(reportError).toHaveBeenCalledWith(expect.stringContaining('listener failed'), expect.any(Error))
+    expect(reportError.mock.calls[0][1].stack).toContain('listener failed')
   })
 
   it('dispatches the first matching keybinding through its registered command', async () => {

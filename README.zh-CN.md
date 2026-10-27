@@ -22,7 +22,9 @@ Coflow 将数据定义、编辑、校验和应用接入连接起来：用 CFT �
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/Puring103/coflow/releases/latest) 下载适合系统的 CLI，将其所在目录加入 `PATH`；也可以安装 Rust 后从源码安装：
+从 [GitHub Releases](https://github.com/Puring103/coflow/releases/latest) 选择 `coflow-tools-windows-x64-setup.exe` 安装桌面编辑器与 CLI，或选择 `coflow-cli-windows-x64-setup.exe` 仅安装 CLI。两个安装器都会安装用户 Skill；安装后重新打开终端。VS Code 用户可通过“从 VSIX 安装”安装发布页的扩展。参见[编辑器上手](https://puring103.github.io/coflow/docs/guide/editors)。
+
+也可以安装 Rust 后从源码安装：
 
 ```powershell
 cargo install --git https://github.com/Puring103/coflow.git coflow
@@ -61,7 +63,7 @@ coflow apply --input changes.json --project <project> --rules --if-revision <rev
 
 ## C# 数据加载
 
-引用 `runtimes/csharp/Coflow.Loader` 和生成的 C# 文件。加载器支持 netstandard2.1 与 net8.0。
+先按 `coflow --version` 获取同版本 tag 的 Loader 源码，再引用 `runtimes/csharp/Coflow.Loader` 和全部生成 C# 文件；CLI 安装包不包含 Loader 源码。具体步骤见 [C# 接入](https://puring103.github.io/coflow/docs/reference/07-codegen/01-csharp)。加载器支持 netstandard2.1 与 net8.0。
 应用自行选择 CFD 文件并提供内容：
 
 ```csharp

@@ -1,4 +1,4 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import * as api from '../../../api'
 import type { EditorProjectSettings } from '../../../bindings/EditorProjectSettings'
 import { errorMessage } from '../../../wire'
@@ -16,18 +16,29 @@ export function useShortNameSettings(
 ) {
   const [shortNameSaving, setShortNameSaving] = useState(false)
   const [shortNameRevision, setShortNameRevision] = useState(0)
+  const saveQueue = useRef(Promise.resolve())
   const saveShortNameField = useCallback(async (actualType: string, field: string | null) => {
     const identity = generation.currentIdentity()
     if (!identity) return
     setShortNameSaving(true)
     try {
-      const fields = api.isTauri
-        ? (await api.setShortNameField(identity.sessionId, actualType, field)).short_name_fields
-        : { ...projectSettings?.short_name_fields, [actualType]: field ?? undefined }
+      if (api.isTauri) {
+        const task = saveQueue.current.then(async () => {
+          if (generation.currentSession() === identity.sessionId) await api.setShortNameField(identity.sessionId, actualType, field)
+        })
+        saveQueue.current = task.catch(() => {})
+        await task
+      }
       if (generation.currentSession() !== identity.sessionId) return
       // 设置保存成功后刷新引用缓存，所有展示位置一起切换到新字段。
       lookups.invalidateRefTargets()
-      setProjectSettings(current => ({ ...(current ?? emptyProjectSettings()), short_name_fields: fields }))
+      setProjectSettings(current => {
+        const base = current ?? emptyProjectSettings()
+        const fields = { ...base.short_name_fields }
+        if (field === null) delete fields[actualType]
+        else fields[actualType] = field
+        return { ...base, short_name_fields: fields }
+      })
       setShortNameRevision(revision => revision + 1)
     } catch (error) {
       if (generation.currentSession() === identity.sessionId) setErrorMsg(`保存缩略名失败: ${errorMessage(error)}`)

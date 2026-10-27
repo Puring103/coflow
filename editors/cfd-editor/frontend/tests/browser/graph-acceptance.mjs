@@ -62,6 +62,10 @@ try {
   }
   for (let round = 0; round < rounds; round++) {
     const current = await open('items=10000&standard&editable')
+    // CPU 采样独立运行，不能将 profiler 开销混入正式帧间隔验收。
+    const profiler = process.env.GRAPH_PERF_PROFILE === '1'
+      ? await current.page.context().newCDPSession(current.page) : null
+    if (profiler) { await profiler.send('Profiler.enable'); await profiler.send('Profiler.start') }
     const frames = await current.page.evaluate(async duration => {
       window.perfLongTasks.length = 0
       const intervals = [], counts = []
@@ -79,6 +83,10 @@ try {
       return { intervals_ms: intervals, counts, long_tasks: window.perfLongTasks }
     }, steadyMs)
     steady.push({ round, ...frames, errors: current.sample.errors })
+    if (profiler) {
+      const { profile } = await profiler.send('Profiler.stop')
+      writeFileSync(output.replace(/\.json$/, `-r${round}.cpuprofile`), JSON.stringify(profile))
+    }
     await current.page.close(); console.log(`steady ${round + 1}/${rounds}`); save()
   }
   // 密集连线与 100k 压力单列，不能混入标准场景的 P95。

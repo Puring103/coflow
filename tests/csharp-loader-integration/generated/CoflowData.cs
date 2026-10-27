@@ -262,6 +262,13 @@ public sealed partial class CoflowData
             hp = reader.Get<int>("hp"),
             extra = reader.Get<CfdField>("extra"),
         }),
+        new global::Coflow.Loader.CfdType<UnicodeDefaults>("UnicodeDefaults", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
+        {
+            new global::Coflow.Loader.CfdField<string>("text", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.String("a\u2028b\u2029c\u0085d")),
+        }, create: id => new UnicodeDefaults(id), fill: (value, reader) =>
+        {
+            value.text = reader.Get<string>("text");
+        }, construct: null),
         new global::Coflow.Loader.CfdType<@class>("class", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<string>("namespace", global::Coflow.Loader.CfdValues.String),

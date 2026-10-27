@@ -64,6 +64,98 @@ fn call(root: &Path, arguments: &[&str], stdin: Option<&str>) -> (i32, Value, St
 }
 
 #[test]
+fn codegen_check_and_preview_agree_for_equivalent_line_endings() {
+    let root = fixture();
+    let (exit, response, _) = call(root.path(), &["codegen"], None);
+    assert_eq!(exit, 0, "{response}");
+    let mut paths = vec![root.path().join("generated")];
+    let mut files = Vec::new();
+    while let Some(path) = paths.pop() {
+        for entry in fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                paths.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "cs") {
+                files.push(path);
+            }
+        }
+    }
+    assert!(!files.is_empty());
+    for path in &files {
+        let text = fs::read_to_string(path).unwrap().replace("\r\n", "\n");
+        fs::write(path, text.trim_end_matches('\n').replace('\n', "\r\n")).unwrap();
+    }
+    let originals = files
+        .iter()
+        .map(|path| {
+            (
+                fs::read(path).unwrap(),
+                fs::metadata(path).unwrap().modified().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let (exit, response, _) = call(root.path(), &["codegen", "--check"], None);
+    assert_eq!(exit, 0, "{response}");
+    assert!(
+        !response["result"].to_string().contains("\"changed\":true"),
+        "{response}"
+    );
+    let (exit, response, _) = call(root.path(), &["codegen"], None);
+    assert_eq!(exit, 0, "{response}");
+    for (path, (bytes, modified)) in files.iter().zip(originals) {
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert_eq!(fs::metadata(path).unwrap().modified().unwrap(), modified);
+    }
+}
+
+#[test]
+fn opt_in_cli_logs_correlate_parameter_errors_without_logging_arguments() {
+    let root = fixture();
+    let child = Command::new(env!("CARGO_BIN_EXE_coflow"))
+        .current_dir(root.path())
+        .env("COFLOW_LOG", "1")
+        .args(["data", "list", "--private-sentinel-do-not-log", "--json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let operation_prefix = format!("{}-", child.id());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["diagnostics"][0]["code"], "CLI-REQUEST");
+    let directory = coflow_observability::directory("cli").unwrap();
+    let events = (0..5)
+        .filter_map(|index| {
+            fs::read_to_string(directory.join(format!("events.{index}.jsonl"))).ok()
+        })
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|event| {
+            event["span"]["operation_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with(&operation_prefix))
+        })
+        .collect::<Vec<_>>();
+    let finished = events
+        .iter()
+        .find(|event| event["fields"]["event"] == "command_finished")
+        .expect("correlated final event");
+    assert_eq!(finished["fields"]["exit_code"], 2);
+    assert_eq!(finished["fields"]["diagnostic_count"], 1);
+    assert!(finished["fields"]["codes"]
+        .as_str()
+        .unwrap()
+        .contains("CLI-REQUEST"));
+    assert!(!serde_json::to_string(&events)
+        .unwrap()
+        .contains("private-sentinel"));
+}
+
+#[test]
 fn project_inspection_contract_preserves_configuration_shape_and_generator_options() {
     let root = fixture();
     let (exit, scalar, _) = call(root.path(), &["project", "inspect"], None);

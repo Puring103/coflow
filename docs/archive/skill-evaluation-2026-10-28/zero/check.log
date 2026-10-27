@@ -1,0 +1,3 @@
+COMMAND: coflow check --project zero --rules --json
+EXIT: 1
+{"protocol_version":1,"command":"check","status":"invalid","error_category":null,"project":"C:/Users/wtlll/AppData/Local/Temp/coflow-skill-eval-20261028/zero","revision":"a4516d67032ecf7df0355fa51954639a572867867df429d9b8869d0adee116d2","result":{"structure":"failed","rules":"skipped_dependency_error","complete":false,"scope":[],"diagnostic_count":1},"data_scope":null,"diagnostics_summary":{"total":1,"returned":1,"truncated":false},"diagnostics":[{"code":"DATA-015","stage":"DATA","severity":"error","message":"singleton type `Settings` has 0 records (must be exactly 1)","help":"按 singleton 身份规则调整记录数量。"}]}

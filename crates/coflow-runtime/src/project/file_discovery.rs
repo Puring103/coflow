@@ -76,9 +76,9 @@ struct DirectoryDiscovery<'a> {
 }
 
 #[derive(Debug)]
-pub(super) struct DiscoveredFile {
-    pub(super) path: PathBuf,
-    pub(super) canonical_path: PathBuf,
+pub(crate) struct DiscoveredFile {
+    pub(crate) path: PathBuf,
+    pub(crate) canonical_path: PathBuf,
 }
 
 /// Discovers files below a declared directory without escaping through links.
@@ -96,7 +96,7 @@ pub fn discover_directory_files(root: &Path) -> Result<Vec<PathBuf>, DirectoryDi
         .map(|files| files.into_iter().map(|file| file.path).collect::<Vec<_>>())
 }
 
-pub(super) fn discover_directory_files_with(
+pub(crate) fn discover_directory_files_with(
     root: &Path,
     include_file: &dyn Fn(&Path) -> bool,
 ) -> Result<Vec<DiscoveredFile>, DirectoryDiscoveryError> {

@@ -8,9 +8,7 @@ use coflow_runtime::{ProjectRefreshContext, WriteProjectSession};
 use super::build::{type_navigation, FileTypeCounts, FileTypeNames, SessionSnapshotParts};
 use super::diagnostics::diagnostics_from_store;
 use super::revision::RevisionTicket;
-use super::{
-    diagnostic_messages, project_bootstrap, Diagnostics, EditorSession, SessionEntry, SessionStore,
-};
+use super::{project_bootstrap, Diagnostics, EditorSession, SessionEntry, SessionStore};
 use crate::editor::types::{EditorError, EditorErrorKind, ProjectBootstrap};
 
 struct DataReloadInput {
@@ -34,7 +32,9 @@ impl DataReloadInput {
         let engine = self
             .context
             .refresh_data_sources(&self.changed_paths)
-            .map_err(|diagnostics| EditorError::project(diagnostic_messages(&diagnostics)))?;
+            .map_err(|diagnostics| {
+                super::errors::project_diagnostics_to_editor_error(&diagnostics)
+            })?;
         let queries = engine.queries();
         let snapshot = SessionSnapshotParts {
             file_tree: queries.file_tree(),

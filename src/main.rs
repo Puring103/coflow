@@ -15,6 +15,7 @@ use std::{
     process::ExitCode,
 };
 mod cli;
+mod command_logging;
 mod diagnostics;
 mod skill_commands;
 
@@ -33,6 +34,11 @@ fn main() -> ExitCode {
     };
     let raw: Vec<_> = std::env::args_os().collect();
     let (invoked, json_output, pretty) = cli::invocation(&raw);
+    let run_id = coflow_observability::run_id();
+    let operation_id = coflow_observability::identifier();
+    let span = coflow_observability::tracing::info_span!("cli_command", run_id, operation_id, command = %invoked);
+    let _entered = span.enter();
+    let mut command_log = command_logging::CommandLog::new();
     let matches = match cli::command().try_get_matches_from(&raw) {
         Ok(matches) => matches,
         Err(error) => {
@@ -41,13 +47,14 @@ fn main() -> ExitCode {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
             ) {
                 let _ = error.print();
+                command_log.exit(0);
                 return ExitCode::SUCCESS;
             }
             let (message, help) = cli::argument_error(&error, &invoked);
             let mut response = Response::new(invoked);
             response.fail(Failure::request(message));
             response.set_diagnostic_help(0, help);
-            return output(response, json_output, pretty, false);
+            return output(response, json_output, pretty, false, &mut command_log);
         }
     };
     let (command, args) = cli::decode(&matches);
@@ -56,21 +63,28 @@ fn main() -> ExitCode {
             .map_err(Failure::from)
             .and_then(|p| coflow_lsp::run(p).map_err(|e| Failure::new(Status::Error, "CLI-LSP", e)))
         {
-            Ok(true) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::FAILURE,
+            Ok(true) => {
+                command_log.exit(0);
+                ExitCode::SUCCESS
+            }
+            Ok(false) => {
+                command_log.exit(1);
+                ExitCode::FAILURE
+            }
             Err(e) => {
+                let exit_code = e.status.exit_code();
                 eprintln!("{}", e.diagnostics);
-                ExitCode::from(e.status.exit_code())
+                let mut response = Response::new("lsp");
+                response.fail(e);
+                command_log.response(&response);
+                ExitCode::from(exit_code)
             }
         };
     }
-    coflow_observability::tracing::info!(command, event = "command_started");
     let mut response = Response::new(&command);
     if let Err(error) = run(&command, &args, &mut response) {
-        coflow_observability::tracing::error!(command, event = "command_failed");
         response.fail(error);
     }
-    coflow_observability::tracing::info!(command, status = ?response.status, event = "command_finished");
     if command == "format"
         && args.flag("stdin")
         && !args.flag("check")
@@ -78,18 +92,33 @@ fn main() -> ExitCode {
         && response.status == Status::Success
     {
         if let Some(source) = response.result["source"].as_str() {
+            command_log.response(&response);
             return match io::stdout().lock().write_all(source.as_bytes()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
+                    command_log.output_failed();
                     eprintln!("output error: {error}");
                     ExitCode::from(4)
                 }
             };
         }
     }
-    output(response, json_output, pretty, args.flag("details"))
+    output(
+        response,
+        json_output,
+        pretty,
+        args.flag("details"),
+        &mut command_log,
+    )
 }
-fn output(mut response: Response, json_output: bool, pretty: bool, details: bool) -> ExitCode {
+fn output(
+    mut response: Response,
+    json_output: bool,
+    pretty: bool,
+    details: bool,
+    command_log: &mut command_logging::CommandLog,
+) -> ExitCode {
+    command_log.response(&response);
     response.prepare_output(details);
     let code = response.exit_code();
     // 先准备完整输出，stdout 只写入结果，错误不会混入 JSON。
@@ -101,6 +130,7 @@ fn output(mut response: Response, json_output: bool, pretty: bool, details: bool
         } {
             Ok(text) => text + "\n",
             Err(error) => {
+                command_log.output_failed();
                 eprintln!("output error: {error}");
                 return ExitCode::from(4);
             }
@@ -114,6 +144,7 @@ fn output(mut response: Response, json_output: bool, pretty: bool, details: bool
                 match serde_json::to_value(scope) {
                     Ok(scope) => render_text(&scope, 2, &mut text),
                     Err(error) => {
+                        command_log.output_failed();
                         eprintln!("output error: {error}");
                         return ExitCode::from(4);
                     }
@@ -137,6 +168,7 @@ fn output(mut response: Response, json_output: bool, pretty: bool, details: bool
         text
     };
     if let Err(error) = io::stdout().lock().write_all(content.as_bytes()) {
+        command_log.output_failed();
         eprintln!("output error: {error}");
         return ExitCode::from(4);
     }

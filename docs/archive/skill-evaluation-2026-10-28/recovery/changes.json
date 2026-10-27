@@ -1,0 +1,11 @@
+{
+  "kind": "files",
+  "protocol_version": 1,
+  "changes": [
+    {
+      "op": "write",
+      "content": "sword: Item {\n  name: \"铁剑\",\n  price: 90,\n  quality: Quality::Rare,\n  next: Some(&Item::shield),\n}\nshield: Item { name: \"盾牌\", price: 80 }\nSettings: Settings { start: &Item::sword }\n\nlanguage[ja] { sword: Item { name: \"剣\" } }\n",
+      "file": "data/items.cfd"
+    }
+  ]
+}

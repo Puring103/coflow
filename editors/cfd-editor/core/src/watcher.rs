@@ -4,7 +4,6 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::Duration;
 
-use coflow_runtime::FlatDiagnostic;
 use coflow_runtime::Project;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::Mutex;
@@ -60,8 +59,7 @@ struct ProjectWatcher {
 pub struct ProjectReloadedPayload {
     pub session_id: u32,
     pub changed_paths: Vec<String>,
-    pub revision: u32,
-    pub diagnostics: Vec<FlatDiagnostic>,
+    pub bootstrap: ProjectBootstrap,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -76,7 +74,7 @@ pub struct ProjectReloadedPayload {
 )]
 pub struct ProjectWatchErrorPayload {
     pub session_id: u32,
-    pub message: String,
+    pub error: EditorError,
 }
 
 impl ProjectWatchRegistry {
@@ -89,9 +87,7 @@ impl ProjectWatchRegistry {
         let session_id = bootstrap.session_id;
         let project_root = PathBuf::from(&bootstrap.project_root);
         let project = Project::open_schema_only(Some(&project_root)).map_err(|diagnostics| {
-            EditorError::project(format!(
-                "failed to resolve project watch paths: {diagnostics}"
-            ))
+            crate::editor::project_diagnostics_to_editor_error(&diagnostics)
         })?;
         let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
         let mut watcher = RecommendedWatcher::new(
@@ -296,13 +292,15 @@ fn emit_reload(
             events.emit(EditorEvent::ProjectReloaded(ProjectReloadedPayload {
                 session_id,
                 changed_paths: normalize_paths(changed_paths),
-                revision: snapshot.revision,
-                diagnostics: snapshot.diagnostics,
+                bootstrap: snapshot,
             }));
             true
         }
         Err(err) => {
-            emit_watch_error(events, session_id, err.message);
+            events.emit(EditorEvent::ProjectWatchError(ProjectWatchErrorPayload {
+                session_id,
+                error: err,
+            }));
             false
         }
     }
@@ -311,7 +309,7 @@ fn emit_reload(
 fn emit_watch_error(events: &Arc<dyn EditorEventSink>, session_id: u32, message: String) {
     events.emit(EditorEvent::ProjectWatchError(ProjectWatchErrorPayload {
         session_id,
-        message,
+        error: EditorError::other(message),
     }));
 }
 
@@ -324,6 +322,62 @@ mod tests {
 
     use super::{filter_relevant_paths, watch_roots};
     use coflow_runtime::Project;
+
+    #[derive(Default)]
+    struct Events(parking_lot::Mutex<Vec<super::EditorEvent>>);
+    impl super::EditorEventSink for Events {
+        fn emit(&self, event: super::EditorEvent) {
+            self.0.lock().push(event);
+        }
+    }
+
+    #[test]
+    fn reload_event_contains_committed_generation_and_structured_schema_errors() {
+        let root = tempfile::tempdir().expect("project");
+        let schema = root.path().join("schema.cft");
+        let data = root.path().join("data.cfd");
+        std::fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: data.cfd\ncodegen:\n  - language: csharp\n    dir: generated/\n").expect("config");
+        std::fs::write(&schema, "table Item { value: int; }").expect("schema");
+        std::fs::write(&data, "a: Item { value: 1 }").expect("data");
+        let sessions = super::SessionStore::new().expect("store");
+        let before = sessions
+            .load_project(&root.path().join("coflow.yaml"))
+            .expect("load");
+        let captured = std::sync::Arc::new(Events::default());
+        let events: std::sync::Arc<dyn super::EditorEventSink> = captured.clone();
+        std::fs::write(&data, "a: Item { value: 2 }").expect("edit data");
+        assert!(super::emit_reload(
+            &sessions,
+            &events,
+            before.session_id,
+            &[data]
+        ));
+        match &captured.0.lock()[0] {
+            super::EditorEvent::ProjectReloaded(event) => {
+                assert_eq!(event.bootstrap.revision, before.revision + 1);
+                assert_eq!(event.bootstrap.session_id, before.session_id);
+            }
+            _ => panic!("expected reload"),
+        }
+        std::fs::write(&schema, "table Item { value: MissingType; }").expect("edit schema");
+        assert!(!super::emit_reload(
+            &sessions,
+            &events,
+            before.session_id,
+            &[schema]
+        ));
+        match &captured.0.lock()[1] {
+            super::EditorEvent::ProjectWatchError(event) => {
+                assert!(!event.error.diagnostics.is_empty());
+                assert!(event
+                    .error
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code != "EDITOR-INTERNAL"));
+            }
+            _ => panic!("expected structured error"),
+        };
+    }
 
     #[test]
     fn project_state_directory_does_not_trigger_reload() {

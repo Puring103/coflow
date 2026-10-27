@@ -12,7 +12,9 @@ pub(crate) mod model;
 #[path = "settings/sanitize.rs"]
 pub(crate) mod sanitize;
 
-pub(crate) use io::{read_project_settings, write_local_settings, write_project_settings};
+pub(crate) use io::{
+    lock_project_settings, read_project_settings, write_local_settings, write_project_settings,
+};
 pub(crate) use sanitize::{
     sanitized_column_widths, sanitized_record_groups, sanitized_views, sanitized_workspace,
 };

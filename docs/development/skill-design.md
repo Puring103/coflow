@@ -36,3 +36,5 @@ SKILL.md 保存简短主流程和任务路由。references 每篇回答一个任
 这些测试随 `cargo test --workspace` 执行；开发门禁仍为 AGENTS.md 规定的两条 Rust 命令。内容审查另外检查 frontmatter、本地链接、任务路由、与实现一致性及示例前提。
 
 行为评测场景见 [技能任务评测](../../tests/skills/scenarios.md)。运行 Agent 评测时仅提供已安装技能、业务要求和隔离项目；不向执行者提供预期答案或实现路径。记录完成结果、额外澄清、错误命令及修复过程。CLI 示例通过与真实 Agent 任务成功分别报告。
+
+八类独立任务的最近结果及原始执行证据见 [2026-10-28评测](../archive/skill-evaluation-2026-10-28/README.md)，其中插件为无头验证，真实宿主验收单独记录。

@@ -22,7 +22,9 @@ Coflow connects data definitions, editing, validation and application integratio
 
 ## Installation
 
-Download the CLI for your system from [GitHub Releases](https://github.com/Puring103/coflow/releases/latest) and add its directory to `PATH`, or install from source with Rust:
+From [GitHub Releases](https://github.com/Puring103/coflow/releases/latest), choose `coflow-tools-windows-x64-setup.exe` for the desktop editor and CLI, or `coflow-cli-windows-x64-setup.exe` for CLI only. Both installers install user skills. Reopen the terminal after installation. Install the release VSIX using VS Code's “Install from VSIX” command for CFT/CFD language support. See the [editor guide](https://puring103.github.io/coflow/en/docs/guide/editors).
+
+Alternatively, install from source with Rust:
 
 ```powershell
 cargo install --git https://github.com/Puring103/coflow.git coflow
@@ -61,7 +63,7 @@ Use the `revision` returned by a query to protect subsequent edits. `apply --rul
 
 ## Loading data in C#
 
-Reference `runtimes/csharp/Coflow.Loader` and the generated C# files. The loader supports .NET Standard 2.1 and .NET 8. Your application selects CFD files and supplies their contents:
+Obtain Loader source from the tag matching `coflow --version`, then reference `runtimes/csharp/Coflow.Loader` and all generated C# files. Follow the [C# integration guide](https://puring103.github.io/coflow/en/docs/reference/07-codegen/01-csharp). The loader supports .NET Standard 2.1 and .NET 8. Your application selects CFD files and supplies their contents:
 
 ```csharp
 using Coflow.Loader;

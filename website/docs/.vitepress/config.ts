@@ -20,6 +20,7 @@ function navigation(english: boolean) {
       [`${prefix}/docs/`]: [
         page(text('总览', 'Overview')),
         page(text('快速开始', 'Getting started'), 'guide/install'),
+        page(text('编辑器上手', 'Editor guide'), 'guide/editors'),
         {
           text: text('特性', 'Features'),
           items: [

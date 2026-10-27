@@ -1,0 +1,21 @@
+{
+  "kind": "operations",
+  "protocol_version": 1,
+  "ops": [
+    {
+      "record": {
+        "type": "Item",
+        "id": "shield"
+      },
+      "op": "set_dimension_value",
+      "value": {
+        "source": "\"盾\"",
+        "kind": "expression"
+      },
+      "dimension": "language",
+      "variant": "ja",
+      "file": "data/items.cfd",
+      "field": "name"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+COMMAND: coflow check --rules --project C:/Users/wtlll/AppData/Local/Temp/coflow-skill-eval-20261028/zero --json
+EXIT: 0
+{"protocol_version":1,"command":"check","status":"success","error_category":null,"project":"C:/Users/wtlll/AppData/Local/Temp/coflow-skill-eval-20261028/zero","revision":"780e1aeac3b0815e2896945f15294815b4a38ac843548e5a7d4066dc77ba836c","result":{"structure":"passed","rules":"passed","complete":true,"scope":"all","rule_counts":{"passed":2,"total":2},"diagnostic_count":0,"requested_tasks":2,"executed_tasks":2,"rejected_tasks":0},"data_scope":null,"diagnostics_summary":null,"diagnostics":[]}

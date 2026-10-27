@@ -8,7 +8,6 @@ interface ProjectWatcherOptions {
   generation: ProjectGenerationController
   refresh: (bootstrap: ProjectBootstrap) => Promise<void>
   reportError: (sessionId: number, prefix: string, error: unknown) => void
-  reportWatchError: (message: string) => void
 }
 
 export function useProjectWatcher({
@@ -16,7 +15,6 @@ export function useProjectWatcher({
   generation,
   refresh,
   reportError,
-  reportWatchError,
 }: ProjectWatcherOptions): void {
   useEffect(() => {
     if (!api.isTauri || !project) return
@@ -28,8 +26,8 @@ export function useProjectWatcher({
 
     api.onProjectReloaded(event => {
       if (!isCurrent() || event.session_id !== sessionId) return
-      api.reloadSession(sessionId)
-        .then(bootstrap => isCurrent() ? refresh(bootstrap) : undefined)
+      // 后端已经提交刷新结果，直接消费该代次，避免再次重建会话。
+      refresh(event.bootstrap)
         .catch(error => {
           if (isCurrent()) reportError(sessionId, '刷新项目失败', error)
         })
@@ -41,7 +39,7 @@ export function useProjectWatcher({
     })
 
     api.onProjectWatchError(event => {
-      if (isCurrent() && event.session_id === sessionId) reportWatchError(event.message)
+      if (isCurrent() && event.session_id === sessionId) reportError(sessionId, '监听项目变更失败', event.error)
     }).then(unlisten => {
       if (isCurrent()) unlistenError = unlisten
       else unlisten()
@@ -54,5 +52,5 @@ export function useProjectWatcher({
       unlistenChanged?.()
       unlistenError?.()
     }
-  }, [generation, project?.session_id, refresh, reportError, reportWatchError])
+  }, [generation, project?.session_id, refresh, reportError])
 }

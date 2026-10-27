@@ -17,6 +17,8 @@ pub struct InputFile {
     #[serde(skip)]
     pub absolute: PathBuf,
     #[serde(skip)]
+    pub(crate) selected: PathBuf,
+    #[serde(skip)]
     pub contents: Vec<u8>,
 }
 
@@ -159,12 +161,15 @@ fn collect(
     }
     if path.is_dir() {
         let extension = if kind == "schema" { "cft" } else { "cfd" };
-        for entry in walkdir::WalkDir::new(path).follow_links(false) {
-            let entry = entry.map_err(|e| Failure::from(std::io::Error::other(e)))?;
-            if entry.file_type().is_file()
-                && entry.path().extension().is_some_and(|e| e == extension)
-            {
-                collect(project, entry.path(), kind, input, files)?;
+        // 与实际加载器共用链接边界与去重规则，不能漏掉模型已经读取的文件。
+        let entries =
+            crate::project::file_discovery::discover_directory_files_with(path, &|entry| {
+                kind != "schema" || entry.extension().is_some_and(|e| e == extension)
+            })
+            .map_err(|error| Failure::from(std::io::Error::other(error)))?;
+        for entry in entries {
+            if entry.path.extension().is_some_and(|e| e == extension) {
+                collect(project, &entry.path, kind, input, files)?;
             }
         }
         return Ok(());
@@ -183,6 +188,7 @@ fn collect(
             inputs: vec![input.replace('\\', "/")],
             fingerprint: fingerprint(&contents),
             absolute,
+            selected: path.to_path_buf(),
             contents,
         },
     );

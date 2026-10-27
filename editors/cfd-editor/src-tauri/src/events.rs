@@ -29,7 +29,10 @@ impl EditorEventSink for TauriEditorEventSink {
             EditorEvent::ProjectWatchError(payload) => {
                 coflow_observability::tracing::warn!(
                     event = "project_watch_error",
-                    session_id = payload.session_id
+                    session_id = payload.session_id,
+                    run_id = coflow_observability::run_id(),
+                    code = %payload.error.code,
+                    diagnostic_count = payload.error.diagnostics.len()
                 );
                 if self.app.emit(PROJECT_WATCH_ERROR_EVENT, payload).is_err() {
                     coflow_observability::tracing::error!(

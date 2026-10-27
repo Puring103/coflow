@@ -126,6 +126,7 @@ fn find_value_match(value: &CfdValue, query: &str, path: &str) -> Option<FieldMa
         });
     }
     match value {
+        CfdValue::OptionSome(value) => find_value_match(value, query, path),
         CfdValue::Object(object) => {
             if contains_normalized(object.actual_type(), query) {
                 return Some(FieldMatch {
@@ -188,4 +189,22 @@ fn scalar_text(value: &CfdValue) -> Option<String> {
 
 fn contains_normalized(value: &str, normalized_query: &str) -> bool {
     value.to_lowercase().contains(normalized_query)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_optional_collections_keep_leaf_paths() {
+        let value = CfdValue::OptionSome(Box::new(CfdValue::OptionSome(Box::new(
+            CfdValue::Array(vec![CfdValue::String("needle".into())]),
+        ))));
+        let found = find_value_match(&value, "needle", "optional");
+        assert_eq!(
+            found.map(|matched| matched.path),
+            Some("optional[0]".into())
+        );
+        assert!(find_value_match(&CfdValue::OptionNone, "needle", "optional").is_none());
+    }
 }

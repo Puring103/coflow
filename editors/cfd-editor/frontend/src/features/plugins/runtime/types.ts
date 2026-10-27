@@ -244,5 +244,5 @@ export interface PluginUiBridge {
   openSidebar(pluginId: string, sidebarId: string): void
   closeSidebar(pluginId: string, sidebarId: string): void
   openRecord(filePath: string, coordinate: RecordCoordinate, fieldPath?: string | null): void
-  reportError(message: string): void
+  reportError(message: string, error?: unknown): void
 }

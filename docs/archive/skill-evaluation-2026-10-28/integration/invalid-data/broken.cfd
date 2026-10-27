@@ -1,0 +1,2 @@
+broken: Item { name: 1, price: 90 }
+Settings: Settings { start: &Item::broken }

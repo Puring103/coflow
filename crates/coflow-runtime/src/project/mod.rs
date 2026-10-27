@@ -15,7 +15,7 @@
 mod config;
 mod config_write;
 mod diagnostics;
-mod file_discovery;
+pub(crate) mod file_discovery;
 mod init;
 mod paths;
 mod schema_path_policy;

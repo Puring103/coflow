@@ -7,6 +7,24 @@ fn schema(source: &str) -> CftSchema {
     let modules = parse_modules([CftFile::from_source(ModuleId::from("main.cft"), source)]);
     build_schema(&modules).expect("schema")
 }
+
+#[test]
+fn rejects_xid_names_that_csharp_cannot_represent() {
+    assert!(generate_csharp(&schema("table ℘ { value: int = 1; }")).is_err());
+    assert!(generate_csharp(&schema("table 𐐀 { value: int = 1; }")).is_err());
+    assert!(generate_csharp(&schema("table 物品 { 名称: string; }")).is_ok());
+}
+
+#[test]
+fn escapes_unicode_line_separators_in_generated_literals() {
+    let text = all(&generate_csharp(&schema(
+        "table Item { value: string = \"a\u{2028}b\u{2029}c\"; }",
+    ))
+    .expect("generate"));
+    assert!(text.contains("a\\u2028b\\u2029c"));
+    assert!(!text.contains('\u{2028}'));
+    assert!(!text.contains('\u{2029}'));
+}
 fn all(files: &[GeneratedFile]) -> String {
     files
         .iter()

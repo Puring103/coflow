@@ -4,7 +4,13 @@ This tutorial defines an iron sword's name and price, generates C# types, and lo
 
 ## 1. Install
 
-Download the CLI for your system from [GitHub Releases](https://github.com/Puring103/coflow/releases/latest) and add its directory to `PATH`. Alternatively, install the Rust toolchain and build from source:
+Choose a Windows x64 asset from [GitHub Releases](https://github.com/Puring103/coflow/releases/latest):
+
+- `coflow-tools-windows-x64-setup.exe`: desktop editor and CLI for visual editing and AI collaboration.
+- `coflow-cli-windows-x64-setup.exe`: CLI only for terminal and automation workflows.
+- VSIX: use “Install from VSIX” in VS Code for CFT/CFD language support.
+
+Both Windows installers install the user skills. Reopen your terminal after installation and verify the CLI with the commands below. The full installer includes the CLI; no separate CLI-only installation is needed. See [Editor guide](./editors.md) for desktop and VS Code usage. Alternatively, install the Rust toolchain and build from source:
 
 ```sh
 cargo install --git https://github.com/Puring103/coflow.git coflow

@@ -119,3 +119,13 @@ coflow check --rule Item::ValidPrice --explain --json
 Responses contain `protocol_version`, `command`, `status` and `result`, with optional `error_category`, `project`, `revision`, `data_scope` and `diagnostics`. `diagnostics_summary.total` is the actual count, `returned` the response count, and `truncated` indicates output truncation.
 
 Exit code 0 means complete success, 1 validation failure, unmet state or incomplete results, 2 invalid request, 3 revision or precondition conflict, and 4 I/O or execution failure. Inspect response status and result for argument errors and conflicts as well as diagnostics. See [CLI output and exit statuses](../08-cli.md#output-and-exit-statuses).
+
+## Editor logs and feedback
+
+“Logs and feedback” is available even without an open project, including from the error screen. Review recent incidents and copy the error identifier and details. Generate a diagnostic preview and review it before downloading. Error text and stacks are excluded by default; include them only when needed, and remove information you do not want to share from the preview. Use “Submit issue” to describe reproduction steps, expected results, and actual results, and attach the diagnostic file.
+
+Logs remain local and are not uploaded automatically. “Open log directory” opens the local files. On Windows, editor logs default to `%LOCALAPPDATA%\Coflow\logs\editor`. Logs have size and retention limits; export soon after an incident.
+
+When changes were saved but refreshing failed, use recovery or reload rather than repeating the write. If file recovery is incomplete, inspect the affected files and retained backups before reloading.
+
+For CLI troubleshooting, set `COFLOW_LOG=1` to write local logs under `Coflow/logs/cli` without changing stdout. In VS Code, select `Coflow Language Server` in the Output panel to inspect language server errors.

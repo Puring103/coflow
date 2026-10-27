@@ -914,10 +914,7 @@ fn writes(command: &Command, name: &str) -> bool {
     command
         .get_arguments()
         .any(|argument| argument.get_id() == "dry-run")
-        || matches!(
-            name,
-            "init" | "build" | "skill.install" | "skill.uninstall"
-        )
+        || matches!(name, "init" | "build" | "skill.install" | "skill.uninstall")
 }
 
 /// 命令目录只返回导航所需信息；大体积 Schema 仅在明确请求时生成一次。

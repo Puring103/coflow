@@ -11,7 +11,20 @@ codegen:
     namespace: Game.Config
 ```
 
-运行 `coflow codegen --project .` 后，将 `runtimes/csharp/Coflow.Loader` 与生成文件加入 C# 项目。
+运行 `coflow codegen --project .` 后，将匹配版本的 Loader 与全部生成文件加入 C# 项目。生成的类型、字段与命名空间需要符合 C# 标识符规则；不能表示的名称会在生成时报告错误，请修改 CFT 名称后重新生成。
+
+## 获取 Loader
+
+先用 `coflow --version` 确认版本，从 [Coflow 发布页](https://github.com/Puring103/coflow/releases)下载同版本 `vX.Y.Z` 的源码，或执行：
+
+```sh
+git clone --depth 1 --branch vX.Y.Z https://github.com/Puring103/coflow.git dependencies/coflow
+dotnet add app/App.csproj reference dependencies/coflow/runtimes/csharp/Coflow.Loader/Coflow.Loader.csproj
+```
+
+将 `X.Y.Z` 替换为实际 CLI 版本，将应用路径替换为自己的项目。CLI 安装包不包含 Loader 源码。将生成目录放入应用的编译范围；目录在应用外时用 `Compile Include` 显式包含全部生成 `.cs` 文件。
+
+Unity 2022+ 可从同版本源码构建 `netstandard2.1` Loader DLL，加入项目并配置程序集引用，同时导入全部生成源码。已有 Loader 时保持单份引用。
 
 ## 加载与查询
 

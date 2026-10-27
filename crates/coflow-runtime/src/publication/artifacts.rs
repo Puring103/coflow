@@ -92,7 +92,10 @@ impl PreparedCodeRelease {
             for (path, contents) in &expected {
                 let absolute = output.directory.join(path);
                 let previous = read_optional_file(&absolute)?;
-                if previous.as_deref() != Some(contents.as_bytes()) {
+                if !previous
+                    .as_deref()
+                    .is_some_and(|previous| generated_text_matches(previous, contents.as_bytes()))
+                {
                     changes.push(serde_json::json!({"path": absolute, "change": if previous.is_some() {"modified"} else {"added"}}));
                 }
             }

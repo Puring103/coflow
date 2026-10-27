@@ -1,0 +1,11 @@
+# 品质只允许普通与稀有，记录必须显式选择。
+enum Quality { Common, Rare }
+table Item {
+  name: string;
+  quality: Quality;
+  price: int;
+  note: string = "";
+  next: Option<&Item> = None;
+  check NonNegativePrice { price >= 0: "价格不能为负数"; }
+}
+singleton Settings { start: &Item; }

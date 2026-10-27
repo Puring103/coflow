@@ -12,7 +12,34 @@ use super::model::{
     LocalSettingsFile, SettingsFile, LOCAL_SETTINGS_VERSION, SETTINGS_FILE, SETTINGS_VERSION,
 };
 use crate::editor::types::{EditorError, EditorProjectSettings};
+use fs2::FileExt;
 use sha2::{Digest, Sha256};
+
+/// 锁覆盖完整读改写；按共享文件、本机文件的固定顺序协调所有会话与进程。
+pub(crate) fn lock_project_settings(project_root: &Path) -> Result<Vec<fs::File>, EditorError> {
+    let shared = settings_path(project_root).with_extension("lock");
+    let local = local_settings_path(project_root)?.with_extension("lock");
+    let mut locks = Vec::new();
+    for path in [shared, local] {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                EditorError::other(format!("failed to create settings lock directory: {error}"))
+            })?;
+        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(|error| {
+                EditorError::other(format!("failed to open settings lock: {error}"))
+            })?;
+        file.lock_exclusive()
+            .map_err(|error| EditorError::other(format!("failed to lock settings: {error}")))?;
+        locks.push(file);
+    }
+    Ok(locks)
+}
 
 fn settings_path(project_root: &Path) -> PathBuf {
     project_root.join("editor-setting").join(SETTINGS_FILE)
@@ -57,7 +84,7 @@ pub(super) fn local_settings_path(project_root: &Path) -> Result<PathBuf, Editor
     .ok_or_else(|| EditorError::other("user data directory is unavailable"))?;
     let root = coflow_runtime::canonicalize_path(project_root)
         .map_err(|error| EditorError::other(format!("failed to resolve project root: {error}")))?;
-    let identity = coflow_runtime::path_to_slash(&root);
+    let identity = coflow_runtime::normalized_path_identity(&root);
     let digest = Sha256::digest(identity.as_bytes());
     let key = format!("{digest:x}");
     Ok(base

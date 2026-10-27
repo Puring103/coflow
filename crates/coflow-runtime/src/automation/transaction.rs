@@ -142,6 +142,7 @@ pub(crate) struct Candidate {
     config_contents: Vec<u8>,
     input_scopes: Vec<(Project, InputSnapshot)>,
     originals: BTreeMap<PathBuf, Option<Vec<u8>>>,
+    source_entries: BTreeMap<PathBuf, PathBuf>,
     pub operations: Vec<Value>,
     baseline: SemanticSnapshot,
     pub materialized: Vec<Value>,
@@ -165,6 +166,16 @@ impl Candidate {
             config_contents: Vec::new(),
             input_scopes: Vec::new(),
             originals: BTreeMap::new(),
+            source_entries: snapshot
+                .files
+                .iter()
+                .filter(|file| {
+                    (file.kind == "schema" && file.absolute.extension().is_none_or(|e| e != "cft"))
+                        || (file.kind == "data"
+                            && file.absolute.extension().is_none_or(|e| e != "cfd"))
+                })
+                .map(|file| (file.absolute.clone(), file.selected.clone()))
+                .collect(),
             operations: Vec::new(),
             baseline: SemanticSnapshot::default(),
             materialized: Vec::new(),
@@ -349,9 +360,11 @@ impl Candidate {
     }
     pub fn shadow(&self, original: &Path) -> PathBuf {
         let original = crate::normalize_path(original);
+        // 使用实际被发现的链接入口，既保留语言扩展名，也不与真实同名文件碰撞。
+        let selected = self.source_entries.get(&original).unwrap_or(&original);
         let mut anchor = PathBuf::new();
         let mut suffix = PathBuf::new();
-        for component in original.components() {
+        for component in selected.components() {
             match component {
                 Component::Prefix(_) | Component::RootDir => anchor.push(component.as_os_str()),
                 Component::Normal(name) => suffix.push(name),
@@ -367,6 +380,14 @@ impl Candidate {
             .join(suffix)
     }
     pub fn unshadow(&self, path: &Path) -> Result<PathBuf> {
+        // 非标准扩展名实体的临时语言路径必须先做精确反向映射。
+        if let Some(original) = self
+            .source_entries
+            .keys()
+            .find(|original| self.shadow(original) == path)
+        {
+            return Ok(original.clone());
+        }
         let project = self.original_view()?;
         for root in project
             .source_roots()
@@ -475,6 +496,14 @@ impl Candidate {
         // 新配置纳入的正式输入只复制一次；前序候选修改与删除不能被导入覆盖。
         let scope = InputSnapshot::capture(&project)?;
         for file in &scope.files {
+            if (file.kind == "schema" && file.absolute.extension().is_none_or(|e| e != "cft"))
+                || (file.kind == "data" && file.absolute.extension().is_none_or(|e| e != "cfd"))
+            {
+                self.source_entries
+                    .insert(file.absolute.clone(), file.selected.clone());
+            }
+        }
+        for file in &scope.files {
             if file.absolute == self.original.config_path()
                 || self.originals.contains_key(&file.absolute)
             {
@@ -541,6 +570,7 @@ impl Candidate {
             ));
         }
         if original != self.original.config_path()
+            && !self.source_entries.contains_key(&original)
             && !original
                 .extension()
                 .is_some_and(|e| e == "cft" || e == "cfd")

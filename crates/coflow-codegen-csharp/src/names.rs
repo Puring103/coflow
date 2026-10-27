@@ -1,8 +1,14 @@
-use unicode_ident::{is_xid_continue, is_xid_start};
+use unicode_general_category::{get_general_category, GeneralCategory};
 
 pub fn csharp_ident_error(value: &str) -> Option<String> {
     if value.is_empty() {
         return Some("identifier is empty".to_string());
+    }
+    // Roslyn 按 UTF-16 字符识别名称，补充平面字母也不能直接成为 C# 标识符。
+    if value.chars().any(|ch| ch.len_utf16() != 1) {
+        return Some(
+            "identifier contains a supplementary Unicode character unsupported by C#".into(),
+        );
     }
 
     let mut chars = value.chars();
@@ -10,12 +16,10 @@ pub fn csharp_ident_error(value: &str) -> Option<String> {
         return Some("identifier is empty".to_string());
     };
     if !is_csharp_ident_start(first) {
-        return Some("identifier must start with `_` or a Unicode identifier start".to_string());
+        return Some("identifier must start with `_` or a C# letter character".to_string());
     }
     if chars.any(|ch| !is_csharp_ident_continue(ch)) {
-        return Some(
-            "identifier must contain only `_` or Unicode identifier characters".to_string(),
-        );
+        return Some("identifier contains a character not supported by C# identifiers".to_string());
     }
     None
 }
@@ -45,11 +49,28 @@ pub fn metadata_identifier(name: &str) -> String {
 }
 
 fn is_csharp_ident_start(ch: char) -> bool {
-    ch == '_' || is_xid_start(ch)
+    // C# 使用 Unicode 字符类别，不能用范围不同的 Coflow XID 规则替代。
+    ch == '_'
+        || matches!(
+            get_general_category(ch),
+            GeneralCategory::UppercaseLetter
+                | GeneralCategory::LowercaseLetter
+                | GeneralCategory::TitlecaseLetter
+                | GeneralCategory::ModifierLetter
+                | GeneralCategory::OtherLetter
+                | GeneralCategory::LetterNumber
+        )
 }
 
 fn is_csharp_ident_continue(ch: char) -> bool {
-    ch == '_' || is_xid_continue(ch)
+    is_csharp_ident_start(ch)
+        || matches!(
+            get_general_category(ch),
+            GeneralCategory::NonspacingMark
+                | GeneralCategory::SpacingMark
+                | GeneralCategory::DecimalNumber
+                | GeneralCategory::ConnectorPunctuation
+        )
 }
 
 fn is_csharp_keyword(value: &str) -> bool {

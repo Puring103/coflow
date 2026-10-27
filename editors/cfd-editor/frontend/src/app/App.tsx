@@ -161,7 +161,11 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     return () => { cancelled = true }
   }, [referenceTarget, project?.revision, project?.session_id, generation, setFileDataCache])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  useEffect(() => { if (errorMsg) recordIncident('editor', errorMsg) }, [errorMsg])
+  const recordedErrorMessage = useRef<string | null>(null)
+  useEffect(() => {
+    if (errorMsg && recordedErrorMessage.current !== errorMsg) recordIncident('editor', errorMsg)
+    recordedErrorMessage.current = null
+  }, [errorMsg])
   const {
     settings: projectSettings,
     setSettings: setProjectSettings,
@@ -285,7 +289,11 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       openRecord: (filePath, coordinate, fieldPath) => {
         pluginOpenRecordRef.current(filePath, coordinate, fieldPath)
       },
-      reportError: setErrorMsg,
+      reportError: (message, error) => {
+        recordIncident('plugin', error ?? message, undefined, message)
+        recordedErrorMessage.current = message
+        setErrorMsg(message)
+      },
     })
     return () => setPluginUiBridge(null)
   }, [closePluginPageTab, openPluginPageTab, openPluginSidebar])
@@ -569,7 +577,10 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       generation.currentSession() !== sessionId
       || (expectedRevision !== undefined && !generation.isCurrent(sessionId, expectedRevision))
     ) return
-    setErrorMsg(`${prefix}: ${errorMessage(err)}`)
+    const message = `${prefix}: ${errorMessage(err)}`
+    recordIncident('editor', err, undefined, message)
+    recordedErrorMessage.current = message
+    setErrorMsg(message)
   }, [generation])
 
   useWorkspacePersistence({
@@ -718,15 +729,11 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     acceptRevision: commitProjectRevision,
   })
 
-  const reportWatchError = useCallback((message: string) => {
-    setErrorMsg(`监听项目变更失败: ${message}`)
-  }, [])
   useProjectWatcher({
     project,
     generation,
     refresh: refreshFromBootstrap,
     reportError: reportSessionError,
-    reportWatchError,
   })
 
   // "新建工程": pick an empty directory, scaffold a minimal Coflow
@@ -2159,6 +2166,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     ? projectSettings?.table_row_heights[currentRoute.file]?.[activeType]?.[resolvedView.id]
     : undefined, [projectSettings?.table_row_heights, currentRoute?.file, activeType, resolvedView?.id])
   const rowHeightSaveQueue = useRef(Promise.resolve())
+  const columnWidthSaveQueue = useRef(Promise.resolve())
   const tableOnRowHeightsChange = useCallback((heights: Record<string, number>) => {
     if (!currentRoute || !activeType || !resolvedView) return
     const file = currentRoute.file, type = activeType, view = resolvedView.id
@@ -2188,12 +2196,22 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     if (!identity) return
     // Default table view widths live in default_table_column_widths; custom
     // table views carry their own widths inside the ViewConfig.
-    const save = resolvedView.isDefault
-      ? api.setDefaultTableColumnWidths(identity.sessionId, currentRoute.file, activeType, widths)
-      : api.setViewColumnWidths(identity.sessionId, currentRoute.file, activeType, resolvedView.id, widths)
-    save
-      .then(settings => {
-        if (generation.isCurrent(identity.sessionId, identity.revision)) setProjectSettings(settings)
+    const file = currentRoute.file, type = activeType, view = resolvedView.id, isDefault = resolvedView.isDefault
+    columnWidthSaveQueue.current = columnWidthSaveQueue.current.then(async () => {
+        if (generation.currentSession() !== identity.sessionId) return
+        const settings = isDefault
+          ? await api.setDefaultTableColumnWidths(identity.sessionId, file, type, widths)
+          : await api.setViewColumnWidths(identity.sessionId, file, type, view, widths)
+        if (!generation.isCurrent(identity.sessionId, identity.revision)) return
+        // 只合并本次保存的列宽，不用整份响应覆盖其他设置。
+        setProjectSettings(current => {
+          if (!current) return current
+          if (isDefault) return { ...current, default_table_column_widths: {
+            ...current.default_table_column_widths, [file]: { ...current.default_table_column_widths[file], [type]: settings.default_table_column_widths[file]?.[type] ?? {} },
+          } }
+          const saved = settings.views[file]?.[type]?.find(item => item.id === view)
+          return { ...current, views: { ...current.views, [file]: { ...current.views[file], [type]: (current.views[file]?.[type] ?? []).map(item => item.id === view && saved ? { ...item, column_widths: saved.column_widths } : item) } } }
+        })
       })
       .catch(err => {
         if (generation.isCurrent(identity.sessionId, identity.revision)) {

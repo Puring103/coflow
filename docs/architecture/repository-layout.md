@@ -4,7 +4,7 @@
 
 | 目录 | 内容 |
 | --- | --- |
-| `src/` | CLI 命令解析、终端输出、自更新与技能安装适配 |
+| `src/` | CLI 命令解析、终端输出、执行日志边界、自更新与技能安装适配 |
 | `crates/` | 共享语言、模型、检查、运行时、生成器、LSP 与基础设施 |
 | `editors/cfd-editor/` | 编辑器共享后端、Tauri 宿主与前端 |
 | `editors/vscode-coflow/` | VS Code 扩展及语言资源 |
@@ -19,6 +19,8 @@
 | `packaging/` | 平台安装器和打包资源 |
 
 Rust crate 的职责与依赖约束见 [系统架构](overview.md) 和 [AGENTS.md](../../AGENTS.md)。CLI 保持二进制宿主；非 CLI 宿主通过共享 crate 接入项目能力。
+
+`coflow-observability` 负责宿主日志初始化、容量控制与诊断快照。CLI 的 `command_logging.rs` 只适配命令执行边界；编辑器的原始错误详情由前端 `features/diagnostics/` 管理。C# XID 判定数据的生成入口归 `coflow-language/examples/`，产物及加载逻辑归 C# Loader。
 
 ## 运行时内部
 

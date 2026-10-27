@@ -680,7 +680,7 @@ export function failPluginContribution(key: string, error: unknown): void {
 }
 
 function reportPluginError(pluginName: string, error: unknown): void {
-  uiBridge?.reportError(`插件 ${pluginName} 运行失败：${errorMessage(error)}`)
+  uiBridge?.reportError(`插件 ${pluginName} 运行失败：${errorMessage(error)}`, error)
 }
 
 function errorMessage(error: unknown): string {

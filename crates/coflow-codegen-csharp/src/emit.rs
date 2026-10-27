@@ -20,6 +20,9 @@ fn quote(text: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            // Unicode 行/段分隔符不是 Rust 控制字符，但会截断 C# 普通字符串。
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
             ch if ch.is_control() => {
                 let _ = write!(out, "\\u{:04X}", u32::from(ch));
             }

@@ -58,6 +58,12 @@ internal static class Program
             var result = CoflowData.Load(input);
             var valid = fixture.EndsWith(".valid.cfd", StringComparison.Ordinal);
             Require(result.Success == valid, fixture + ": " + string.Join("; ", result.Diagnostics));
+            if (Path.GetFileName(fixture) == "unicode-xid.valid.cfd")
+            {
+                // CFD 身份采用完整 XID；默认字符串跨生成、编译和加载后保持原值。
+                foreach (var id in new[] { "℘", "𐐀key", "a·b" })
+                    Require(result.Data.Table<UnicodeDefaults>()[id].text == "a\u2028b\u2029c\u0085d", "Unicode identifiers and literal roundtrip");
+            }
             if (Path.GetFileName(fixture) == "numeric-widths.valid.cfd")
             {
                 var numbers = result.Data.Table<NumericValues>()["numeric"];

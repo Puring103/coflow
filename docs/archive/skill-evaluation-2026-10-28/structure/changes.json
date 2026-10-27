@@ -1,0 +1,16 @@
+{
+  "kind": "files",
+  "protocol_version": 1,
+  "changes": [
+    {
+      "op": "write",
+      "content": "enum Quality { Common, Rare }\n\nsealed data Stats {\n  hp: int = 100;\n  check PositiveHealth { hp > 0: \"生命值必须为正\"; }\n}\n\ntable Item {\n  @localized\n  name: string;\n  @dimension(\"region\")\n  price: int;\n  weight: int;\n  quality: Quality = Quality::Common;\n  stats: Stats = Stats {};\n  next: Option<&Item> = None;\n  note: Option<string> = None;\n  tags: [string] = [];\n  labels: {string: string} = {};\n  @localized\n  label: string = f\"{self.name}：{self.price}\";\n\n  # 业务规则作用于基础值；翻译完整性可按业务要求另加规则。\n  check ValidItem {\n    !name.isBlank(): \"名称不能为空\";\n    price >= 0: \"价格不能为负数\";\n    tags.isUnique(): \"标签不能重复\";\n  }\n}\n\nsingleton Settings { start: &Item; }\n\ncheck HasItems { records(Item).len() > 0: \"至少需要一个物品\"; }\n",
+      "file": "schema/main.cft"
+    },
+    {
+      "op": "write",
+      "content": "sword: Item {\n  name: \"铁剑\",\n  price: 90,\n  weight: 3,\n  quality: Quality::Rare,\n  next: Some(&Item::shield),\n}\nshield: Item { name: \"盾牌\", price: 80, weight: 5 }\nSettings: Settings { start: &Item::sword }\n\nlanguage[ja] { sword: Item { name: \"剣\" } }\n",
+      "file": "data/items.cfd"
+    }
+  ]
+}

@@ -24,6 +24,126 @@ fn project_directory(prefix: &str) -> TempDir {
 }
 
 #[test]
+fn independent_sessions_preserve_concurrent_settings_updates() {
+    let root = project_directory("settings-concurrent-");
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("schema.cft"), "table Item { value: int; }").unwrap();
+    fs::write(root.path().join("data.cfd"), "a: Item { value: 1 }").unwrap();
+    let workers = (0..8)
+        .map(|_| {
+            let store = SessionStore::new().unwrap();
+            let session = store
+                .load_project(&root.path().join("coflow.yaml"))
+                .unwrap()
+                .session_id;
+            (store, session)
+        })
+        .collect::<Vec<_>>();
+    let barrier = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        for (index, (store, session)) in workers.iter().enumerate() {
+            let barrier = &barrier;
+            scope.spawn(move || {
+                barrier.wait();
+                let key =
+                    serde_json::json!(["data.cfd", format!("view-{index}"), "Item"]).to_string();
+                store
+                    .set_graph_positions(
+                        *session,
+                        key,
+                        BTreeMap::from([("Item::a".into(), [index as f64, 1.0])]),
+                    )
+                    .unwrap();
+            });
+        }
+    });
+    let settings = workers[0].0.get_project_settings(workers[0].1).unwrap();
+    assert_eq!(settings.graph_positions.len(), 8);
+}
+
+#[test]
+fn settings_process_worker() {
+    let Some(root) = std::env::var_os("COFLOW_SETTINGS_TEST_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let index = std::env::var("COFLOW_SETTINGS_TEST_INDEX").unwrap();
+    let store = SessionStore::new().unwrap();
+    let session = store
+        .load_project(&root.join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    fs::write(root.join(format!("ready-{index}")), "").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while !root.join("start").exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "settings worker barrier timeout"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let key = serde_json::json!(["data.cfd", format!("process-{index}"), "Item"]).to_string();
+    store
+        .set_graph_positions(
+            session,
+            key,
+            BTreeMap::from([("Item::a".into(), [1.0, 2.0])]),
+        )
+        .unwrap();
+}
+
+#[test]
+fn separate_processes_preserve_settings_updates() {
+    let root = project_directory("settings-processes-");
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen:\n  - language: csharp\n    dir: generated/\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("schema.cft"), "table Item { value: int; }").unwrap();
+    fs::write(root.path().join("data.cfd"), "a: Item { value: 1 }").unwrap();
+    let mut children = (0..4)
+        .map(|index| {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "settings_process_worker", "--nocapture"])
+                .env("COFLOW_SETTINGS_TEST_ROOT", root.path())
+                .env("COFLOW_SETTINGS_TEST_INDEX", index.to_string())
+                .spawn()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while !(0..4).all(|index| root.path().join(format!("ready-{index}")).exists()) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "settings parent barrier timeout"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    fs::write(root.path().join("start"), "").unwrap();
+    for child in &mut children {
+        assert!(child.wait().unwrap().success());
+    }
+    let store = SessionStore::new().unwrap();
+    let session = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    assert_eq!(
+        store
+            .get_project_settings(session)
+            .unwrap()
+            .graph_positions
+            .len(),
+        4
+    );
+}
+
+#[test]
 fn configured_external_sources_can_be_opened() {
     let root = project_directory("cfd-editor-external-source-");
     let project_root = root.path().join("project");

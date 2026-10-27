@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { EditorProjectSettings } from '../../../bindings/EditorProjectSettings'
 import type { EditorRecordGroup } from '../../../bindings/EditorRecordGroup'
 import type { ViewConfig } from '../../../bindings/ViewConfig'
@@ -58,37 +58,13 @@ function withViews(
   }
 }
 
-function persistLatestSettings(
-  sequenceRef: MutableRefObject<number>,
-  generation: ProjectGenerationController,
-  setSettings: Dispatch<SetStateAction<EditorProjectSettings | null>>,
-  setError: Dispatch<SetStateAction<string | null>>,
-  errorPrefix: string,
-  request: (sessionId: number) => Promise<EditorProjectSettings>,
-): void {
-  const sequence = ++sequenceRef.current
-  const identity = generation.currentIdentity()
-  if (!api.isTauri || !identity) return
-  request(identity.sessionId)
-    .then(next => {
-      if (generation.currentSession() === identity.sessionId && sequenceRef.current === sequence) {
-        setSettings(next)
-      }
-    })
-    .catch(error => {
-      if (generation.currentSession() === identity.sessionId) {
-        setError(`${errorPrefix}: ${errorMessage(error)}`)
-      }
-    })
-}
-
 export function useProjectSettings(
   generation: ProjectGenerationController,
   setError: Dispatch<SetStateAction<string | null>>,
 ) {
   const [settings, setSettings] = useState<EditorProjectSettings | null>(null)
-  const recordGroupSaveSequence = useRef(0)
-  const viewsSaveSequence = useRef(0)
+  const recordGroupSaveQueue = useRef(Promise.resolve())
+  const viewsSaveQueue = useRef(Promise.resolve())
   const orderSaveQueue = useRef(Promise.resolve())
 
   const saveViewOrder = useCallback((filePath: string, actualType: string, order: string[]) => {
@@ -119,14 +95,18 @@ export function useProjectSettings(
     groups: EditorRecordGroup[],
   ) => {
     setSettings(current => withRecordGroups(current, filePath, actualType, groups))
-    persistLatestSettings(
-      recordGroupSaveSequence, generation, setSettings, setError, '保存记录分组失败',
-      sessionId => api.setRecordGroups(sessionId, filePath, actualType, groups),
-    )
+    const identity = generation.currentIdentity()
+    if (!api.isTauri || !identity) return
+    // 局部乐观状态不被服务端的旧整份快照覆盖；同类写入按提交顺序持久化。
+    recordGroupSaveQueue.current = recordGroupSaveQueue.current.then(async () => {
+      if (generation.currentSession() !== identity.sessionId) return
+      await api.setRecordGroups(identity.sessionId, filePath, actualType, groups)
+    }).catch(error => {
+      if (generation.currentSession() === identity.sessionId) setError(`保存记录分组失败: ${errorMessage(error)}`)
+    })
   }, [generation, setError])
 
   const saveViews = useCallback(async (filePath: string, actualType: string, views: ViewConfig[]) => {
-    const sequence = ++viewsSaveSequence.current
     const identity = generation.currentIdentity()
     if (!api.isTauri) {
       setSettings(current => withViews(current, filePath, actualType, views))
@@ -134,9 +114,14 @@ export function useProjectSettings(
     }
     if (!identity) throw new Error('项目尚未打开')
     // 成功后发布设置；失败保留对话框草稿，避免把未保存的配置显示为已保存。
-    const next = await api.setViews(identity.sessionId, filePath, actualType, views)
-    if (generation.currentSession() !== identity.sessionId) throw new Error('项目已切换')
-    if (viewsSaveSequence.current === sequence) setSettings(next)
+    const task = viewsSaveQueue.current.then(async () => {
+      if (generation.currentSession() !== identity.sessionId) throw new Error('项目已切换')
+      const next = await api.setViews(identity.sessionId, filePath, actualType, views)
+      if (generation.currentSession() !== identity.sessionId) throw new Error('项目已切换')
+      setSettings(current => withViews(current, filePath, actualType, next.views[filePath]?.[actualType] ?? []))
+    })
+    viewsSaveQueue.current = task.catch(() => {})
+    await task
   }, [generation])
 
   return { settings, setSettings, saveRecordGroups, saveViews, saveViewOrder }

@@ -28,6 +28,82 @@ fn fixture() -> tempfile::TempDir {
     root
 }
 
+#[test]
+fn linked_nonstandard_source_is_included_in_revision_and_candidate_validation() {
+    let root = fixture();
+    let target = root.path().join("data/real.txt");
+    let link = root.path().join("data/linked.cfd");
+    fs::write(&target, "linked: Item { value: 7 }\n").unwrap();
+    fs::write(
+        root.path().join("data/real.txt.cfd"),
+        "ordinary: Item { value: 6 }\n",
+    )
+    .unwrap();
+    #[cfg(windows)]
+    let result = std::os::windows::fs::symlink_file(&target, &link);
+    #[cfg(unix)]
+    let result = std::os::unix::fs::symlink(&target, &link);
+    if let Err(error) = result {
+        if error.kind() == std::io::ErrorKind::PermissionDenied {
+            eprintln!("symlink regression skipped: {error}");
+            return;
+        }
+        panic!("symlink: {error}");
+    }
+    let read = || {
+        run(
+            root.path(),
+            "data.get",
+            &[("type", "Item"), ("id", "linked")],
+            None,
+        )
+        .unwrap()
+    };
+    let before = read().revision.unwrap();
+    let source = run(
+        root.path(),
+        "source.read",
+        &[("file", "data/linked.cfd")],
+        None,
+    )
+    .unwrap();
+    assert!(source.result.to_string().contains("linked: Item"));
+    fs::write(&target, "linked: Item { value: 8 }\n").unwrap();
+    assert_ne!(read().revision.unwrap(), before);
+    let stale = run(
+        root.path(),
+        "apply",
+        &[("if-revision", &before)],
+        Some(json!({
+            "protocol_version": 1, "kind": "files", "changes": []
+        })),
+    )
+    .unwrap_err();
+    assert_eq!(stale.status, Status::Conflict);
+    let failed = run(root.path(), "apply", &[], Some(json!({
+        "protocol_version": 1, "kind": "files", "changes": [
+            {"op": "create", "file": "data/duplicate.cfd", "content": "linked: Item { value: 9 }\n"}
+        ]
+    }))).unwrap();
+    assert_eq!(failed.status, Status::Invalid);
+    assert!(failed
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "DATA-011"));
+    assert!(!root.path().join("data/duplicate.cfd").exists());
+    let saved = run(root.path(), "apply", &[], Some(json!({
+        "protocol_version": 1, "kind": "files", "changes": [
+            {"op": "write", "file": "data/linked.cfd", "content": "linked: Item { value: 10 }\n"}
+        ]
+    }))).unwrap();
+    assert_eq!(saved.status, Status::Success);
+    assert!(fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(fs::read_to_string(&target).unwrap().contains("value: 10"));
+}
+
 fn run(
     root: &Path,
     command: &str,

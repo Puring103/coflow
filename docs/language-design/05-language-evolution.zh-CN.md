@@ -84,6 +84,8 @@ CLI `rule list` 与 `rule inspect` 汇总整条规则；`check --rule Type::Rule
 
 ## 7. 验证与文档维护
 
+CFD 标识符使用 `unicode-ident` 的 XID_Start/XID_Continue（另允许 `_`）。C# Loader 的 `CfdXid.Generated.cs` 由 `cargo run -p coflow-language --example export_csharp_xid` 生成，工作区测试逐个 Unicode 标量核对表与语言实现，升级 Unicode 数据后同步重新生成。C# 公开名称另按目标语言规则验证，不将其限制施加给 CFD 记录 ID。
+
 语言测试覆盖名称位置、重复规则、继承次序、显式默认值和模板源码；模型测试覆盖上下文传播、基础表达式回退、显式覆盖与循环；checker 测试覆盖内联拥有关系、量词、消息、状态及预算。runtime 验证修改后的重新规划、来源写回、CLI 选择、整规则汇总与诊断缓存清理。
 
 C# 测试验证生成代码、Option 省略、独立视图、引用身份、多维组合、模板和显式覆盖；编辑器测试验证公开 DTO、文本/模板编辑与记录坐标。

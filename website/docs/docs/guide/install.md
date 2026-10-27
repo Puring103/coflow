@@ -4,7 +4,13 @@
 
 ## 1. 安装
 
-从 [GitHub Releases](https://github.com/Puring103/coflow/releases/latest) 下载适合系统的 CLI，将可执行文件所在目录加入 `PATH`。也可以在安装 Rust 工具链后从源码安装：
+从 [GitHub Releases](https://github.com/Puring103/coflow/releases/latest) 选择 Windows x64 安装包：
+
+- `coflow-tools-windows-x64-setup.exe`：桌面编辑器与 CLI，适合可视化编辑及 AI 协作。
+- `coflow-cli-windows-x64-setup.exe`：仅 CLI，适合命令行和自动化。
+- VSIX：在 VS Code 扩展菜单中选择“从 VSIX 安装”，获得 CFT/CFD 语言支持。
+
+两个 Windows 安装器都会安装用户 Skill。安装完成后重新打开终端，运行下方命令确认 CLI 可用。全量安装包含 CLI，无需再安装 CLI-only 包。编辑器和 VS Code 的使用见[编辑器上手](./editors.md)。也可以安装 Rust 工具链后从源码安装：
 
 ```sh
 cargo install --git https://github.com/Puring103/coflow.git coflow

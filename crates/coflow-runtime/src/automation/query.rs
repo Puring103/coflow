@@ -272,6 +272,15 @@ pub(crate) fn record_range(
         }
     }
     let projected = project_dimensions(session, &selector.dimensions)?;
+    let requested = selector.file.as_ref().map(|file| {
+        crate::normalized_path_identity(
+            &session
+                .session
+                .project
+                .resolve_path(std::path::Path::new(file)),
+        )
+    });
+    let mut source_identities = BTreeMap::<String, String>::new();
     Ok(projected
         .records()
         .filter(|(_, record)| {
@@ -285,18 +294,21 @@ pub(crate) fn record_range(
             if selector.id.as_ref().is_some_and(|key| record.id() != key) {
                 return false;
             }
-            if let Some(file) = &selector.file {
+            if requested.is_some() {
                 let project = &session.session.project;
-                let requested = crate::normalized_path_identity(
-                    &project.resolve_path(std::path::Path::new(file)),
-                );
                 if session
                     .queries()
                     .file_for_record(record.actual_type(), record.id())
                     .is_none_or(|source| {
-                        crate::normalized_path_identity(
-                            &project.resolve_path(std::path::Path::new(source)),
-                        ) != requested
+                        let identity =
+                            source_identities
+                                .entry(source.to_string())
+                                .or_insert_with(|| {
+                                    crate::normalized_path_identity(
+                                        &project.resolve_path(std::path::Path::new(source)),
+                                    )
+                                });
+                        Some(identity.as_str()) != requested.as_deref()
                     })
                 {
                     return false;
@@ -442,11 +454,19 @@ pub(crate) fn query_records(
 ) -> Result<Page<Value>> {
     let records = selected_records(session, selector)?;
     let mut sources = RecordSources::default();
-    let items = records
+    // 全局选择与排序先完成，但只有当前页需要物化字段、渲染值和来源。
+    let page = paginate(records, selector)?;
+    let items = page
+        .items
         .iter()
         .map(|record| record_json_with_sources(project, session, record, selector, &mut sources))
         .collect::<Result<Vec<_>>>()?;
-    paginate(items, selector)
+    Ok(Page {
+        items,
+        total: page.total,
+        truncated: page.truncated,
+        next_cursor: page.next_cursor,
+    })
 }
 
 pub(crate) fn record_json(
@@ -465,7 +485,10 @@ pub(crate) fn record_json(
 }
 
 #[derive(Default)]
-pub(crate) struct RecordSources(BTreeMap<std::path::PathBuf, std::sync::Arc<ParsedRecordSource>>);
+pub(crate) struct RecordSources {
+    files: BTreeMap<std::path::PathBuf, std::sync::Arc<ParsedRecordSource>>,
+    lines: BTreeMap<std::path::PathBuf, (crate::LineIndex, String)>,
+}
 struct ParsedRecordSource {
     source: String,
     ast: coflow_language::cfd::CfdAst,
@@ -473,8 +496,38 @@ struct ParsedRecordSource {
     dimensions: BTreeMap<(String, String, String, String), (usize, usize)>,
 }
 impl RecordSources {
+    fn location(
+        &mut self,
+        root: &std::path::Path,
+        path: &std::path::Path,
+        source: &str,
+        span: coflow_language::source::Span,
+    ) -> super::diagnostics::CommandLocation {
+        // 每份源码只扫描一次行索引，位置查询不再从文件头重复扫描。
+        let (index, display) = self.lines.entry(path.to_path_buf()).or_insert_with(|| {
+            (
+                crate::LineIndex::new(source),
+                crate::project_path(root, path),
+            )
+        });
+        let range = index.range(source, span.start, span.end);
+        super::diagnostics::CommandLocation {
+            path: display.clone(),
+            config_path: None,
+            range: Some(super::diagnostics::CommandRange {
+                start: super::diagnostics::CommandPosition {
+                    line: range.start.line,
+                    character: range.start.character,
+                },
+                end: super::diagnostics::CommandPosition {
+                    line: range.end.line,
+                    character: range.end.character,
+                },
+            }),
+        }
+    }
     fn load(&mut self, path: &std::path::Path) -> Result<std::sync::Arc<ParsedRecordSource>> {
-        if let Some(source) = self.0.get(path) {
+        if let Some(source) = self.files.get(path) {
             return Ok(source.clone());
         }
         let source = std::fs::read_to_string(path)?;
@@ -513,7 +566,7 @@ impl RecordSources {
             records,
             dimensions,
         });
-        self.0.insert(path.to_path_buf(), parsed.clone());
+        self.files.insert(path.to_path_buf(), parsed.clone());
         Ok(parsed)
     }
 }
@@ -591,7 +644,7 @@ pub(crate) fn record_json_with_sources(
             .zip(text)
             .zip(file)
             .map(|((value, text), file)| {
-                super::schema_queries::location(
+                cache.location(
                     project.root_dir(),
                     &project.resolve_path(std::path::Path::new(file)),
                     text,
@@ -626,14 +679,7 @@ pub(crate) fn record_json_with_sources(
                     .schema()
                     .resolve_type(&f.declaring_type)
                     .and_then(|t| session.schema().source(&t.module))
-                    .map(|s| {
-                        super::schema_queries::location(
-                            project.root_dir(),
-                            &s.path,
-                            &s.source,
-                            f.span,
-                        )
-                    });
+                    .map(|s| cache.location(project.root_dir(), &s.path, &s.source, f.span));
             }
         }
         let mut expression = assigned_value
@@ -702,7 +748,7 @@ pub(crate) fn record_json_with_sources(
                     assigned = assigned_value.is_some();
                     if let Some(value) = assigned_value {
                         let span = ast_value_span(value);
-                        location = Some(super::schema_queries::location(
+                        location = Some(cache.location(
                             project.root_dir(),
                             source_path,
                             &parsed.source,
@@ -722,7 +768,7 @@ pub(crate) fn record_json_with_sources(
                         .resolve_type(&declared.declaring_type)
                         .and_then(|ty| session.schema().source(&ty.module))
                         .map(|source| {
-                            super::schema_queries::location(
+                            cache.location(
                                 project.root_dir(),
                                 &source.path,
                                 &source.source,

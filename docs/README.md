@@ -34,6 +34,8 @@
 
 ## 工程规范
 
+- [2026-10-28项目审查修复验收](development/project-review-2026-10-28.md)：修复对应关系、独立任务评测与性能状态。
+
 - [质量要求](development/quality.md)：代码、诊断、测试、文档及检查职责。
 - [用户技能设计](development/skill-design.md)：任务边界、按需资料、实现依据与示例验证。
 - [日志与反馈实现契约](development/logging-and-feedback.zh-CN.md)：日志存储、错误状态、反馈导出与验证边界。

@@ -11,7 +11,20 @@ codegen:
     namespace: Game.Config
 ```
 
-Run `coflow codegen --project .`, then add `runtimes/csharp/Coflow.Loader` and the generated files to your C# project.
+Run `coflow codegen --project .`, then add a matching Loader and all generated files to your C# project. Type, field, and namespace names must be representable as C# identifiers. Unsupported names produce generation diagnostics; rename them in CFT and regenerate.
+
+## Get the Loader
+
+Check `coflow --version`, then download the source for the matching `vX.Y.Z` tag from [Coflow releases](https://github.com/Puring103/coflow/releases), or run:
+
+```sh
+git clone --depth 1 --branch vX.Y.Z https://github.com/Puring103/coflow.git dependencies/coflow
+dotnet add app/App.csproj reference dependencies/coflow/runtimes/csharp/Coflow.Loader/Coflow.Loader.csproj
+```
+
+Replace `X.Y.Z` with your CLI version and the application path with your project. CLI installers do not include Loader source. Include every generated `.cs` file in the application compilation; use `Compile Include` when the generated directory is outside the project.
+
+For Unity 2022+, build a `netstandard2.1` Loader DLL from the same source version, import it with the generated source, and configure assembly references. Keep a single Loader reference when one is already installed.
 
 ## Loading and queries
 

@@ -26,6 +26,10 @@
 
 设置 `COFLOW_LOG=1` 后运行 CLI 开启文件日志。日志不进入 stdout，JSON、format 和 LSP 协议不受影响。VS Code 的 `Coflow Language Server` 输出通道显示 LSP stderr；内嵌 LSP 复用桌面宿主的 subscriber。
 
+CLI 的统一执行 span 包含运行编号、操作编号与受控命令标识。参数错误、帮助、版本、普通命令和 LSP 均产生终结事件，包含退出码、完整诊断数量、有界诊断码/阶段集合及写入事实；输出截断不改变日志中的诊断数量。
+
+监听刷新事件携带已提交的 ProjectBootstrap，前端直接接收其代次，不再次调用完整 reload。监听错误保留 EditorError 的诊断位置和 publication 状态。插件捕获点传递原始 Error，内存问题历史保留 stack；同一个错误跨 IPC 与展示层传播时复用问题编号并更新展示摘要，不重复写日志。
+
 ## 验证与发布
 
 普通开发仍执行 `cargo check --workspace` 和 `cargo test --workspace`。日志轮转、写入失败、恢复备份、源码冲突与复合操作有专项回归；前端测试覆盖保存恢复、历史推进、原子历史请求和失败传播。浏览器测试覆盖默认脱敏、可选错误详情和诊断文件下载。

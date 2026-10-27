@@ -1,0 +1,3 @@
+COMMAND: coflow data list --type Item --where price < 100 --fields price --project C:/Users/wtlll/AppData/Local/Temp/coflow-skill-eval-20261028/batch --json
+EXIT: 0
+{"protocol_version":1,"command":"data.list","status":"success","error_category":null,"project":"C:/Users/wtlll/AppData/Local/Temp/coflow-skill-eval-20261028/batch","revision":"76282eac56552e5c52539e634a27652378fab3ae0b758b4dc54f341f8f45e04f","result":{"items":[],"total":0,"truncated":false,"next_cursor":null},"data_scope":{"complete":true,"available_records":3,"selected_file_count":1,"incomplete_file_count":0,"rejected_record_count":0,"details_omitted":true},"diagnostics_summary":null,"diagnostics":[]}

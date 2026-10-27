@@ -1,0 +1,3 @@
+sword: Item { name: "铁剑", quality: Quality::Rare, price: 90, next: Some(&Item::shield) }
+shield: Item { name: "盾牌", quality: Quality::Common, price: 80 }
+Settings: Settings { start: &Item::sword }

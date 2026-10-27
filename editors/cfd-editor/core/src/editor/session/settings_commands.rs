@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 
 use super::SessionStore;
 use crate::editor::settings::{
-    read_project_settings, sanitized_column_widths, sanitized_record_groups, sanitized_views,
-    sanitized_workspace, write_local_settings, write_project_settings,
+    lock_project_settings, read_project_settings, sanitized_column_widths, sanitized_record_groups,
+    sanitized_views, sanitized_workspace, write_local_settings, write_project_settings,
 };
 use crate::editor::types::{
     EditorError, EditorProjectSettings, EditorRecordGroup, EditorWorkspaceState, ViewConfig,
@@ -40,6 +40,7 @@ impl SessionStore {
                 return Err(EditorError::other("缩略名必须是记录类型的字符串字段"));
             }
         }
+        let _settings_lock = lock_project_settings(&session.project_root)?;
         let mut settings = read_project_settings(&session.project_root)?;
         if let Some(name) = field {
             settings.short_name_fields.insert(actual_type, name);
@@ -63,6 +64,7 @@ impl SessionStore {
         }
         let entry = self.session(id)?;
         let session = entry.state.write();
+        let _settings_lock = lock_project_settings(&session.project_root)?;
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_positions.insert(view_key, positions);
         write_project_settings(&session.project_root, &settings)
@@ -77,6 +79,7 @@ impl SessionStore {
     ) -> Result<(), EditorError> {
         let entry = self.session(id)?;
         let session = entry.state.write();
+        let _settings_lock = lock_project_settings(&session.project_root)?;
         let mut settings = read_project_settings(&session.project_root)?;
         settings.graph_compact_modes.insert(view_key, compact);
         write_local_settings(&session.project_root, &settings)
@@ -91,6 +94,7 @@ impl SessionStore {
         order: Vec<String>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         settings
             .view_order
@@ -111,6 +115,7 @@ impl SessionStore {
         widths: BTreeMap<String, f64>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         settings
             .default_table_column_widths
@@ -131,6 +136,7 @@ impl SessionStore {
         heights: BTreeMap<String, f64>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         let heights = heights
             .into_iter()
@@ -157,6 +163,7 @@ impl SessionStore {
         views: Vec<ViewConfig>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         let valid_group_ids = settings
             .record_groups
@@ -198,6 +205,7 @@ impl SessionStore {
         widths: BTreeMap<String, f64>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         if let Some(view) = settings
             .views
@@ -219,6 +227,7 @@ impl SessionStore {
         groups: Vec<EditorRecordGroup>,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         settings
             .record_groups
@@ -235,6 +244,7 @@ impl SessionStore {
         workspace: EditorWorkspaceState,
     ) -> Result<EditorProjectSettings, EditorError> {
         let project_root = self.project_root_for(id)?;
+        let _settings_lock = lock_project_settings(&project_root)?;
         let mut settings = read_project_settings(&project_root)?;
         settings.workspace = sanitized_workspace(workspace);
         write_local_settings(&project_root, &settings)?;

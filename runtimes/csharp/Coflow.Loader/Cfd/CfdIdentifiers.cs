@@ -7,7 +7,7 @@ using System;
 namespace Coflow.Loader
 {
 
-using System.Globalization;
+
 
 internal static class CfdIdentifiers
 {
@@ -60,22 +60,8 @@ internal static class CfdIdentifiers
             return false;
         }
 
-        var category = CharUnicodeInfo.GetUnicodeCategory(value, index);
-        var identifierStart = category is
-            UnicodeCategory.UppercaseLetter or
-            UnicodeCategory.LowercaseLetter or
-            UnicodeCategory.TitlecaseLetter or
-            UnicodeCategory.ModifierLetter or
-            UnicodeCategory.OtherLetter or
-            UnicodeCategory.LetterNumber;
-        var valid = start
-            ? codePoint == '_' || identifierStart
-            : codePoint == '_' || identifierStart || category is
-                UnicodeCategory.NonSpacingMark or
-                UnicodeCategory.SpacingCombiningMark or
-                UnicodeCategory.DecimalDigitNumber or
-                UnicodeCategory.ConnectorPunctuation or
-                UnicodeCategory.Format;
+        // 与语言侧 XID 表一致，不能用 Unicode 大类近似替代。
+        var valid = codePoint == '_' || CfdXid.Contains(codePoint, start);
         index += width;
         return valid;
     }
