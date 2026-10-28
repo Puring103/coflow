@@ -315,7 +315,7 @@ fn emit_watch_error(events: &Arc<dyn EditorEventSink>, session_id: u32, message:
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
+    #![allow(clippy::expect_used, clippy::panic)]
 
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -357,7 +357,7 @@ mod tests {
                 assert_eq!(event.bootstrap.revision, before.revision + 1);
                 assert_eq!(event.bootstrap.session_id, before.session_id);
             }
-            _ => panic!("expected reload"),
+            super::EditorEvent::ProjectWatchError(_) => panic!("expected reload"),
         }
         std::fs::write(&schema, "table Item { value: MissingType; }").expect("edit schema");
         assert!(!super::emit_reload(
@@ -368,14 +368,14 @@ mod tests {
         ));
         match &captured.0.lock()[1] {
             super::EditorEvent::ProjectWatchError(event) => {
-                assert!(!event.error.diagnostics.is_empty());
+                assert_ne!(event.error.diagnostics.len(), 0);
                 assert!(event
                     .error
                     .diagnostics
                     .iter()
                     .any(|diagnostic| diagnostic.code != "EDITOR-INTERNAL"));
             }
-            _ => panic!("expected structured error"),
+            super::EditorEvent::ProjectReloaded(_) => panic!("expected structured error"),
         };
     }
 

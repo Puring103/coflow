@@ -55,7 +55,7 @@ impl CommandLog {
         self.restoration_failed = count("restoration_failed");
     }
 
-    pub(crate) fn exit(&mut self, code: u8) {
+    pub(crate) const fn exit(&mut self, code: u8) {
         self.code = code;
     }
 
@@ -64,6 +64,17 @@ impl CommandLog {
         self.diagnostic_count += 1;
         self.codes.insert("CLI-OUTPUT".into());
         self.stages.insert("CLI".into());
+    }
+}
+
+impl Drop for CommandLog {
+    fn drop(&mut self) {
+        // RAII 覆盖参数错误、LSP、输出失败与正常退出，不依赖 run 是否返回 Err。
+        coflow_observability::tracing::info!(event = "command_finished", exit_code = self.code,
+            diagnostic_count = self.diagnostic_count, codes = ?self.codes, stages = ?self.stages,
+            written = self.written, written_files = self.written_files,
+            restored_files = self.restored_files, restoration_failed = self.restoration_failed,
+            elapsed_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX));
     }
 }
 
@@ -82,16 +93,5 @@ mod tests {
         assert_eq!(log.written_files, 2);
         assert_eq!(log.restored_files, 1);
         assert_eq!(log.restoration_failed, 0);
-    }
-}
-
-impl Drop for CommandLog {
-    fn drop(&mut self) {
-        // RAII 覆盖参数错误、LSP、输出失败与正常退出，不依赖 run 是否返回 Err。
-        coflow_observability::tracing::info!(event = "command_finished", exit_code = self.code,
-            diagnostic_count = self.diagnostic_count, codes = ?self.codes, stages = ?self.stages,
-            written = self.written, written_files = self.written_files,
-            restored_files = self.restored_files, restoration_failed = self.restoration_failed,
-            elapsed_ms = self.started.elapsed().as_millis() as u64);
     }
 }

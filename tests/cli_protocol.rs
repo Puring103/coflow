@@ -80,7 +80,7 @@ fn codegen_check_and_preview_agree_for_equivalent_line_endings() {
             }
         }
     }
-    assert!(!files.is_empty());
+    assert_ne!(files.len(), 0);
     for path in &files {
         let text = fs::read_to_string(path).unwrap().replace("\r\n", "\n");
         fs::write(path, text.trim_end_matches('\n').replace('\n', "\r\n")).unwrap();

@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 //! Loader 生成表必须随语言侧 Unicode 版本一起更新。
 #[test]
 fn csharp_xid_table_matches_every_unicode_scalar() {
@@ -24,7 +25,7 @@ fn csharp_xid_table_matches_every_unicode_scalar() {
             .collect::<Vec<_>>();
         assert_eq!(bounds.len() % 2, 0);
         let mut range = 0;
-        for code in 0..=0x10ffff {
+        for code in 0..=0x0010_ffff {
             while range < bounds.len() && code > bounds[range + 1] {
                 range += 2;
             }

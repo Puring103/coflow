@@ -55,7 +55,10 @@ fn independent_sessions_preserve_concurrent_settings_updates() {
                     .set_graph_positions(
                         *session,
                         key,
-                        BTreeMap::from([("Item::a".into(), [index as f64, 1.0])]),
+                        BTreeMap::from([(
+                            "Item::a".into(),
+                            [f64::from(u32::try_from(index).unwrap()), 1.0],
+                        )]),
                     )
                     .unwrap();
             });
