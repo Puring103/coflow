@@ -1,0 +1,6 @@
+RUN data_get records=10000 files=1
+PASS data_get p50=459.258ms
+RUN set_field records=10000 files=1
+PASS set_field p50=42820.004ms
+RUN batch_same_file records=10000 files=1
+FAIL batch_same_file: CLI timeout: apply --input - --rules

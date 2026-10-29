@@ -3,8 +3,8 @@
 mod trivia;
 
 pub(crate) use trivia::{
-    decode_simple_escape, scan_number_literal, scan_string_literal, scan_trivia, DelimiterNesting,
-    NumberLiteralError, StringLiteralError,
+    decode_simple_escape, lossless_tokens, scan_number_literal, scan_string_literal, scan_trivia,
+    DelimiterNesting, NumberLiteralError, StringLiteralError,
 };
 pub use trivia::{tokenize_lossless, LosslessToken, LosslessTokenKind};
 

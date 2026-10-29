@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "selected_cases": [
+    "set",
+    "batch"
+  ],
+  "batch_records": 1000,
+  "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+  "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+  "scope": "One diagnostic execution per operation; direct CLI OS cumulative peak sampled approximately every 100ms, with best-effort startup/exit observations. Last-interval peaks can be missed. Each write is verified outside the measured process. Not a latency distribution."
+}

@@ -1,0 +1,35 @@
+RUN project_inspect records=10000 files=10
+PASS project_inspect p50=47.170ms
+RUN schema_inspect records=10000 files=10
+PASS schema_inspect p50=45.542ms
+RUN data_get records=10000 files=10
+PASS data_get p50=403.996ms
+RUN data_list records=10000 files=10
+PASS data_list p50=410.635ms
+RUN filter_sort records=10000 files=10
+PASS filter_sort p50=433.355ms
+RUN data_search records=10000 files=10
+PASS data_search p50=413.127ms
+RUN data_refs records=10000 files=10
+PASS data_refs p50=1283.103ms
+RUN check_structure records=10000 files=10
+PASS check_structure p50=390.563ms
+RUN check_rules records=10000 files=10
+PASS check_rules p50=475.485ms
+RUN stats_field records=10000 files=10
+PASS stats_field p50=409.536ms
+RUN dimension_get records=10000 files=10
+PASS dimension_get p50=546.239ms
+RUN dimension_missing records=10000 files=10
+PASS dimension_missing p50=660.401ms
+RUN dimension_diff records=10000 files=10
+PASS dimension_diff p50=664.869ms
+RUN dimension_query records=10000 files=10
+PASS dimension_query p50=554.090ms
+RUN set_field records=10000 files=10
+PASS set_field p50=45721.994ms
+RUN set_field_rules records=10000 files=10
+PASS set_field_rules p50=47087.389ms
+RUN set_noop records=10000 files=10
+PASS set_noop p50=46940.273ms
+RUN set_preview records=10000 files=10

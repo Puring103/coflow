@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-10-28T15:07:39.5865224Z",
+  "source_path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\crates\\coflow-runtime\\examples\\runtime_matrix.rs",
+  "source_sha256": "09683DD65877D50E09183F9696A70108F3C024C975462316BB4F05EC3E9DACA4",
+  "source_snapshot": "runtime_matrix-pre-existing-dimension.rs",
+  "snapshot_sha256": "09683DD65877D50E09183F9696A70108F3C024C975462316BB4F05EC3E9DACA4",
+  "binary_sha256": "F5B3A2B6E4679775C7C7BF513D5B0E5DC0C9D45B67F14DB73EDCE04176E4A564",
+  "fixture_sha256": "6C37202A6633E35ACD00C00304B1285EB8FA3BB9C57603F13F868CBB348CAC36",
+  "provenance": "Exact byte-for-byte source snapshot captured before adding optional existing-dimension-file benchmark cases; no build or sampling performed."
+}

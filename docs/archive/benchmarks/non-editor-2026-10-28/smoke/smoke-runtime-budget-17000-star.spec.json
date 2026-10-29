@@ -1,0 +1,18 @@
+{
+  "id": "smoke-runtime-budget-17000-star",
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+  "arguments": [],
+  "environment": {
+    "MATRIX_RECORDS": "17000",
+    "MATRIX_FILES": "1",
+    "MATRIX_FIELDS": "20",
+    "MATRIX_COLLECTION": "8",
+    "MATRIX_SAMPLES": "1",
+    "MATRIX_WARMUPS": "0",
+    "MATRIX_CASES": "load_budget_rejected",
+    "MATRIX_VARIANTS": "0",
+    "MATRIX_TEMPLATES": "0",
+    "MATRIX_TOPOLOGY": "star",
+    "MATRIX_BATCH": "100"
+  }
+}

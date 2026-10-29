@@ -1,0 +1,538 @@
+{
+  "captured_at": "2026-10-28T22:00:56.237Z",
+  "base_commit": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "branch": "codex/non-editor-performance",
+  "snapshot_directory": "source-final",
+  "native_artifact_version": "r4",
+  "managed_artifact_version": "r6",
+  "files": [
+    {
+      "path": "crates/coflow-language/src/cfd/parser.rs",
+      "sha256": "f6836f2fe33050c7f41b2a545d71218996b51351955a98e57474a0d23dee9b56"
+    },
+    {
+      "path": "crates/coflow-language/src/lexical/mod.rs",
+      "sha256": "aa3c5f4cbad4a691657b7ca4d7a94c34bd468346715d7238b507beed5f61186f"
+    },
+    {
+      "path": "crates/coflow-language/src/lexical/trivia.rs",
+      "sha256": "9a813c662edc1fbec3f217db39e94b42e5802f7f88c7c449c8de0f4f9081e28d"
+    },
+    {
+      "path": "crates/coflow-model/src/build/incremental.rs",
+      "sha256": "576b24b3f75cea92cd3096f73a86d6c0670171cb490b8c9789daf9108bc34062"
+    },
+    {
+      "path": "crates/coflow-model/src/build/membership.rs",
+      "sha256": "1bef61bb675229cd01c59c056c2513edb44648ecd5c9507c924b01916bcb53b7"
+    },
+    {
+      "path": "crates/coflow-model/src/build/mod.rs",
+      "sha256": "77b40d890ca06d90712475e15aa5cfa5fc883553e6a6ae90d2a953f2125a94d6"
+    },
+    {
+      "path": "crates/coflow-model/src/build/projection.rs",
+      "sha256": "7d95c5734f10b5321872ef424a2269741a6f07224534ec8d050d3ae2d15cbd46"
+    },
+    {
+      "path": "crates/coflow-model/src/build/rejection.rs",
+      "sha256": "69326f95b391c811096f7928c0d35f55b14ce2d4ece226ceb80145893d78ce7f"
+    },
+    {
+      "path": "crates/coflow-model/src/build/resolve.rs",
+      "sha256": "f5486c148c197a3c3ec983fd6a4c2b95af3501f9b464e08bd165ba09a41f7c4a"
+    },
+    {
+      "path": "crates/coflow-model/src/indexes/mod.rs",
+      "sha256": "341a75d89c43694cda230dd9c7965fb0605dd9991044168b31a7c7baa88b83b3"
+    },
+    {
+      "path": "crates/coflow-model/src/indexes/relations.rs",
+      "sha256": "8e751829ed0587efd55b52e0f67a3bb72bf7741121248c6abb5bfa063b79aa49"
+    },
+    {
+      "path": "crates/coflow-model/src/lib.rs",
+      "sha256": "24c9bfd8e68c46844b0e60a4c9bfb64e2511b60abf339ffb0eba6571ac4f120b"
+    },
+    {
+      "path": "crates/coflow-model/src/model/projection.rs",
+      "sha256": "0a449c846f0f032a8fdc1e97ee437eb21aa29840cf62591b99fbc0753b3a642e"
+    },
+    {
+      "path": "crates/coflow-model/tests/membership_updates.rs",
+      "sha256": "b33ed41fc5770ae7b5d67af7a9d72ccc8cdf01c38fd6bdf4ac1e8ab381c32bc4"
+    },
+    {
+      "path": "crates/coflow-model/tests/template_rejection.rs",
+      "sha256": "c3440bb44b630b98e9d697ca2e0d42e1bdafb24a19d44165608ec57e2329e37b"
+    },
+    {
+      "path": "crates/coflow-runtime/examples/runtime_matrix.rs",
+      "sha256": "51125a4fd39d3105d4f7a1eddaad0f548dc995d5ac9549c264a1ecd9d330779f"
+    },
+    {
+      "path": "crates/coflow-runtime/examples/runtime_matrix/README.md",
+      "sha256": "cea466d3abb65820f11910ad484d9a50c9768687707be81a1b76a2844e47b41b"
+    },
+    {
+      "path": "crates/coflow-runtime/examples/runtime_matrix/fixture.rs",
+      "sha256": "6c37202a6633e35acd00c00304b1285eb8fa3bb9c57603f13f868cbb348cac36"
+    },
+    {
+      "path": "crates/coflow-runtime/src/api/diagnostics.rs",
+      "sha256": "b2b446f5b940eb6f9c82f6b4ae1a48115b2657a0f37521f090440332daed2db3"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/operations.rs",
+      "sha256": "72930b6f71760b05ed190e2e2ef27554f643df93471144ec0528fae265cef4af"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/query.rs",
+      "sha256": "6154278e30d4f5f6d9622ffac896ae4e8bb955517aa231a48b52f4e3c0eb5304"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/semantic_diff.rs",
+      "sha256": "65d43c6f481c482137ef2118fc4e21f092a20bf70fef9e25f1c24c0cdd7a674b"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/semantic_diff_capture_tests.rs",
+      "sha256": "36d53857c703d4c3925b512d118c785adf19dc985f9031b8dea5ef21a886338f"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/semantic_diff_sparse_tests.rs",
+      "sha256": "476fecf395758f1d4836e3bf27e094b5ad550248edc9a0d9017459f719d15d16"
+    },
+    {
+      "path": "crates/coflow-runtime/src/automation/transaction.rs",
+      "sha256": "e4f90d7e75b8579910b43f085ff3b96ca38f0e10b18f3eddbc101e3f55390064"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/diagnostics.rs",
+      "sha256": "88d4a22436a9e5a52993d4703aea8e62b5a981aab89119904638ab8c0b812087"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/mod.rs",
+      "sha256": "5781b62d2776add270afa724ded390c253cc7f84c57a9f93b0ea8b0a89f37ed9"
+    },
+    {
+      "path": "crates/coflow-runtime/src/cfd_loader/writer/batch.rs",
+      "sha256": "02e66a2bd4b10e536de7530f5a7fa13f1b1a5a44f6ce571450788b87656b7775"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks.rs",
+      "sha256": "56abaaed4c6d982ea87fcccaea208990d6630f09a8d449a448f5e61beac302f5"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/impact.rs",
+      "sha256": "16b99a9a3e9a27f460d72192350ac4ad76e07480b08c86c60fe9a1c107a1a582"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/membership_tests.rs",
+      "sha256": "cbc82a1cd324845df23b2c23c06502cef36d6f2760c279fced7a320a8b91952a"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/planning.rs",
+      "sha256": "728309dd193925e3c15c7008a665a0f593907c0bdbe0db85572ce04959a17db1"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/read_graph.rs",
+      "sha256": "5363fb0719292bf23e2eab91f71fa9f10aa43c03262d507caaa76e2ce39cfc1b"
+    },
+    {
+      "path": "crates/coflow-runtime/src/checks/store.rs",
+      "sha256": "5a0902f303fd7470418772474d85229359555a8162f7e7e38a90bd1d2fe8da48"
+    },
+    {
+      "path": "crates/coflow-runtime/src/loading/load.rs",
+      "sha256": "195b871e09739935e70c91fb776d5536215dbabb07e98c6ff4e1618caf54c4bf"
+    },
+    {
+      "path": "crates/coflow-runtime/tests/dimension_records.rs",
+      "sha256": "7c4b4aa8eed6ea8a626aff4dd8225384a5f3bf392a9adf6949f33b18ceff7838"
+    },
+    {
+      "path": "crates/coflow-runtime/tests/membership_updates.rs",
+      "sha256": "9bec9110bc16f713485b56f56167c6598f4e33ef3eb6d9f426a22c3b1b52b506"
+    },
+    {
+      "path": "crates/coflow-runtime/tests/template_rejection.rs",
+      "sha256": "ec80e1fe62f51ffd184460ef5f9ae1f0de1fc01a525dba5cb7ee8b3755cec686"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/Adapter.cs",
+      "sha256": "d8266301d92ec5dd5bbfa8ff138a2efdff444031ff31f7a0ce9d9a585275291f"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/Adapters.cs",
+      "sha256": "cd2923b3048d8df7431eef39af031d02dd3adf1cf11cd85e9cbd3b665b32cb27"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/Coflow.Loader.Benchmarks.csproj",
+      "sha256": "bbe4b0b78e20b8701c2fb2a42c9897bf853c99c02a7925c6cf0721705b5461e6"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/Fixture.cs",
+      "sha256": "3430445c21bd4bbbd2a78afd506c14d80ac2255cd80094caae23c2a2a28022b6"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/Program.cs",
+      "sha256": "8095b8a17f1420c1c8f3f80cc00ed45e21d7a3586e1a1162fe234d758499070a"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/README.md",
+      "sha256": "2677636e4f0460a47fcab58fa5ad4badd7c5f6495a5e9b3e84a9aa06bf4cc9c4"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/complex/coflow.yaml",
+      "sha256": "88f780aa95231241c5d857c7ae160c066bbc5d89e2af6779ee60f6218364f733"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/complex/generated/CoflowData.cs",
+      "sha256": "8be7ff2d3b49acfac6e41aab089385ebed915d44c3cfba0f320ae2b9a1917de5"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/complex/generated/Payload.cs",
+      "sha256": "e53288b4c98cc0004f4a792f3c9a2b1943f86329e4464a88411ae8724c761051"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/complex/generated/Row.cs",
+      "sha256": "1138e9147e3f3e92c64da0a37eb6dab9426bd7fcc403b29834e41cb63b9cf26d"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/complex/schema.cft",
+      "sha256": "e1b96369c8b20cf6b22cd7e32769f49cfa311bb3cbad209245445000e137ab9a"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/dimensions/coflow.yaml",
+      "sha256": "7de11d629e068867037898e38db968461b408239430b34c0c69057eced269d28"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/dimensions/generated/CoflowData.cs",
+      "sha256": "bed616aef84c5cc9d7f02d61998d47f137f3eb826c002432dbaf436250a830eb"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/dimensions/generated/Payload.cs",
+      "sha256": "b0bb542afbbe2780a508d10d2b1e603cea38728b91ad048b0e37f6b29105e7ab"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/dimensions/generated/Row.cs",
+      "sha256": "33eae3e95fc793f39e89a4e3150e37b5cf588409e7822d20ce97eb339bca595b"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/dimensions/schema.cft",
+      "sha256": "3408efdfe61063640f5c164516b786b1919be1c45a5dcf7ddecffa73b3d3b398"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar100/coflow.yaml",
+      "sha256": "a97d2825ed9b88b9e327b3900f218ecb10280507b2fa9e5f0a4241aab7f1f83d"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar100/generated/CoflowData.cs",
+      "sha256": "8231c9cea4d8b654e1975c1574caf1c69fb96d0d02bfded7e7d4acc6da34f511"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar100/generated/Row.cs",
+      "sha256": "13aa0b7882c22481126c1ea744db6a27692bb4e04e5ce119f68b150f03ae96a3"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar100/schema.cft",
+      "sha256": "efbb5a7c93a01edba2c8aa03b0860f360d53093620c3203d17e6df4b2e534c5f"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar20/coflow.yaml",
+      "sha256": "f0f61fa4be6077c5c06ec758fc0e93c3dd8942d76decfcde8bfb132910665f7c"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar20/generated/CoflowData.cs",
+      "sha256": "dfef30a1bb1fe8599859502a498ec5238f6cdec2812ce0669cb8ba1c7a91729d"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar20/generated/Row.cs",
+      "sha256": "abc9985f9025f2572c533ea873c9dbeb807bce7d51c02b1c8e7b89b0b0ea3f16"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar20/schema.cft",
+      "sha256": "1581ac3696c1cd4b38ae0de9d065c1181d88408817c0f1ede21d7990282fd29a"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar8/coflow.yaml",
+      "sha256": "925d892aa1a427ef3004a614f5eb9e649bb292de026283bd9005d2d11a49fdaf"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar8/generated/CoflowData.cs",
+      "sha256": "be8451cd57c99d4e9584231b1eca88fe2e2e2a5077e17ef0d4079e52b7a07b33"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar8/generated/Row.cs",
+      "sha256": "fc2bbf61116cd40182e9664483c9e42357d97e5976f21d662b1723f8c03cc2a6"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/scalar8/schema.cft",
+      "sha256": "e249c9eaa9f60ad95c375ddb4bfccd206c4eb607d85e57b7247ac1a7b06883b8"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/coflow.yaml",
+      "sha256": "0621368765afb769732fa59ca4e18afed23b402823674909d309e77251a34074"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/CoflowData.cs",
+      "sha256": "418113b613c129e2a0bd76f32f24d88aa22054a624536cde5bf9361ce5e7be5f"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row.cs",
+      "sha256": "da623b8822991c34d131e0112ff59e80ab368e899314c982210c9a8afd5aacc3"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row0.cs",
+      "sha256": "b1734b0f3b36e39060341ea0a566469fb5a30bc2a609e18cf59da4f62661fd33"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row1.cs",
+      "sha256": "2cc6a1a0a610e443db35ff20aa9539d1c71519156c96e443cd75e8f597aa8aeb"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row10.cs",
+      "sha256": "ae73d4818ad1636563db77869aac76dda7f5d5961180a0f581541839b9a395b5"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row11.cs",
+      "sha256": "03f06cf5e898a9f7d2e8ffcd2ce4fda701b5d02d342240f5f7052487c81caed0"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row12.cs",
+      "sha256": "0362885e865dffa6116f2ab3aeffd7130c79af0bc7a9208bda207f2e90ea579c"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row13.cs",
+      "sha256": "b6f8554c71b8a4331b092fd04e793fe5c45603dedb436ba4178fc6d2a6a51ed5"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row14.cs",
+      "sha256": "8a1184efd3a2623b2d2efd17c63033b724f77ac7b1bfb815b0d1879360585c1e"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row15.cs",
+      "sha256": "b86d31611fde4aebbd0f46a69e3bc39ac75a629593d1f3d7d195ec2b1d0f22da"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row16.cs",
+      "sha256": "9854382c82fc925a23e63d9d0aa2aa656755216d92abac9a142fa11f197bae8e"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row17.cs",
+      "sha256": "9bfb2d7ddb56b4d511fd7f8ca523fe5c1185611756b10d3f4667f9cd87a646ff"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row18.cs",
+      "sha256": "7c0aa989eaa1db901e52f33b47fc6309b1c5a44a3a78d8dcc0a894a60c402800"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row19.cs",
+      "sha256": "295a24818b177dd33acc5eed42d398e829bd98c284647014cd7e46ca995b8b0c"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row2.cs",
+      "sha256": "0b8a47b3e2045baad6566f97173a8608ac90a21ba5984bd79a93dfeef2934679"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row20.cs",
+      "sha256": "f143773a009bba22a87bb2ab37f1ead53dbb877b2bbfa3f8df09f5ac09887650"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row21.cs",
+      "sha256": "38febe766c8917aea02494af7b21359151d52e0aef5ffc7a76785aa225fe5159"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row22.cs",
+      "sha256": "9eb4cd05c5626e69422741c94a2c6122ffeaaeea981ab49dd81a26fcff351bc4"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row23.cs",
+      "sha256": "67da3877866f011a76298bb313b0d40ba6900c778f77c35d2ff9870203bd2e7e"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row24.cs",
+      "sha256": "b87ebac489bf2d62cef31a1821da6344769f9ede577bcefb8e87f881d4312519"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row25.cs",
+      "sha256": "3e96459020f08f2daddca0998def91529d846834ae744e96a3e6e922730927bf"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row26.cs",
+      "sha256": "e8e38f437fe81af22cc8e2a4b7b564efe76b2f4671f89642b41db1c345a986cb"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row27.cs",
+      "sha256": "1e75c506b56161998375ad107720dc07f00c4af43a33fc56b99786621e701603"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row28.cs",
+      "sha256": "91ad114a6d1599483740a2f86854a5cc00ece14cf162e477033710ab8e24c275"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row29.cs",
+      "sha256": "7ca57ef131aa62c3c83eac572e6ba72550a2028994e37f5b1c12ecdc4c74c50b"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row3.cs",
+      "sha256": "477f62add939a9f06ec4bbb31e682def26012eadc66ad38495978e07c2cbe5f7"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row30.cs",
+      "sha256": "286e4c2feeebb101bcc3b0c55ded7eacd7362c8e67673399e92beeceb3985c8c"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row31.cs",
+      "sha256": "bca3a1340561b5d1668233d4f208a906ba3abfa21e1bd616325e8dc4e073452e"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row4.cs",
+      "sha256": "95a5d852e511ae168cdc7fdc872e42d396b6fb534cb2bcf35eb596bd7b010805"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row5.cs",
+      "sha256": "b1b0c5d2f2ac4e3f1fe85ca65a92ddb2c27a5686d071e2a4351e447c6c9103d4"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row6.cs",
+      "sha256": "a645e585829e453fda65df32a530fafee1ff8145c1823ad30899d331497fe285"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row7.cs",
+      "sha256": "988a68dbb1fa56d7a2be971a6955a1528699919ab5a7526fa5cc1b227627e537"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row8.cs",
+      "sha256": "8d4010e17c9a027ae9e6f11676f9483dfcf3033d8ddaa482be4e172f265f418b"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/generated/Row9.cs",
+      "sha256": "c06cf4a815610e4a13d67e3387942e710260aa22e6772f77f4b3c59f0d95705e"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/fixtures/tables32/schema.cft",
+      "sha256": "c87262a88960df55cb22fa8510945ef024e5314b6ac9737bed21bc6cd2387771"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Benchmarks/generate.ps1",
+      "sha256": "5372d6865e9f13d91e530eff5c3d22700874b5225475e2634a24fa7aaf6ef0ff"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Tests/PerformanceContractTests.cs",
+      "sha256": "71cd1733995181b9cb688b364e1370af1b8c84d645f24afd94dc59a360ba85c4"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Cfd/CfdNamePool.cs",
+      "sha256": "5c2d6bef5591b7b8ad5453b46b0e42395a96a2942da3dbf598ac67c97b4358c4"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Cfd/CfdNodes.cs",
+      "sha256": "f5c1bc190a54dcc7812e7f34ed4a9be744fb558c522cca5c8004c4a44b4aee8e"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Cfd/CfdParser.cs",
+      "sha256": "b92f791a902ba8095723a24eebfaedd62c047412a153539fe0e00e260594a2bd"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Construction.cs",
+      "sha256": "73d7214d3afabd6e5e273980ba7880c653847678f1a4fcc851d21943d06290a6"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Descriptors.cs",
+      "sha256": "c7d8610668a2e1f1b4f90689369b528b8666ab2f4a6d9162580e8e5ebb7c1ee5"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Dimensions.cs",
+      "sha256": "e7294688bc5fffdfbef551ec638275cff5cf9c307bb035f33d5dd7219d03237c"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Loading.cs",
+      "sha256": "a411d3a48db0e911847a95f605a6238dec3508b43001bdbc9ef809ef21af5ce9"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader/Table.cs",
+      "sha256": "3b0bf2692c75533bfb6e4dc529df0162c4ee0b5a396f4d1251f7f9a2c67eb00b"
+    },
+    {
+      "path": "scripts/performance/audit-optimization.mjs",
+      "sha256": "f9fac4c177927d56b735c50a9f81e7fd98c838014edee6616d207dd9b54e70d0"
+    },
+    {
+      "path": "scripts/performance/cli-matrix.md",
+      "sha256": "7e96145f730cde8891fc6c3610230295080d2d42a41db75dea148bba938cd835"
+    },
+    {
+      "path": "scripts/performance/cli-matrix.mjs",
+      "sha256": "1897c9d6e2d01306cf0280f20820fbfe3a153922f8100ce808c31630bef54dfe"
+    },
+    {
+      "path": "scripts/performance/compare-optimization.mjs",
+      "sha256": "1c5d9829a81b5cb35f0a9639c983fe33adeb4b0befb9b80a1cfe7a9fa95a9f0c"
+    },
+    {
+      "path": "scripts/performance/measure-cli-memory.mjs",
+      "sha256": "96c872fcf9ef2a0dd21ddd9a86c555d107d9a93679cb4cb0f2bf623cece44a50"
+    },
+    {
+      "path": "scripts/performance/non-editor-suite.mjs",
+      "sha256": "f54191af55e9748e1a0d7a43c3878cf11c7adb85e1770c5fbb6e13b581272b8d"
+    },
+    {
+      "path": "scripts/performance/optimization-suite.mjs",
+      "sha256": "9fb3fd5534833ee38f0937da522cd4396636653f99f967d057e107636c704acc"
+    },
+    {
+      "path": "scripts/performance/report-cli-memory.mjs",
+      "sha256": "348db483b5dfff6fbcb0e367e08873b1c539180a7e22feb14404e9c5305f5173"
+    },
+    {
+      "path": "scripts/performance/report-optimization-targets.mjs",
+      "sha256": "f7e5f0986aef0c46fd8669d44f8d5eba67fa37affb2d0cd6ee15f6c3cd8ea844"
+    },
+    {
+      "path": "scripts/performance/run-case.ps1",
+      "sha256": "18b2f09e1a9cb0b23f2f7fe79298a044545c512c23429f98d296dd66594cd552"
+    },
+    {
+      "path": "scripts/performance/summarize.mjs",
+      "sha256": "a78ef3ecfca8456e44e6ca405bb5743e81f1ae2c4ee3f96d01c4e094ab03de6b"
+    },
+    {
+      "path": "scripts/performance/unity/Adapter.cs",
+      "sha256": "b34447861a76d1c14f39140971f80cf65beb38adc0c75757154d5d2948abe1c4"
+    },
+    {
+      "path": "scripts/performance/unity/BenchmarkPlayer.cs",
+      "sha256": "33aa71c5638aa18d662e49d54c77116fca102235e39df6adbe0526e240065161"
+    },
+    {
+      "path": "scripts/performance/unity/BuildBenchmark.cs",
+      "sha256": "c9f4b5a8e9d3b844eeb6353d34adf2339355532431f14c32291c1f0fc7232ab8"
+    },
+    {
+      "path": "scripts/performance/unity/ConstructionContracts.cs",
+      "sha256": "85ce0dc908292457a8565e0261678a0205f551477855d1a9c5b575232dbe46cd"
+    },
+    {
+      "path": "scripts/performance/unity/README.md",
+      "sha256": "9a38b6f038bced91db895295b095e3435f801c1bb7b73ab6009bb4c59bbb427e"
+    },
+    {
+      "path": "scripts/performance/unity/build.ps1",
+      "sha256": "508e03c906a9b1e33bb27288da6f815f2f5f9e8a96de42419e1eac5b51d48002"
+    },
+    {
+      "path": "scripts/performance/unity/prepare.ps1",
+      "sha256": "81360adfbb710bff2478f1d2a7eeb68e27984f6fc4641517aa87fac19de163b5"
+    },
+    {
+      "path": "scripts/performance/unity/run-player.ps1",
+      "sha256": "ac298d591613598a02d805bb9670b1e2e0b09c9ee79d9bc99499ca5f2fd5d337"
+    },
+    {
+      "path": "scripts/performance/unity/run-suite.ps1",
+      "sha256": "3e664dc1f97889eadd1a444681afc9f66e5b21bed75c95c0180ac8ad9837cba7"
+    }
+  ]
+}

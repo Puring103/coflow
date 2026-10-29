@@ -1,0 +1,48 @@
+{
+  "id": "cli-memory-10000-set",
+  "spec": {
+    "id": "cli-memory-10000-set",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+    "arguments": [
+      "data",
+      "set",
+      "--type",
+      "Row",
+      "--id",
+      "r000000",
+      "--path",
+      "value",
+      "--value-cfd",
+      "10002",
+      "--rules",
+      "--project",
+      "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-nQFFQG",
+      "--json"
+    ],
+    "environment": {
+      "COFLOW_LOG": "0"
+    },
+    "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+    "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+    "memory_scope": "Direct coflow.exe process for one command, excluding the Node and PowerShell drivers, fixture generation and subsequent verification. No warmup; filesystem caches are uncontrolled.",
+    "timeout_scope": "One direct CLI command including startup, loading, operation and output; a timeout is censored command evidence, not a completed latency."
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+      "sha256": "FA3259043A2FF64C8776E5C44567279270037F4A3F7277E2E278802DEAD15027"
+    }
+  ],
+  "started_at": "2026-10-29T07:24:07.2494452+08:00",
+  "process_id": 31468,
+  "wall_seconds": 2.3160773,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "One direct CLI command including startup, loading, operation and output; a timeout is censored command evidence, not a completed latency.",
+  "sampled_process_peak_working_set_bytes": 744210432,
+  "process_memory_samples": 20,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Direct coflow.exe process for one command, excluding the Node and PowerShell drivers, fixture generation and subsequent verification. No warmup; filesystem caches are uncontrolled.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

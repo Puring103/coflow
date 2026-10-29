@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-10-29T00:06:54.949Z",
+  "status": "passed",
+  "documents": [
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\README.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\results-tables.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\goals-status.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\remaining-work-rust-cli.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\remaining-work-csharp.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\audit-final.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\verification\\final-report-method-review.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\verification\\analysis-tools\\README.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\verification\\final-report-review.md",
+    "docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\target-status.md"
+  ],
+  "relative_links_checked": 282,
+  "issues": [],
+  "analysis_scripts_sha256_checked": 4,
+  "targets": {
+    "passed": 185,
+    "not_met": 63,
+    "insufficient_evidence": 7
+  },
+  "git_diff_check": "passed; normal CRLF normalization warning only"
+}

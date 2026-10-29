@@ -1,0 +1,4 @@
+{"tool":"runtime_matrix","config":{"records":10000,"files":10,"fields":20,"samples":1,"warmups":0,"batch":1000,"collection_length":8,"variants":1,"dimension_stride":100,"topology":"ring","templates":false,"query_batch":1000},"timing":"fixture/setup/reset/assertions/output excluded; API call and internal drops included; returned output drop excluded","allocator":"mimalloc"}
+{"case":"validate_invalid","source_bytes":3106290,"config":{"records":10000,"files":10,"fields":20,"samples":1,"warmups":0,"batch":1000,"collection_length":8,"variants":1,"dimension_stride":100,"topology":"ring","templates":false,"query_batch":1000}}
+{"phase":"validate_invalid_started","case":"validate_invalid","iteration":0,"unix_ms":1793219530672}
+{"metric":"validate_invalid","samples_ms":[228.0273],"median_ms":228.0273,"min_ms":228.0273,"max_ms":228.0273,"p95_ms":null,"operations_per_sample":1,"stats":{"diagnostic_count":5}}

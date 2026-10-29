@@ -474,6 +474,7 @@ pub(crate) fn reload_project_data_from_cache_with_preloaded(
         schema,
         indexes,
         source_data,
+        previous,
         &options,
         statistics,
         diagnostics,
@@ -661,26 +662,34 @@ impl SourceDataCache {
                 .dimension_values
                 .same_generation(&old.dimension_values)
             {
-                // 覆盖的增删和目标变化同时影响旧、新宿主；来源位置由模型独立刷新。
-                let values_equal = current.dimension_values.len() == old.dimension_values.len()
-                    && current
-                        .dimension_values
-                        .iter()
-                        .zip(old.dimension_values.iter())
-                        .all(|(a, b)| {
-                            a.source_type == b.source_type
-                                && a.source_id == b.source_id
-                                && a.field == b.field
-                                && a.dimension == b.dimension
-                                && a.variant == b.variant
-                                && a.value.same_value(&b.value)
-                        });
-                if !values_equal {
-                    for value in current
-                        .dimension_values
-                        .iter()
-                        .chain(old.dimension_values.iter())
-                    {
+                // 文件重排和来源位置变化不等于业务值变化。按完整覆盖坐标匹配，
+                // 只让新增、删除或值不同的宿主进入依赖闭包；来源仍由模型单独更新。
+                fn coordinate(
+                    value: &crate::DimensionValueDraft,
+                ) -> (&str, &str, &str, &str, &str) {
+                    (
+                        value.source_type.as_str(),
+                        value.source_id.as_str(),
+                        value.field.as_str(),
+                        value.dimension.as_str(),
+                        value.variant.as_str(),
+                    )
+                }
+                let mut prior = BTreeMap::new();
+                for value in old.dimension_values.iter() {
+                    if prior.insert(coordinate(value), value).is_some() {
+                        // 重复覆盖需要完整构建按原顺序报告，不能被索引覆盖掉。
+                        return None;
+                    }
+                }
+                let mut seen = BTreeSet::new();
+                for value in current.dimension_values.iter() {
+                    let key = coordinate(value);
+                    if !seen.insert(key) {
+                        return None;
+                    }
+                    let previous = prior.remove(&key);
+                    if previous.is_none_or(|old| !value.value.same_value(&old.value)) {
                         let host = model.lookup_assignable(
                             schema,
                             &value.source_type,
@@ -689,9 +698,62 @@ impl SourceDataCache {
                         changed.entry(host).or_default().insert(value.field.clone());
                     }
                 }
+                for value in prior.into_values() {
+                    let host =
+                        model.lookup_assignable(schema, &value.source_type, &value.source_id)?;
+                    changed.entry(host).or_default().insert(value.field.clone());
+                }
             }
         }
         (offset == model.record_count()).then_some(changed)
+    }
+
+    /// 成员变化通过原始业务输入证明复用；同批次直接复用，变化批次按旧模型坐标比较。
+    fn membership_reuse(&self, previous: &Self) -> Option<Vec<Option<CfdRecordHandle>>> {
+        let model = previous.model.as_ref()?;
+        if self.batches.iter().chain(&previous.batches).any(|batch| {
+            !batch.loaded
+                || !batch.diagnostics.is_empty()
+                || !batch.dimension_variants.is_empty()
+                || !batch.dimension_values.is_empty()
+        }) {
+            return None;
+        }
+        let old_inputs = previous.record_drafts();
+        if old_inputs.len() != model.record_count() {
+            return None;
+        }
+        let old_handles = model.records().map(|(id, _)| id).collect::<Vec<_>>();
+        let mut offset = 0;
+        let old_batches = previous
+            .batches
+            .iter()
+            .map(|batch| {
+                let start = offset;
+                offset += batch.records.len();
+                (batch.entry.display_path.as_str(), (batch, start))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut unchanged = Vec::new();
+        for batch in &self.batches {
+            if let Some((old, start)) = old_batches.get(batch.entry.display_path.as_str()) {
+                if batch.records.same_generation(&old.records) {
+                    unchanged.extend(
+                        old_handles[*start..*start + old.records.len()]
+                            .iter()
+                            .copied()
+                            .map(Some),
+                    );
+                    continue;
+                }
+            }
+            unchanged.extend(batch.records.iter().map(|input| {
+                model
+                    .record_by_type_id(&input.actual_type, &input.id)
+                    .filter(|id| input.same_values(old_inputs[id.index()]))
+            }));
+        }
+        Some(unchanged)
     }
 
     fn record_drafts(&self) -> Vec<&LoadedRecordDraft> {
@@ -740,6 +802,7 @@ fn model_builder<'a>(
 fn build_cached_model(
     schema: &CftSchema,
     source_data: &SourceDataCache,
+    previous_source_data: &SourceDataCache,
     changed_records: Option<&BTreeMap<CfdRecordHandle, BTreeSet<FieldName>>>,
 ) -> Result<(PartialModelBuild, usize), LoadDiagnostics> {
     let unchanged = changed_records.is_some_and(BTreeMap::is_empty)
@@ -747,6 +810,7 @@ fn build_cached_model(
         && source_data.model.is_some();
     // 健康增量直接借用源批次；只有完整容错重建才建立用于剔除候选的平面表。
     let records = std::cell::OnceCell::new();
+    let membership_drafts = std::cell::Cell::new(0);
     let full_build = || {
         build_partial_model(
             schema,
@@ -755,6 +819,26 @@ fn build_cached_model(
         )
     };
     let build = || -> Result<PartialModelBuild, LoadDiagnostics> {
+        if changed_records.is_none() {
+            if let Some(previous) = source_data.model.as_ref() {
+                if let Some(unchanged) = source_data.membership_reuse(previous_source_data) {
+                    membership_drafts.set(previous.record_count());
+                    let builder = model_builder(schema, source_data);
+                    if let Some(output) = builder.try_build_membership_updates(previous, &unchanged)
+                    {
+                        return Ok(PartialModelBuild {
+                            model: output.model,
+                            diagnostics: DiagnosticSet::empty(),
+                            logical_locations: BTreeMap::new(),
+                            accepted_origins: Vec::new(),
+                            statistics: output.statistics,
+                            // 成员句柄会重排，来源索引与 checker 保持成员变化的原处理路径。
+                            changed_records: None,
+                        });
+                    }
+                }
+            }
+        }
         Ok(match source_data.model.as_ref().zip(changed_records) {
             Some((previous, _)) if unchanged => PartialModelBuild {
                 model: previous.clone(),
@@ -787,13 +871,21 @@ fn build_cached_model(
         })
     };
     let partial = build()?;
-    Ok((partial, records.get().map_or(0, Vec::len)))
+    Ok((
+        partial,
+        membership_drafts.get() + records.get().map_or(0, Vec::len),
+    ))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "输出装配同时衔接来源缓存、复用模型和精确变化记录，参数保持各阶段所有权与借用边界。"
+)]
 fn build_output_from_cache(
     schema: &CftSchema,
     indexes: &mut SessionIndexBuilder,
     mut source_data: SourceDataCache,
+    previous_source_data: &SourceDataCache,
     options: &ReloadProjectDataOptions<'_>,
     mut statistics: ProjectExecutionStats,
     source_diagnostics: DiagnosticSet,
@@ -807,7 +899,7 @@ fn build_output_from_cache(
             .add_source_file(batch.entry.display_path.clone(), source_id);
     }
     let (partial, draft_record_count) =
-        match build_cached_model(schema, &source_data, changed_records) {
+        match build_cached_model(schema, &source_data, previous_source_data, changed_records) {
             Ok(partial) => partial,
             Err(error) => {
                 // 全局构建失败也保留全部可定位记录，供容错会话展示被拒绝项。
@@ -895,6 +987,10 @@ fn build_output_from_cache(
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "容错构建按原错误轮次收集诊断、传播模板拒绝并累计工作量，集中保持顺序和预算。"
+)]
 fn build_partial_model(
     schema: &CftSchema,
     records: &[&LoadedRecordDraft],
@@ -904,6 +1000,7 @@ fn build_partial_model(
     let mut candidates = (0..records.len()).collect::<Vec<usize>>();
     let mut diagnostics = DiagnosticSet::empty();
     let mut logical_locations = BTreeMap::new();
+    let mut failed_statistics = CfdModelBuildStats::default();
 
     loop {
         let candidate_origins = candidates
@@ -933,8 +1030,9 @@ fn build_partial_model(
                 builder.add_dimension_variant(dimension.clone(), variant.clone());
             }
         }
-        match builder.build_partial() {
-            Ok(output) => {
+        match builder.build_partial_with_statistics() {
+            Ok(mut output) => {
+                output.statistics.accumulate(failed_statistics);
                 let offset = diagnostics.diagnostics.len();
                 let current_locations =
                     logical_locations_from_cfd(&output.diagnostics, candidate_coordinate);
@@ -956,7 +1054,8 @@ fn build_partial_model(
                     changed_records: None,
                 });
             }
-            Err(error) => {
+            Err((error, statistics)) => {
+                failed_statistics.accumulate(statistics);
                 let rejected = error
                     .diagnostics
                     .iter()
@@ -998,6 +1097,44 @@ fn build_partial_model(
                         diagnostics,
                         logical_locations,
                     });
+                }
+                // 第一次真实失败仍由完整编译器判定。剩余输入满足前置条件时，
+                // 按实际身份依赖一次传播后续基础模板拒绝，最终构建继续验证维度与健康记录。
+                let mut closure_builder = CfdDataModel::builder(schema)
+                    .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
+                for &index in &candidates {
+                    closure_builder.add_borrowed_record(records[index]);
+                }
+                let closure = closure_builder.template_rejection_closure();
+                failed_statistics.accumulate(closure.statistics);
+                if !closure.rejected_records.is_empty() {
+                    let origins = candidates
+                        .iter()
+                        .map(|&index| records[index].origin.clone())
+                        .collect::<Vec<_>>();
+                    let offset = diagnostics.diagnostics.len();
+                    let locations = logical_locations_from_cfd(&closure.diagnostics, |id| {
+                        let record = records[*candidates.get(id.index())?];
+                        RecordCoordinate::try_new(&record.actual_type, &record.id).ok()
+                    });
+                    logical_locations.extend(
+                        locations
+                            .into_iter()
+                            .map(|(index, location)| (offset + index, location)),
+                    );
+                    diagnostics.extend(map_diagnostics_with_origins(closure.diagnostics, &origins));
+                    let rejected = closure
+                        .rejected_records
+                        .into_iter()
+                        .map(CfdRecordHandle::index)
+                        .collect::<BTreeSet<_>>();
+                    candidates = candidates
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(index, candidate)| {
+                            (!rejected.contains(&index)).then_some(candidate)
+                        })
+                        .collect();
                 }
             }
         }

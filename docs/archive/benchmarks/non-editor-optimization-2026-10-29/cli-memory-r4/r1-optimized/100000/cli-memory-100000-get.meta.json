@@ -1,0 +1,43 @@
+{
+  "id": "cli-memory-100000-get",
+  "spec": {
+    "id": "cli-memory-100000-get",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+    "arguments": [
+      "data",
+      "get",
+      "--type",
+      "Row",
+      "--id",
+      "r000000",
+      "--project",
+      "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-O7HrNH",
+      "--json"
+    ],
+    "environment": {
+      "COFLOW_LOG": "0"
+    },
+    "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+    "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+    "memory_scope": "Direct coflow.exe process for one command, excluding the Node and PowerShell drivers, fixture generation and subsequent verification. No warmup; filesystem caches are uncontrolled.",
+    "timeout_scope": "One direct CLI command including startup, loading, operation and output; a timeout is censored command evidence, not a completed latency."
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+      "sha256": "FA3259043A2FF64C8776E5C44567279270037F4A3F7277E2E278802DEAD15027"
+    }
+  ],
+  "started_at": "2026-10-29T07:20:30.5679542+08:00",
+  "process_id": 32136,
+  "wall_seconds": 5.5244658,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "One direct CLI command including startup, loading, operation and output; a timeout is censored command evidence, not a completed latency.",
+  "sampled_process_peak_working_set_bytes": 2280579072,
+  "process_memory_samples": 50,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Direct coflow.exe process for one command, excluding the Node and PowerShell drivers, fixture generation and subsequent verification. No warmup; filesystem caches are uncontrolled.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

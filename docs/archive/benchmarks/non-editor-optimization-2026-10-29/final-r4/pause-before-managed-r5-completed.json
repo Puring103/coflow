@@ -1,0 +1,4 @@
+{
+  "id": "cli-main-100k-r1-optimized",
+  "reason": "Preserve serial sampling while correcting the measured managed ring regression; Rust and CLI artifacts remain unchanged"
+}

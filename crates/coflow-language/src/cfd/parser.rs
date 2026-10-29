@@ -6,7 +6,7 @@ use super::ast::{
 };
 use super::{CfdParseOptions, CfdSyntaxDiagnostic};
 use crate::lexical::{
-    decode_simple_escape, is_identifier_continue, is_identifier_start, tokenize_lossless,
+    decode_simple_escape, is_identifier_continue, is_identifier_start, lossless_tokens,
     DelimiterNesting, LosslessTokenKind,
 };
 use crate::limits::{StructuralBudget, StructureKind, TraversalCursor};
@@ -76,7 +76,7 @@ impl<'a> Parser<'a> {
             let mut starts = Vec::new();
             let mut nesting = DelimiterNesting::default();
             let mut at_line_start = true;
-            for token in tokenize_lossless(self.source) {
+            for token in lossless_tokens(self.source) {
                 if at_line_start
                     && nesting.is_top_level()
                     && matches!(

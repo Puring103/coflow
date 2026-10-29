@@ -1,0 +1,2 @@
+RUN batch_cross_file records=100000 files=100
+FAIL batch_cross_file: CLI timeout: apply --input - --rules

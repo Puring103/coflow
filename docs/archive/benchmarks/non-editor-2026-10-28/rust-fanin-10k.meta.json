@@ -1,0 +1,42 @@
+{
+  "id": "rust-fanin-10k",
+  "spec": {
+    "id": "rust-fanin-10k",
+    "group": "rust",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+    "arguments": [],
+    "environment": {
+      "MATRIX_RECORDS": "10000",
+      "MATRIX_FILES": "10",
+      "MATRIX_FIELDS": "20",
+      "MATRIX_SAMPLES": "3",
+      "MATRIX_WARMUPS": "1",
+      "MATRIX_BATCH": "1000",
+      "MATRIX_COLLECTION": "8",
+      "MATRIX_VARIANTS": "0",
+      "MATRIX_STRIDE": "100",
+      "MATRIX_TOPOLOGY": "star",
+      "MATRIX_TEMPLATES": "1",
+      "MATRIX_QUERY_BATCH": "1000",
+      "MATRIX_CASES": "load_checks,set_scalar,set_dependency"
+    }
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+      "sha256": "F5B3A2B6E4679775C7C7BF513D5B0E5DC0C9D45B67F14DB73EDCE04176E4A564"
+    }
+  ],
+  "started_at": "2026-10-28T21:50:40.8650478+08:00",
+  "process_id": 49104,
+  "wall_seconds": 7.0645294,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 414892032,
+  "process_memory_samples": 59,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

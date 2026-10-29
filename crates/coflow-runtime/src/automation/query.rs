@@ -571,10 +571,6 @@ impl RecordSources {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
-)]
 pub(crate) fn record_json_with_sources(
     project: &Project,
     session: &ReadOnlyProjectSession,
@@ -582,6 +578,24 @@ pub(crate) fn record_json_with_sources(
     selector: &Selector,
     cache: &mut RecordSources,
 ) -> Result<Value> {
+    super::json(record_result_with_sources(
+        project, session, record, selector, cache, true,
+    )?)
+}
+
+/// 内部语义快照直接保留字段状态；查询专用的位置、重复视图与 JSON 仅在输出边界生成。
+#[expect(
+    clippy::too_many_lines,
+    reason = "来源与有效值共用解析过程，保证查询与语义差异使用同一规则。"
+)]
+pub(crate) fn record_result_with_sources(
+    project: &Project,
+    session: &ReadOnlyProjectSession,
+    record: &CfdRecord,
+    selector: &Selector,
+    cache: &mut RecordSources,
+    query_details: bool,
+) -> Result<RecordResult> {
     if !["source", "effective", "both"].contains(&selector.view.as_str()) {
         return Err(Failure::request("view must be source, effective or both"));
     }
@@ -624,7 +638,9 @@ pub(crate) fn record_json_with_sources(
         let encoded = value
             .map(|value| super::ModelValue::from_model(session.schema(), &expected, value))
             .transpose()?;
-        values.insert(field.clone(), encoded.clone());
+        if query_details {
+            values.insert(field.clone(), encoded.clone());
+        }
         if let Some(value) = value.and_then(super::model_value::rendered) {
             rendered.insert(field.clone(), value);
         }
@@ -643,6 +659,7 @@ pub(crate) fn record_json_with_sources(
         let mut location = assigned_value
             .zip(text)
             .zip(file)
+            .filter(|_| query_details)
             .map(|((value, text), file)| {
                 cache.location(
                     project.root_dir(),
@@ -673,7 +690,7 @@ pub(crate) fn record_json_with_sources(
         } else {
             "explicit_base"
         };
-        if origin == "schema_default" {
+        if query_details && origin == "schema_default" {
             if let Some(f) = source_field {
                 location = session
                     .schema()
@@ -691,15 +708,19 @@ pub(crate) fn record_json_with_sources(
             .map(str::to_string);
         if let Some(override_value) = override_value {
             // 有效维度值的来源必须跟随覆盖文件，不能仍指向基础赋值。
-            location = override_value
-                .origin
-                .location_for_path(&CfdPath::root())
-                .map(|source| {
-                    super::diagnostics::CommandLocation::from_source(
-                        &source.into(),
-                        Some(project.root_dir()),
-                    )
-                });
+            location = if query_details {
+                override_value
+                    .origin
+                    .location_for_path(&CfdPath::root())
+                    .map(|source| {
+                        super::diagnostics::CommandLocation::from_source(
+                            &source.into(),
+                            Some(project.root_dir()),
+                        )
+                    })
+            } else {
+                None
+            };
             expression = None;
             assigned = path.len() == 1;
             if let Some(source_path) = override_value.origin.local_path() {
@@ -748,12 +769,14 @@ pub(crate) fn record_json_with_sources(
                     assigned = assigned_value.is_some();
                     if let Some(value) = assigned_value {
                         let span = ast_value_span(value);
-                        location = Some(cache.location(
-                            project.root_dir(),
-                            source_path,
-                            &parsed.source,
-                            span,
-                        ));
+                        if query_details {
+                            location = Some(cache.location(
+                                project.root_dir(),
+                                source_path,
+                                &parsed.source,
+                                span,
+                            ));
+                        }
                         expression = parsed.source.get(span.start..span.end).map(str::to_string);
                     }
                 }
@@ -763,18 +786,20 @@ pub(crate) fn record_json_with_sources(
                     .filter(|field| field.default.is_some())
                 {
                     origin = "schema_default";
-                    location = session
-                        .schema()
-                        .resolve_type(&declared.declaring_type)
-                        .and_then(|ty| session.schema().source(&ty.module))
-                        .map(|source| {
-                            cache.location(
-                                project.root_dir(),
-                                &source.path,
-                                &source.source,
-                                declared.span,
-                            )
-                        });
+                    if query_details {
+                        location = session
+                            .schema()
+                            .resolve_type(&declared.declaring_type)
+                            .and_then(|ty| session.schema().source(&ty.module))
+                            .map(|source| {
+                                cache.location(
+                                    project.root_dir(),
+                                    &source.path,
+                                    &source.source,
+                                    declared.span,
+                                )
+                            });
+                    }
                 }
             }
         }
@@ -802,11 +827,11 @@ pub(crate) fn record_json_with_sources(
         id: record.id().to_string(),
         file: file.map(str::to_string),
         rendered,
-        fields: (selector.view != "source").then_some(values),
-        origins: (selector.view != "source").then(|| sources.clone()),
+        fields: (query_details && selector.view != "source").then_some(values),
+        origins: (query_details && selector.view != "source").then(|| sources.clone()),
         source: (selector.view != "effective").then_some(sources),
     };
-    super::json(output)
+    Ok(output)
 }
 
 fn declared_field_at<'a>(
@@ -981,3 +1006,84 @@ pub fn parse_path(source: &str) -> Result<Vec<CfdPathSegment>> {
 }
 
 use coflow_language::cft::CftValueType as T;
+
+#[cfg(test)]
+mod snapshot_tests {
+    #![allow(clippy::unwrap_used, reason = "测试夹具及对照结果必须完整构造。")]
+    use super::*;
+
+    #[test]
+    fn compact_record_state_matches_full_query_for_base_and_dimension_views() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("language")).unwrap();
+        std::fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: data.cfd\ncodegen: [{language: csharp, dir: generated}]\ndimensions:\n  language: {dir: language}\n").unwrap();
+        std::fs::write(root.path().join("schema.cft"), "data Detail { count: int = 3; }\ntable Row { @localized name: string; label: string; parent: &Row; maybe: Option<Detail> = None; tags: [int] = []; metadata: {string: string} = {}; score: double = 0.1; }\n").unwrap();
+        std::fs::write(root.path().join("data.cfd"), "a: Row { name: \"甲😀\", label: f\"{self.parent.name}\", parent: &b, maybe: Some(Detail { count: 4 }), tags: [1,2], metadata: {\"k\": \"v\"}, score: -0.0 }\nb: Row { name: \"乙\", label: f\"{self.parent.name}\", parent: &a }\n").unwrap();
+        std::fs::write(
+            root.path().join("language/zh.cfd"),
+            "language[zh] { a: Row { name: \"覆盖\" } }\n",
+        )
+        .unwrap();
+        let project = Project::open_schema_only(Some(root.path())).unwrap();
+        let session = crate::Runtime::new()
+            .open_read_only_session(project.clone())
+            .unwrap();
+        assert!(!session.queries().has_diagnostics());
+        for dimensions in [
+            BTreeMap::new(),
+            BTreeMap::from([("language".into(), "zh".into())]),
+        ] {
+            let projected = project_dimensions(&session, &dimensions).unwrap();
+            for fields in [
+                Vec::new(),
+                vec!["maybe.count".into(), "name".into(), "label".into()],
+            ] {
+                let selector = Selector {
+                    view: "both".into(),
+                    dimensions: dimensions.clone(),
+                    fields,
+                    ..Default::default()
+                };
+                let mut compact_cache = RecordSources::default();
+                let mut query_cache = RecordSources::default();
+                for (_, record) in projected.records() {
+                    let full: RecordResult = serde_json::from_value(
+                        record_json_with_sources(
+                            &project,
+                            &session,
+                            record,
+                            &selector,
+                            &mut query_cache,
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                    let compact = record_result_with_sources(
+                        &project,
+                        &session,
+                        record,
+                        &selector,
+                        &mut compact_cache,
+                        false,
+                    )
+                    .unwrap();
+                    assert_eq!(compact.rendered, full.rendered);
+                    assert!(compact.fields.is_none() && compact.origins.is_none());
+                    let full = full.source.unwrap();
+                    let compact = compact.source.unwrap();
+                    assert_eq!(compact.len(), full.len());
+                    for (field, source) in compact {
+                        let expected = &full[&field];
+                        assert_eq!(source.assigned, expected.assigned);
+                        assert_eq!(source.origin, expected.origin);
+                        assert_eq!(source.expression, expected.expression);
+                        assert_eq!(source.effective, expected.effective);
+                        assert_eq!(source.reachable, expected.reachable);
+                        assert!(source.location.is_none());
+                    }
+                }
+                assert!(compact_cache.lines.is_empty());
+            }
+        }
+    }
+}

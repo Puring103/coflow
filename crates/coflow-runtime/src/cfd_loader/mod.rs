@@ -240,9 +240,16 @@ impl CfdLoader {
                 structural_limits: crate::limits::RuntimeLimits::default().structural,
             },
         );
-        let mut loaded = Self::load_parsed_partial(ctx.schema, file, &contents, &ast);
-        let mut diagnostics =
-            cfd_error_to_diagnostics(file, &contents, syntax_diagnostics(parse_errors));
+        // 正常来源、语法错误和降低错误使用同一个位置索引，文件只扫描一次。
+        let line_index = LineIndex::new(&contents);
+        let mut loaded =
+            Self::load_parsed_with_index(ctx.schema, file, &contents, &ast, &line_index);
+        let mut diagnostics = cfd_error_to_diagnostics(
+            file,
+            &contents,
+            &line_index,
+            syntax_diagnostics(parse_errors),
+        );
         diagnostics.extend(loaded.diagnostics);
         loaded.diagnostics = diagnostics;
         Ok(loaded)
@@ -255,17 +262,26 @@ impl CfdLoader {
         contents: &str,
         ast: &coflow_language::cfd::CfdAst,
     ) -> LoadedCfdSource {
+        let line_index = LineIndex::new(contents);
+        Self::load_parsed_with_index(schema, file, contents, ast, &line_index)
+    }
+
+    fn load_parsed_with_index(
+        schema: &CftSchema,
+        file: &Path,
+        contents: &str,
+        ast: &coflow_language::cfd::CfdAst,
+        line_index: &LineIndex,
+    ) -> LoadedCfdSource {
         let (lowered, mut lower_errors) = lower_records_partial(schema, ast);
         let (overlays, overlay_errors) = lower::lower_dimensions(schema, ast);
         lower_errors.extend(overlay_errors);
-        // 行首索引只构建一次，避免逐条记录从文件头重新扫描（二次复杂度）。
-        let line_index = LineIndex::new(contents);
         let dimensions = overlays
             .into_iter()
             .map(|(mut value, span)| {
                 value.origin = RecordOrigin::File {
                     path: file.to_path_buf(),
-                    span: Some(text_span(&line_index, contents, span)),
+                    span: Some(text_span(line_index, contents, span)),
                 };
                 value
             })
@@ -273,7 +289,7 @@ impl CfdLoader {
         let records = lowered
             .into_iter()
             .map(|record| {
-                let span = text_span(&line_index, contents, record.span);
+                let span = text_span(line_index, contents, record.span);
                 record.record.with_origin(RecordOrigin::File {
                     path: file.to_path_buf(),
                     span: Some(span),
@@ -283,6 +299,7 @@ impl CfdLoader {
         let diagnostics = cfd_error_to_diagnostics(
             file,
             contents,
+            line_index,
             CfdTextDiagnostics {
                 diagnostics: lower_errors,
             },

@@ -4,6 +4,7 @@ use coflow_runtime::{
     CfdValue, DimensionValueCoordinate, DimensionValueExpectation, DimensionValueState, MutationOp,
     MutationRequest, MutationValue, Project, RecordCoordinate, Runtime,
 };
+use std::fmt::Write as _;
 use std::fs;
 use tempfile::TempDir;
 
@@ -415,4 +416,102 @@ fn record_rename_updates_references_in_each_original_overlay_file() {
         .expect("reload")
         .into_diagnostics()
         .is_empty());
+}
+
+#[test]
+fn one_overlay_change_rebuilds_only_its_dependency_closure_and_preserves_origins() {
+    let mut base = String::new();
+    for i in 0..40 {
+        writeln!(base, "r{i}: Child {{ name: \"base {i}\", parent: &r{}, caption: f\"{{self.parent.name}}\", note: Some(\"base\") }}", (i + 1) % 40).expect("fixture source");
+    }
+    let entries = (0..40)
+        .map(|i| format!("r{i}: Base {{ name: \"日本 {i}\", note: Some(\"note {i}\") }}\n"))
+        .collect::<Vec<_>>();
+    let original = format!("language[ja] {{\n{}}}\n", entries.concat());
+    let dir = project(
+        "table Base { @localized name: string; parent: &Base; @localized caption: string; @localized note: Option<string>; } table Child: Base {}",
+        &base,
+        &[("ja.cfd", &original)],
+    );
+    let project = Project::open(Some(dir.path())).expect("project");
+    let mut session = Runtime::new()
+        .open_write_session(project.clone())
+        .expect("session");
+    let path = dir.path().join("data/ja.cfd");
+    let changed = original.replace("日本 0", "変更された長い名前😀");
+    let reordered = format!(
+        "# only source order changes\nlanguage[ja] {{\n{}}}\n",
+        entries.iter().rev().cloned().collect::<String>()
+    )
+    .replace("日本 0", "変更された長い名前😀");
+    let removed = reordered.replace(&entries[1], "");
+    let explicit_none = removed.replace("Some(\"note 2\")", "None");
+    let alias = explicit_none.replace("r3: Base", "r3: Child");
+    let duplicate = format!("{alias}\nlanguage[ja] {{ r4: Base {{ name: \"duplicate\" }} }}\n");
+    for (step, source) in [
+        changed,
+        reordered,
+        removed,
+        explicit_none,
+        alias.clone(),
+        duplicate,
+        alias,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // 保存上一代的完整记录；更新位置或覆盖值不能污染旧的不可变快照。
+        let old = session
+            .queries()
+            .record_views_in_file("data/base.cfd")
+            .map(|v| v.record.clone())
+            .collect::<Vec<_>>();
+        let snapshot = session.refresh_context();
+        fs::write(&path, source).expect("edit overlays");
+        let next = snapshot
+            .refresh_data_sources(std::slice::from_ref(&path))
+            .expect("refresh");
+        let full = Runtime::new()
+            .open_read_only_session(project.clone())
+            .expect("reload");
+        assert_eq!(
+            next.queries().diagnostics().as_set(),
+            full.queries().diagnostics().as_set(),
+            "diagnostics at {step}"
+        );
+        let expected = full
+            .queries()
+            .record_views_in_file("data/base.cfd")
+            .collect::<Vec<_>>();
+        for (actual, expected) in next
+            .queries()
+            .record_views_in_file("data/base.cfd")
+            .zip(expected)
+        {
+            assert_eq!(
+                actual.record, expected.record,
+                "all values, dimensions and origins at {step}"
+            );
+            assert_eq!(
+                next.queries().record_references(&actual.coordinate),
+                full.queries().record_references(&expected.coordinate)
+            );
+        }
+        assert_eq!(
+            session
+                .queries()
+                .record_views_in_file("data/base.cfd")
+                .map(|v| v.record.clone())
+                .collect::<Vec<_>>(),
+            old,
+            "old generation at {step}"
+        );
+        if step == 0 {
+            assert_eq!(next.queries().execution_stats().records_materialized, 2);
+        }
+        if step == 1 {
+            assert_eq!(next.queries().execution_stats().records_materialized, 0);
+        }
+        session = next;
+    }
 }

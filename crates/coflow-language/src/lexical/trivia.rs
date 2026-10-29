@@ -109,9 +109,16 @@ fn scan_line_comment(source: &str, start: usize, limit: usize) -> usize {
 /// 扫描完整源码并保留所有 trivia 与未知字符，任意输入都能无损重建。
 #[must_use]
 pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
-    let mut tokens = Vec::new();
+    lossless_tokens(source).collect()
+}
+
+/// 恢复扫描只消费当前 token，避免为大文件预算拒绝另存完整 token 数组。
+pub(crate) fn lossless_tokens(source: &str) -> impl Iterator<Item = LosslessToken> + '_ {
     let mut offset = 0;
-    while offset < source.len() {
+    std::iter::from_fn(move || {
+        if offset >= source.len() {
+            return None;
+        }
         let start = offset;
         let ch = next_char(source, offset);
         let kind = if matches!(ch, '\r' | '\n') {
@@ -155,12 +162,11 @@ pub fn tokenize_lossless(source: &str) -> Vec<LosslessToken> {
             offset += ch.len_utf8();
             LosslessTokenKind::Unknown
         };
-        tokens.push(LosslessToken {
+        Some(LosslessToken {
             kind,
             span: Span::new(start, offset),
-        });
-    }
-    tokens
+        })
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

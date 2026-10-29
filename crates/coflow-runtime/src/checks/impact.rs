@@ -97,6 +97,9 @@ impl CheckImpact {
                 .and_then(|handle| before.record(handle));
             let Some(previous) = previous else {
                 impact.add_membership(schema, coordinate);
+                if membership_may_change {
+                    impact.add_reference_membership(after, handle);
+                }
                 continue;
             };
             if !std::sync::Arc::ptr_eq(&previous.object, &current.object) {
@@ -150,16 +153,53 @@ impl CheckImpact {
             }
         }
         if membership_may_change {
-            for (_, previous) in before.records() {
+            for (handle, previous) in before.records() {
                 if after
                     .record_by_type_id(previous.actual_type(), previous.id())
                     .is_none()
                 {
                     impact.add_membership(schema, previous.coordinate());
+                    impact.add_reference_membership(before, handle);
                 }
             }
         }
         impact
+    }
+
+    fn add_reference_membership(
+        &mut self,
+        model: &crate::data_model::CfdDataModel,
+        target: crate::data_model::CfdRecordHandle,
+    ) {
+        // 引用字面量可能不变而目标被删除或替换为另一个实际类型；类型判断和虚拟 id
+        // 依赖引用解析结果。只使真实入边的拥有字段失效，避免扩大到整个声明类型。
+        for edge in model.ref_edges_to_target(target) {
+            let Some(host) = model.record(edge.site.host) else {
+                continue;
+            };
+            let changed = if let Some(dimension) = &edge.site.dimension {
+                ChangedField {
+                    field: dimension.field.clone(),
+                    projection: ChangedProjection::Dimension {
+                        dimension: dimension.dimension.clone(),
+                        variant: dimension.variant.clone(),
+                    },
+                }
+            } else if let Some(crate::data_model::CfdPathSegment::Field(field)) =
+                edge.site.path.segments.first()
+            {
+                let Ok(field) = FieldName::new(field) else {
+                    continue;
+                };
+                ChangedField {
+                    field,
+                    projection: ChangedProjection::Base,
+                }
+            } else {
+                continue;
+            };
+            self.add_field(host.coordinate(), changed);
+        }
     }
 
     fn add_field(&mut self, coordinate: RecordCoordinate, field: ChangedField) {

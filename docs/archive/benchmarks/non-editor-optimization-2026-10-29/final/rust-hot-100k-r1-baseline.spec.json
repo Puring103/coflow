@@ -1,0 +1,25 @@
+{
+  "id": "rust-hot-100k-r1-baseline",
+  "scenario": "rust-hot-100k",
+  "round": 1,
+  "arm": "baseline",
+  "group": "rust",
+  "arguments": [],
+  "timeout_seconds": 1800,
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+  "environment": {
+    "MATRIX_RECORDS": "100000",
+    "MATRIX_FILES": "100",
+    "MATRIX_FIELDS": "20",
+    "MATRIX_SAMPLES": "100",
+    "MATRIX_WARMUPS": "1",
+    "MATRIX_BATCH": "1000",
+    "MATRIX_COLLECTION": "8",
+    "MATRIX_VARIANTS": "0",
+    "MATRIX_STRIDE": "100",
+    "MATRIX_TOPOLOGY": "ring",
+    "MATRIX_TEMPLATES": "1",
+    "MATRIX_QUERY_BATCH": "1000",
+    "MATRIX_CASES": "set_scalar,set_dependency,refresh_same"
+  }
+}

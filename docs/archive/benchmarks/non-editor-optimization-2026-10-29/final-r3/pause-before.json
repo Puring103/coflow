@@ -1,0 +1,4 @@
+{
+  "id": "rust-recovery-10k-r1-optimized",
+  "reason": "Investigate observed fan-in error regression before continuing final campaign"
+}

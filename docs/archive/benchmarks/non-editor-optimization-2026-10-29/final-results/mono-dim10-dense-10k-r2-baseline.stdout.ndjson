@@ -1,0 +1,35 @@
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=4194304"
+    "memorysetup-bucket-allocator-block-count=1"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=4194304"
+    "memorysetup-profiler-bucket-allocator-block-count=1"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=4194304"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=262144"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gfx=262144"
+{"unity_version":"2022.3.62f3","backend":"Mono","runtime":"Unity Mono","development":false,"os":"Windows 11  (10.0.26300) 64bit","architecture":"x64","processors":20,"stopwatch_frequency":10000000,"gc_max_generation":0,"allocation_counter_available":false,"incremental_gc":false,"case":"dimensions","records":10000,"files":100,"variants":10,"density":"dense","topology":"pairs","templates":true,"operations":["load"],"utc":"2026-10-28T23:02:17.8489240Z","protocol":"independent semantic preflight after optional startup; one warmup except startup; full GC before heavy samples; validation outside timing; OS cache retained; one fixture per process","memory":"current-thread operation allocation or null if unsupported; GC counts for supported generations; Unity managed heap used/reserved; no OS process working set; retained delta is after validation/full GC for heavy metrics","kind":"metadata"}
+{"files":110,"records":10000,"fields":20,"utf8_bytes":11255506,"utf16_chars":11255506,"ring_group_size":64,"declared_dimension_variants":20,"kind":"fixture"}
+{"success":true,"scope":"all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback","kind":"validation"}
+{"metric":"load_text","samples":1,"samples_ms":[8021.5477],"operations_per_sample":1,"gc_before_sample":true,"warmups":1,"samples_detail":[{"elapsed_ms":8021.5477,"allocated_current_thread_bytes":null,"collections":[24],"retained_delta_bytes":398520320,"managed_live_bytes":422080512,"unity_managed_used_bytes":422080512,"unity_managed_reserved_bytes":617066496}],"p50_ms":8021.5477,"p95_ms":null,"p99_ms":null,"min_ms":8021.5477,"max_ms":8021.5477,"kind":"measurement"}
+{"success":true,"sink":0,"kind":"complete"}

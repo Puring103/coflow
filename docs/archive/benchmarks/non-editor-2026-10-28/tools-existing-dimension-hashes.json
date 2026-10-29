@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-10-28T15:44:59.3705823Z",
+  "build_command": "cargo build --release -p coflow-runtime --example runtime_matrix",
+  "build_exit_code": 0,
+  "source_path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\crates\\coflow-runtime\\examples\\runtime_matrix.rs",
+  "source_sha256": "51125A4FD39D3105D4F7A1EDDAAD0F548DC995D5AC9549C264A1ECD9D330779F",
+  "source_snapshot": "runtime_matrix-existing-dimension.rs",
+  "source_snapshot_sha256": "51125A4FD39D3105D4F7A1EDDAAD0F548DC995D5AC9549C264A1ECD9D330779F",
+  "fixture_path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\crates\\coflow-runtime\\examples\\runtime_matrix\\fixture.rs",
+  "fixture_sha256": "6C37202A6633E35ACD00C00304B1285EB8FA3BB9C57603F13F868CBB348CAC36",
+  "fixture_snapshot": "runtime_matrix-existing-dimension-fixture.rs",
+  "binary_path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+  "binary_sha256": "C2DDEDC6EBFE42149CD24A526D619A9A4917BBB5E602AF4E3753EF688CA1C604",
+  "format_check": "rustfmt --check --edition 2021 crates/coflow-runtime/examples/runtime_matrix.rs (passed)",
+  "smoke_results": [
+    {
+      "layout": "sparse",
+      "path": "smoke/dimension-existing-sparse-100.ndjson",
+      "sha256": "1281A7C1477295125103498D4958E744E98321052D38073EBD97590C50540E85",
+      "exit_code": 0,
+      "metrics": [
+        "dimension_existing_set",
+        "dimension_existing_clear"
+      ],
+      "full_reload_verifications": 4,
+      "records": 100,
+      "files": 2,
+      "variants": 2,
+      "samples": 1,
+      "warmups": 0,
+      "stride": 100,
+      "classification": "smoke_only_excluded_from_formal_statistics"
+    },
+    {
+      "layout": "dense",
+      "path": "smoke/dimension-existing-dense-100.ndjson",
+      "sha256": "0D3CEF9C05FD4A000EC407FABD4AC61B691EC80D1EB7E5A6A316ABE633DC1DD1",
+      "exit_code": 0,
+      "metrics": [
+        "dimension_existing_set",
+        "dimension_existing_clear"
+      ],
+      "full_reload_verifications": 4,
+      "records": 100,
+      "files": 2,
+      "variants": 2,
+      "samples": 1,
+      "warmups": 0,
+      "stride": 1,
+      "classification": "smoke_only_excluded_from_formal_statistics"
+    }
+  ],
+  "provenance": "Release executable built from the recorded final source after formatting; optional existing-dimension cases verified with complete dimension oracle and independent reloads. These four smoke cases are not formal performance measurements."
+}

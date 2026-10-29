@@ -1,0 +1,2352 @@
+{
+  "created_at": "2026-10-28T20:50:12.553Z",
+  "method": "Static source/SHA256 comparison, Portable PDB source checksums and embedded generated source, played PE/PDB identity binding, frozen build settings and already-completed formal run evidence. No assemblies loaded for execution; no build, test or benchmark launched.",
+  "conclusions": {
+    "fixture_adapter_and_generated_business_sources_equal": true,
+    "driver_equal_after_removing_only_explicit_validation_additions": true,
+    "measure_method_text_identical": true,
+    "build_settings_identical": true,
+    "unity_player_executable_engine_and_mono_runtime_identical": true,
+    "measured_harness_and_loader_hashes_match_formal_plan": true,
+    "all_compiled_pdb_documents_verified": true,
+    "all_observed_formal_specs_exclude_validation_groups": true,
+    "paired_scalar_and_complex_first_round_fixture_and_parameters_identical": true
+  },
+  "source_changes": [
+    {
+      "file": "Assets/Scripts/BenchmarkPlayer.cs",
+      "lines": [
+        55,
+        114
+      ],
+      "change": "Only accept validate/contracts in the operation allowlist and add a contracts-guarded ConstructionContracts.Run call after existing ValidateFixture and before existing Collect. Removing those two additions reproduces baseline source exactly."
+    },
+    {
+      "file": "Assets/Scripts/ConstructionContracts.cs",
+      "change": "New correctness-only helper, invoked exclusively by the guarded contracts branch; formal operation lists omit this branch."
+    },
+    {
+      "file": "Unity.SourceGenerators/Unity.MonoScriptGenerator.MonoScriptInfoGenerator/AssemblyMonoScriptTypes.generated.cs",
+      "change": "Embedded generated script-type metadata includes the added ConstructionContracts file and its four types. Source checksums verified from both PDBs; this is engine script registration metadata, not a changed Measure body."
+    }
+  ],
+  "timing_boundary": {
+    "unchanged": [
+      "Config parsing, Unity startup, fixtures, temporary file writes and semantic preflight are outside operation timing.",
+      "One unreported warmup precedes normal measurements; startup metric intentionally omits warmup.",
+      "Heavy samples force full GC before the timer. The stopwatch encloses only operation(); load_text operation is adapter.Load(sources).",
+      "Allocation sampling and GC-count collection surround the same operation. Result verification and retained-heap full GC follow elapsed capture.",
+      "Queries, dimensions, errors, preflight, output serialization and allocation probe bodies are unchanged."
+    ],
+    "new_unmeasured_work": "For formal groups, the additional groups.Contains(\"contracts\") check evaluates false once before the existing full GC and measurement warmup. validate adds no timed branch; used alone it runs the already-unconditional preflight only.",
+    "limit": "Assembly-CSharp is not byte-identical: new helper code, registration metadata and method layout differ. Static audit establishes source-level fixture and timed-work equivalence, not identical JIT/code layout or a numerical bound on host overhead. Whole-player wall/peak metrics include engine and driver footprint. Final benefits still require complete paired rounds."
+  },
+  "build_settings": {
+    "baseline": {
+      "unity_version": "2022.3.62f3",
+      "backend": "Mono",
+      "api_compatibility": "netstandard2.1",
+      "managed_stripping": "Disabled",
+      "il2cpp_compiler_configuration": "Release",
+      "target": "StandaloneWindows64",
+      "result": "Succeeded",
+      "total_size_bytes": "70303125",
+      "utc": "2026-10-28T16:27:58.6320755Z",
+      "development": false,
+      "incremental_gc": false,
+      "build_seconds": 11.312908
+    },
+    "optimized": {
+      "unity_version": "2022.3.62f3",
+      "backend": "Mono",
+      "api_compatibility": "netstandard2.1",
+      "managed_stripping": "Disabled",
+      "il2cpp_compiler_configuration": "Release",
+      "target": "StandaloneWindows64",
+      "result": "Succeeded",
+      "total_size_bytes": "70318157",
+      "utc": "2026-10-28T18:08:16.7476429Z",
+      "development": false,
+      "incremental_gc": false,
+      "build_seconds": 8.3351277
+    }
+  },
+  "payloads": [
+    {
+      "file": "CoflowBenchmark.exe",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029-mono/CoflowBenchmark.exe",
+        "sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036",
+        "bytes": 666624
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/CoflowBenchmark.exe",
+        "sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036",
+        "bytes": 666624
+      }
+    },
+    {
+      "file": "UnityPlayer.dll",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029-mono/UnityPlayer.dll",
+        "sha256": "DC005461655B67912029EEA6BCC303FE244C3A336E2046107F934B901AB9CE2B",
+        "bytes": 31100848
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/UnityPlayer.dll",
+        "sha256": "DC005461655B67912029EEA6BCC303FE244C3A336E2046107F934B901AB9CE2B",
+        "bytes": 31100848
+      }
+    },
+    {
+      "file": "MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029-mono/MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll",
+        "sha256": "EA0FB1FD0AA074BB46C71E52831A843BFC2B73EA3CF7EE9F205C57CE6D262FB5",
+        "bytes": 7897512
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll",
+        "sha256": "EA0FB1FD0AA074BB46C71E52831A843BFC2B73EA3CF7EE9F205C57CE6D262FB5",
+        "bytes": 7897512
+      }
+    },
+    {
+      "file": "CoflowBenchmark_Data/Managed/Assembly-CSharp.dll",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029-mono/CoflowBenchmark_Data/Managed/Assembly-CSharp.dll",
+        "sha256": "0ED25A8A87416D498A0275DA92086CA17FFB96EFB3BCDD5143051312D56740B1",
+        "bytes": 137728
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/CoflowBenchmark_Data/Managed/Assembly-CSharp.dll",
+        "sha256": "1DB8732C2CBA430FC9A4BF74CB46A5B5690534DE79E7EB6354F0B132B3E8FD0D",
+        "bytes": 145920
+      }
+    },
+    {
+      "file": "CoflowBenchmark_Data/Managed/Coflow.Loader.dll",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029-mono/CoflowBenchmark_Data/Managed/Coflow.Loader.dll",
+        "sha256": "A46D67D20596E79A4C0BD590C68938849C0F60DE62ABADD0BC7291F49D00BA54",
+        "bytes": 84480
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/CoflowBenchmark_Data/Managed/Coflow.Loader.dll",
+        "sha256": "38180E0F3A7318BAB78DEDAEF567A2816BED3083427EC6E747B4CD3C4369C3D6",
+        "bytes": 91136
+      }
+    }
+  ],
+  "formal_plan": {
+    "path": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/plan-csharp,mono-all-baseline-optimized.json",
+    "sha256": "80807C64F253780CA0EAD7AD57122EC3F180430D8854FBB689A5D1345283D32C",
+    "payload_bindings": [
+      {
+        "arm": "baseline",
+        "path": "target/benchmarks/unity-control-20261029-mono/CoflowBenchmark_Data/Managed/Assembly-CSharp.dll",
+        "actual_sha256": "0ED25A8A87416D498A0275DA92086CA17FFB96EFB3BCDD5143051312D56740B1",
+        "plan_sha256": "0ED25A8A87416D498A0275DA92086CA17FFB96EFB3BCDD5143051312D56740B1",
+        "matches": true
+      },
+      {
+        "arm": "optimized",
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/CoflowBenchmark_Data/Managed/Assembly-CSharp.dll",
+        "actual_sha256": "1DB8732C2CBA430FC9A4BF74CB46A5B5690534DE79E7EB6354F0B132B3E8FD0D",
+        "plan_sha256": "1DB8732C2CBA430FC9A4BF74CB46A5B5690534DE79E7EB6354F0B132B3E8FD0D",
+        "matches": true
+      },
+      {
+        "arm": "baseline",
+        "path": "target/benchmarks/unity-control-20261029-mono/CoflowBenchmark_Data/Managed/Coflow.Loader.dll",
+        "actual_sha256": "A46D67D20596E79A4C0BD590C68938849C0F60DE62ABADD0BC7291F49D00BA54",
+        "plan_sha256": "A46D67D20596E79A4C0BD590C68938849C0F60DE62ABADD0BC7291F49D00BA54",
+        "matches": true
+      },
+      {
+        "arm": "optimized",
+        "path": "target/benchmarks/unity-optimized-20261029-r2-mono/CoflowBenchmark_Data/Managed/Coflow.Loader.dll",
+        "actual_sha256": "38180E0F3A7318BAB78DEDAEF567A2816BED3083427EC6E747B4CD3C4369C3D6",
+        "plan_sha256": "38180E0F3A7318BAB78DEDAEF567A2816BED3083427EC6E747B4CD3C4369C3D6",
+        "matches": true
+      }
+    ]
+  },
+  "source_files": [
+    {
+      "file": "Assets/Editor/BuildBenchmark.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Editor/BuildBenchmark.cs",
+        "sha256": "C9F4B5A8E9D3B844EEB6353D34ADF2339355532431F14C32291C1F0FC7232AB8"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Editor/BuildBenchmark.cs",
+        "sha256": "C9F4B5A8E9D3B844EEB6353D34ADF2339355532431F14C32291C1F0FC7232AB8"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/complex/CoflowData.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/complex/CoflowData.cs",
+        "sha256": "8BE7FF2D3B49ACFAC6E41AAB089385EBED915D44C3CFBA0F320AE2B9A1917DE5"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/complex/CoflowData.cs",
+        "sha256": "8BE7FF2D3B49ACFAC6E41AAB089385EBED915D44C3CFBA0F320AE2B9A1917DE5"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/complex/Payload.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/complex/Payload.cs",
+        "sha256": "E53288B4C98CC0004F4A792F3C9A2B1943F86329E4464A88411AE8724C761051"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/complex/Payload.cs",
+        "sha256": "E53288B4C98CC0004F4A792F3C9A2B1943F86329E4464A88411AE8724C761051"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/complex/Row.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/complex/Row.cs",
+        "sha256": "1138E9147E3F3E92C64DA0A37EB6DAB9426BD7FCC403B29834E41CB63B9CF26D"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/complex/Row.cs",
+        "sha256": "1138E9147E3F3E92C64DA0A37EB6DAB9426BD7FCC403B29834E41CB63B9CF26D"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/dimensions/CoflowData.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/dimensions/CoflowData.cs",
+        "sha256": "BED616AEF84C5CC9D7F02D61998D47F137F3EB826C002432DBAF436250A830EB"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/dimensions/CoflowData.cs",
+        "sha256": "BED616AEF84C5CC9D7F02D61998D47F137F3EB826C002432DBAF436250A830EB"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/dimensions/Payload.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/dimensions/Payload.cs",
+        "sha256": "B0BB542AFBBE2780A508D10D2B1E603CEA38728B91AD048B0E37F6B29105E7AB"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/dimensions/Payload.cs",
+        "sha256": "B0BB542AFBBE2780A508D10D2B1E603CEA38728B91AD048B0E37F6B29105E7AB"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/dimensions/Row.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/dimensions/Row.cs",
+        "sha256": "33EAE3E95FC793F39E89A4E3150E37B5CF588409E7822D20CE97EB339BCA595B"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/dimensions/Row.cs",
+        "sha256": "33EAE3E95FC793F39E89A4E3150E37B5CF588409E7822D20CE97EB339BCA595B"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/scalar100/CoflowData.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar100/CoflowData.cs",
+        "sha256": "8231C9CEA4D8B654E1975C1574CAF1C69FB96D0D02BFDED7E7D4ACC6DA34F511"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar100/CoflowData.cs",
+        "sha256": "8231C9CEA4D8B654E1975C1574CAF1C69FB96D0D02BFDED7E7D4ACC6DA34F511"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/scalar100/Row.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar100/Row.cs",
+        "sha256": "13AA0B7882C22481126C1EA744DB6A27692BB4E04E5CE119F68B150F03AE96A3"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar100/Row.cs",
+        "sha256": "13AA0B7882C22481126C1EA744DB6A27692BB4E04E5CE119F68B150F03AE96A3"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/scalar20/CoflowData.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar20/CoflowData.cs",
+        "sha256": "DFEF30A1BB1FE8599859502A498EC5238F6CDEC2812CE0669CB8BA1C7A91729D"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar20/CoflowData.cs",
+        "sha256": "DFEF30A1BB1FE8599859502A498EC5238F6CDEC2812CE0669CB8BA1C7A91729D"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/scalar20/Row.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar20/Row.cs",
+        "sha256": "ABC9985F9025F2572C533EA873C9DBEB807BCE7D51C02B1C8E7B89B0B0EA3F16"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar20/Row.cs",
+        "sha256": "ABC9985F9025F2572C533EA873C9DBEB807BCE7D51C02B1C8E7B89B0B0EA3F16"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/scalar8/CoflowData.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar8/CoflowData.cs",
+        "sha256": "BE8451CD57C99D4E9584231B1ECA88FE2E2E2A5077E17EF0D4079E52B7A07B33"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar8/CoflowData.cs",
+        "sha256": "BE8451CD57C99D4E9584231B1ECA88FE2E2E2A5077E17EF0D4079E52B7A07B33"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/scalar8/Row.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar8/Row.cs",
+        "sha256": "FC2BBF61116CD40182E9664483C9E42357D97E5976F21D662B1723F8C03CC2A6"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar8/Row.cs",
+        "sha256": "FC2BBF61116CD40182E9664483C9E42357D97E5976F21D662B1723F8C03CC2A6"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/CoflowData.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/CoflowData.cs",
+        "sha256": "418113B613C129E2A0BD76F32F24D88AA22054A624536CDE5BF9361CE5E7BE5F"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/CoflowData.cs",
+        "sha256": "418113B613C129E2A0BD76F32F24D88AA22054A624536CDE5BF9361CE5E7BE5F"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row.cs",
+        "sha256": "DA623B8822991C34D131E0112FF59E80AB368E899314C982210C9A8AFD5AACC3"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row.cs",
+        "sha256": "DA623B8822991C34D131E0112FF59E80AB368E899314C982210C9A8AFD5AACC3"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row0.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row0.cs",
+        "sha256": "B1734B0F3B36E39060341EA0A566469FB5A30BC2A609E18CF59DA4F62661FD33"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row0.cs",
+        "sha256": "B1734B0F3B36E39060341EA0A566469FB5A30BC2A609E18CF59DA4F62661FD33"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row1.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row1.cs",
+        "sha256": "2CC6A1A0A610E443DB35FF20AA9539D1C71519156C96E443CD75E8F597AA8AEB"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row1.cs",
+        "sha256": "2CC6A1A0A610E443DB35FF20AA9539D1C71519156C96E443CD75E8F597AA8AEB"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row10.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row10.cs",
+        "sha256": "AE73D4818AD1636563DB77869AAC76DDA7F5D5961180A0F581541839B9A395B5"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row10.cs",
+        "sha256": "AE73D4818AD1636563DB77869AAC76DDA7F5D5961180A0F581541839B9A395B5"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row11.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row11.cs",
+        "sha256": "03F06CF5E898A9F7D2E8FFCD2CE4FDA701B5D02D342240F5F7052487C81CAED0"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row11.cs",
+        "sha256": "03F06CF5E898A9F7D2E8FFCD2CE4FDA701B5D02D342240F5F7052487C81CAED0"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row12.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row12.cs",
+        "sha256": "0362885E865DFFA6116F2AB3AEFFD7130C79AF0BC7A9208BDA207F2E90EA579C"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row12.cs",
+        "sha256": "0362885E865DFFA6116F2AB3AEFFD7130C79AF0BC7A9208BDA207F2E90EA579C"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row13.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row13.cs",
+        "sha256": "B6F8554C71B8A4331B092FD04E793FE5C45603DEDB436BA4178FC6D2A6A51ED5"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row13.cs",
+        "sha256": "B6F8554C71B8A4331B092FD04E793FE5C45603DEDB436BA4178FC6D2A6A51ED5"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row14.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row14.cs",
+        "sha256": "8A1184EFD3A2623B2D2EFD17C63033B724F77AC7B1BFB815B0D1879360585C1E"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row14.cs",
+        "sha256": "8A1184EFD3A2623B2D2EFD17C63033B724F77AC7B1BFB815B0D1879360585C1E"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row15.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row15.cs",
+        "sha256": "B86D31611FDE4AEBBD0F46A69E3BC39AC75A629593D1F3D7D195EC2B1D0F22DA"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row15.cs",
+        "sha256": "B86D31611FDE4AEBBD0F46A69E3BC39AC75A629593D1F3D7D195EC2B1D0F22DA"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row16.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row16.cs",
+        "sha256": "9854382C82FC925A23E63D9D0AA2AA656755216D92ABAC9A142FA11F197BAE8E"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row16.cs",
+        "sha256": "9854382C82FC925A23E63D9D0AA2AA656755216D92ABAC9A142FA11F197BAE8E"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row17.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row17.cs",
+        "sha256": "9BFB2D7DDB56B4D511FD7F8CA523FE5C1185611756B10D3F4667F9CD87A646FF"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row17.cs",
+        "sha256": "9BFB2D7DDB56B4D511FD7F8CA523FE5C1185611756B10D3F4667F9CD87A646FF"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row18.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row18.cs",
+        "sha256": "7C0AA989EAA1DB901E52F33B47FC6309B1C5A44A3A78D8DCC0A894A60C402800"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row18.cs",
+        "sha256": "7C0AA989EAA1DB901E52F33B47FC6309B1C5A44A3A78D8DCC0A894A60C402800"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row19.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row19.cs",
+        "sha256": "295A24818B177DD33ACC5EED42D398E829BD98C284647014CD7E46CA995B8B0C"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row19.cs",
+        "sha256": "295A24818B177DD33ACC5EED42D398E829BD98C284647014CD7E46CA995B8B0C"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row2.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row2.cs",
+        "sha256": "0B8A47B3E2045BAAD6566F97173A8608AC90A21BA5984BD79A93DFEEF2934679"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row2.cs",
+        "sha256": "0B8A47B3E2045BAAD6566F97173A8608AC90A21BA5984BD79A93DFEEF2934679"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row20.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row20.cs",
+        "sha256": "F143773A009BBA22A87BB2AB37F1EAD53DBB877B2BBFA3F8DF09F5AC09887650"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row20.cs",
+        "sha256": "F143773A009BBA22A87BB2AB37F1EAD53DBB877B2BBFA3F8DF09F5AC09887650"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row21.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row21.cs",
+        "sha256": "38FEBE766C8917AEA02494AF7B21359151D52E0AEF5FFC7A76785AA225FE5159"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row21.cs",
+        "sha256": "38FEBE766C8917AEA02494AF7B21359151D52E0AEF5FFC7A76785AA225FE5159"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row22.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row22.cs",
+        "sha256": "9EB4CD05C5626E69422741C94A2C6122FFEAAEEA981AB49DD81A26FCFF351BC4"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row22.cs",
+        "sha256": "9EB4CD05C5626E69422741C94A2C6122FFEAAEEA981AB49DD81A26FCFF351BC4"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row23.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row23.cs",
+        "sha256": "67DA3877866F011A76298BB313B0D40BA6900C778F77C35D2FF9870203BD2E7E"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row23.cs",
+        "sha256": "67DA3877866F011A76298BB313B0D40BA6900C778F77C35D2FF9870203BD2E7E"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row24.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row24.cs",
+        "sha256": "B87EBAC489BF2D62CEF31A1821DA6344769F9EDE577BCEFB8E87F881D4312519"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row24.cs",
+        "sha256": "B87EBAC489BF2D62CEF31A1821DA6344769F9EDE577BCEFB8E87F881D4312519"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row25.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row25.cs",
+        "sha256": "3E96459020F08F2DADDCA0998DEF91529D846834AE744E96A3E6E922730927BF"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row25.cs",
+        "sha256": "3E96459020F08F2DADDCA0998DEF91529D846834AE744E96A3E6E922730927BF"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row26.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row26.cs",
+        "sha256": "E8E38F437FE81AF22CC8E2A4B7B564EFE76B2F4671F89642B41DB1C345A986CB"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row26.cs",
+        "sha256": "E8E38F437FE81AF22CC8E2A4B7B564EFE76B2F4671F89642B41DB1C345A986CB"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row27.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row27.cs",
+        "sha256": "1E75C506B56161998375AD107720DC07F00C4AF43A33FC56B99786621E701603"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row27.cs",
+        "sha256": "1E75C506B56161998375AD107720DC07F00C4AF43A33FC56B99786621E701603"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row28.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row28.cs",
+        "sha256": "91AD114A6D1599483740A2F86854A5CC00ECE14CF162E477033710AB8E24C275"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row28.cs",
+        "sha256": "91AD114A6D1599483740A2F86854A5CC00ECE14CF162E477033710AB8E24C275"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row29.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row29.cs",
+        "sha256": "7CA57EF131AA62C3C83EAC572E6BA72550A2028994E37F5B1C12ECDC4C74C50B"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row29.cs",
+        "sha256": "7CA57EF131AA62C3C83EAC572E6BA72550A2028994E37F5B1C12ECDC4C74C50B"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row3.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row3.cs",
+        "sha256": "477F62ADD939A9F06EC4BBB31E682DEF26012EADC66AD38495978E07C2CBE5F7"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row3.cs",
+        "sha256": "477F62ADD939A9F06EC4BBB31E682DEF26012EADC66AD38495978E07C2CBE5F7"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row30.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row30.cs",
+        "sha256": "286E4C2FEEEBB101BCC3B0C55DED7EACD7362C8E67673399E92BEECEB3985C8C"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row30.cs",
+        "sha256": "286E4C2FEEEBB101BCC3B0C55DED7EACD7362C8E67673399E92BEECEB3985C8C"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row31.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row31.cs",
+        "sha256": "BCA3A1340561B5D1668233D4F208A906BA3ABFA21E1BD616325E8DC4E073452E"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row31.cs",
+        "sha256": "BCA3A1340561B5D1668233D4F208A906BA3ABFA21E1BD616325E8DC4E073452E"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row4.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row4.cs",
+        "sha256": "95A5D852E511AE168CDC7FDC872E42D396B6FB534CB2BCF35EB596BD7B010805"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row4.cs",
+        "sha256": "95A5D852E511AE168CDC7FDC872E42D396B6FB534CB2BCF35EB596BD7B010805"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row5.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row5.cs",
+        "sha256": "B1B0C5D2F2AC4E3F1FE85CA65A92DDB2C27A5686D071E2A4351E447C6C9103D4"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row5.cs",
+        "sha256": "B1B0C5D2F2AC4E3F1FE85CA65A92DDB2C27A5686D071E2A4351E447C6C9103D4"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row6.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row6.cs",
+        "sha256": "A645E585829E453FDA65DF32A530FAFEE1FF8145C1823AD30899D331497FE285"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row6.cs",
+        "sha256": "A645E585829E453FDA65DF32A530FAFEE1FF8145C1823AD30899D331497FE285"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row7.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row7.cs",
+        "sha256": "988A68DBB1FA56D7A2BE971A6955A1528699919AB5A7526FA5CC1B227627E537"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row7.cs",
+        "sha256": "988A68DBB1FA56D7A2BE971A6955A1528699919AB5A7526FA5CC1B227627E537"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row8.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row8.cs",
+        "sha256": "8D4010E17C9A027AE9E6F11676F9483DFCF3033D8DDAA482BE4E172F265F418B"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row8.cs",
+        "sha256": "8D4010E17C9A027AE9E6F11676F9483DFCF3033D8DDAA482BE4E172F265F418B"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Generated/tables32/Row9.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row9.cs",
+        "sha256": "C06CF4A815610E4A13D67E3387942E710260AA22E6772F77F4B3C59F0D95705E"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row9.cs",
+        "sha256": "C06CF4A815610E4A13D67E3387942E710260AA22E6772F77F4B3C59F0D95705E"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Scripts/Adapter.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Scripts/Adapter.cs",
+        "sha256": "B34447861A76D1C14F39140971F80CF65BEB38ADC0C75757154D5D2948ABE1C4"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/Adapter.cs",
+        "sha256": "B34447861A76D1C14F39140971F80CF65BEB38ADC0C75757154D5D2948ABE1C4"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Scripts/Adapters.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Scripts/Adapters.cs",
+        "sha256": "01B9DC76EEA4265C7F70D20FFF741A727DE84A9FE47FFA1F111405A4293E8819"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/Adapters.cs",
+        "sha256": "01B9DC76EEA4265C7F70D20FFF741A727DE84A9FE47FFA1F111405A4293E8819"
+      },
+      "equal": true
+    },
+    {
+      "file": "Assets/Scripts/BenchmarkPlayer.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Scripts/BenchmarkPlayer.cs",
+        "sha256": "34304829F1D731E089D18F2D3EFE9EA4C10E59612AC81B15683C14C4BBE5278C"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/BenchmarkPlayer.cs",
+        "sha256": "6642D7A9901810BF17A3B5AF1F0C742DA9E619821C851F902AFD65EB18FBA1CD"
+      },
+      "equal": false
+    },
+    {
+      "file": "Assets/Scripts/ConstructionContracts.cs",
+      "baseline": null,
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/ConstructionContracts.cs",
+        "sha256": "984B282273D1713B6968F705BE0711EBB0189003E365A1EE89C36D4CF1FD307B"
+      },
+      "equal": false
+    },
+    {
+      "file": "Assets/Scripts/Fixture.cs",
+      "baseline": {
+        "path": "target/benchmarks/unity-control-20261029/Assets/Scripts/Fixture.cs",
+        "sha256": "62E33C722AE83815A5C9A93917898463CB44EF18DEF1B0CA8DBCA222815CA3D7"
+      },
+      "optimized": {
+        "path": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/Fixture.cs",
+        "sha256": "62E33C722AE83815A5C9A93917898463CB44EF18DEF1B0CA8DBCA222815CA3D7"
+      },
+      "equal": true
+    }
+  ],
+  "pdbs": [
+    {
+      "arm": "baseline",
+      "project": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029",
+      "pdb": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Library\\Bee\\PlayerScriptAssemblies\\Assembly-CSharp.pdb",
+      "pdb_guid": "11043914-5722-43f8-81f9-e98eff512fd2",
+      "played_dll": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029-mono\\CoflowBenchmark_Data\\Managed\\Assembly-CSharp.dll",
+      "played_sha256": "0ED25A8A87416D498A0275DA92086CA17FFB96EFB3BCDD5143051312D56740B1",
+      "player_compilation_sha256": "0ED25A8A87416D498A0275DA92086CA17FFB96EFB3BCDD5143051312D56740B1",
+      "codeview_guid": "11043914-5722-43f8-81f9-e98eff512fd2",
+      "pdb_matches_player": true,
+      "documents": [
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\complex\\CoflowData.cs",
+          "checksum": "8BE7FF2D3B49ACFAC6E41AAB089385EBED915D44C3CFBA0F320AE2B9A1917DE5",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/complex/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\complex\\Payload.cs",
+          "checksum": "E53288B4C98CC0004F4A792F3C9A2B1943F86329E4464A88411AE8724C761051",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/complex/Payload.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\complex\\Row.cs",
+          "checksum": "1138E9147E3F3E92C64DA0A37EB6DAB9426BD7FCC403B29834E41CB63B9CF26D",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/complex/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\dimensions\\CoflowData.cs",
+          "checksum": "BED616AEF84C5CC9D7F02D61998D47F137F3EB826C002432DBAF436250A830EB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/dimensions/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\dimensions\\Payload.cs",
+          "checksum": "B0BB542AFBBE2780A508D10D2B1E603CEA38728B91AD048B0E37F6B29105E7AB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/dimensions/Payload.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\dimensions\\Row.cs",
+          "checksum": "33EAE3E95FC793F39E89A4E3150E37B5CF588409E7822D20CE97EB339BCA595B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/dimensions/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\scalar100\\CoflowData.cs",
+          "checksum": "8231C9CEA4D8B654E1975C1574CAF1C69FB96D0D02BFDED7E7D4ACC6DA34F511",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar100/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\scalar100\\Row.cs",
+          "checksum": "13AA0B7882C22481126C1EA744DB6A27692BB4E04E5CE119F68B150F03AE96A3",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar100/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\scalar20\\CoflowData.cs",
+          "checksum": "DFEF30A1BB1FE8599859502A498EC5238F6CDEC2812CE0669CB8BA1C7A91729D",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar20/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\scalar20\\Row.cs",
+          "checksum": "ABC9985F9025F2572C533EA873C9DBEB807BCE7D51C02B1C8E7B89B0B0EA3F16",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar20/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\scalar8\\CoflowData.cs",
+          "checksum": "BE8451CD57C99D4E9584231B1ECA88FE2E2E2A5077E17EF0D4079E52B7A07B33",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar8/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\scalar8\\Row.cs",
+          "checksum": "FC2BBF61116CD40182E9664483C9E42357D97E5976F21D662B1723F8C03CC2A6",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/scalar8/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\CoflowData.cs",
+          "checksum": "418113B613C129E2A0BD76F32F24D88AA22054A624536CDE5BF9361CE5E7BE5F",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row.cs",
+          "checksum": "DA623B8822991C34D131E0112FF59E80AB368E899314C982210C9A8AFD5AACC3",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row0.cs",
+          "checksum": "B1734B0F3B36E39060341EA0A566469FB5A30BC2A609E18CF59DA4F62661FD33",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row0.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row1.cs",
+          "checksum": "2CC6A1A0A610E443DB35FF20AA9539D1C71519156C96E443CD75E8F597AA8AEB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row1.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row10.cs",
+          "checksum": "AE73D4818AD1636563DB77869AAC76DDA7F5D5961180A0F581541839B9A395B5",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row10.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row11.cs",
+          "checksum": "03F06CF5E898A9F7D2E8FFCD2CE4FDA701B5D02D342240F5F7052487C81CAED0",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row11.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row12.cs",
+          "checksum": "0362885E865DFFA6116F2AB3AEFFD7130C79AF0BC7A9208BDA207F2E90EA579C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row12.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row13.cs",
+          "checksum": "B6F8554C71B8A4331B092FD04E793FE5C45603DEDB436BA4178FC6D2A6A51ED5",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row13.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row14.cs",
+          "checksum": "8A1184EFD3A2623B2D2EFD17C63033B724F77AC7B1BFB815B0D1879360585C1E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row14.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row15.cs",
+          "checksum": "B86D31611FDE4AEBBD0F46A69E3BC39AC75A629593D1F3D7D195EC2B1D0F22DA",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row15.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row16.cs",
+          "checksum": "9854382C82FC925A23E63D9D0AA2AA656755216D92ABAC9A142FA11F197BAE8E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row16.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row17.cs",
+          "checksum": "9BFB2D7DDB56B4D511FD7F8CA523FE5C1185611756B10D3F4667F9CD87A646FF",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row17.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row18.cs",
+          "checksum": "7C0AA989EAA1DB901E52F33B47FC6309B1C5A44A3A78D8DCC0A894A60C402800",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row18.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row19.cs",
+          "checksum": "295A24818B177DD33ACC5EED42D398E829BD98C284647014CD7E46CA995B8B0C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row19.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row2.cs",
+          "checksum": "0B8A47B3E2045BAAD6566F97173A8608AC90A21BA5984BD79A93DFEEF2934679",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row2.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row20.cs",
+          "checksum": "F143773A009BBA22A87BB2AB37F1EAD53DBB877B2BBFA3F8DF09F5AC09887650",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row20.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row21.cs",
+          "checksum": "38FEBE766C8917AEA02494AF7B21359151D52E0AEF5FFC7A76785AA225FE5159",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row21.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row22.cs",
+          "checksum": "9EB4CD05C5626E69422741C94A2C6122FFEAAEEA981AB49DD81A26FCFF351BC4",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row22.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row23.cs",
+          "checksum": "67DA3877866F011A76298BB313B0D40BA6900C778F77C35D2FF9870203BD2E7E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row23.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row24.cs",
+          "checksum": "B87EBAC489BF2D62CEF31A1821DA6344769F9EDE577BCEFB8E87F881D4312519",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row24.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row25.cs",
+          "checksum": "3E96459020F08F2DADDCA0998DEF91529D846834AE744E96A3E6E922730927BF",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row25.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row26.cs",
+          "checksum": "E8E38F437FE81AF22CC8E2A4B7B564EFE76B2F4671F89642B41DB1C345A986CB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row26.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row27.cs",
+          "checksum": "1E75C506B56161998375AD107720DC07F00C4AF43A33FC56B99786621E701603",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row27.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row28.cs",
+          "checksum": "91AD114A6D1599483740A2F86854A5CC00ECE14CF162E477033710AB8E24C275",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row28.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row29.cs",
+          "checksum": "7CA57EF131AA62C3C83EAC572E6BA72550A2028994E37F5B1C12ECDC4C74C50B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row29.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row3.cs",
+          "checksum": "477F62ADD939A9F06EC4BBB31E682DEF26012EADC66AD38495978E07C2CBE5F7",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row3.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row30.cs",
+          "checksum": "286E4C2FEEEBB101BCC3B0C55DED7EACD7362C8E67673399E92BEECEB3985C8C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row30.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row31.cs",
+          "checksum": "BCA3A1340561B5D1668233D4F208A906BA3ABFA21E1BD616325E8DC4E073452E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row31.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row4.cs",
+          "checksum": "95A5D852E511AE168CDC7FDC872E42D396B6FB534CB2BCF35EB596BD7B010805",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row4.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row5.cs",
+          "checksum": "B1B0C5D2F2AC4E3F1FE85CA65A92DDB2C27A5686D071E2A4351E447C6C9103D4",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row5.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row6.cs",
+          "checksum": "A645E585829E453FDA65DF32A530FAFEE1FF8145C1823AD30899D331497FE285",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row6.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row7.cs",
+          "checksum": "988A68DBB1FA56D7A2BE971A6955A1528699919AB5A7526FA5CC1B227627E537",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row7.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row8.cs",
+          "checksum": "8D4010E17C9A027AE9E6F11676F9483DFCF3033D8DDAA482BE4E172F265F418B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row8.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Generated\\tables32\\Row9.cs",
+          "checksum": "C06CF4A815610E4A13D67E3387942E710260AA22E6772F77F4B3C59F0D95705E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Generated/tables32/Row9.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Scripts\\Adapter.cs",
+          "checksum": "B34447861A76D1C14F39140971F80CF65BEB38ADC0C75757154D5D2948ABE1C4",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Scripts/Adapter.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Scripts\\Adapters.cs",
+          "checksum": "01B9DC76EEA4265C7F70D20FFF741A727DE84A9FE47FFA1F111405A4293E8819",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Scripts/Adapters.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Scripts\\BenchmarkPlayer.cs",
+          "checksum": "34304829F1D731E089D18F2D3EFE9EA4C10E59612AC81B15683C14C4BBE5278C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Scripts/BenchmarkPlayer.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Assets\\Scripts\\Fixture.cs",
+          "checksum": "62E33C722AE83815A5C9A93917898463CB44EF18DEF1B0CA8DBCA222815CA3D7",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-control-20261029/Assets/Scripts/Fixture.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-control-20261029\\Unity.SourceGenerators\\Unity.MonoScriptGenerator.MonoScriptInfoGenerator\\AssemblyMonoScriptTypes.generated.cs",
+          "checksum": "09F3E0D2A640796FB63D86D0B7EA0F8773FC4188",
+          "algorithm": "sha1",
+          "source_origin": "Portable PDB EmbeddedSource",
+          "audited_source": "target/performance-worklogs/mono-generated-baseline.cs",
+          "verified": true
+        }
+      ]
+    },
+    {
+      "arm": "optimized",
+      "project": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2",
+      "pdb": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Library\\Bee\\PlayerScriptAssemblies\\Assembly-CSharp.pdb",
+      "pdb_guid": "1714e8f8-b058-41a1-9b2e-d1f3343c8f31",
+      "played_dll": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2-mono\\CoflowBenchmark_Data\\Managed\\Assembly-CSharp.dll",
+      "played_sha256": "1DB8732C2CBA430FC9A4BF74CB46A5B5690534DE79E7EB6354F0B132B3E8FD0D",
+      "player_compilation_sha256": "1DB8732C2CBA430FC9A4BF74CB46A5B5690534DE79E7EB6354F0B132B3E8FD0D",
+      "codeview_guid": "1714e8f8-b058-41a1-9b2e-d1f3343c8f31",
+      "pdb_matches_player": true,
+      "documents": [
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\complex\\CoflowData.cs",
+          "checksum": "8BE7FF2D3B49ACFAC6E41AAB089385EBED915D44C3CFBA0F320AE2B9A1917DE5",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/complex/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\complex\\Payload.cs",
+          "checksum": "E53288B4C98CC0004F4A792F3C9A2B1943F86329E4464A88411AE8724C761051",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/complex/Payload.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\complex\\Row.cs",
+          "checksum": "1138E9147E3F3E92C64DA0A37EB6DAB9426BD7FCC403B29834E41CB63B9CF26D",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/complex/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\dimensions\\CoflowData.cs",
+          "checksum": "BED616AEF84C5CC9D7F02D61998D47F137F3EB826C002432DBAF436250A830EB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/dimensions/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\dimensions\\Payload.cs",
+          "checksum": "B0BB542AFBBE2780A508D10D2B1E603CEA38728B91AD048B0E37F6B29105E7AB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/dimensions/Payload.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\dimensions\\Row.cs",
+          "checksum": "33EAE3E95FC793F39E89A4E3150E37B5CF588409E7822D20CE97EB339BCA595B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/dimensions/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\scalar100\\CoflowData.cs",
+          "checksum": "8231C9CEA4D8B654E1975C1574CAF1C69FB96D0D02BFDED7E7D4ACC6DA34F511",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar100/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\scalar100\\Row.cs",
+          "checksum": "13AA0B7882C22481126C1EA744DB6A27692BB4E04E5CE119F68B150F03AE96A3",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar100/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\scalar20\\CoflowData.cs",
+          "checksum": "DFEF30A1BB1FE8599859502A498EC5238F6CDEC2812CE0669CB8BA1C7A91729D",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar20/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\scalar20\\Row.cs",
+          "checksum": "ABC9985F9025F2572C533EA873C9DBEB807BCE7D51C02B1C8E7B89B0B0EA3F16",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar20/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\scalar8\\CoflowData.cs",
+          "checksum": "BE8451CD57C99D4E9584231B1ECA88FE2E2E2A5077E17EF0D4079E52B7A07B33",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar8/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\scalar8\\Row.cs",
+          "checksum": "FC2BBF61116CD40182E9664483C9E42357D97E5976F21D662B1723F8C03CC2A6",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/scalar8/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\CoflowData.cs",
+          "checksum": "418113B613C129E2A0BD76F32F24D88AA22054A624536CDE5BF9361CE5E7BE5F",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/CoflowData.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row.cs",
+          "checksum": "DA623B8822991C34D131E0112FF59E80AB368E899314C982210C9A8AFD5AACC3",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row0.cs",
+          "checksum": "B1734B0F3B36E39060341EA0A566469FB5A30BC2A609E18CF59DA4F62661FD33",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row0.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row1.cs",
+          "checksum": "2CC6A1A0A610E443DB35FF20AA9539D1C71519156C96E443CD75E8F597AA8AEB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row1.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row10.cs",
+          "checksum": "AE73D4818AD1636563DB77869AAC76DDA7F5D5961180A0F581541839B9A395B5",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row10.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row11.cs",
+          "checksum": "03F06CF5E898A9F7D2E8FFCD2CE4FDA701B5D02D342240F5F7052487C81CAED0",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row11.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row12.cs",
+          "checksum": "0362885E865DFFA6116F2AB3AEFFD7130C79AF0BC7A9208BDA207F2E90EA579C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row12.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row13.cs",
+          "checksum": "B6F8554C71B8A4331B092FD04E793FE5C45603DEDB436BA4178FC6D2A6A51ED5",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row13.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row14.cs",
+          "checksum": "8A1184EFD3A2623B2D2EFD17C63033B724F77AC7B1BFB815B0D1879360585C1E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row14.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row15.cs",
+          "checksum": "B86D31611FDE4AEBBD0F46A69E3BC39AC75A629593D1F3D7D195EC2B1D0F22DA",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row15.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row16.cs",
+          "checksum": "9854382C82FC925A23E63D9D0AA2AA656755216D92ABAC9A142FA11F197BAE8E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row16.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row17.cs",
+          "checksum": "9BFB2D7DDB56B4D511FD7F8CA523FE5C1185611756B10D3F4667F9CD87A646FF",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row17.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row18.cs",
+          "checksum": "7C0AA989EAA1DB901E52F33B47FC6309B1C5A44A3A78D8DCC0A894A60C402800",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row18.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row19.cs",
+          "checksum": "295A24818B177DD33ACC5EED42D398E829BD98C284647014CD7E46CA995B8B0C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row19.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row2.cs",
+          "checksum": "0B8A47B3E2045BAAD6566F97173A8608AC90A21BA5984BD79A93DFEEF2934679",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row2.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row20.cs",
+          "checksum": "F143773A009BBA22A87BB2AB37F1EAD53DBB877B2BBFA3F8DF09F5AC09887650",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row20.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row21.cs",
+          "checksum": "38FEBE766C8917AEA02494AF7B21359151D52E0AEF5FFC7A76785AA225FE5159",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row21.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row22.cs",
+          "checksum": "9EB4CD05C5626E69422741C94A2C6122FFEAAEEA981AB49DD81A26FCFF351BC4",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row22.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row23.cs",
+          "checksum": "67DA3877866F011A76298BB313B0D40BA6900C778F77C35D2FF9870203BD2E7E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row23.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row24.cs",
+          "checksum": "B87EBAC489BF2D62CEF31A1821DA6344769F9EDE577BCEFB8E87F881D4312519",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row24.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row25.cs",
+          "checksum": "3E96459020F08F2DADDCA0998DEF91529D846834AE744E96A3E6E922730927BF",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row25.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row26.cs",
+          "checksum": "E8E38F437FE81AF22CC8E2A4B7B564EFE76B2F4671F89642B41DB1C345A986CB",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row26.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row27.cs",
+          "checksum": "1E75C506B56161998375AD107720DC07F00C4AF43A33FC56B99786621E701603",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row27.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row28.cs",
+          "checksum": "91AD114A6D1599483740A2F86854A5CC00ECE14CF162E477033710AB8E24C275",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row28.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row29.cs",
+          "checksum": "7CA57EF131AA62C3C83EAC572E6BA72550A2028994E37F5B1C12ECDC4C74C50B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row29.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row3.cs",
+          "checksum": "477F62ADD939A9F06EC4BBB31E682DEF26012EADC66AD38495978E07C2CBE5F7",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row3.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row30.cs",
+          "checksum": "286E4C2FEEEBB101BCC3B0C55DED7EACD7362C8E67673399E92BEECEB3985C8C",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row30.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row31.cs",
+          "checksum": "BCA3A1340561B5D1668233D4F208A906BA3ABFA21E1BD616325E8DC4E073452E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row31.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row4.cs",
+          "checksum": "95A5D852E511AE168CDC7FDC872E42D396B6FB534CB2BCF35EB596BD7B010805",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row4.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row5.cs",
+          "checksum": "B1B0C5D2F2AC4E3F1FE85CA65A92DDB2C27A5686D071E2A4351E447C6C9103D4",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row5.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row6.cs",
+          "checksum": "A645E585829E453FDA65DF32A530FAFEE1FF8145C1823AD30899D331497FE285",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row6.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row7.cs",
+          "checksum": "988A68DBB1FA56D7A2BE971A6955A1528699919AB5A7526FA5CC1B227627E537",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row7.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row8.cs",
+          "checksum": "8D4010E17C9A027AE9E6F11676F9483DFCF3033D8DDAA482BE4E172F265F418B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row8.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Generated\\tables32\\Row9.cs",
+          "checksum": "C06CF4A815610E4A13D67E3387942E710260AA22E6772F77F4B3C59F0D95705E",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Generated/tables32/Row9.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Scripts\\Adapter.cs",
+          "checksum": "B34447861A76D1C14F39140971F80CF65BEB38ADC0C75757154D5D2948ABE1C4",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/Adapter.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Scripts\\Adapters.cs",
+          "checksum": "01B9DC76EEA4265C7F70D20FFF741A727DE84A9FE47FFA1F111405A4293E8819",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/Adapters.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Scripts\\BenchmarkPlayer.cs",
+          "checksum": "6642D7A9901810BF17A3B5AF1F0C742DA9E619821C851F902AFD65EB18FBA1CD",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/BenchmarkPlayer.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Scripts\\ConstructionContracts.cs",
+          "checksum": "984B282273D1713B6968F705BE0711EBB0189003E365A1EE89C36D4CF1FD307B",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/ConstructionContracts.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Assets\\Scripts\\Fixture.cs",
+          "checksum": "62E33C722AE83815A5C9A93917898463CB44EF18DEF1B0CA8DBCA222815CA3D7",
+          "algorithm": "sha256",
+          "source_origin": "project file",
+          "audited_source": "target/benchmarks/unity-optimized-20261029-r2/Assets/Scripts/Fixture.cs",
+          "verified": true
+        },
+        {
+          "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r2\\Unity.SourceGenerators\\Unity.MonoScriptGenerator.MonoScriptInfoGenerator\\AssemblyMonoScriptTypes.generated.cs",
+          "checksum": "ACEBF1E16EFE49A364E2C8D0113EDD4C7AAC43EC",
+          "algorithm": "sha1",
+          "source_origin": "Portable PDB EmbeddedSource",
+          "audited_source": "target/performance-worklogs/mono-generated-optimized.cs",
+          "verified": true
+        }
+      ]
+    }
+  ],
+  "audited_formal_specs": [
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-complex-100k-r1-baseline.spec.json",
+      "id": "mono-complex-100k-r1-baseline",
+      "scenario": "mono-complex-100k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "reload",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-complex-100k-r1-optimized.spec.json",
+      "id": "mono-complex-100k-r1-optimized",
+      "scenario": "mono-complex-100k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "reload",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim1-sparse-10k-r1-baseline.spec.json",
+      "id": "mono-dim1-sparse-10k-r1-baseline",
+      "scenario": "mono-dim1-sparse-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "dimensions",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim1-sparse-10k-r1-optimized.spec.json",
+      "id": "mono-dim1-sparse-10k-r1-optimized",
+      "scenario": "mono-dim1-sparse-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "dimensions",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim10-dense-10k-r1-baseline.spec.json",
+      "id": "mono-dim10-dense-10k-r1-baseline",
+      "scenario": "mono-dim10-dense-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim10-dense-10k-r1-optimized.spec.json",
+      "id": "mono-dim10-dense-10k-r1-optimized",
+      "scenario": "mono-dim10-dense-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim10-no-templates-10k-r1-baseline.spec.json",
+      "id": "mono-dim10-no-templates-10k-r1-baseline",
+      "scenario": "mono-dim10-no-templates-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim10-no-templates-10k-r1-optimized.spec.json",
+      "id": "mono-dim10-no-templates-10k-r1-optimized",
+      "scenario": "mono-dim10-no-templates-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim10-sparse-10k-r1-baseline.spec.json",
+      "id": "mono-dim10-sparse-10k-r1-baseline",
+      "scenario": "mono-dim10-sparse-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-dim10-sparse-10k-r1-optimized.spec.json",
+      "id": "mono-dim10-sparse-10k-r1-optimized",
+      "scenario": "mono-dim10-sparse-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-ring-10k-r1-baseline.spec.json",
+      "id": "mono-ring-10k-r1-baseline",
+      "scenario": "mono-ring-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-ring-10k-r1-optimized.spec.json",
+      "id": "mono-ring-10k-r1-optimized",
+      "scenario": "mono-ring-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-100k-r1-baseline.spec.json",
+      "id": "mono-scalar20-100k-r1-baseline",
+      "scenario": "mono-scalar20-100k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-100k-r1-optimized.spec.json",
+      "id": "mono-scalar20-100k-r1-optimized",
+      "scenario": "mono-scalar20-100k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-100k-r2-baseline.spec.json",
+      "id": "mono-scalar20-100k-r2-baseline",
+      "scenario": "mono-scalar20-100k",
+      "arm": "baseline",
+      "round": 2,
+      "operations": [
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-100k-r2-optimized.spec.json",
+      "id": "mono-scalar20-100k-r2-optimized",
+      "scenario": "mono-scalar20-100k",
+      "arm": "optimized",
+      "round": 2,
+      "operations": [
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-1k-r1-baseline.spec.json",
+      "id": "mono-scalar20-1k-r1-baseline",
+      "scenario": "mono-scalar20-1k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "startup",
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-1k-r1-optimized.spec.json",
+      "id": "mono-scalar20-1k-r1-optimized",
+      "scenario": "mono-scalar20-1k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "startup",
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-1k-r2-baseline.spec.json",
+      "id": "mono-scalar20-1k-r2-baseline",
+      "scenario": "mono-scalar20-1k",
+      "arm": "baseline",
+      "round": 2,
+      "operations": [
+        "startup",
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-1k-r2-optimized.spec.json",
+      "id": "mono-scalar20-1k-r2-optimized",
+      "scenario": "mono-scalar20-1k",
+      "arm": "optimized",
+      "round": 2,
+      "operations": [
+        "startup",
+        "load",
+        "io",
+        "reload",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-tables32-10k-r1-baseline.spec.json",
+      "id": "mono-tables32-10k-r1-baseline",
+      "scenario": "mono-tables32-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-tables32-10k-r1-optimized.spec.json",
+      "id": "mono-tables32-10k-r1-optimized",
+      "scenario": "mono-tables32-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-tables32-10k-r2-baseline.spec.json",
+      "id": "mono-tables32-10k-r2-baseline",
+      "scenario": "mono-tables32-10k",
+      "arm": "baseline",
+      "round": 2,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-tables32-10k-r2-optimized.spec.json",
+      "id": "mono-tables32-10k-r2-optimized",
+      "scenario": "mono-tables32-10k",
+      "arm": "optimized",
+      "round": 2,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-templates-10k-r1-baseline.spec.json",
+      "id": "mono-templates-10k-r1-baseline",
+      "scenario": "mono-templates-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-templates-10k-r1-optimized.spec.json",
+      "id": "mono-templates-10k-r1-optimized",
+      "scenario": "mono-templates-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries",
+        "error"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width100-10k-r1-baseline.spec.json",
+      "id": "mono-width100-10k-r1-baseline",
+      "scenario": "mono-width100-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width100-10k-r1-optimized.spec.json",
+      "id": "mono-width100-10k-r1-optimized",
+      "scenario": "mono-width100-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width100-10k-r2-baseline.spec.json",
+      "id": "mono-width100-10k-r2-baseline",
+      "scenario": "mono-width100-10k",
+      "arm": "baseline",
+      "round": 2,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width100-10k-r2-optimized.spec.json",
+      "id": "mono-width100-10k-r2-optimized",
+      "scenario": "mono-width100-10k",
+      "arm": "optimized",
+      "round": 2,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width8-10k-r1-baseline.spec.json",
+      "id": "mono-width8-10k-r1-baseline",
+      "scenario": "mono-width8-10k",
+      "arm": "baseline",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width8-10k-r1-optimized.spec.json",
+      "id": "mono-width8-10k-r1-optimized",
+      "scenario": "mono-width8-10k",
+      "arm": "optimized",
+      "round": 1,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width8-10k-r2-baseline.spec.json",
+      "id": "mono-width8-10k-r2-baseline",
+      "scenario": "mono-width8-10k",
+      "arm": "baseline",
+      "round": 2,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    },
+    {
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-width8-10k-r2-optimized.spec.json",
+      "id": "mono-width8-10k-r2-optimized",
+      "scenario": "mono-width8-10k",
+      "arm": "optimized",
+      "round": 2,
+      "operations": [
+        "load",
+        "queries"
+      ],
+      "contracts_or_validate_requested": false
+    }
+  ],
+  "completed_scalar_complex_first_round": [
+    {
+      "id": "mono-scalar20-100k-r1-baseline",
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-100k-r1-baseline.stdout.ndjson",
+      "source_sha256": "254DDE3B3DCB34C1D53C34F421CEE9B18C017AEC88EC6FA2FB80445768A19642",
+      "metadata": {
+        "unity_version": "2022.3.62f3",
+        "backend": "Mono",
+        "runtime": "Unity Mono",
+        "development": false,
+        "os": "Windows 11  (10.0.26300) 64bit",
+        "architecture": "x64",
+        "processors": 20,
+        "stopwatch_frequency": 10000000,
+        "gc_max_generation": 0,
+        "allocation_counter_available": false,
+        "incremental_gc": false,
+        "case": "scalar20",
+        "records": 100000,
+        "files": 100,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": [
+          "load",
+          "io",
+          "reload",
+          "queries",
+          "error"
+        ],
+        "utc": "2026-10-28T20:36:00.7614911Z",
+        "protocol": "independent semantic preflight after optional startup; one warmup except startup; full GC before heavy samples; validation outside timing; OS cache retained; one fixture per process",
+        "memory": "current-thread operation allocation or null if unsupported; GC counts for supported generations; Unity managed heap used/reserved; no OS process working set; retained delta is after validation/full GC for heavy metrics",
+        "kind": "metadata"
+      },
+      "fixture": {
+        "files": 100,
+        "records": 100000,
+        "fields": 20,
+        "utf8_bytes": 24467595,
+        "utf16_chars": 24467595,
+        "ring_group_size": 64,
+        "declared_dimension_variants": 0,
+        "kind": "fixture"
+      },
+      "configured": {
+        "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r4\\mono-scalar20-100k-r1-baseline.measurements.ndjson",
+        "case": "scalar20",
+        "records": "100000",
+        "files": "100",
+        "samples": "1",
+        "query-samples": "100",
+        "query-batch": "10000",
+        "variants": "1",
+        "density": "sparse",
+        "topology": "none",
+        "templates": "false",
+        "operations": "load,io,reload,queries,error"
+      },
+      "complete": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "load_warmups": 1,
+      "load_gc_before_sample": true,
+      "load_operations_per_sample": 1
+    },
+    {
+      "id": "mono-scalar20-100k-r1-optimized",
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-scalar20-100k-r1-optimized.stdout.ndjson",
+      "source_sha256": "01BDC004E39DF9685C1662D46442D2069C5B12F5A7A3B8BD30DED10226191258",
+      "metadata": {
+        "unity_version": "2022.3.62f3",
+        "backend": "Mono",
+        "runtime": "Unity Mono",
+        "development": false,
+        "os": "Windows 11  (10.0.26300) 64bit",
+        "architecture": "x64",
+        "processors": 20,
+        "stopwatch_frequency": 10000000,
+        "gc_max_generation": 0,
+        "allocation_counter_available": false,
+        "incremental_gc": false,
+        "case": "scalar20",
+        "records": 100000,
+        "files": 100,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": [
+          "load",
+          "io",
+          "reload",
+          "queries",
+          "error"
+        ],
+        "utc": "2026-10-28T20:37:28.7460108Z",
+        "protocol": "independent semantic preflight after optional startup; one warmup except startup; full GC before heavy samples; validation outside timing; OS cache retained; one fixture per process",
+        "memory": "current-thread operation allocation or null if unsupported; GC counts for supported generations; Unity managed heap used/reserved; no OS process working set; retained delta is after validation/full GC for heavy metrics",
+        "kind": "metadata"
+      },
+      "fixture": {
+        "files": 100,
+        "records": 100000,
+        "fields": 20,
+        "utf8_bytes": 24467595,
+        "utf16_chars": 24467595,
+        "ring_group_size": 64,
+        "declared_dimension_variants": 0,
+        "kind": "fixture"
+      },
+      "configured": {
+        "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r4\\mono-scalar20-100k-r1-optimized.measurements.ndjson",
+        "case": "scalar20",
+        "records": "100000",
+        "files": "100",
+        "samples": "1",
+        "query-samples": "100",
+        "query-batch": "10000",
+        "variants": "1",
+        "density": "sparse",
+        "topology": "none",
+        "templates": "false",
+        "operations": "load,io,reload,queries,error"
+      },
+      "complete": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "load_warmups": 1,
+      "load_gc_before_sample": true,
+      "load_operations_per_sample": 1
+    },
+    {
+      "id": "mono-complex-100k-r1-baseline",
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-complex-100k-r1-baseline.stdout.ndjson",
+      "source_sha256": "2ADD43352D60C57226ECB2CA944409E477887C6D150EB9E234A822C5D777E6B4",
+      "metadata": {
+        "unity_version": "2022.3.62f3",
+        "backend": "Mono",
+        "runtime": "Unity Mono",
+        "development": false,
+        "os": "Windows 11  (10.0.26300) 64bit",
+        "architecture": "x64",
+        "processors": 20,
+        "stopwatch_frequency": 10000000,
+        "gc_max_generation": 0,
+        "allocation_counter_available": false,
+        "incremental_gc": false,
+        "case": "complex",
+        "records": 100000,
+        "files": 100,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": false,
+        "operations": [
+          "load",
+          "reload",
+          "queries"
+        ],
+        "utc": "2026-10-28T20:39:48.6728194Z",
+        "protocol": "independent semantic preflight after optional startup; one warmup except startup; full GC before heavy samples; validation outside timing; OS cache retained; one fixture per process",
+        "memory": "current-thread operation allocation or null if unsupported; GC counts for supported generations; Unity managed heap used/reserved; no OS process working set; retained delta is after validation/full GC for heavy metrics",
+        "kind": "metadata"
+      },
+      "fixture": {
+        "files": 100,
+        "records": 100000,
+        "fields": 20,
+        "utf8_bytes": 40695275,
+        "utf16_chars": 40695275,
+        "ring_group_size": 64,
+        "declared_dimension_variants": 0,
+        "kind": "fixture"
+      },
+      "configured": {
+        "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r4\\mono-complex-100k-r1-baseline.measurements.ndjson",
+        "case": "complex",
+        "records": "100000",
+        "files": "100",
+        "samples": "1",
+        "query-samples": "100",
+        "query-batch": "10000",
+        "variants": "1",
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": "false",
+        "operations": "load,reload,queries"
+      },
+      "complete": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "load_warmups": 1,
+      "load_gc_before_sample": true,
+      "load_operations_per_sample": 1
+    },
+    {
+      "id": "mono-complex-100k-r1-optimized",
+      "source": "docs/archive/benchmarks/non-editor-optimization-2026-10-29/final-r4/mono-complex-100k-r1-optimized.stdout.ndjson",
+      "source_sha256": "ECCE83AEE1A7B4F1612E7E75A96CDD44B95889F2CE9351797F2EA839EBD55841",
+      "metadata": {
+        "unity_version": "2022.3.62f3",
+        "backend": "Mono",
+        "runtime": "Unity Mono",
+        "development": false,
+        "os": "Windows 11  (10.0.26300) 64bit",
+        "architecture": "x64",
+        "processors": 20,
+        "stopwatch_frequency": 10000000,
+        "gc_max_generation": 0,
+        "allocation_counter_available": false,
+        "incremental_gc": false,
+        "case": "complex",
+        "records": 100000,
+        "files": 100,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": false,
+        "operations": [
+          "load",
+          "reload",
+          "queries"
+        ],
+        "utc": "2026-10-28T20:40:48.1135672Z",
+        "protocol": "independent semantic preflight after optional startup; one warmup except startup; full GC before heavy samples; validation outside timing; OS cache retained; one fixture per process",
+        "memory": "current-thread operation allocation or null if unsupported; GC counts for supported generations; Unity managed heap used/reserved; no OS process working set; retained delta is after validation/full GC for heavy metrics",
+        "kind": "metadata"
+      },
+      "fixture": {
+        "files": 100,
+        "records": 100000,
+        "fields": 20,
+        "utf8_bytes": 40695275,
+        "utf16_chars": 40695275,
+        "ring_group_size": 64,
+        "declared_dimension_variants": 0,
+        "kind": "fixture"
+      },
+      "configured": {
+        "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r4\\mono-complex-100k-r1-optimized.measurements.ndjson",
+        "case": "complex",
+        "records": "100000",
+        "files": "100",
+        "samples": "1",
+        "query-samples": "100",
+        "query-batch": "10000",
+        "variants": "1",
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": "false",
+        "operations": "load,reload,queries"
+      },
+      "complete": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "load_warmups": 1,
+      "load_gc_before_sample": true,
+      "load_operations_per_sample": 1
+    }
+  ]
+}

@@ -84,6 +84,8 @@ public abstract class CfdValueNode
 {
     internal CfdValueNode(CfdSpan span) => Span = span;
     public CfdSpan Span { get; }
+    // 仅为本次加载私有的解析节点赋值；默认值/常量不写入，视图只读共享来源。
+    internal string? SourcePath { get; set; }
 }
 
 // 生成器提供已解析的枚举默认值，组合 flag 不依赖虚构的成员名称。

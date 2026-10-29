@@ -1,0 +1,71 @@
+{
+  "purpose": "correctness smoke only; not formal performance samples",
+  "cases": [
+    {
+      "case": "complex",
+      "records": 100,
+      "files": 2,
+      "backend": "Mono",
+      "unity_version": "2022.3.62f3",
+      "validation": true,
+      "complete": true,
+      "measurement_rows": 11,
+      "result": "complex-100.ndjson"
+    },
+    {
+      "case": "dimensions",
+      "records": 100,
+      "files": 2,
+      "backend": "Mono",
+      "unity_version": "2022.3.62f3",
+      "validation": true,
+      "complete": true,
+      "measurement_rows": 19,
+      "result": "dimensions-100.ndjson"
+    },
+    {
+      "case": "scalar100",
+      "records": 100,
+      "files": 2,
+      "backend": "Mono",
+      "unity_version": "2022.3.62f3",
+      "validation": true,
+      "complete": true,
+      "measurement_rows": 10,
+      "result": "scalar100-100.ndjson"
+    },
+    {
+      "case": "scalar20",
+      "records": 100,
+      "files": 2,
+      "backend": "Mono",
+      "unity_version": "2022.3.62f3",
+      "validation": true,
+      "complete": true,
+      "measurement_rows": 10,
+      "result": "scalar20-100.ndjson"
+    },
+    {
+      "case": "scalar8",
+      "records": 100,
+      "files": 2,
+      "backend": "Mono",
+      "unity_version": "2022.3.62f3",
+      "validation": true,
+      "complete": true,
+      "measurement_rows": 10,
+      "result": "scalar8-100.ndjson"
+    },
+    {
+      "case": "tables32",
+      "records": 100,
+      "files": 2,
+      "backend": "Mono",
+      "unity_version": "2022.3.62f3",
+      "validation": true,
+      "complete": true,
+      "measurement_rows": 10,
+      "result": "tables32-100.ndjson"
+    }
+  ]
+}

@@ -60,6 +60,10 @@ impl ValueNode {
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "预算耗尽、模板跟踪、字面量计费缓存和记录读取跟踪是独立开关，不构成互斥状态机。"
+)]
 pub(super) struct ValueResolver<'a, 'schema, S: RecordDraftSource + ?Sized> {
     schema: &'a BuildSchema<'schema>,
     drafts: &'a S,
@@ -82,6 +86,8 @@ pub(super) struct ValueResolver<'a, 'schema, S: RecordDraftSource + ?Sized> {
     trace_depth: u64,
     trace_template: bool,
     cache_literal_costs: bool,
+    track_record_reads: bool,
+    record_reads: BTreeSet<CfdRecordHandle>,
     pub(super) resolved_root_fields: usize,
     pub(super) reused_literal_fields: usize,
 }
@@ -115,6 +121,8 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             trace_depth: 0,
             trace_template: false,
             cache_literal_costs: false,
+            track_record_reads: false,
+            record_reads: BTreeSet::new(),
             resolved_root_fields: 0,
             reused_literal_fields: 0,
         }
@@ -148,6 +156,15 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
 
     pub(super) fn take_reference_diagnostics(&mut self) -> Vec<CfdDiagnostic> {
         std::mem::take(&mut self.reference_diagnostics)
+    }
+
+    /// 拒绝闭包记录真正访问过的身份；包括虚拟 id 和显式类型引用，不能只依赖字段读集。
+    pub(super) fn enable_record_reads(&mut self) {
+        self.track_record_reads = true;
+    }
+
+    pub(super) fn take_record_reads(&mut self) -> BTreeSet<CfdRecordHandle> {
+        std::mem::take(&mut self.record_reads)
     }
 
     pub(super) fn take_reads(&mut self) -> TemplateReads {
@@ -393,12 +410,17 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
                 id: key,
             } => {
                 if let Some(explicit) = explicit_type {
-                    if let Some(target) = self
+                    let target_id = self
                         .schema
                         .inheritance_root(explicit.as_str())
                         .and_then(|root| self.record_by_domain_id.get(root))
                         .and_then(|records| records.get(key.as_str()))
-                        .and_then(|id| self.drafts.actual_type(id.index()))
+                        .copied();
+                    if let Some(id) = target_id.filter(|_| self.track_record_reads) {
+                        self.record_reads.insert(id);
+                    }
+                    if let Some(target) =
+                        target_id.and_then(|id| self.drafts.actual_type(id.index()))
                     {
                         if !self.schema.is_assignable(target, explicit.as_str()) {
                             // 非法引用保留记录与编辑入口，严格构建由引用诊断拒绝，不能静默放宽到字段父类型。
@@ -662,6 +684,10 @@ impl<'a, 'schema, S: RecordDraftSource + ?Sized> ValueResolver<'a, 'schema, S> {
             );
             return None;
         };
+
+        if self.track_record_reads {
+            self.record_reads.insert(target.0);
+        }
 
         let target_draft = self.drafts.get(target.0.index())?;
         if !self

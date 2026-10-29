@@ -1,0 +1,25 @@
+{
+  "id": "engine-existing-100k-hot",
+  "spec": {
+    "id": "engine-existing-100k-hot",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\engine_perf.exe",
+    "arguments": [],
+    "environment": {
+      "ENGINE_UPDATE_SAMPLES": "100",
+      "ENGINE_VALIDATION_SAMPLES": "20",
+      "ENGINE_BATCHES": "1",
+      "ENGINE_FIELD": "name",
+      "ENGINE_FILES": "100",
+      "ENGINE_SAMPLES": "3",
+      "ENGINE_MODE": "pipeline",
+      "ENGINE_RECORDS": "100000"
+    }
+  },
+  "started_at": "2026-10-28T20:10:40.6453289+08:00",
+  "wall_seconds": 56.6647272,
+  "exit_code": 0,
+  "timed_out": false,
+  "sampled_process_peak_working_set_bytes": 6495633408,
+  "process_memory_samples": 479,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics."
+}

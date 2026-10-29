@@ -64,7 +64,7 @@ impl TemplateDependencies {
         }
     }
 
-    fn affected(&self, changed: &[TemplateField]) -> BTreeSet<CfdRecordHandle> {
+    pub(crate) fn affected(&self, changed: &[TemplateField]) -> BTreeSet<CfdRecordHandle> {
         let mut affected = changed.iter().cloned().collect::<BTreeSet<_>>();
         let mut pending = changed.to_vec();
         while let Some(target) = pending.pop() {

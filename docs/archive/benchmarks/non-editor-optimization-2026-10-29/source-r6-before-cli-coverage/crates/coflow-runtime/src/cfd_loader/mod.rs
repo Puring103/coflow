@@ -1,0 +1,400 @@
+//! Text `.cfd` loader for Coflow data models.
+
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+#![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
+
+use crate::api::{
+    CfdLoadContext, CfdSource, Diagnostic, DiagnosticSet, LineIndex, LoadedCfdSource,
+};
+
+mod constants;
+mod diagnostics;
+#[cfg(test)]
+mod loader_tests;
+mod lower;
+mod writer;
+use crate::data_model::RecordOrigin;
+#[cfg(test)]
+use crate::data_model::{CfdDataModel, LoadedRecordDraft};
+use coflow_language::cfd::{parse_cfd_with_options, CfdParseOptions};
+use coflow_language::cft::CftSchema;
+use coflow_language::cft::{DimensionName, VariantName};
+#[cfg(test)]
+use diagnostics::CfdTextLoadError;
+use diagnostics::{cfd_error_to_diagnostics, text_span};
+pub use diagnostics::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
+#[cfg(test)]
+use lower::{lower_records, ParsedLoadedRecordDraft};
+use lower::{lower_records_partial, syntax_diagnostics};
+use std::borrow::Cow;
+use std::fs;
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
+use std::sync::Arc;
+pub(crate) use writer::{CfdWriter, CFD_WRITER_CAPABILITIES};
+
+/// 公共操作协议的表达式复用 CFD 语法与类型降低，不经过编辑器单元格语法。
+pub(crate) fn parse_expression(
+    schema: &CftSchema,
+    expected: &coflow_language::cft::CftValueType,
+    source: &str,
+) -> Result<crate::LoadedValueDraft, DiagnosticSet> {
+    let wrapped = format!("request: Request {{ value: {source} }}");
+    let (ast, diagnostics) = coflow_language::cfd::parse_cfd(&wrapped);
+    if !diagnostics.is_empty()
+        || ast.records.len() != 1
+        || ast.records[0].fields.len() != 1
+        || !ast.dimensions.is_empty()
+    {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "CLI-VALUE",
+            "CFD",
+            format!("expected one CFD expression: {diagnostics:?}"),
+        )));
+    }
+    lower::lower_value_resolved(schema, &ast.records[0].fields[0].value, expected, false).map_err(
+        |errors| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CLI-VALUE",
+                "CFD",
+                errors
+                    .diagnostics
+                    .iter()
+                    .map(|e| e.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ))
+        },
+    )
+}
+
+/// Parses `.cfd` text into source-neutral input records.
+///
+/// The returned records use the top-level CFD record name as
+/// [`LoadedRecordDraft::key`]. No `id` field is emitted.
+///
+/// # Errors
+///
+/// Returns text diagnostics when parsing or schema-guided conversion fails.
+#[cfg(test)]
+fn parse_cfd_input_records(
+    schema: &CftSchema,
+    source: &str,
+) -> Result<Vec<LoadedRecordDraft>, CfdTextLoadError> {
+    parse_cfd_input_records_with_spans(schema, source).map(|records| {
+        records
+            .into_iter()
+            .map(|record| record.record)
+            .collect::<Vec<_>>()
+    })
+}
+
+#[cfg(test)]
+fn parse_cfd_input_records_with_spans(
+    schema: &CftSchema,
+    source: &str,
+) -> Result<Vec<ParsedLoadedRecordDraft>, CfdTextLoadError> {
+    let (ast, diagnostics) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: crate::limits::RuntimeLimits::default().structural,
+        },
+    );
+    if !diagnostics.is_empty() {
+        return Err(CfdTextLoadError::Text(syntax_diagnostics(diagnostics)));
+    }
+    lower_records(schema, &ast).map_err(CfdTextLoadError::Text)
+}
+
+/// Parses `.cfd` text and builds a validated [`CfdDataModel`].
+///
+/// # Errors
+///
+/// Returns text diagnostics for CFD syntax/conversion errors or data-model
+/// diagnostics for schema/data/reference errors.
+#[cfg(test)]
+fn load_cfd_model(schema: &CftSchema, source: &str) -> Result<CfdDataModel, CfdTextLoadError> {
+    let (ast, errors) = parse_cfd_with_options(
+        source,
+        CfdParseOptions {
+            structural_limits: crate::limits::RuntimeLimits::default().structural,
+        },
+    );
+    if !errors.is_empty() {
+        return Err(CfdTextLoadError::Text(syntax_diagnostics(errors)));
+    }
+    let records = lower_records(schema, &ast).map_err(CfdTextLoadError::Text)?;
+    let (overlays, errors) = lower::lower_dimensions(schema, &ast);
+    if !errors.is_empty() {
+        return Err(CfdTextLoadError::Text(CfdTextDiagnostics {
+            diagnostics: errors,
+        }));
+    }
+    let mut builder = CfdDataModel::builder(schema)
+        .with_structural_limits(crate::limits::RuntimeLimits::default().structural);
+    let line_index = LineIndex::new(source);
+    let mut origins = Vec::with_capacity(records.len());
+    for record in records {
+        let origin = RecordOrigin::File {
+            path: PathBuf::new(),
+            span: Some(text_span(&line_index, source, record.span)),
+        };
+        origins.push(origin.clone());
+        builder.add_loaded_record(record.record.with_origin(origin));
+    }
+    for block in &ast.dimensions {
+        if let (Ok(dimension), Ok(variant)) = (
+            DimensionName::new(&block.dimension),
+            VariantName::new(&block.variant),
+        ) {
+            builder.add_dimension_variant(dimension, variant);
+        }
+    }
+    for (mut value, span) in overlays {
+        value.origin = RecordOrigin::File {
+            path: PathBuf::new(),
+            span: Some(text_span(&line_index, source, span)),
+        };
+        builder.add_dimension_value_draft(value);
+    }
+    builder
+        .build()
+        .map_err(|diagnostics| CfdTextLoadError::DataModel {
+            diagnostics,
+            origins,
+        })
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct CfdLoader;
+
+impl CfdLoader {
+    pub fn resolve(source: &CfdSource) -> Result<CfdSource, DiagnosticSet> {
+        let path = source.location.path();
+        if is_cfd_path(path) {
+            return Ok(source.clone());
+        }
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "CFD-SOURCE",
+            "CFD",
+            format!(
+                "source file `{}` has unsupported extension",
+                source.display_name
+            ),
+        )))
+    }
+
+    #[cfg(test)]
+    pub fn load(
+        ctx: CfdLoadContext<'_>,
+        source: &CfdSource,
+    ) -> Result<LoadedCfdSource, DiagnosticSet> {
+        let loaded = Self::load_partial(ctx, source)?;
+        if loaded.diagnostics.is_empty() {
+            Ok(loaded)
+        } else {
+            Err(loaded.diagnostics)
+        }
+    }
+
+    pub(crate) fn read_source<'a>(
+        source: &CfdSource,
+        source_text: Option<&'a str>,
+    ) -> Result<Cow<'a, str>, DiagnosticSet> {
+        let file = source.location.path();
+        let contents = match source_text {
+            Some(source) => Cow::Borrowed(source),
+            None => Cow::Owned(fs::read_to_string(file).map_err(|err| {
+                DiagnosticSet::one(Diagnostic::error(
+                    "CFD-READ",
+                    "CFD",
+                    format!("failed to read CFD source `{}`: {err}", file.display()),
+                ))
+            })?),
+        };
+        Ok(contents)
+    }
+
+    pub(crate) fn load_partial(
+        ctx: CfdLoadContext<'_>,
+        source: &CfdSource,
+    ) -> Result<LoadedCfdSource, DiagnosticSet> {
+        let file = source.location.path();
+        let contents = Self::read_source(source, ctx.source_text)?;
+        let (ast, parse_errors) = parse_cfd_with_options(
+            &contents,
+            CfdParseOptions {
+                structural_limits: crate::limits::RuntimeLimits::default().structural,
+            },
+        );
+        // 正常来源、语法错误和降低错误使用同一个位置索引，文件只扫描一次。
+        let line_index = LineIndex::new(&contents);
+        let mut loaded =
+            Self::load_parsed_with_index(ctx.schema, file, &contents, &ast, &line_index);
+        let mut diagnostics = cfd_error_to_diagnostics(
+            file,
+            &contents,
+            &line_index,
+            syntax_diagnostics(parse_errors),
+        );
+        diagnostics.extend(loaded.diagnostics);
+        loaded.diagnostics = diagnostics;
+        Ok(loaded)
+    }
+
+    /// 写事务已检查候选语法和结构预算，直接复用该 AST 降低草稿，避免第三次解析。
+    pub(crate) fn load_parsed_partial(
+        schema: &CftSchema,
+        file: &Path,
+        contents: &str,
+        ast: &coflow_language::cfd::CfdAst,
+    ) -> LoadedCfdSource {
+        let line_index = LineIndex::new(contents);
+        Self::load_parsed_with_index(schema, file, contents, ast, &line_index)
+    }
+
+    fn load_parsed_with_index(
+        schema: &CftSchema,
+        file: &Path,
+        contents: &str,
+        ast: &coflow_language::cfd::CfdAst,
+        line_index: &LineIndex,
+    ) -> LoadedCfdSource {
+        let (lowered, mut lower_errors) = lower_records_partial(schema, ast);
+        let (overlays, overlay_errors) = lower::lower_dimensions(schema, ast);
+        lower_errors.extend(overlay_errors);
+        let dimensions = overlays
+            .into_iter()
+            .map(|(mut value, span)| {
+                value.origin = RecordOrigin::File {
+                    path: file.to_path_buf(),
+                    span: Some(text_span(line_index, contents, span)),
+                };
+                value
+            })
+            .collect();
+        let records = lowered
+            .into_iter()
+            .map(|record| {
+                let span = text_span(line_index, contents, record.span);
+                record.record.with_origin(RecordOrigin::File {
+                    path: file.to_path_buf(),
+                    span: Some(span),
+                })
+            })
+            .collect();
+        let diagnostics = cfd_error_to_diagnostics(
+            file,
+            contents,
+            line_index,
+            CfdTextDiagnostics {
+                diagnostics: lower_errors,
+            },
+        );
+        let dimension_variants = ast
+            .dimensions
+            .iter()
+            .filter_map(|block| {
+                let dimension = DimensionName::new(&block.dimension).ok()?;
+                let variant = VariantName::new(&block.variant).ok()?;
+                schema.resolve_dimension(dimension.as_str())?;
+                Some((dimension, variant))
+            })
+            .collect();
+        LoadedCfdSource {
+            records,
+            dimensions,
+            dimension_variants,
+            diagnostics,
+            source: Arc::from(contents),
+        }
+    }
+}
+
+fn is_cfd_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    use std::fs;
+
+    use coflow_language::cft::{build_schema, parse_modules, CftFile, ModuleId};
+
+    use super::CfdLoader;
+    use crate::api::{CfdLoadContext, CfdSource, CfdSourcePath};
+    use crate::{map_diagnostics_with_origins, origins_of, CfdDataModel, SourceLocation};
+
+    fn schema() -> coflow_language::cft::CftSchema {
+        let modules = parse_modules([CftFile::from_source(
+            ModuleId::from("main"),
+            "table Item { value: int; }",
+        )]);
+        build_schema(&modules).expect("schema")
+    }
+
+    #[test]
+    fn rejects_non_cfd_sources_before_reading() {
+        let source = CfdSource {
+            location: CfdSourcePath::new("data/items.json"),
+            display_name: "data/items.json".to_string(),
+        };
+        let diagnostics = CfdLoader::resolve(&source).expect_err("only CFD is supported");
+        assert!(diagnostics.contains("unsupported extension"));
+    }
+
+    #[test]
+    fn file_origins_preserve_record_text_spans() {
+        let root = tempfile::tempdir().expect("temp source");
+        let source_path = root.path().join("items.cfd");
+        fs::write(
+            &source_path,
+            "first: Item { value: 1 }\n\nsecond: Item {\n}\n",
+        )
+        .expect("write source");
+        let schema = schema();
+        let loaded = CfdLoader::load(
+            CfdLoadContext {
+                schema: &schema,
+                source_text: None,
+            },
+            &CfdSource {
+                location: CfdSourcePath::new(source_path.clone()),
+                display_name: source_path.display().to_string(),
+            },
+        )
+        .expect("load source");
+        let origins = origins_of(&loaded.records);
+        let mut builder = CfdDataModel::builder(&schema);
+        for record in loaded.records {
+            builder.add_loaded_record(record);
+        }
+        let diagnostics = builder.build().expect_err("missing required value");
+        let mapped = map_diagnostics_with_origins(diagnostics, &origins);
+        assert!(matches!(
+            mapped.diagnostics[0].primary.as_ref().map(|label| &label.location),
+            Some(SourceLocation::FileSpan {
+                path,
+                start_line: 2,
+                start_character: 0,
+                end_line: 3,
+                end_character: 1,
+            }) if path == &source_path
+        ));
+    }
+}

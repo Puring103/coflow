@@ -1,0 +1,62 @@
+RUN project_inspect records=10000 files=10
+PASS project_inspect p50=41.810ms
+RUN schema_inspect records=10000 files=10
+PASS schema_inspect p50=43.143ms
+RUN data_list records=10000 files=10
+PASS data_list p50=411.159ms
+RUN filter_sort records=10000 files=10
+PASS filter_sort p50=427.113ms
+RUN data_search records=10000 files=10
+PASS data_search p50=405.549ms
+RUN data_refs records=10000 files=10
+PASS data_refs p50=1264.524ms
+RUN check_structure records=10000 files=10
+PASS check_structure p50=379.595ms
+RUN stats_field records=10000 files=10
+PASS stats_field p50=404.792ms
+RUN dimension_get records=10000 files=10
+PASS dimension_get p50=416.522ms
+RUN dimension_missing records=10000 files=10
+PASS dimension_missing p50=521.072ms
+RUN dimension_diff records=10000 files=10
+PASS dimension_diff p50=512.489ms
+RUN dimension_query records=10000 files=10
+PASS dimension_query p50=422.910ms
+RUN set_where records=10000 files=10
+PASS set_where p50=28478.396ms
+RUN array_insert records=10000 files=10
+PASS array_insert p50=2301.225ms
+RUN array_remove records=10000 files=10
+PASS array_remove p50=2382.748ms
+RUN array_move records=10000 files=10
+PASS array_move p50=2301.195ms
+RUN dict_set records=10000 files=10
+PASS dict_set p50=2299.064ms
+RUN dict_remove records=10000 files=10
+PASS dict_remove p50=2317.009ms
+RUN create_record records=10000 files=10
+PASS create_record p50=2336.898ms
+RUN delete_record records=10000 files=10
+PASS delete_record p50=2323.180ms
+RUN rename_record records=10000 files=10
+PASS rename_record p50=2552.119ms
+RUN transfer_record records=10000 files=10
+PASS transfer_record p50=2327.688ms
+RUN unset_field records=10000 files=10
+PASS unset_field p50=2279.796ms
+RUN dimension_set records=10000 files=10
+PASS dimension_set p50=2266.593ms
+RUN dimension_add_variant records=10000 files=10
+PASS dimension_add_variant p50=2875.575ms
+RUN dimension_clear records=10000 files=10
+PASS dimension_clear p50=2263.886ms
+RUN source_write records=10000 files=10
+PASS source_write p50=1995.976ms
+RUN reject_invalid_value records=10000 files=10
+PASS reject_invalid_value p50=1282.755ms
+RUN reject_invalid_source records=10000 files=10
+PASS reject_invalid_source p50=1316.609ms
+RUN repair_invalid_source records=10000 files=10
+PASS repair_invalid_source p50=1374.507ms
+RUN revision_conflict records=10000 files=10
+PASS revision_conflict p50=131.914ms

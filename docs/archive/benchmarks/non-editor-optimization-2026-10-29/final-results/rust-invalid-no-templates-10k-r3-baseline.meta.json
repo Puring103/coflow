@@ -1,0 +1,46 @@
+{
+  "id": "rust-invalid-no-templates-10k-r3-baseline",
+  "spec": {
+    "id": "rust-invalid-no-templates-10k-r3-baseline",
+    "scenario": "rust-invalid-no-templates-10k",
+    "round": 3,
+    "arm": "baseline",
+    "group": "rust",
+    "arguments": [],
+    "timeout_seconds": 120,
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+    "environment": {
+      "MATRIX_RECORDS": "10000",
+      "MATRIX_FILES": "10",
+      "MATRIX_FIELDS": "20",
+      "MATRIX_SAMPLES": "1",
+      "MATRIX_WARMUPS": "0",
+      "MATRIX_BATCH": "1000",
+      "MATRIX_COLLECTION": "8",
+      "MATRIX_VARIANTS": "1",
+      "MATRIX_STRIDE": "100",
+      "MATRIX_TOPOLOGY": "ring",
+      "MATRIX_TEMPLATES": "0",
+      "MATRIX_QUERY_BATCH": "1000",
+      "MATRIX_CASES": "validate_invalid"
+    }
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+      "sha256": "C2DDEDC6EBFE42149CD24A526D619A9A4917BBB5E602AF4E3753EF688CA1C604"
+    }
+  ],
+  "started_at": "2026-10-29T04:32:08.7729493+08:00",
+  "process_id": 26196,
+  "wall_seconds": 0.9831825,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 120,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 349650944,
+  "process_memory_samples": 9,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

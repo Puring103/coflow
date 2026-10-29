@@ -1,0 +1,27 @@
+{
+  "checked_at_utc": "2026-10-28T16:52:50.527Z",
+  "status": "passed",
+  "latency_records": 545,
+  "process_metadata": 88,
+  "dotnet_formal_groups": 19,
+  "mono_formal_groups": 17,
+  "direct_cli_memory_commands": 10,
+  "source_and_binary_hashes_verified": 88,
+  "local_document_links_verified": 47,
+  "checks": [
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "JavaScript syntax",
+    "summary sample/quantile invariants",
+    "source and binary manifest",
+    "C# and Mono process completion",
+    "direct CLI semantic verification",
+    "document links"
+  ],
+  "limitations": [
+    "IL2CPP module official download returned 404; no IL2CPP measurements",
+    "Timeout and environment failure evidence remains in summary/runs; pending original 10k preview was completed in cli-common-10k",
+    "1000-record CLI get/check memory sampling insufficient for capacity peak; raw values preserved",
+    "Most heavy operations have only 1–5 samples; no stable tails inferred"
+  ]
+}

@@ -100,6 +100,16 @@ pub(crate) fn build_ref_indexes(
     schema: BuildSchema<'_>,
     plan: &ReferenceFieldPlan<'_>,
 ) -> RefIndexes {
+    build_ref_indexes_iter(records.iter(), record_by_domain_id, schema, plan)
+}
+
+/// 成员变化重建句柄索引时直接借用共享记录，不复制未变化记录的头部和值树。
+pub(crate) fn build_ref_indexes_iter<'a>(
+    records: impl ExactSizeIterator<Item = &'a CfdRecord>,
+    record_by_domain_id: &BTreeMap<TypeName, BTreeMap<RecordId, CfdRecordHandle>>,
+    schema: BuildSchema<'_>,
+    plan: &ReferenceFieldPlan<'_>,
+) -> RefIndexes {
     // 空入边共享同一不可变块，修改时由 Arc 写时复制隔离。
     let empty_incoming = Arc::new(Vec::new());
     let mut out = RefIndexes {
@@ -112,7 +122,7 @@ pub(crate) fn build_ref_indexes(
         plan,
     };
     let empty_host = Arc::new(HostRefs::default());
-    for (index, record) in records.iter().enumerate() {
+    for (index, record) in records.enumerate() {
         let host = CfdRecordHandle::new(index);
         let references = record_refs(record, host, &context);
         for (index, edge) in references.edges.iter().enumerate() {

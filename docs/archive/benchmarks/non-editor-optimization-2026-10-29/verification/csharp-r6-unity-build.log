@@ -1,0 +1,14 @@
+{
+    "unity_version": "2022.3.62f3",
+    "backend": "Mono",
+    "api_compatibility": "netstandard2.1",
+    "managed_stripping": "Disabled",
+    "il2cpp_compiler_configuration": "Release",
+    "target": "StandaloneWindows64",
+    "result": "Succeeded",
+    "total_size_bytes": "70325325",
+    "utc": "2026-10-28T21:52:34.3668317Z",
+    "development": false,
+    "incremental_gc": false,
+    "build_seconds": 6.5338777
+}

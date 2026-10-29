@@ -1,0 +1,66 @@
+{
+  "id": "cli-expanded-10k-r1-optimized",
+  "spec": {
+    "id": "cli-expanded-10k-r1-optimized",
+    "scenario": "cli-expanded-10k",
+    "round": 1,
+    "arm": "optimized",
+    "group": "cli",
+    "arguments": [
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\cli-matrix.mjs",
+      "--cli",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+      "--output",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\cli-expanded-r4\\cli-expanded-10k-r1-optimized.results.json",
+      "--records",
+      "10000",
+      "--files",
+      "10",
+      "--fields",
+      "20",
+      "--samples",
+      "1",
+      "--warmups",
+      "0",
+      "--batch",
+      "1000",
+      "--variants",
+      "1",
+      "--coverage",
+      "sparse",
+      "--topology",
+      "sparse",
+      "--timeout-ms",
+      "120000",
+      "--continue-on-error",
+      "true",
+      "--case",
+      "project_inspect,schema_inspect,data_list,filter_sort,data_search,data_refs,check_structure,stats_field,dimension_get,dimension_missing,dimension_diff,dimension_query,set_where,array_insert,array_remove,array_move,dict_set,dict_remove,create_record,delete_record,rename_record,transfer_record,unset_field,dimension_set,dimension_add_variant,dimension_clear,source_write,reject_invalid_value,reject_invalid_source,repair_invalid_source,revision_conflict"
+    ],
+    "timeout_seconds": 1800,
+    "executable": "C:\\Program Files\\nodejs\\node.exe",
+    "memory_scope": "Node driver only; excluded from CLI peak comparison. Direct CLI memory uses measure-cli-memory.mjs."
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Program Files\\nodejs\\node.exe",
+      "sha256": "DCCC52DE28D8DF2EE22D2062424F8C563070D95D8AD70C54C4BF01D590DEC14F"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\cli-matrix.mjs",
+      "sha256": "1897C9D6E2D01306CF0280F20820FBFE3A153922F8100CE808C31630BEF54DFE"
+    }
+  ],
+  "started_at": "2026-10-29T07:32:10.2608827+08:00",
+  "process_id": 12644,
+  "wall_seconds": 113.7607412,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 105029632,
+  "process_memory_samples": 1008,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Node driver only; excluded from CLI peak comparison. Direct CLI memory uses measure-cli-memory.mjs.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

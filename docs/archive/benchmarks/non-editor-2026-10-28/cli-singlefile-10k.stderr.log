@@ -1,0 +1,14 @@
+node:internal/fs/promises:606
+  return await PromisePrototypeThen(
+         ^
+
+Error: ENOENT: no such file or directory, access 'C:\Users\wtlll\Desktop\projects\coflow\target\release\coflow.exe'
+    at async Object.access (node:internal/fs/promises:606:10)
+    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:183:1 {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'access',
+  path: 'C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\coflow.exe'
+}
+
+Node.js v22.23.4

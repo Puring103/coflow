@@ -1,0 +1,1322 @@
+{
+  "protocol_version": 1,
+  "suite": "cli_matrix",
+  "started_at_utc": "2026-10-28T23:51:11.795Z",
+  "config": {
+    "records": 10000,
+    "files": 10,
+    "fields": 20,
+    "samples": 1,
+    "warmups": 0,
+    "batch": 1000,
+    "variants": 1,
+    "coverage": "sparse",
+    "topology": "sparse",
+    "timeout_ms": 120000
+  },
+  "cli": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+  "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+  "tool_sha256": "1897c9d6e2d01306cf0280f20820fbfe3a153922f8100ce808c31630bef54dfe",
+  "environment": {
+    "platform": "win32",
+    "architecture": "x64",
+    "node": "v22.23.4",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "logical_cpus": 20,
+    "total_memory_bytes": 34190790656
+  },
+  "timing": "Independent CLI process spawn through close and stdout collection; fixture generation/reset, input construction, JSON parsing and correctness checks excluded. Filesystem cache is warm; no OS cache eviction.",
+  "validation": "Every sample validates exit/status, operation results and fresh CLI semantic queries. Nonpublishing cases compare the entire selected input path/content fingerprint, including added/deleted matching files. Each case ends with full check --rules. Original fixture is restored before each mutating sample.",
+  "memory": {
+    "collected": false,
+    "reason": "Node parent memory does not represent the CLI child. No child working-set sampler is included."
+  },
+  "metrics": [
+    {
+      "metric": "project_inspect",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        41.8096
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 41.8096,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 866,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "project",
+            "inspect"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 41.8096,
+      "p95_ms": null,
+      "min_ms": 41.8096,
+      "max_ms": 41.8096
+    },
+    {
+      "metric": "schema_inspect",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        43.1431
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 43.1431,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 6864,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "schema",
+            "inspect",
+            "--type",
+            "Row"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 43.1431,
+      "p95_ms": null,
+      "min_ms": 43.1431,
+      "max_ms": 43.1431
+    },
+    {
+      "metric": "data_list",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        411.1588
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 411.1588,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 33637,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "list",
+            "--type",
+            "Row",
+            "--fields",
+            "value,name",
+            "--limit",
+            "50"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 411.1588,
+      "p95_ms": null,
+      "min_ms": 411.1588,
+      "max_ms": 411.1588
+    },
+    {
+      "metric": "filter_sort",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        427.1134
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 427.1134,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 34536,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "list",
+            "--type",
+            "Row",
+            "--where",
+            "value >= 5000",
+            "--sort",
+            "-value",
+            "--fields",
+            "value,name",
+            "--limit",
+            "50"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 427.1134,
+      "p95_ms": null,
+      "min_ms": 427.1134,
+      "max_ms": 427.1134
+    },
+    {
+      "metric": "data_search",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        405.5486
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 405.5486,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 900,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "search",
+            "--type",
+            "Row",
+            "--text",
+            "Row 9999",
+            "--fields",
+            "name",
+            "--limit",
+            "50"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 405.5486,
+      "p95_ms": null,
+      "min_ms": 405.5486,
+      "max_ms": 405.5486
+    },
+    {
+      "metric": "data_refs",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        1264.5239
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1264.5239,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1053,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "refs",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--direction",
+            "incoming",
+            "--limit",
+            "50"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1264.5239,
+      "p95_ms": null,
+      "min_ms": 1264.5239,
+      "max_ms": 1264.5239
+    },
+    {
+      "metric": "check_structure",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        379.595
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 379.595,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 396,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "check"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 379.595,
+      "p95_ms": null,
+      "min_ms": 379.595,
+      "max_ms": 379.595
+    },
+    {
+      "metric": "stats_field",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        404.7918
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 404.7918,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 741,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "stats",
+            "field",
+            "--type",
+            "Row",
+            "--field",
+            "value",
+            "--metrics",
+            "count,min,max,mean"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 404.7918,
+      "p95_ms": null,
+      "min_ms": 404.7918,
+      "max_ms": 404.7918
+    },
+    {
+      "metric": "dimension_get",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        416.5223
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 416.5223,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 872,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "dimension",
+            "get",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--field",
+            "name",
+            "--dimension",
+            "language",
+            "--variant",
+            "ja"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 416.5223,
+      "p95_ms": null,
+      "min_ms": 416.5223,
+      "max_ms": 416.5223
+    },
+    {
+      "metric": "dimension_missing",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        521.0722
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 521.0722,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 15576,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "dimension",
+            "missing",
+            "--type",
+            "Row",
+            "--dimension",
+            "language",
+            "--variant",
+            "ja",
+            "--limit",
+            "50"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 521.0722,
+      "p95_ms": null,
+      "min_ms": 521.0722,
+      "max_ms": 521.0722
+    },
+    {
+      "metric": "dimension_diff",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        512.4888
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 512.4888,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 32579,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "dimension",
+            "diff",
+            "--type",
+            "Row",
+            "--dimension",
+            "language",
+            "--from-base",
+            "--to",
+            "ja",
+            "--limit",
+            "50"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 512.4888,
+      "p95_ms": null,
+      "min_ms": 512.4888,
+      "max_ms": 512.4888
+    },
+    {
+      "metric": "dimension_query",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        422.9099
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 422.9099,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1537,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "get",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--dimension",
+            "language=ja",
+            "--dimension",
+            "platform=mobile",
+            "--fields",
+            "name,description,note"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 422.9099,
+      "p95_ms": null,
+      "min_ms": 422.9099,
+      "max_ms": 422.9099
+    },
+    {
+      "metric": "set_where",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        28478.3956
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 28478.3956,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 722427,
+          "changed": true,
+          "written": true,
+          "affected_records": 1000,
+          "submitted_file_records": null,
+          "revision": "c85d446389b40933ae1f087ed9180011681dfbdba84124a5cd82bef474368c4a",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "a08826a152eb84bf2fa6d9502de2214ea46f3cb36bf08bfce53d2ced1b04d5be",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 28478.3956,
+      "p95_ms": null,
+      "min_ms": 28478.3956,
+      "max_ms": 28478.3956
+    },
+    {
+      "metric": "array_insert",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2301.2253
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2301.2253,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2673,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "5134e1e9ed08de584b5db6d861043802d617c5f5c6628967cfe14029d66dd20c",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "ca2675f4283b4d5508e4a908525618ad25332ed918d40a08745540d489bac147",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2301.2253,
+      "p95_ms": null,
+      "min_ms": 2301.2253,
+      "max_ms": 2301.2253
+    },
+    {
+      "metric": "array_remove",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2382.748
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2382.748,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2661,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "c19d1ece6956d08ebb1c2cf384bd9742a657cf8889227c2b00e13a828447f4e9",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "f1f2f7e44d6d4f5bacd47e8747b15271c0152a61b5437b4be614f3a0bf5886dc",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2382.748,
+      "p95_ms": null,
+      "min_ms": 2382.748,
+      "max_ms": 2382.748
+    },
+    {
+      "metric": "array_move",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2301.1945
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2301.1945,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2664,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "b93ac0024d0638220bb39d67ba0ab5793e9fba68a23844f1f8b9a792e1ded939",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "9fb456711fe63346b7a6568736b32f56c2e21ae72bcd224d35280d638c781018",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2301.1945,
+      "p95_ms": null,
+      "min_ms": 2301.1945,
+      "max_ms": 2301.1945
+    },
+    {
+      "metric": "dict_set",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2299.0643
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2299.0643,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2666,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "032469aa7c918b3a45386a57377798bf2a54d48862e41d7f0fb8f4734913bb19",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "5bac8755ce82aa0115bee84b1e5b59b55dfd0f64ed8c6da3357aa56e47a6d354",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2299.0643,
+      "p95_ms": null,
+      "min_ms": 2299.0643,
+      "max_ms": 2299.0643
+    },
+    {
+      "metric": "dict_remove",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2317.0086
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2317.0086,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2644,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "889c117f91ce75102717c2724408cc095d357f90605c5725b2d8d3449f9cd2ea",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "e51d2d23f77fe8cfee27c20ead523477a0c3abff77e13a825f796ec958dba00b",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2317.0086,
+      "p95_ms": null,
+      "min_ms": 2317.0086,
+      "max_ms": 2317.0086
+    },
+    {
+      "metric": "create_record",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2336.8983
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2336.8983,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2289,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "41bf841cb6434c79d405676fbfc7b683d60e317e7a26d178d6e6e8b1e1b6e582",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "88b8e0d93f10bf7120ace050d000cd34849adaf4a6c8eeaf3791e0990024a637",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2336.8983,
+      "p95_ms": null,
+      "min_ms": 2336.8983,
+      "max_ms": 2336.8983
+    },
+    {
+      "metric": "delete_record",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2323.1802
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2323.1802,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2547,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "3f9a305739307b3b4dbfd3641d0db5ba2310b20fa062b695496c7fb1198e4b19",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "9ccad8300f84c0375d5c444618f9991de8c2fc3e22dcda5f5124233f4dfb8643",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2323.1802,
+      "p95_ms": null,
+      "min_ms": 2323.1802,
+      "max_ms": 2323.1802
+    },
+    {
+      "metric": "rename_record",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2552.1191
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2552.1191,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 4906,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "1383be8e15c37973babf9cb9b7ac02b64d8afcbdd1c404c469c59f9708b4169e",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "7999a75844b619a7d5e331bacdf9942373faababbeefd9811c7fff1dd62363e3",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2552.1191,
+      "p95_ms": null,
+      "min_ms": 2552.1191,
+      "max_ms": 2552.1191
+    },
+    {
+      "metric": "transfer_record",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2327.6877
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2327.6877,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2795,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "b71a7a0d20d2ba629f69049c8fbd6a46536cd8b6c6ce20ed6975c6196067d085",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "69c9a3e87e86bc316c19e10b1c1efbbed5fa7d28d655a514dce86c443881476a",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2327.6877,
+      "p95_ms": null,
+      "min_ms": 2327.6877,
+      "max_ms": 2327.6877
+    },
+    {
+      "metric": "unset_field",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2279.7962
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2279.7962,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2648,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "7bab274f2e158e16e89e8febe5510db46d157a3ec7febc38c836e577793293a9",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "e05fbb4f67bb4de2056cd18ef665f2ad0c53bc2e9ad30bcb2ed44bc4a3aad252",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2279.7962,
+      "p95_ms": null,
+      "min_ms": 2279.7962,
+      "max_ms": 2279.7962
+    },
+    {
+      "metric": "dimension_set",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2266.5933
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2266.5933,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1233,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "cdd9953d4b126ef546a918340bb020f352c88c62cd0739c44b3d3e0626b088af",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "42d906c509826b610ff7610550ed6b99d75b4c4eecbdb9a725db224e7f43ccac",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2266.5933,
+      "p95_ms": null,
+      "min_ms": 2266.5933,
+      "max_ms": 2266.5933
+    },
+    {
+      "metric": "dimension_add_variant",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2875.5753
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2875.5753,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1121,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "d898b3ca087cac972c87af29325e5cea74f6611ba07451588f19b61cd9e4e5b5",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "d1baabc6e45fe4ed704442dd8b82dcd0b73829d6f5b183886d4a8b462471e0c3",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2875.5753,
+      "p95_ms": null,
+      "min_ms": 2875.5753,
+      "max_ms": 2875.5753
+    },
+    {
+      "metric": "dimension_clear",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        2263.8862
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 2263.8862,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1212,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "1cffb3eb45841252741e58edabecbbf5c279209fc75ac872f1cf972aed822754",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "66ec552cd68231ec83b5465b397d747f47df966d2c6d1c0ac6f790921a8d2b75",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 2263.8862,
+      "p95_ms": null,
+      "min_ms": 2263.8862,
+      "max_ms": 2263.8862
+    },
+    {
+      "metric": "source_write",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        1995.9763
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1995.9763,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2677,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": 1000,
+          "revision": "dd07051774e201c3396463bbef42efbc21e9d3a501b91c4e56c055d20abe6755",
+          "diagnostic_count": 0,
+          "args": [
+            "source",
+            "write",
+            "--file",
+            "data/0000.cfd",
+            "--input",
+            "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-GAcctI\\request.cfd",
+            "--rules"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1995.9763,
+      "p95_ms": null,
+      "min_ms": 1995.9763,
+      "max_ms": 1995.9763
+    },
+    {
+      "metric": "reject_invalid_value",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        1282.7555
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1282.7555,
+          "exit_code": 2,
+          "status": "error",
+          "stdout_bytes": 1108,
+          "changed": false,
+          "written": false,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": null,
+          "diagnostic_count": 1,
+          "args": [
+            "data",
+            "set",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--path",
+            "value",
+            "--value-cfd",
+            "\"invalid\""
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1282.7555,
+      "p95_ms": null,
+      "min_ms": 1282.7555,
+      "max_ms": 1282.7555
+    },
+    {
+      "metric": "reject_invalid_source",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        1316.6085
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1316.6085,
+          "exit_code": 1,
+          "status": "invalid",
+          "stdout_bytes": 4094,
+          "changed": true,
+          "written": false,
+          "affected_records": 0,
+          "submitted_file_records": 1000,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 5,
+          "args": [
+            "source",
+            "write",
+            "--file",
+            "data/0000.cfd",
+            "--input",
+            "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-1T2Vf0\\request.cfd",
+            "--rules"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1316.6085,
+      "p95_ms": null,
+      "min_ms": 1316.6085,
+      "max_ms": 1316.6085
+    },
+    {
+      "metric": "repair_invalid_source",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        1374.5073
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1374.5073,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2683,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": 1000,
+          "revision": "dd07051774e201c3396463bbef42efbc21e9d3a501b91c4e56c055d20abe6755",
+          "diagnostic_count": 0,
+          "args": [
+            "source",
+            "write",
+            "--file",
+            "data/0000.cfd",
+            "--input",
+            "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-7EtAxL\\request.cfd",
+            "--rules"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1374.5073,
+      "p95_ms": null,
+      "min_ms": 1374.5073,
+      "max_ms": 1374.5073
+    },
+    {
+      "metric": "revision_conflict",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        131.9139
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 131.9139,
+          "exit_code": 3,
+          "status": "conflict",
+          "stdout_bytes": 808,
+          "changed": null,
+          "written": false,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "b3919877c12714704284d1d953130daadecc5ed6d8d99a8dac97b9edf393ab1c",
+          "diagnostic_count": 1,
+          "args": [
+            "data",
+            "set",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--path",
+            "value",
+            "--value-cfd",
+            "1000000",
+            "--if-revision",
+            "stale-benchmark-revision"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 131.9139,
+      "p95_ms": null,
+      "min_ms": 131.9139,
+      "max_ms": 131.9139
+    }
+  ],
+  "completed_at_utc": "2026-10-28T23:53:04.895Z",
+  "success": true
+}

@@ -1,0 +1,37 @@
+{
+  "id": "engine-model-10000-r1-baseline",
+  "spec": {
+    "id": "engine-model-10000-r1-baseline",
+    "scenario": "engine-model-10000",
+    "round": 1,
+    "arm": "baseline",
+    "group": "model",
+    "arguments": [],
+    "timeout_seconds": 1800,
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\engine_perf.exe",
+    "environment": {
+      "ENGINE_MODE": "model",
+      "ENGINE_RECORDS": "10000",
+      "ENGINE_DIMENSION_RECORDS": "10000",
+      "ENGINE_SAMPLES": "3"
+    }
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\engine_perf.exe",
+      "sha256": "EA11F7206427F36D6EB4B3A4EE764F483B477CF7166DA13FE1893D1340C1F938"
+    }
+  ],
+  "started_at": "2026-10-29T02:37:26.7015709+08:00",
+  "process_id": 31488,
+  "wall_seconds": 10.5386739,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 408092672,
+  "process_memory_samples": 94,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

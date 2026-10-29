@@ -1,0 +1,55 @@
+{
+  "id": "csharp-ring-10k",
+  "spec": {
+    "id": "csharp-ring-10k",
+    "group": "csharp",
+    "executable": "dotnet",
+    "arguments": [
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\runtimes\\csharp\\Coflow.Loader.Benchmarks\\bin\\Release\\net8.0\\Coflow.Loader.Benchmarks.dll",
+      "--case",
+      "complex",
+      "--records",
+      "10000",
+      "--files",
+      "100",
+      "--samples",
+      "5",
+      "--query-samples",
+      "100",
+      "--query-batch",
+      "10000",
+      "--variants",
+      "1",
+      "--density",
+      "sparse",
+      "--topology",
+      "ring",
+      "--templates",
+      "true",
+      "--operations",
+      "load,queries,error"
+    ]
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Program Files\\dotnet\\dotnet.exe",
+      "sha256": "ABCE6623A6729059CF39BB0F728C4A7804F625895099C88C17E6E704661E09EB"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\runtimes\\csharp\\Coflow.Loader.Benchmarks\\bin\\Release\\net8.0\\Coflow.Loader.Benchmarks.dll",
+      "sha256": "C1073F573F5F99D7EE2D8B047B431846D0F5A1E19923FE8DD20DE4DD76AA1CCB"
+    }
+  ],
+  "started_at": "2026-10-28T22:23:56.2974316+08:00",
+  "process_id": 46844,
+  "wall_seconds": 27.2057002,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 320557056,
+  "process_memory_samples": 222,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

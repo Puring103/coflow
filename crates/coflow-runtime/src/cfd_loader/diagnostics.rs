@@ -1,4 +1,4 @@
-use crate::api::{byte_range, Diagnostic, DiagnosticSet, Label, LineIndex, SourceLocation};
+use crate::api::{Diagnostic, DiagnosticSet, Label, LineIndex, SourceLocation};
 use crate::data_model::TextSpan;
 #[cfg(test)]
 use crate::data_model::{CfdDiagnostics, RecordOrigin};
@@ -143,6 +143,7 @@ pub(super) fn text_span(line_index: &LineIndex, source: &str, span: CfdTextSpan)
 pub(super) fn cfd_error_to_diagnostics(
     file: &Path,
     source: &str,
+    line_index: &LineIndex,
     diagnostics: CfdTextDiagnostics,
 ) -> DiagnosticSet {
     DiagnosticSet {
@@ -151,7 +152,8 @@ pub(super) fn cfd_error_to_diagnostics(
             .diagnostics
             .into_iter()
             .map(|diagnostic| {
-                let range = byte_range(source, diagnostic.span.start, diagnostic.span.end);
+                // 语法与降低错误共享本来源的行索引；错误密集时也不逐条重扫源码前缀。
+                let range = line_index.range(source, diagnostic.span.start, diagnostic.span.end);
                 Diagnostic::error(diagnostic.code.as_str(), "CFD", diagnostic.message).with_primary(
                     Label {
                         location: SourceLocation::FileSpan {

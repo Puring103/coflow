@@ -1,0 +1,1707 @@
+{
+  "method": "Arithmetic median of per-process medians. Paired ratios use the same scenario and round. Missing/failed/censored operations are never imputed. These are descriptive measurements, not statistical confidence intervals.",
+  "comparisons": [
+    {
+      "scenario": "cli-common-10k",
+      "metric": "data_get",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 404.0783,
+      "optimized_ms": 394.085,
+      "improvement_percent": 2.4731097908499478,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 404.0783,
+          "optimized_ms": 394.085,
+          "ratio": 0.9752689020915005
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "check_rules",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 475.1344,
+      "optimized_ms": 476.6177,
+      "improvement_percent": -0.3121853521866669,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 475.1344,
+          "optimized_ms": 476.6177,
+          "ratio": 1.0031218535218667
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "set_field",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 42383.3188,
+      "optimized_ms": 2265.0533,
+      "improvement_percent": 94.65579061732183,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 42383.3188,
+          "optimized_ms": 2265.0533,
+          "ratio": 0.05344209382678168
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "set_field_rules",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 42419.3443,
+      "optimized_ms": 2334.4232,
+      "improvement_percent": 94.49679565178945,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 42419.3443,
+          "optimized_ms": 2334.4232,
+          "ratio": 0.055032043482105414
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "set_noop",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 43186.5772,
+      "optimized_ms": 2209.6301,
+      "improvement_percent": 94.88352575438648,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 43186.5772,
+          "optimized_ms": 2209.6301,
+          "ratio": 0.051164742456135184
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "set_preview",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 42943.5133,
+      "optimized_ms": 2230.3486,
+      "improvement_percent": 94.8063201433498,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 42943.5133,
+          "optimized_ms": 2230.3486,
+          "ratio": 0.051936798566502004
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "batch_same_file",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 86147.2847,
+      "optimized_ms": 2393.7383,
+      "improvement_percent": 97.22134213709002,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 86147.2847,
+          "optimized_ms": 2393.7383,
+          "ratio": 0.027786578629099844
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "cli-common-10k",
+      "metric": "batch_cross_file",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 86428.1264,
+      "optimized_ms": 2671.8338,
+      "improvement_percent": 96.90860613171871,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 86428.1264,
+          "optimized_ms": 2671.8338,
+          "ratio": 0.030913938682812867
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-baseline.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "cli-common-10k-r1-optimized.results.json",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "load_text",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 1256.7258,
+      "optimized_ms": 405.8109,
+      "improvement_percent": 67.70887491925446,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1256.7258,
+          "optimized_ms": 405.8109,
+          "ratio": 0.3229112508074554
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 731446600,
+          "optimized": 230291976
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 120422520,
+          "optimized": 77816360
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_first_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.1277,
+      "optimized_ms": 0.0506,
+      "improvement_percent": 60.37588097102584,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.1277,
+          "optimized_ms": 0.0506,
+          "ratio": 0.39624119028974153
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 33256,
+          "optimized": 4096
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 10104,
+          "optimized": 3392
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_first_all",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 338.8449,
+      "optimized_ms": 55.6088,
+      "improvement_percent": 83.58871566312493,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 338.8449,
+          "optimized_ms": 55.6088,
+          "ratio": 0.16411284336875073
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 171515104,
+          "optimized": 22035104
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 49964408,
+          "optimized": 15684408
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_cached_for_batch",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 4.2997,
+      "optimized_ms": 0.9774499999999999,
+      "improvement_percent": 77.26701862920669,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 4.2997,
+          "optimized_ms": 0.9774499999999999,
+          "ratio": 0.22732981370793312
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 7360000,
+          "optimized": 0
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": -5197532,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 6.1849,
+          "p99_ms": 8.9483
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 1.4325,
+          "p99_ms": 1.8389
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_combined_first_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.1725,
+      "optimized_ms": 0.0937,
+      "improvement_percent": 45.68115942028985,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.1725,
+          "optimized_ms": 0.0937,
+          "ratio": 0.5431884057971015
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 67576,
+          "optimized": 9120
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 28320,
+          "optimized": 6928
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_fallback_first_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.1024,
+      "optimized_ms": 0.0712,
+      "improvement_percent": 30.46875,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.1024,
+          "optimized_ms": 0.0712,
+          "ratio": 0.6953125
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 33080,
+          "optimized": 4816
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 10064,
+          "optimized": 11832
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_fallback_cached_batch",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 3.86605,
+      "optimized_ms": 0.9619,
+      "improvement_percent": 75.11930782064381,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 3.86605,
+          "optimized_ms": 0.9619,
+          "ratio": 0.2488069217935619
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 7440000,
+          "optimized": 0
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": -5115340,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 4.7774,
+          "p99_ms": 5.1593
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 1.3718,
+          "p99_ms": 1.816
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_variants_batch",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 0.8164,
+      "optimized_ms": 0.1896,
+      "improvement_percent": 76.77609015188634,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.8164,
+          "optimized_ms": 0.1896,
+          "ratio": 0.2322390984811367
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 2240000,
+          "optimized": 0
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 2245152,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 1.3812,
+          "p99_ms": 1.9839
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 0.2793,
+          "p99_ms": 0.3643
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "dimension_has_variant_batch",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 0.8227,
+      "optimized_ms": 0.4998,
+      "improvement_percent": 39.248814877841255,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.8227,
+          "optimized_ms": 0.4998,
+          "ratio": 0.6075118512215875
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 1200000,
+          "optimized": 0
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 1200704,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 1.6219,
+          "p99_ms": 1.9404
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 0.7339,
+          "p99_ms": 1.034
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "reject_unknown_type_at_end",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 341.2492,
+      "optimized_ms": 385.5978,
+      "improvement_percent": -12.99595720663962,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 341.2492,
+          "optimized_ms": 385.5978,
+          "ratio": 1.1299595720663962
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 242738328,
+          "optimized": 162123480
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 440,
+          "optimized": 440
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "reject_syntax_at_end",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 321.632,
+      "optimized_ms": 292.3595,
+      "improvement_percent": 9.10123992637548,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 321.632,
+          "optimized_ms": 292.3595,
+          "ratio": 0.9089876007362452
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 237358536,
+          "optimized": 156742136
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 352,
+          "optimized": -7872
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "reject_missing_reference",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 505.4629,
+      "optimized_ms": 335.2783,
+      "improvement_percent": 33.669058599553004,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 505.4629,
+          "optimized_ms": 335.2783,
+          "ratio": 0.66330941400447
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 311818440,
+          "optimized": 169832488
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 464,
+          "optimized": 8688
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "metric": "load_after_invalid_input",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 1423.27,
+      "optimized_ms": 555.7868,
+      "improvement_percent": 60.95000948519957,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1423.27,
+          "optimized_ms": 555.7868,
+          "ratio": 0.39049990514800426
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 731444208,
+          "optimized": 230266672
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 120414232,
+          "optimized": 77812232
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "load_text",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 5158.5623,
+      "optimized_ms": 2762.6396,
+      "improvement_percent": 46.44555131184516,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 5158.5623,
+          "optimized_ms": 2762.6396,
+          "ratio": 0.5355444868815484
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 3079747832,
+          "optimized": 1219183984
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 814774688,
+          "optimized": 458025944
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "read_files_and_load",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 4774.3908,
+      "optimized_ms": 2481.5383,
+      "improvement_percent": 48.023980357871,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 4774.3908,
+          "optimized_ms": 2481.5383,
+          "ratio": 0.51976019642129
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 3178991808,
+          "optimized": 1318422568
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 814774624,
+          "optimized": 458025880
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "reload_with_old_result_alive",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 5638.9725,
+      "optimized_ms": 3013.7409,
+      "improvement_percent": 46.55514102968227,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 5638.9725,
+          "optimized_ms": 3013.7409,
+          "ratio": 0.5344485897031773
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 3079747096,
+          "optimized": 1219181872
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 814774624,
+          "optimized": 458025880
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "table_lookup_batch",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 1.7785,
+      "optimized_ms": 1.7309999999999999,
+      "improvement_percent": 2.670789991565936,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1.7785,
+          "optimized_ms": 1.7309999999999999,
+          "ratio": 0.9732921000843406
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 0,
+          "optimized": 0
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 0,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 3.6867,
+          "p99_ms": 4.9816
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 2.4654,
+          "p99_ms": 2.8079
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "direct_property_batch",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 10000,
+      "baseline_ms": 0.0372,
+      "optimized_ms": 0.0368,
+      "improvement_percent": 1.0752688172043001,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0372,
+          "optimized_ms": 0.0368,
+          "ratio": 0.989247311827957
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 0,
+          "optimized": 0
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 0,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 0.0421,
+          "p99_ms": 0.2465
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 0.0446,
+          "p99_ms": 0.2868
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "table_enumerate",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 100000,
+      "baseline_ms": 1.74025,
+      "optimized_ms": 1.8083,
+      "improvement_percent": -3.9103577072259643,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1.74025,
+          "optimized_ms": 1.8083,
+          "ratio": 1.0391035770722596
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 40,
+          "optimized": 40
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 0,
+          "optimized": 0
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 3.5263,
+          "p99_ms": 4.6347
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 2.7524,
+          "p99_ms": 3.5989
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "reject_unknown_type_at_end",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 2279.6306,
+      "optimized_ms": 1851.6119,
+      "improvement_percent": 18.775792007705107,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 2279.6306,
+          "optimized_ms": 1851.6119,
+          "ratio": 0.812242079922949
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 1862039976,
+          "optimized": 1102041432
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 440,
+          "optimized": -136
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "reject_syntax_at_end",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 2267.222,
+      "optimized_ms": 1758.3748,
+      "improvement_percent": 22.443642484062,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 2267.222,
+          "optimized_ms": 1758.3748,
+          "ratio": 0.77556357515938
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 1814218472,
+          "optimized": 1054219736
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": -7872,
+          "optimized": 352
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "metric": "load_after_invalid_input",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 4802.3203,
+      "optimized_ms": 2396.2492,
+      "improvement_percent": 50.1022620252964,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 4802.3203,
+          "optimized_ms": 2396.2492,
+          "ratio": 0.49897737974703604
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": 3079746472,
+          "optimized": 1219181168
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": 814774624,
+          "optimized": 458017656
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "insert_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6004.3360999999995,
+      "optimized_ms": 673.0007,
+      "improvement_percent": 88.791421919236,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6004.3360999999995,
+          "optimized_ms": 673.0007,
+          "ratio": 0.11208578080764002
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "delete_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6037.6817,
+      "optimized_ms": 665.8884,
+      "improvement_percent": 88.97112446321906,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6037.6817,
+          "optimized_ms": 665.8884,
+          "ratio": 0.11028875536780948
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "rename_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6015.9122,
+      "optimized_ms": 723.6804,
+      "improvement_percent": 87.97056246931263,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6015.9122,
+          "optimized_ms": 723.6804,
+          "ratio": 0.12029437530687366
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "transfer_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6002.566,
+      "optimized_ms": 651.3446,
+      "improvement_percent": 89.1488973215788,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6002.566,
+          "optimized_ms": 651.3446,
+          "ratio": 0.10851102678421196
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    }
+  ],
+  "censored": [],
+  "failures": []
+}

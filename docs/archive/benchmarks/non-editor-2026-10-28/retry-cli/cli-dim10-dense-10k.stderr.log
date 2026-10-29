@@ -1,0 +1,6 @@
+RUN dimension_query records=10000 files=10
+PASS dimension_query p50=1249.394ms
+RUN dimension_set records=10000 files=10
+FAIL dimension_set: CLI timeout: apply --input - --rules
+RUN dimension_clear records=10000 files=10
+FAIL dimension_clear: CLI timeout: apply --input - --rules

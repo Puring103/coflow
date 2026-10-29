@@ -1,0 +1,66 @@
+{
+  "id": "cli-dim10-sparse-10k-r3-optimized",
+  "spec": {
+    "id": "cli-dim10-sparse-10k-r3-optimized",
+    "scenario": "cli-dim10-sparse-10k",
+    "round": 3,
+    "arm": "optimized",
+    "group": "cli",
+    "arguments": [
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\cli-matrix.mjs",
+      "--cli",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+      "--output",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r4\\cli-dim10-sparse-10k-r3-optimized.results.json",
+      "--records",
+      "10000",
+      "--files",
+      "10",
+      "--fields",
+      "20",
+      "--samples",
+      "1",
+      "--warmups",
+      "0",
+      "--batch",
+      "1000",
+      "--variants",
+      "10",
+      "--coverage",
+      "sparse",
+      "--topology",
+      "sparse",
+      "--timeout-ms",
+      "120000",
+      "--continue-on-error",
+      "true",
+      "--case",
+      "dimension_query,dimension_set,dimension_clear"
+    ],
+    "timeout_seconds": 1800,
+    "executable": "C:\\Program Files\\nodejs\\node.exe",
+    "memory_scope": "Node driver only; excluded from CLI peak comparison. Direct CLI memory uses measure-cli-memory.mjs."
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Program Files\\nodejs\\node.exe",
+      "sha256": "DCCC52DE28D8DF2EE22D2062424F8C563070D95D8AD70C54C4BF01D590DEC14F"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\cli-matrix.mjs",
+      "sha256": "1897C9D6E2D01306CF0280F20820FBFE3A153922F8100CE808C31630BEF54DFE"
+    }
+  ],
+  "started_at": "2026-10-29T06:37:15.6334588+08:00",
+  "process_id": 21032,
+  "wall_seconds": 16.5299137,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 84635648,
+  "process_memory_samples": 148,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Node driver only; excluded from CLI peak comparison. Direct CLI memory uses measure-cli-memory.mjs.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

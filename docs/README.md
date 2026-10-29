@@ -47,4 +47,8 @@
 - [增量代次与复用边界](runtime-design/incremental-generations.md)：输入批次、维度、检查、来源和发布契约。
 - [表格投影、尺寸测量与共享传输](editor-design/table-projection.md)：摘要、缓存、窗口、共享注解与失效规则。
 - [性能验证与优化候选](development/performance-validation.md)：测量协议、性能目标、待评估方向和基准工具。
+- [非编辑器基准协议](development/non-editor-benchmarks.md)：Rust、独立 CLI、C# 与 Unity 的计时、正确性和内存口径。
+- [非编辑器性能优化方案](development/non-editor-performance-plan.md)：错误拒绝、增量修改、CLI 事务和 C# 加载/维度的分阶段目标与验收。
+- [0.14.0 非编辑器基线报告](archive/benchmarks/non-editor-2026-10-28/README.md)：数据容量、常见操作、两个 C# 宿主及原始测量证据。
+- [非编辑器优化验证](archive/benchmarks/non-editor-optimization-2026-10-29/README.md)：优化实现、能力保持、成对测量、目标达成度和剩余工作。
 - [性能测量索引](archive/README.md)：带版本、环境与夹具的测量报告和原始样本。

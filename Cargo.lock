@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "cfd-editor-core",
  "coflow-observability",
@@ -446,7 +446,7 @@ dependencies = [
 
 [[package]]
 name = "cfd-editor-core"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "atomicwrites",
  "coflow-language",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "coflow"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "atomicwrites",
  "clap",
@@ -569,7 +569,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-checker"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-language",
  "coflow-model",
@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-codegen-csharp"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-codegen",
  "coflow-language",
@@ -600,18 +600,18 @@ dependencies = [
 
 [[package]]
 name = "coflow-diagnostics"
-version = "0.14.0"
+version = "0.15.0"
 
 [[package]]
 name = "coflow-format"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-language",
 ]
 
 [[package]]
 name = "coflow-language"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "regex",
  "serde",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-lsp"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-format",
  "coflow-language",
@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-model"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-diagnostics",
  "coflow-language",
@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-observability"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "dirs",
  "fs2",
@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-runtime"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "coflow-checker",
  "coflow-codegen",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-staging"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "tempfile",
  "tracing",
@@ -692,7 +692,7 @@ dependencies = [
 
 [[package]]
 name = "coflow-storage"
-version = "0.14.0"
+version = "0.15.0"
 
 [[package]]
 name = "colorchoice"

@@ -1,0 +1,1393 @@
+   Compiling coflow-runtime v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-runtime)
+   Compiling coflow-lsp v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-lsp)
+   Compiling cfd-editor-core v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\editors\cfd-editor\core)
+   Compiling cfd-editor v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\editors\cfd-editor\src-tauri)
+   Compiling coflow v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.88s
+     Running unittests src\lib.rs (target\debug\deps\cfd_editor_lib-6860070fb371d771.exe)
+
+running 8 tests
+test plugins::store::frontend_plugin_tests::project_plugin_config_rejects_absolute_manifest_paths ... ok
+test plugins::store::frontend_plugin_tests::rejects_invalid_plugin_ids_when_loading_manifests ... ok
+test plugins::store::frontend_plugin_tests::project_plugin_config_reads_default_contributions ... ok
+test plugins::store::frontend_plugin_tests::rejects_plugin_entry_outside_the_manifest_directory ... ok
+test plugins::store::frontend_plugin_tests::loads_a_local_frontend_plugin_bundle ... ok
+test plugins::store::frontend_plugin_tests::project_plugin_config_converts_old_absolute_paths_on_read ... ok
+test plugins::store::frontend_plugin_tests::project_plugins_store_external_manifests_as_relative_paths ... ok
+test plugins::store::frontend_plugin_tests::project_plugin_loading_isolates_invalid_entries ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\main.rs (target\debug\deps\cfd_editor-bbe40a32e43955b4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\export_bindings.rs (target\debug\deps\export_bindings-8b45f8021ac89871.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\cfd_editor_core-467151b1d3b4638a.exe)
+
+running 36 tests
+test editor::convert::tests::string_summary_preserves_ascii_truncation_behavior ... ok
+test editor::convert::tests::string_summary_truncates_at_utf8_boundary ... ok
+test editor::session::row_build::width_tests::width_preserves_unicode_and_caps_long_text ... ok
+test editor::session::mutation_apply::collection_edit_tests::dict_insert_preserves_nested_option_layers ... ok
+test editor::session::diagnostics::tests::record_index_preserves_order_and_matches_exact_coordinates ... ok
+test editor::session::mutation_apply::collection_edit_tests::array_append_materializes_an_optional_collection ... ok
+test editor::settings::tests::column_widths_preserve_finite_values_above_the_minimum ... ok
+test editor::settings::tests::default_table_view_settings_are_preserved ... ok
+test editor::session::revision::tests::reload_ticket_only_advances_the_revision_that_created_it ... ok
+test editor::settings::tests::record_groups_remove_duplicate_members_and_invalid_groups ... ok
+test editor::settings::model::path_tests::sibling_data_paths_remain_project_relative_on_disk ... ok
+test editor::settings::model::path_tests::stored_settings_convert_absolute_paths_before_resolving ... ok
+test editor::session::revision::tests::internally_deleted_file_is_ignored_but_recreation_is_external ... ok
+test editor::settings::tests::views_drop_reserved_prefix_and_duplicate_ids ... ok
+test editor::types::records::tests::enum_variant_option_serializes_missing_metadata_as_null ... ok
+test editor::settings::tests::views_clear_dangling_group_filter_and_graph_fields ... ok
+test editor::session::revision::tests::reload_preserves_internal_write_fingerprints_for_the_watcher ... ok
+test editor::types::transfer::tests::descriptors_share_subtrees_and_keep_enum_instance_values ... ok
+test watcher::path_tests::configured_inputs_under_build_named_ancestors_are_relevant ... ok
+test watcher::tests::atomic_write_staging_paths_do_not_trigger_reload ... ok
+test watcher::tests::project_state_directory_does_not_trigger_reload ... ok
+test editor::settings::tests::settings_reject_unknown_file_version ... ok
+test editor::session::revision::publication_tests::external_write_between_publish_and_registration_is_detected ... ok
+test editor::session::revision::tests::exact_internal_content_is_not_external_but_later_content_is ... ok
+test editor::session::language_concurrency_tests::source_reads_do_not_wait_for_language_analysis ... ok
+test watcher::tests::configured_external_source_is_watched ... ok
+test editor::settings::tests::dimension_workspace_round_trip_and_path_migration ... ok
+test host::tests::watched_session_rolls_back_when_watcher_start_fails ... ok
+test editor::settings::tests::settings_round_trip_under_editor_setting_directory ... ok
+test editor::session::reload::tests::schema_changes_build_a_new_schema_and_language_session ... ok
+test editor::settings::tests::settings_store_project_and_external_files_as_relative_paths ... ok
+test editor::session::reload::tests::source_save_reuses_data_session_and_keeps_invalid_source_editable ... ok
+test editor::session::reload::tests::data_refresh_preserves_schema_shapes_and_open_language_drafts ... ok
+test editor::session::reload::tests::stale_data_candidate_cannot_replace_a_newer_internal_write ... ok
+test watcher::tests::reload_event_contains_committed_generation_and_structured_schema_errors ... ok
+test editor::session::reload::tests::data_file_creation_and_deletion_refresh_navigation ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\dimension_files.rs (target\debug\deps\dimension_files-06fb69f267283c0c.exe)
+
+running 1 test
+test editor_groups_new_overrides_by_owner_and_dimension_and_keeps_scattered_sources ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\editor_workflows.rs (target\debug\deps\editor_workflows-8cbd5c7dde6fb13a.exe)
+
+running 25 tests
+test compound_editor_mutation_does_not_publish_its_first_step_when_second_step_fails ... ok
+test configured_external_sources_can_be_opened ... ok
+test cft_string_defaults_are_supported_through_the_editor_backend ... ok
+test settings_process_worker ... ok
+
+running 1 test
+
+running 1 test
+
+running 1 test
+test diff_snapshot_highlighting_supports_deleted_files_without_changing_live_sources ... ok
+test nested_scalar_edit_materializes_a_missing_top_level_default ... ok
+test nested_collection_edit_materializes_a_missing_top_level_default ... ok
+
+running 1 test
+test new_record_can_be_created_with_a_missing_required_reference ... ok
+test batch_nested_edits_materialize_missing_top_level_defaults ... ok
+test editor_field_write_preserves_a_self_referencing_record ... ok
+test editor_language_features_are_served_by_embedded_lsp ... ok
+test editor_check_command_runs_rules_while_build_only_generates_data_types ... ok
+test linked_record_creation_and_inverse_batch_publish_one_generation_each ... ok
+test deep_default_parents_materialize_for_collection_and_batch_edits ... ok
+test cft_source_is_visible_editable_and_validated ... ok
+test graph_positions_persist_per_view_without_changing_data_revision ... ok
+test missing_optional_default_ref_and_enum_states_are_structurally_repairable ... ok
+test settings_process_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.06s
+
+test array_editor_mutations_round_trip_through_reload ... ok
+test cell_templates_and_explicit_reference_constraints_survive_reload ... ok
+test source_text_edit_saves_invalid_data_with_complete_diagnostics ... ok
+test settings_process_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.08s
+
+test inherited_and_optional_polymorphic_values_edit_end_to_end ... ok
+test settings_process_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.07s
+
+test settings_process_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.09s
+
+test short_names_are_type_scoped_persisted_and_refreshed ... ok
+test separate_processes_preserve_settings_updates ... ok
+test independent_sessions_preserve_concurrent_settings_updates ... ok
+test repository_projects_open_in_editor ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests\export_bindings.rs (target\debug\deps\export_bindings-338a05271b73c0bf.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (target\debug\deps\coflow-570cde6309c7963d.exe)
+
+running 5 tests
+test skill_commands::tests::embedded_bundle_contains_expected_skills ... ok
+test command_logging::tests::publication_counts_include_nested_codegen_artifacts ... ok
+test skill_commands::tests::reinstall_replaces_managed_skill_contents ... ok
+test skill_commands::tests::global_install_targets_universal_and_detected_agents ... ok
+test cli::tests::every_described_leaf_has_documented_parameters_and_an_accepted_example ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\cli_protocol.rs (target\debug\deps\cli_protocol-e4e0d8ea0a24b5a0.exe)
+
+running 23 tests
+test describe_reference_query_exposes_edges_paths_locations_and_truncation ... ok
+test default_terminal_output_is_text ... ok
+test stdin_format_check_reports_changes_without_returning_source ... ok
+test opt_in_cli_logs_correlate_parameter_errors_without_logging_arguments ... ok
+test evaluation_error_aborts_only_its_rule_without_claiming_budget_exhaustion ... ok
+test describe_reports_canonical_names_and_required_value_groups ... ok
+test terminal_diagnostics_include_source_target_and_repair_guidance ... ok
+test missing_targets_and_unreadable_request_files_return_complete_results ... ok
+test project_files_contract_describes_roles_and_reports_unavailable_metadata ... ok
+test source_read_contract_exposes_metadata_without_internal_snapshot_fields ... ok
+test argument_errors_preserve_cause_and_offer_targeted_help_without_usage_dump ... ok
+test successful_rule_runs_default_to_counts_and_details_are_explicit ... ok
+test json_is_one_line_and_pretty_is_an_explicit_json_mode ... ok
+test validation_and_request_errors_have_different_exit_codes ... ok
+test codegen_check_and_preview_agree_for_equivalent_line_endings ... ok
+test project_inspection_contract_preserves_configuration_shape_and_generator_options ... ok
+test named_rules_are_listed_once_and_inline_diagnostics_keep_record_and_path ... ok
+test describe_distinguishes_record_fields_change_sets_and_source_carriers ... ok
+test describe_defaults_to_a_small_catalog_and_schemas_are_explicit_and_unique ... ok
+test failed_transactions_and_schema_previews_return_compact_source_patches ... ok
+test data_set_exposes_revision_and_typed_value_preconditions ... ok
+test invalid_arguments_return_json_before_project_loading ... ok
+test explain_uses_real_diagnostic_codes_and_describes_its_typed_result ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s
+
+     Running tests\skills_examples.rs (target\debug\deps\skills_examples-29192d8f3b6ced9f.exe)
+
+running 6 tests
+test installed_file_candidate_repairs_broken_source ... ok
+test installed_minimal_project_validates_and_generates_with_documented_values ... ok
+test installed_batch_example_checks_total_and_updates_all_matches ... ok
+test installed_schema_example_requires_joint_data_update ... ok
+test installed_record_example_previews_then_writes_and_rejects_stale_revision ... ok
+test installed_dimension_example_preserves_base_and_template_fallback ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_checker-deb29282a28abf6c.exe)
+
+running 4 tests
+test limits::tests::work_and_iterations_have_independent_boundaries ... ok
+test limits::tests::internal_depth_and_node_guards_keep_stable_boundaries ... ok
+test diagnostics::trace::tests::deferred_evidence_preserves_scalar_and_collection_rendering ... ok
+test operations::builtins::regex_cache_tests::repeated_matches_reuse_one_compiled_regex ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\checker_budgets.rs (target\debug\deps\checker_budgets-7d6712a3f8fa914d.exe)
+
+running 4 tests
+test aggregate_builtins_charge_work_before_scanning ... ok
+test quantifier_iterations_have_an_independent_limit_and_location ... ok
+test raising_iterations_does_not_raise_the_work_limit ... ok
+test raising_work_does_not_raise_the_iteration_limit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\checker_check.rs (target\debug\deps\checker_check-c9df9bc5aae6558f.exe)
+
+running 9 tests
+test mismatched_statement_target_returns_an_internal_diagnostic ... ok
+test duplicate_tasks_are_stably_deduplicated ... ok
+test task_limit_rejects_the_request_and_work_limit_reports_unexecuted_tasks ... ok
+test project_statement_runs_for_an_empty_model ... ok
+test explicit_task_executes_only_the_selected_root_statement ... ok
+test table_check_reads_optional_inline_values ... ok
+test when_quantifier_and_formatted_message_stay_inside_one_task ... ok
+test table_check_walks_inline_collection_elements ... ok
+test project_checks_query_singleton_fields_and_table_records_together ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\checker_error_coverage.rs (target\debug\deps\checker_error_coverage-77f7705bb6edcdeb.exe)
+
+running 1 test
+test every_cfd_error_code_has_negative_and_adjacent_valid_coverage ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\checker_multi_language.rs (target\debug\deps\checker_multi_language-ae4b97e7f70056ea.exe)
+
+running 7 tests
+test for_requires_a_dimension_field_and_a_string_variant ... ok
+test missing_or_unknown_variant_uses_base_value ... ok
+test explicit_variant_selection_reads_overlay_and_locates_its_source ... ok
+test dimension_reference_fallback_uses_the_base_reference_edge ... ok
+test explicit_none_does_not_fall_back_to_optional_base ... ok
+test variants_include_empty_headers_and_effective_fallback_values ... ok
+test explicit_presence_and_variant_template_context_are_independent ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\checker_patterns.rs (target\debug\deps\checker_patterns-1294a36fa22bc847.exe)
+
+running 6 tests
+test polymorphic_fields_narrow_in_when_and_short_circuit_conjunctions ... ok
+test missing_option_reports_pattern_failure_without_evaluating_the_bound_operand ... ok
+test option_comparison_and_pattern_scopes_reject_invalid_access ... ok
+test narrowing_respects_aliases_ancestor_predicates_and_shadowing ... ok
+test pattern_binding_preserves_reference_dependencies_and_diagnostic_paths ... ok
+test option_patterns_bind_scalars_objects_collections_and_nested_options ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\named_rules.rs (target\debug\deps\named_rules-33726d2de06ade3a.exe)
+
+running 7 tests
+test named_rules_are_unique_through_inheritance_and_blocks_are_nonempty ... ok
+test rule_order_is_parent_first_and_failures_do_not_stop_later_rules ... ok
+test anonymous_rules_execute_in_inheritance_order_and_keep_distinct_identities ... ok
+test empty_quantifiers_keep_boolean_meanings_and_quantifier_message_locations ... ok
+test data_rules_read_their_own_id_field_and_validate_inline_option_objects ... ok
+test evaluation_error_stops_only_its_rule_and_when_reports_not_triggered ... ok
+test block_messages_preserve_rule_identity_and_failing_element_location ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numeric_widths.rs (target\debug\deps\numeric_widths-22b7222406f21628.exe)
+
+running 2 tests
+test numeric_promotion_and_precision_survive_options_collections_and_constants ... ok
+test int_operations_report_overflow_instead_of_implicitly_widening ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\prepared_plan.rs (target\debug\deps\prepared_plan-1dfb11219c0d11f9.exe)
+
+running 2 tests
+test prepared_plan_preserves_order_errors_and_both_budget_boundaries ... ok
+test cached_record_sets_preserve_cold_and_warm_budget_results ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_codegen-9f86f5df10221249.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\contracts.rs (target\debug\deps\contracts-1f4c5cf8ae9ad892.exe)
+
+running 2 tests
+test artifacts_reject_duplicate_or_non_portable_paths ... ok
+test registry_rejects_duplicate_generator_ids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_codegen_csharp-572d4a669c744012.exe)
+
+running 13 tests
+test tests::generator_advertises_loader_package ... ok
+test tests::descriptor_defaults_preserve_literal_strings_and_explicit_templates ... ok
+test tests::dimension_fields_load_all_variants ... ok
+test tests::emitted_metadata_is_data_only_even_when_schema_has_checks ... ok
+test tests::inheritance_preserves_shared_record_identity ... ok
+test tests::escapes_unicode_line_separators_in_generated_literals ... ok
+test tests::numeric_widths_and_builtin_flags_are_generated_consistently ... ok
+test tests::emits_typed_business_objects_and_shared_loader_descriptors ... ok
+test tests::enums_flags_constants_and_namespaces_use_loader_contracts ... ok
+test tests::id_enum_keeps_active_keys_and_stable_numbers ... ok
+test tests::rejects_xid_names_that_csharp_cannot_represent ... ok
+test tests::language_names_are_escaped_only_in_generated_csharp_identifiers ... ok
+test tests::invalid_identifiers_and_generated_name_collisions_are_reported ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_diagnostics-f1b48f78572eede4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_format-9266bf539ce49dd5.exe)
+
+running 1 test
+test formatting::tests::cfd_formatter_expands_typed_blocks_without_input_spacing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cfd.rs (target\debug\deps\cfd-be660c7be4443b68.exe)
+
+running 3 tests
+test cfd_formatter_separates_array_close_after_structural_object ... ok
+test cfd_formatter_expands_dimension_blocks_and_keeps_templates_intact ... ok
+test cfd_formatter_expands_records_and_separates_top_level_entries ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cft.rs (target\debug\deps\cft-458f1ce624a35782.exe)
+
+running 9 tests
+test formatter_attaches_standalone_opening_braces ... ok
+test formatter_ignores_delimiters_inside_strings_and_comments ... ok
+test formatter_preserves_depth_in_nested_objects ... ok
+test formatter_covers_data_defaults_and_is_idempotent ... ok
+test formatter_separates_top_level_definitions_but_keeps_their_annotations_attached ... ok
+test formatter_normalizes_blank_lines_and_safe_inline_spacing ... ok
+test formatter_recovers_fields_and_indents_expression_continuations ... ok
+test formatter_isolates_annotated_fields_as_one_definition ... ok
+test formatter_matches_the_canonical_whitespace_example ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\properties.rs (target\debug\deps\properties-35938da2408c341c.exe)
+
+running 3 tests
+test formatting_preserves_non_trivia_tokens_and_comments ... ok
+test malformed_sources_format_stably ... ok
+test valid_sources_parse_before_and_after_formatting ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_language-fa26c65d46ecb7e3.exe)
+
+running 26 tests
+test lexical::tests::uses_unicode_xid_for_all_identifier_positions ... ok
+test limits::tests::depth_limit_accepts_boundary_and_rejects_first_child_beyond_it ... ok
+test lexical::trivia::tests::trivia_and_nesting_share_comment_and_string_boundaries ... ok
+test lexical::trivia::tests::numeric_boundaries_cover_valid_and_schema_free_neighbors ... ok
+test lexical::trivia::tests::shared_scanners_keep_language_boundaries ... ok
+test limits::tests::cached_subtree_depth_can_be_checked_without_charging_nodes ... ok
+test limits::tests::node_and_analysis_limits_have_stable_boundary_results ... ok
+test lexical::tests::reserves_only_current_syntax_and_literals ... ok
+test lexical::trivia::tests::lossless_tokens_reconstruct_unicode_and_trivia ... ok
+test cfd::structure::tests::ast_node_counts_match_the_parser_at_the_exact_budget_boundary ... ok
+test schema::compiler::entry::tests::analysis_budget_is_passed_to_the_graph_phase ... ok
+test schema::compiler::entry::tests::failed_inheritance_does_not_enter_value_resolution ... ok
+test schema::compiler::entry::tests::phase_diagnostics_keep_source_independent_pass_order ... ok
+test schema::compiler::entry::tests::check_stage_rejects_diagnostics_before_lowering ... ok
+test schema::check_builtins::tests::builtin_registry_keeps_names_and_arities_together ... ok
+test schema::compiler::entry::tests::stage_outputs_accumulate_diagnostics_without_back_writing ... ok
+test limits::tests::overflow_reports_saturated_observation_without_mutating_usage ... ok
+test schema::compiler::entry::tests::symbol_stage_enforces_its_own_structural_budget ... ok
+test schema::compiler::entry::tests::check_stage_publishes_analysis_for_every_check_block ... ok
+test schema::compiler::entry::tests::lower_stage_publishes_only_a_fully_validated_schema ... ok
+test schema::compiler::entry::tests::symbol_stage_returns_complete_declarations ... ok
+test schema::compiler::entry::tests::value_stage_reports_its_errors_through_the_stage_output ... ok
+test schema::compiler::entry::tests::type_and_value_stages_publish_resolved_products ... ok
+test schema::plans::check_index::tests::dependency_index_compilation_obeys_the_schema_budget ... ok
+test schema::traversal::tests::traversal_plan_covers_recursive_and_polymorphic_children ... ok
+test schema::plans::value_dependencies::tests::iterative_root_compilation_handles_a_ten_thousand_node_chain ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\anonymous_checks.rs (target\debug\deps\anonymous_checks-d835ff2e52d7f708.exe)
+
+running 3 tests
+test anonymous_checks_in_different_modules_have_distinct_valid_identities ... ok
+test optional_names_preserve_duplicate_name_and_empty_block_validation ... ok
+test anonymous_blocks_accept_formatted_messages ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cfd_namespace_use.rs (target\debug\deps\cfd_namespace_use-e52b659fe555cf9d.exe)
+
+running 3 tests
+test cfd_names_and_record_ids_use_unicode_xid_rules ... ok
+test namespace_and_use_are_not_cfd_syntax ... ok
+test cfd_type_names_are_short_and_static_paths_remain_valid ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cfd_parser_parity.rs (target\debug\deps\cfd_parser_parity-f9f21da39af708de.exe)
+
+running 6 tests
+test numeric_scalars_keep_their_schema_free_source_text ... ok
+test option_constructors_share_the_structural_depth_budget ... ok
+test recovery_ignores_delimiters_inside_strings_and_comments ... ok
+test unparenthesized_flag_expression_chains_use_the_ast_depth_limit ... ok
+test shared_cfd_parser_corpus_has_the_expected_outcomes ... ok
+test repeated_recovery_preserves_diagnostics_and_following_unicode_source_spans ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\compound_constants.rs (target\debug\deps\compound_constants-6e788b1ce4e03367.exe)
+
+running 3 tests
+test infers_unambiguous_constant_types_and_rejects_dependency_cycles ... ok
+test object_constants_apply_field_defaults_and_reject_missing_required_fields ... ok
+test resolves_schema_guided_compound_constants_and_references ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\csharp_xid.rs (target\debug\deps\csharp_xid-ab2ef063d6d345a5.exe)
+
+running 1 test
+test csharp_xid_table_matches_every_unicode_scalar ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\data_strings.rs (target\debug\deps\data_strings-f3fb1f980d1efe4f.exe)
+
+running 3 tests
+test function_values_are_not_data_syntax ... ok
+test template_reference_spans_use_source_bytes_after_escapes_and_unicode ... ok
+test interpolation_is_explicit_and_only_accepts_paths ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\declaration_kinds.rs (target\debug\deps\declaration_kinds-cb5cfcd31e8f9cc2.exe)
+
+running 2 tests
+test declaration_kinds_resolve_named_values_and_preserve_identity_boundaries ... ok
+test declaration_categories_reject_cross_category_inheritance_and_old_protocols ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\default_values.rs (target\debug\deps\default_values-d4d0c4e5136359d7.exe)
+
+running 6 tests
+test function_types_and_defaults_are_rejected ... ok
+test formatted_defaults_only_accept_field_paths ... ok
+test rejects_invalid_flag_default_expressions ... ok
+test ordinary_string_braces_are_literal ... ok
+test supports_data_field_defaults ... ok
+test check_messages_only_interpolate_paths ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dimension_blocks.rs (target\debug\deps\dimension_blocks-8df2da9d932a0da7.exe)
+
+running 2 tests
+test overlay_targets_require_explicit_record_types ... ok
+test overlays_are_syntactically_distinct_from_base_records ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dimension_record_names.rs (target\debug\deps\dimension_record_names-086124dbdb79b654.exe)
+
+running 2 tests
+test dimension_fields_use_independent_coordinates_without_auxiliary_type_names ... ok
+test declarations_can_use_names_previously_reserved_for_auxiliary_records ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\namespace_use_syntax.rs (target\debug\deps\namespace_use_syntax-262764c03bb07a60.exe)
+
+running 5 tests
+test semantic_declaration_names_are_always_short ... ok
+test namespace_and_use_are_not_language_syntax ... ok
+test qualified_type_names_are_rejected_but_static_paths_remain_valid ... ok
+test project_global_declarations_must_be_unique ... ok
+test declarations_are_project_global_across_files ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\numeric_widths.rs (target\debug\deps\numeric_widths-c265e11fd0d43d80.exe)
+
+running 5 tests
+test untyped_floating_literals_preserve_double_precision_and_range ... ok
+test numeric_constants_use_declared_width_and_widen_without_narrowing ... ok
+test enums_default_to_int_and_int64_is_explicit ... ok
+test numeric_types_work_in_collections_options_aliases_and_checks ... ok
+test flags_synthesize_members_from_actual_bits_including_empty_and_single_bit ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\option_schema.rs (target\debug\deps\option_schema-28b71883589bb59b.exe)
+
+running 3 tests
+test deeply_nested_option_types_are_rejected_before_recursing ... ok
+test legacy_nullable_type_and_null_default_are_rejected ... ok
+test option_types_preserve_nested_defaults ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\type_aliases.rs (target\debug\deps\type_aliases-b1d4f3c8b52b4bd3.exe)
+
+running 6 tests
+test type_aliases_do_not_accept_annotations_or_object_modifiers ... ok
+test alias_cycles_are_rejected_with_a_dedicated_diagnostic ... ok
+test aliases_reject_unknown_targets_invalid_dict_keys_and_inheritance ... ok
+test aliases_resolve_by_project_global_short_name_across_files ... ok
+test aliases_expand_in_fields_constants_and_nested_collections ... ok
+test object_aliases_are_transparent_in_check_type_positions ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\value_creation_schema.rs (target\debug\deps\value_creation_schema-471d5faf4d300200.exe)
+
+running 7 tests
+test removed_result_constructors_are_rejected_in_defaults_and_constants ... ok
+test removed_result_and_unit_types_are_rejected_in_all_declaration_positions ... ok
+test required_object_cycles_are_rejected ... ok
+test optional_collection_and_reference_recursion_are_finite ... ok
+test former_result_names_are_ordinary_user_type_names ... ok
+test terminating_recursive_defaults_are_allowed ... ok
+test recursive_default_materialization_is_rejected ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_lsp-fd837ea727ade1d2.exe)
+
+running 72 tests
+test tests::cfd_tests::cfd_definition_type_name_returns_none_outside_type_span ... ok
+test tests::cfd_tests::cfd_definition_type_name_extracts_type_at_offset ... ok
+test tests::cfd_tests::cfd_definition_field_name_extracts_record_field_at_offset ... ok
+test tests::cfd_tests::cfd_hover_returns_null_for_non_type_position ... ok
+test tests::cfd_tests::cfd_semantic_tokens_no_comment_token_inside_string ... ok
+test tests::cfd_tests::cfd_hover_on_type_name_returns_type_info ... ok
+test tests::cfd_tests::cfd_document_symbols_returns_record_entries ... ok
+test tests::cfd_tests::cfd_semantic_tokens_no_overlap_from_comment_and_ast ... ok
+test tests::cfd_tests::cfd_goto_def_continues_past_unparseable_document ... ok
+test tests::cfd_tests::line_indexed_cfd_range_matches_linear_scan ... ok
+test tests::cfd_tests::cfd_schema_field_definition_location_finds_field_name_span ... ok
+test tests::cfd_tests::cfd_completion_recurses_through_arrays_and_inline_objects ... ok
+test tests::cfd_tests::dirty_group_record_id_keeps_semantic_color_and_offers_completion ... ok
+test tests::cfd_tests::cfd_top_level_completion_inserts_a_required_field_record_snippet ... ok
+test tests::cfd_tests::cfd_formatted_strings_highlight_and_complete_record_fields ... ok
+test tests::cfd_tests::literal_and_escaped_braces_do_not_offer_interpolation_paths ... ok
+test tests::cft::dotted_word_parsing_rejects_partial_empty_or_punctuated_chains ... ok
+test tests::cfd_tests::cfd_requests_ignore_uppercase_cfd_extension ... ok
+test tests::cft::formatter_returns_independent_local_text_edits ... ok
+test tests::cfd_tests::incomplete_group_record_field_completion_uses_record_schema_context ... ok
+test tests::cfd_tests::cfd_value_completion_uses_schema_types ... ok
+test tests::cfd_tests::cfd_formatted_string_completion_supports_record_reference_syntax ... ok
+test tests::cfd_tests::cfd_flag_completion_excludes_variants_already_in_an_incomplete_expression ... ok
+test tests::cfd_tests::cfd_formatted_string_completion_includes_nested_paths ... ok
+test tests::cfd_tests::cfd_definition_request_returns_schema_field_location ... ok
+test tests::cfd_tests::cfd_definition_request_resolves_each_nested_object_field ... ok
+test tests::protocol::file_uri_parser_handles_windows_localhost_and_unc_forms ... ok
+test tests::protocol::file_uri_parser_rejects_file_uris_without_paths ... ok
+test tests::cft::declaration_category_filters_body_annotations_and_reference_targets ... ok
+test tests::cft::completion_items_suppress_trivia_and_restrict_predicate_context ... ok
+test tests::cft::dimension_completion_offers_variants_and_base_value_operations ... ok
+test tests::cfd_tests::cfd_definition_request_returns_null_for_invalid_record_references ... ok
+test tests::protocol::lsp_diagnostic_renders_structured_context_without_mutating_message ... ok
+test tests::cfd_tests::cfd_definition_request_resolves_record_ids_across_project_sources ... ok
+test tests::protocol::oversized_content_length_is_rejected_before_body_allocation ... ok
+test tests::cft::hover_and_definition_ignore_comment_and_string_words ... ok
+test tests::protocol::initialize_advertises_semantic_token_modifiers ... ok
+test tests::cft::records_query_completes_types_and_resolves_hover_and_definition ... ok
+test tests::protocol::unified_diagnostic_severity_is_preserved_in_lsp_rendering ... ok
+test tests::cft::named_top_level_check_uses_check_completion_scope ... ok
+test tests::protocol::handler_ignores_malformed_notifications_and_reports_unknown_requests ... ok
+test tests::protocol::notification_errors_are_logged_without_returning_from_handler ... ok
+test tests::cft::completion_covers_const_alias_inheritance_and_annotation_arguments ... ok
+test tests::semantic::cfd_semantic_tokens_distinguish_record_refs_and_schema_fields ... ok
+test tests::protocol::request_errors_are_reported_without_returning_from_handler ... ok
+test tests::semantic::encoded_semantic_tokens_preserve_modifiers ... ok
+test tests::cft::hover_and_definition_cover_symbol_resolution_boundaries ... ok
+test tests::protocol::requests_after_shutdown_return_invalid_request ... ok
+test tests::semantic::semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens ... ok
+test tests::cft::scope_type_helpers_return_none_for_invalid_or_non_object_chains ... ok
+test tests::cfd_tests::cfd_definition_index_uses_actual_type_and_dirty_overlay ... ok
+test tests::protocol::stale_document_version_does_not_replace_newer_text ... ok
+test uri::tests::unc_uri_preserves_share_and_escaped_characters ... ok
+test tests::protocol::failed_snapshot_invalidates_build_and_clears_old_uri ... ok
+test tests::cft::completion_scope_uses_boundary_offsets_and_missing_ast_as_top_level ... ok
+test tests::protocol::feature_requests_return_empty_results_for_missing_params_and_unknown_documents ... ok
+test tests::protocol::validation_worker_coalesces_pending_revisions_and_commits_only_latest ... ok
+test tests::protocol::queued_feature_request_is_cancelled_when_its_validation_revision_expires ... ok
+test tests::semantic::named_data_checks_appear_in_outline_and_semantic_tokens ... ok
+test tests::semantic::type_aliases_are_symbols_semantic_declarations_and_definition_targets ... ok
+test tests::protocol::formatting_requests_handle_idempotent_unknown_and_dirty_documents ... ok
+test tests::semantic::named_top_level_checks_are_symbols_and_semantic_declarations ... ok
+test tests::protocol::validation_snapshot_rejects_stale_revision_commit ... ok
+test tests::semantic::semantic_tokens_do_not_treat_unknown_ref_annotation_arg_as_type ... ok
+test tests::semantic::cft_semantic_tokens_distinguish_schema_declarations_references_and_paths ... ok
+test tests::semantic::semantic_tokens_and_protocol_helpers_cover_malformed_boundaries ... ok
+test tests::protocol::did_save_with_text_updates_document_and_without_text_revalidates_project ... ok
+test tests::protocol::unreadable_cfd_source_invalidates_current_snapshot ... ok
+test tests::cft::incomplete_definitions_keep_contextual_completion_scopes ... ok
+test tests::cfd_tests::cfd_validation_reuses_unchanged_trees_and_updates_file_definitions ... ok
+test tests::cft::completion_items_cover_context_filters_and_default_boundaries ... ok
+test tests::protocol::watched_closed_schema_cfd_and_config_files_refresh_the_snapshot ... ok
+
+test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_model-bd22cc04d0464762.exe)
+
+running 7 tests
+test model::projection::tests::custom_source_limits_preserve_projection_default_budget_and_full_validation ... ok
+test build::projection::tests::combined_projection_enforces_the_whole_record_budget_at_exact_boundary ... ok
+test model::projection::tests::different_schema_and_editable_errors_require_full_projection_validation ... ok
+test model::projection::tests::individually_valid_overrides_report_combined_template_cycles_like_full_build ... ok
+test model::projection::tests::chained_selection_replaces_only_its_dimension_and_preserves_old_views_and_refs ... ok
+test model::projection::tests::complete_projection_matches_full_build_for_combinations_and_nested_templates ... ok
+test model::projection::tests::source_above_default_depth_is_rejected_by_projection_with_identical_diagnostics ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\data_model_budgets.rs (target\debug\deps\data_model_budgets-30c2aa6ebfd63c6b.exe)
+
+running 4 tests
+test cached_default_subtree_is_charged_before_it_is_cloned ... ok
+test nested_value_depth_accepts_boundary_and_rejects_first_deeper_value ... ok
+test structural_budget_is_independent_for_each_top_level_record ... ok
+test materialized_node_limit_reports_the_first_rejected_array_item ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_cell_value.rs (target\debug\deps\data_model_cell_value-2cb80c076d6704f8.exe)
+
+running 44 tests
+test parses_array_cells_with_pipe_delimiters ... ok
+test object_cells_reject_invalid_at_references ... ok
+test direct_record_refs_reject_invalid_forms_and_keys ... ok
+test parses_dict_cells_with_schema_guided_keys ... ok
+test parses_enum_values_with_or_without_type_prefix ... ok
+test object_cells_reject_bare_reference_keys_with_marker_hint ... ok
+test flag_enum_dict_keys_keep_single_variant_identity ... ok
+test parses_formatted_string_cell_references ... ok
+test keeps_delimiters_inside_quotes_and_nested_boundaries ... ok
+test flag_enum_cells_use_integer_masks ... ok
+test object_cells_reject_invalid_record_reference_forms ... ok
+test explicit_record_refs_resolve_to_cfd_refs ... ok
+test parses_omitted_and_option_cells ... ok
+test object_type_markers_require_identifier_names_and_closed_boundaries ... ok
+test direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type ... ok
+test parses_empty_arrays_dicts_and_objects_with_explicit_boundaries ... ok
+test named_and_positional_object_cells_skip_explicit_underscore_values ... ok
+test parses_full_nested_root_object_example ... ok
+test parses_named_object_cells_and_omits_skipped_fields ... ok
+test parses_nested_objects_inside_array_cells ... ok
+test parses_schema_guided_scalar_values ... ok
+test parses_polymorphic_object_type_markers ... ok
+test quoted_strings_require_internal_quotes_to_be_escaped ... ok
+test parses_unicode_polymorphic_object_type_markers ... ok
+test parses_positional_object_cells_using_field_order ... ok
+test rejects_comma_arrays_and_bare_special_strings ... ok
+test rejects_declared_type_and_nested_scan_edge_cases ... ok
+test ref_cells_parse_direct_record_ref_shorthand_from_expected_type ... ok
+test rejects_duplicate_named_object_fields ... ok
+test rejects_malformed_declared_types ... ok
+test rejects_empty_object_field_values ... ok
+test rejects_invalid_dict_entries_and_key_types ... ok
+test rejects_mixed_unknown_and_excess_object_fields ... ok
+test rejects_non_finite_float_values ... ok
+test rejects_unbalanced_boundaries_and_invalid_string_escapes ... ok
+test renders_polymorphic_object_values_with_type_marker ... ok
+test rejects_object_array_elements_without_object_boundaries ... ok
+test rejects_nested_composite_values_without_boundaries ... ok
+test string_cells_keep_at_prefixed_text_as_plain_strings ... ok
+test string_values_accept_standard_escapes_and_reject_bare_boundaries ... ok
+test unknown_declared_enum_names_are_treated_as_object_types ... ok
+test every_cell_value_error_code_has_negative_and_adjacent_valid_coverage ... ok
+test validates_polymorphic_type_markers_are_assignable_and_concrete ... ok
+test renders_runtime_values_as_parseable_table_cell_text ... ok
+
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_cfd_value_pure_serde.rs (target\debug\deps\data_model_cfd_value_pure_serde-0840ff216774b691.exe)
+
+running 4 tests
+test cfd_i64_wire_uses_strings_and_accepts_numeric_values ... ok
+test record_coordinate_has_stable_validated_wire_form ... ok
+test removed_result_wire_variants_are_rejected ... ok
+test cfd_value_round_trips_through_json ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_edge_cases.rs (target\debug\deps\data_model_edge_cases-7c302da0798e70b0.exe)
+
+running 4 tests
+test top_level_abstract_records_are_rejected ... ok
+test invalid_enum_and_non_finite_float_inputs_are_rejected ... ok
+test unresolved_record_ref_reports_reference_stage_diagnostic ... ok
+test cyclic_record_refs_build_and_remain_resolvable ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_model.rs (target\debug\deps\data_model_model-9225e1e7fe4e5887.exe)
+
+running 19 tests
+test empty_record_ids_are_rejected ... ok
+test non_identifier_record_ids_are_rejected ... ok
+test duplicate_keys_report_record_level_id_paths ... ok
+test dimension_field_lookup_reads_record_owned_overlay ... ok
+test data_model_applies_defaults_and_builds_record_id_indexes_without_running_check ... ok
+test omitted_option_requires_an_explicit_default ... ok
+test inline_objects_use_declared_type_when_not_polymorphic ... ok
+test dimension_refs_are_precomputed_with_typed_coordinates ... ok
+test data_model_reuses_shared_schema_default_subgraphs ... ok
+test dimension_field_lookup_uses_singleton_owner_record ... ok
+test invalid_dimension_values_preserve_the_overlay_origin ... ok
+test parent_record_ids_do_not_satisfy_child_typed_refs ... ok
+test partial_build_keeps_records_with_only_missing_required_fields ... ok
+test plain_object_fields_reject_record_refs ... ok
+test ref_type_rejects_inline_objects ... ok
+test partial_build_still_rejects_non_representable_data_errors ... ok
+test object_typed_record_refs_resolve_by_expected_type ... ok
+test record_value_lookup_traverses_object_array_and_dict_paths ... ok
+test semantic_edges_report_data_model_diagnostics ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_phase3_refs.rs (target\debug\deps\data_model_phase3_refs-f8e84428d6058592.exe)
+
+running 9 tests
+test inline_object_fields_reject_record_refs ... ok
+test refs_populate_ref_edge_indexes ... ok
+test partial_build_preserves_unresolved_refs ... ok
+test key_only_record_ref_helper_builds_ref_values_for_ref_fields ... ok
+test wrong_ref_target_type_has_a_reference_diagnostic ... ok
+test missing_key_reports_ref_target_not_found ... ok
+test reference_plan_includes_polymorphic_recursive_objects_and_preserves_edge_order ... ok
+test ref_fields_accept_child_records_and_reject_inline_objects_siblings_and_parents ... ok
+test repeated_validation_preserves_nested_editable_diagnostic_severity_and_order ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_record_keys.rs (target\debug\deps\data_model_record_keys-120c00b1adfe81d3.exe)
+
+running 12 tests
+test schema_exposes_type_ancestors_without_a_model_relation_copy ... ok
+test same_abstract_base_children_reject_duplicate_domain_keys ... ok
+test object_typed_fields_do_not_accept_bare_string_refs ... ok
+test plain_parent_and_child_reject_duplicate_domain_keys ... ok
+test multi_level_inheritance_chain_rejects_duplicate_domain_keys ... ok
+test duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges ... ok
+test domain_lookup_finds_any_member_record_but_type_lookup_uses_actual_type ... ok
+test lookup_for_middle_type_does_not_return_ancestor_records ... ok
+test unrelated_types_can_reuse_record_ids_in_separate_domains ... ok
+test record_ids_build_indexes_and_record_refs_resolve_by_expected_type ... ok
+test parent_records_cannot_satisfy_child_typed_refs ... ok
+test concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\data_model_value_semantics.rs (target\debug\deps\data_model_value_semantics-6dcf12cd70e9feb8.exe)
+
+running 4 tests
+test complete_validation_allows_omitted_schema_defaults ... ok
+test fragment_validation_allows_missing_fields_but_checks_provided_values ... ok
+test complete_validation_rejects_missing_nested_required_fields ... ok
+test source_build_and_mutation_validation_share_semantic_rule_matrix ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dimension_context.rs (target\debug\deps\dimension_context-0b4eece506d2ca52.exe)
+
+running 8 tests
+test variant_reference_cycles_in_unannotated_templates_fail_during_loading ... ok
+test model_snapshots_and_repeated_dimension_selections_share_immutable_records ... ok
+test cycles_introduced_by_a_variant_are_reported ... ok
+test variant_validation_shares_one_structural_budget_per_record ... ok
+test reused_literal_budget_replays_precise_failure_after_a_larger_dimension_override ... ok
+test unrelated_dimension_contexts_reuse_literal_costs_without_resolving_value_trees ... ok
+test variant_context_selects_sources_across_references_objects_and_collections ... ok
+test chained_projections_reselect_original_sources_and_preserve_other_dimensions ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\incremental_model.rs (target\debug\deps\incremental_model-d6011b62bcc3f141.exe)
+
+running 16 tests
+test incremental_attempt_preserves_structural_budget_boundaries ... ok
+test identity_schema_variant_and_diagnostic_changes_require_full_compilation ... ok
+test new_template_cycle_preserves_full_diagnostics ... ok
+test local_update_reuses_values_and_preserves_previous_snapshot ... ok
+test reference_retarget_updates_both_directions_without_rebuilding_target_values ... ok
+test record_set_cache_is_shared_only_while_membership_is_stable ... ok
+test field_updates_do_not_invalidate_readers_of_unrelated_fields ... ok
+test signed_zero_invalidates_storage_and_templates_without_changing_numeric_equality ... ok
+test borrowed_dimension_inputs_match_owned_full_and_incremental_builds ... ok
+test template_dependency_closure_is_transitive_and_retargets ... ok
+test dimension_changes_refresh_cross_record_templates_and_share_origin_only_updates ... ok
+test batched_hub_retarget_matches_full_build_and_preserves_old_incoming_order ... ok
+test immutable_batches_limit_identity_and_origin_checks_to_changed_input ... ok
+test mixed_borrowed_batches_preserve_handles_origins_and_incremental_results ... ok
+test shared_dimension_batches_reindex_only_changed_overlays_and_refresh_origins ... ok
+test repeated_mixed_updates_match_full_builds_including_overlay_removal ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.74s
+
+     Running tests\membership_updates.rs (target\debug\deps\membership_updates-c36b924b0f170509.exe)
+
+running 5 tests
+test member_source_transfer_refreshes_origins_without_mutating_old_objects ... ok
+test membership_reuse_preserves_identity_singleton_and_structural_guards ... ok
+test members_revalidate_explicit_reference_types_when_inheritance_target_changes ... ok
+test members_recompute_nested_default_and_virtual_identity_templates ... ok
+test members_insert_delete_rename_and_reorder_reuse_unchanged_value_trees ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\template_rejection.rs (target\debug\deps\template_rejection-f43f4607d22f5c54.exe)
+
+running 7 tests
+test failed_build_reports_work_without_changing_diagnostics ... ok
+test rejection_leaves_other_compiler_stages_in_charge ... ok
+test default_templates_and_reference_diagnostics_preserve_rejection_order ... ok
+test rejection_tracks_virtual_ids_nested_collection_reads_and_cycle_labels ... ok
+test rejection_replays_original_structure_budget_and_precise_blame ... ok
+test rejection_matches_original_diagnostics_across_mixed_dependency_graphs ... ok
+test rejection_closure_matches_each_original_wave_and_uses_linear_root_work ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_observability-3f1a4d038059c163.exe)
+
+running 2 tests
+test tests::io_failure_is_counted_without_recursion ... ok
+test tests::rotation_bounds_total_files_and_preserves_recent_events ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_runtime-d63a06267b622ca7.exe)
+
+running 186 tests
+test api::diagnostics::tests::diagnostic_contexts_are_backward_compatible_and_preserve_unknown_kinds ... ok
+test api::diagnostics::tests::line_index_matches_linear_scan_for_every_offset ... ok
+test automation::explanations::tests::every_language_and_model_code_has_an_exact_explanation_and_public_index_entry ... ok
+test automation::semantic_diff::assignment_tests::assignment_comparison_preserves_trivia_and_missing_semantics ... ok
+test automation::operations::batch_tests::replay_after_publication_failure_requires_recovery_receipt_and_unchanged_bytes ... ok
+test automation::query::snapshot_tests::compact_record_state_matches_full_query_for_base_and_dimension_views ... ok
+test automation::transaction::cache_tests::candidate_maps_canonical_paths_back_to_original_inputs ... ok
+test automation::semantic_diff::capture_tests::indirect_reference_and_nested_template_renders_are_captured_without_host_overrides ... ok
+test cfd_loader::loader_tests::bool_fields_accept_only_lowercase_cfd_literals ... ok
+test automation::semantic_diff::capture_tests::schema_default_change_propagates_to_fallback_contexts_but_preserves_override_shielding ... ok
+test cfd_loader::loader_tests::cfd_allows_acyclic_record_reference_chains ... ok
+test cfd_loader::loader_tests::cfd_allows_cyclic_record_references ... ok
+test cfd_loader::loader_tests::cfd_enforces_ref_and_inline_types ... ok
+test cfd_loader::loader_tests::cfd_loading_rejects_removed_result_constructors_and_unit_values ... ok
+test automation::semantic_diff::capture_tests::simultaneous_record_field_and_context_membership_changes_match_dense_capture ... ok
+test cfd_loader::loader_tests::cfd_rejects_check_blocks_as_data_syntax ... ok
+test cfd_loader::loader_tests::cfd_loads_shared_complex_runtime_values ... ok
+test cfd_loader::loader_tests::cfd_rejects_invalid_record_reference_forms ... ok
+test cfd_loader::loader_tests::cfd_rejects_invalid_record_reference_in_scalar_field ... ok
+test cfd_loader::loader_tests::cfd_rejects_invalid_reference_syntax_and_bare_object_keys ... ok
+test cfd_loader::loader_tests::cfd_rejects_removed_namespace_and_use_headers ... ok
+test cfd_loader::loader_tests::cfd_rejects_reserved_id_fields ... ok
+test cfd_loader::loader_tests::cfd_rejects_slash_slash_comments ... ok
+test cfd_loader::loader_tests::cft_data_defaults_materialize_as_cfd_values ... ok
+test cfd_loader::loader_tests::cfd_text_error_codes_have_negative_and_adjacent_valid_cases ... ok
+test cfd_loader::loader_tests::direct_model_errors_keep_record_text_spans ... ok
+test cfd_loader::loader_tests::dimension_blocks_replace_selected_fields_without_configured_variants ... ok
+test automation::transaction::cache_tests::changing_input_scope_rebuilds_configuration_and_path_cache ... ok
+test cfd_loader::loader_tests::cfd_rejects_shared_complex_runtime_unknown_fields ... ok
+test cfd_loader::loader_tests::flag_enum_fields_accept_expressions_and_integer_masks ... ok
+test cfd_loader::loader_tests::explicit_reference_type_errors_remain_repairable_in_partial_models ... ok
+test cfd_loader::loader_tests::flag_enum_fields_reject_invalid_operands_and_non_flag_expressions ... ok
+test cfd_loader::loader_tests::formatted_strings_follow_record_reference_fields ... ok
+test cfd_loader::loader_tests::formatted_string_terminals_reject_composite_and_optional_numbers ... ok
+test cfd_loader::loader_tests::formatted_strings_resolve_cross_record_fields_and_preserve_source ... ok
+test cfd_loader::loader_tests::formatted_strings_resolve_fields_on_another_record_of_the_same_type ... ok
+test cfd_loader::loader_tests::grouped_polymorphic_records_can_choose_concrete_types ... ok
+test cfd_loader::loader_tests::grouped_record_commas_are_optional ... ok
+test cfd_loader::loader_tests::grouped_records_expand_to_records_of_the_same_type ... ok
+test cfd_loader::loader_tests::lowering_collects_independent_errors_across_fields_and_records ... ok
+test cfd_loader::loader_tests::nested_option_tags_survive_loading ... ok
+test cfd_loader::loader_tests::records_use_colon_blocks_and_do_not_emit_id_fields ... ok
+test cfd_loader::loader_tests::project_global_names_resolve_types_enums_dict_keys_and_references ... ok
+test cfd_loader::loader_tests::numeric_widths_are_enforced_for_source_constants_and_nested_values ... ok
+test cfd_loader::loader_tests::ref_type_fields_parse_key_only_refs ... ok
+test cfd_loader::loader_tests::string_fields_require_quotes ... ok
+test cfd_loader::loader_tests::schema_free_ast_matches_loader_record_coordinates_for_supported_syntax ... ok
+test cfd_loader::tests::rejects_non_cfd_sources_before_reading ... ok
+test cfd_loader::loader_tests::showcase_files_load_together ... ok
+test cfd_loader::tests::file_origins_preserve_record_text_spans ... ok
+test automation::transaction::cache_tests::revision_read_failure_preserves_completed_publication ... ok
+test automation::transaction::cache_tests::same_file_batch_refreshes_the_source_once ... ok
+test automation::semantic_diff::capture_tests::empty_context_addition_and_removal_report_every_effective_field ... ok
+test cfd_loader::writer::batch_tests::batch_publication_detects_external_edits_without_overwriting_them ... ok
+test cfd_loader::writer::batch_tests::failed_batch_keeps_original_workspace_and_reports_first_bad_operation ... ok
+test cfd_loader::writer::batch_tests::deferred_parent_materialization_matches_eager_writer_text ... ok
+test cfd_loader::writer::batch_tests::later_insert_does_not_hide_an_earlier_source_expression_error ... ok
+test cfd_loader::writer::batch_tests::earlier_multiline_patch_preserves_later_same_line_rendering ... ok
+test cfd_loader::writer::batch_tests::materialized_default_parent_charges_its_actual_written_subtree ... ok
+test automation::semantic_diff::capture_tests::explicit_override_equal_to_base_preserves_assignment_origin_changes ... ok
+test automation::transaction::cache_tests::source_edits_invalidate_cached_schema_and_records ... ok
+test cfd_loader::writer::batch_tests::merged_missing_siblings_charge_each_intermediate_field_node ... ok
+test cfd_loader::writer::batch_tests::later_text_staging_discards_the_previous_lowered_candidate ... ok
+test cfd_loader::writer::patch::replacement_tests::invalid_or_overlapping_source_spans_return_diagnostics ... ok
+test cfd_loader::writer::batch_tests::preloaded_source_keeps_unrelated_lowering_diagnostics ... ok
+test cfd_loader::loader_tests::shared_runtime_corpus_preserves_acceptance_and_value_states ... ok
+test cfd_loader::writer::patch::replacement_tests::source_replacements_keep_order_unicode_and_duplicate_span_semantics ... ok
+test cfd_loader::writer::render::tests::serializes_flag_masks_in_schema_order ... ok
+test cfd_loader::writer::render::tests::serializes_object_collections_with_structural_indentation ... ok
+test cfd_loader::writer::render::tests::serializes_present_options_without_some_constructor ... ok
+test cfd_loader::writer::batch_tests::overlap_collections_options_and_materialized_defaults_keep_request_order ... ok
+test cfd_loader::writer::batch_tests::shrinking_a_later_value_does_not_hide_an_intermediate_node_budget_failure ... ok
+test cfd_loader::writer::batch_tests::repeated_missing_field_is_updated_after_its_first_insertion ... ok
+test cfd_loader::writer::tests::delete_record_uses_exact_type_when_unrelated_types_share_key ... ok
+test cfd_loader::writer::tests::insert_record_allows_same_key_for_unrelated_types_in_same_file ... ok
+test cfd_loader::writer::tests::rejects_empty_reference_key_at_value_boundary ... ok
+test cfd_loader::writer::tests::inserts_missing_field_with_two_space_indentation ... ok
+test cfd_loader::writer::tests::inserts_record_at_end_of_cfd_file ... ok
+test cfd_loader::writer::batch_tests::optional_object_paths_support_explicit_and_implicit_some ... ok
+test cfd_loader::writer::batch_tests::absent_sibling_fields_share_one_patch_and_keep_comments ... ok
+test cfd_loader::writer::tests::deletes_record_span_from_cfd_file ... ok
+test cfd_loader::writer::tests::inserts_record_serializes_nested_ref_fields_with_ref_syntax ... ok
+test cfd_loader::writer::tests::write_reports_parse_diagnostics_instead_of_missing_record_for_bad_cfd ... ok
+test cfd_loader::writer::tests::ref_to_unknown_target_uses_short_form ... ok
+test automation::transaction::cache_tests::repeated_record_paths_reuse_file_identity_and_display ... ok
+test automation::operations::batch_tests::interleaved_batches_preserve_intermediate_node_budget_and_global_failure_order ... ok
+test automation::transaction::cache_tests::repeated_set_where_uses_current_candidate_and_shared_schema ... ok
+test cfd_loader::writer::tests::reorders_grouped_and_top_level_records_without_losing_record_types ... ok
+test checks::incremental_tests::any_keeps_later_errors_and_later_element_reads_after_a_true_element ... ok
+test cfd_loader::writer::tests::rewrites_polymorphic_objects_and_arrays_as_valid_cfd ... ok
+test checks::incremental_tests::diagnostic_origin_lookup_matches_explicit_origins_and_preserves_overrides ... ok
+test checks::incremental_tests::array_insert_delete_move_and_replacement_recheck_only_the_owning_field ... ok
+test checks::incremental_tests::empty_record_set_membership_and_later_element_reads_stay_equivalent ... ok
+test checks::incremental_tests::branch_and_reference_retargeting_replace_the_observed_dependency_set ... ok
+test cfd_loader::writer::tests::writes_enum_dict_key_path_using_member_display_text ... ok
+test cfd_loader::writer::tests::reorders_records_without_changing_document_slots ... ok
+test checks::incremental_tests::existing_variant_change_only_rechecks_that_owned_variant ... ok
+test cfd_loader::writer::tests::writes_field_inside_polymorphic_block_using_type_marker ... ok
+test cfd_loader::writer::tests::writes_scalar_field_and_preserves_siblings ... ok
+test cfd_loader::writer::tests::writes_record_by_exact_type_when_unrelated_types_share_key ... ok
+test checks::incremental_tests::failed_dictionary_lookup_and_rule_abort_recover_from_field_changes ... ok
+test checks::incremental_tests::interrupted_plan_forces_complete_recovery_on_the_next_generation ... ok
+test checks::incremental_tests::record_membership_changes_preserve_data_diagnostics_across_handle_reordering ... ok
+test cfd_loader::writer::tests::writes_group_record_without_required_commas ... ok
+test checks::incremental_tests::replacing_a_polymorphic_object_removes_previous_rule_diagnostics ... ok
+test cfd_loader::writer::tests::writes_ref_type_as_key_ref ... ok
+test checks::incremental_tests::reference_dependency_reruns_only_the_affected_rule_on_all_data_owners ... ok
+test checks::incremental_tests::request_and_task_work_interruptions_never_reuse_incomplete_read_graphs ... ok
+test checks::incremental_tests::signed_zero_updates_custom_diagnostic_text ... ok
+test checks::incremental_tests::short_circuit_reads_and_custom_message_reads_follow_actual_execution ... ok
+test checks::incremental_tests::template_values_propagate_indirect_record_and_variant_changes_to_data_rules ... ok
+test checks::incremental_tests::unrelated_scalar_change_preserves_data_failures_without_running_tasks ... ok
+test checks::membership_tests::all_fields_only_invalidate_actual_readers_and_always_run_local_constant_roots ... ok
+test checks::incremental_tests::unqualified_templates_keep_base_semantics_beside_explicit_dimension_reads ... ok
+test checks::membership_tests::missing_read_tracking_keeps_static_member_planning ... ok
+test checks::incremental_tests::incremental_data_plan_respects_budget_for_changed_field_not_project_size ... ok
+test checks::incremental_tests::variant_presence_and_projection_reads_invalidate_independently ... ok
+test checks::membership_tests::empty_sets_and_short_circuit_changes_replace_dynamic_collection_dependencies ... ok
+test checks::incremental_tests::precise_reference_reads_only_recheck_the_actual_inline_owner ... ok
+test checks::read_graph::tests::membership_prefix_and_set_readers_preserve_replacement_removal_and_old_snapshots ... ok
+test checks::read_graph::tests::read_replacement_preserves_snapshots_and_projection_invalidation ... ok
+test checks::read_graph::tests::record_local_buckets_keep_fields_projections_collisions_and_snapshots_precise ... ok
+test checks::tests::cross_type_field_change_fans_out_to_every_owner_record ... ok
+test checks::tests::adding_a_variant_invalidates_other_records_variant_collections ... ok
+test checks::membership_tests::dangling_reference_host_recovers_after_target_deletion_and_restoration ... ok
+test checks::membership_tests::unchanged_dimension_reference_literal_rechecks_actual_type_replacement ... ok
+test checks::membership_tests::new_nested_and_dimension_instances_run_all_roots_and_removed_paths_disappear ... ok
+test checks::membership_tests::reference_type_replacement_rename_and_delete_preserve_inherited_rules_and_virtual_ids ... ok
+test checks::membership_tests::skipped_later_root_gains_collection_reads_after_earlier_error_is_repaired ... ok
+test checks::tests::deleted_record_and_record_set_diagnostics_are_removed_by_stable_scope ... ok
+test checks::membership_tests::rejected_member_plans_and_evaluation_budgets_force_full_recovery ... ok
+test checks::tests::cross_type_incremental_replacement_matches_full_without_runtime_read_edges ... ok
+test checks::tests::dimension_variant_and_base_changes_invalidate_the_same_statement ... ok
+test checks::tests::full_plan_runs_project_checks_even_when_the_model_is_empty ... ok
+test checks::tests::direct_field_change_plans_the_complete_named_rule_on_the_changed_record ... ok
+test checks::tests::dimension_variant_incremental_replacement_matches_full ... ok
+test checks::tests::inherited_statement_incremental_replacement_matches_full ... ok
+test checks::tests::incremental_scope_replacement_matches_full_and_preserves_unaffected_statements ... ok
+test checks::tests::planning_limit_accepts_the_exact_boundary_and_rejects_partial_plans ... ok
+test checks::tests::materialized_data_defaults_are_checked_at_each_owner ... ok
+test checks::tests::planning_failure_preserves_scoped_diagnostics_and_adds_request_diagnostic ... ok
+test checks::tests::nested_field_change_plans_the_nested_statement_on_only_its_host ... ok
+test checks::tests::project_collection_field_change_incremental_replacement_matches_full ... ok
+test indexes::tests::diagnostic_extensions_index_only_new_entries_with_shifted_locations ... ok
+test indexes::tests::duplicate_display_paths_remain_ambiguous ... ok
+test indexes::tests::repeated_bindings_to_one_physical_source_remain_unique ... ok
+test checks::tests::record_set_change_runs_project_statement_once ... ok
+test inspection::diff::tests::unified_hunks_keeps_three_context_lines_and_separates_distant_changes ... ok
+test checks::tests::owned_data_checks_cover_collections_options_dimensions_and_clear_removed_paths ... ok
+test inspection::diff::tests::unified_hunks_handles_empty_sides_and_missing_newlines ... ok
+test inspection::query::tests::concrete_base_object_shape_exposes_all_assignable_types ... ok
+test inspection::query::tests::dict_shape_exposes_key_and_value_metadata ... ok
+test inspection::search::tests::nested_optional_collections_keep_leaf_paths ... ok
+test inspection::query::tests::optional_concrete_object_shape_exposes_its_inner_object_type ... ok
+test loading::schema_diagnostics::tests::deduplication_supports_diagnostics_without_primary_labels ... ok
+test loading::load::tests::runtime_invariants_use_the_internal_diagnostic_family ... ok
+test automation::operations::batch_tests::independent_writes_preserve_defaults_templates_references_and_order ... ok
+test loading::schema_diagnostics::tests::canonical_conversion_deduplicates_complete_diagnostic_identity ... ok
+test inspection::diff::tests::non_git_directory_reports_diff_unavailable ... ok
+test loading::source_resolution::tests::configured_source_keeps_project_relative_display_name ... ok
+test mutation::defaults::tests::editable_object_omits_fields_that_require_an_explicit_choice ... ok
+test mutation::defaults::tests::record_draft_marks_required_reference_and_type_default_sources ... ok
+test mutation::defaults::tests::minimal_insert_fields_omit_required_references ... ok
+test mutation::defaults::tests::record_draft_prefers_schema_defaults_over_type_defaults ... ok
+test mutation::prepare::deferred_path_tests::borrowed_validation_matches_materialized_path_errors ... ok
+test mutation::types::tests::mutation_failure_keeps_structured_diagnostics_after_flattening ... ok
+test writes::tests::mutation_impact_unions_precise_paths_and_structural_changes_absorb_them ... ok
+test files::tests::configured_empty_directories_are_preserved_with_their_group ... ok
+test publication::operation::tests::source_publication_preserves_an_external_change ... ok
+test sessions::runtime::project_runtime_tests::duplicate_records_are_all_rejected_without_hiding_other_records ... ok
+test mutation::apply::batch_tests::interleaved_files_share_one_field_batch_per_source ... ok
+test sessions::runtime::project_runtime_tests::reverting_to_published_schema_discards_failed_attempt ... ok
+test sessions::runtime::project_runtime_tests::data_errors_preserve_unrelated_records_and_complete_diagnostics ... ok
+test mutation::apply::batch_tests::file_group_failure_uses_earliest_request_index_and_publishes_nothing ... ok
+test automation::operations::batch_tests::failed_batch_preserves_first_error_and_successful_candidate_prefix ... ok
+test mutation::apply::batch_tests::non_field_operations_are_ordering_barriers ... ok
+test mutation::apply::batch_tests::interleaved_mutation_returns_original_order_and_correct_generation ... ok
+test automation::transaction::cache_tests::interleaved_file_batch_refreshes_each_source_once ... ok
+test checks::incremental_tests::deterministic_edit_sequences_match_full_checks_through_references_and_owned_arrays ... ok
+test checks::membership_tests::member_insert_rename_delete_and_reorder_only_execute_new_roots_and_set_readers ... ok
+test automation::operations::batch_tests::noop_and_forward_reference_batches_match_sequential_execution ... ok
+test automation::operations::batch_tests::interleaved_files_preserve_results_and_earliest_failure_in_original_order ... ok
+test cfd_loader::writer::batch_tests::independent_complex_record_updates_parse_the_file_only_twice ... ok
+test automation::semantic_diff::sparse_tests::sparse_contexts_match_dense_report_for_members_variants_sources_and_templates ... ok
+test automation::transaction::cache_tests::batch_reuses_schema_and_discovers_sources_once ... ok
+test automation::semantic_diff::capture_tests::trivia_only_assignment_changes_keep_raw_sources_when_indirect_render_also_changes ... ok
+
+test result: ok. 186 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s
+
+     Running tests\automation.rs (target\debug\deps\automation-98e48ec175af506a.exe)
+
+running 49 tests
+test inherited_field_symbols_locate_the_original_declaration ... ok
+test format_conflicts_return_the_planned_changes_without_writing ... ok
+test field_projection_traverses_nested_some_layers_and_preserves_terminal_none ... ok
+test context_includes_related_declarations_target_sources_and_bounded_references ... ok
+test cursors_allow_page_size_changes_but_reject_another_query ... ok
+test file_failures_report_unexecuted_changes_and_preserve_project_contents ... ok
+test failed_operations_report_their_index_precondition_and_unexecuted_tail ... ok
+test filter_dictionary_keys_keep_integer_precision_and_enum_identity ... ok
+test candidate_schema_diagnostic_limits_preserve_total_count_and_failure_status ... ok
+test format_previews_and_checks_are_read_only_and_publication_reports_files ... ok
+test cursor_rejects_changed_data_and_default_check_skips_business_rules ... ok
+test cursors_reject_changes_to_command_and_command_specific_filters ... ok
+test malformed_field_paths_are_rejected_without_records ... ok
+test filter_type_checks_cover_empty_data_and_both_boolean_branches ... ok
+test invalid_schema_candidate_returns_its_diff_and_original_source_location ... ok
+test context_budget_preserves_core_identity_and_reports_declaration_omissions ... ok
+test project_file_summaries_work_without_schema_compilation_and_mark_syntax_failures ... ok
+test rule_queries_share_typed_dependencies_and_project_relative_locations ... ok
+test schema_constant_references_preserve_each_expression_location_after_value_folding ... ok
+test empty_input_directories_and_source_deletes_preserve_unchanged_config ... ok
+test requests_and_results_do_not_expose_project_snapshots ... ok
+test candidate_schema_check_ignores_invalid_data_and_never_publishes ... ok
+test schema_symbols_reject_unknown_kinds_before_returning_an_empty_page ... ok
+test schema_references_distinguish_nested_defaults_from_string_mentions ... ok
+test related_schema_collects_transitive_constants_and_shares_symbol_limits ... ok
+test new_explicit_external_scope_can_be_created_in_the_same_transaction ... ok
+test candidate_config_imports_new_inputs_without_overwriting_prior_edits ... ok
+test sorting_validates_collection_and_heterogeneous_types_even_without_matches ... ok
+test sorting_orders_unreachable_none_and_large_signed_values_without_precision_loss ... ok
+test source_ranges_preserve_original_line_endings_and_trailing_newlines ... ok
+test dimension_base_flags_are_distinct_from_a_variant_named_base ... ok
+test reference_edges_locate_base_and_dimension_sources_separately ... ok
+test schema_reference_pages_preserve_all_uses_and_bind_the_symbol ... ok
+test numeric_mutations_round_float_and_reject_out_of_range_int_without_writing ... ok
+test absolute_candidate_config_uses_candidate_sources_and_preserves_submitted_text ... ok
+test schema_symbols_contract_covers_all_kinds_and_preserves_filtered_pages ... ok
+test option_sources_distinguish_explicit_none_declared_defaults_and_unreachable_paths ... ok
+test operations_support_forward_cycles_transfer_and_sequential_arrays ... ok
+test schema_references_resolve_field_and_rule_symbols_from_the_symbol_index ... ok
+test malformed_typed_values_fail_without_publishing ... ok
+test query_values_can_be_submitted_without_internal_model_encoding ... ok
+test statistics_contracts_describe_project_counts_groups_and_nullable_coverage ... ok
+test source_fingerprint_checks_the_submitted_config_not_the_execution_mapping ... ok
+test setting_a_default_creates_explicit_data_then_preserves_identical_source ... ok
+test reference_graph_reports_depth_and_pagination_truncation_independently ... ok
+test typed_filters_support_functions_precedence_and_unreachable_values ... ok
+test dimension_metadata_and_variant_pages_use_public_locations ... ok
+test writes_are_previewed_and_invalid_candidates_never_publish ... ok
+test typed_dictionary_paths_validate_keys_and_share_text_query_paths ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests\automation_output.rs (target\debug\deps\automation_output-87d1bb466f2823ad.exe)
+
+running 5 tests
+test compact_output_preserves_nullable_values_empty_collections_and_sources ... ok
+test formatting_reports_a_local_patch_and_preserves_preview_source ... ok
+test compact_transaction_retains_failed_operation_and_precondition_without_publishing ... ok
+test bounded_diagnostics_keep_failure_status_counts_coordinates_and_repairs ... ok
+test incomplete_data_scope_reports_counts_without_repeating_every_diagnostic ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\automation_transactions.rs (target\debug\deps\automation_transactions-7ae140836ffb6d1f.exe)
+
+running 9 tests
+test change_set_revision_and_request_paths_are_enforced_before_execution ... ok
+test revisions_are_stable_for_identical_relative_projects_and_include_new_inputs ... ok
+test codegen_preserves_the_callers_revision_until_publication_and_keeps_conflict_details ... ok
+test cursors_bind_revision_but_allow_page_size_and_presentation_changes ... ok
+test deleting_a_schema_file_inside_a_directory_invalidates_the_cached_schema ... ok
+test revisions_guard_every_write_entry_point_and_report_current_input ... ok
+test successful_write_and_preview_return_revisions_and_old_value_condition ... ok
+test linked_nonstandard_source_is_included_in_revision_and_candidate_validation ... ok
+test failed_batches_and_schema_previews_report_patches_without_whole_files ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\check_benchmark_fixtures.rs (target\debug\deps\check_benchmark_fixtures-d29fa717dc7db929.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\commands.rs (target\debug\deps\commands-c28fd370a76065ec.exe)
+
+running 18 tests
+test project_uses_data_paths_and_direct_code_outputs ... ok
+test runtime_is_cfd_only_and_loads_the_project ... ok
+test project_reports_missing_overlay_targets_at_the_original_field ... ok
+test csharp_codegen_rejects_removed_numeric_width_options ... ok
+test project_discovers_arbitrary_variants_from_selected_files ... ok
+test codegen_failure_does_not_publish_an_earlier_target ... ok
+test cli_codegen_dispatches_through_the_language_registry ... ok
+test csharp_codegen_emits_shared_loader_descriptors_for_dimensions ... ok
+test codegen_rejects_outputs_that_overlap_project_inputs ... ok
+test csharp_codegen_uses_one_singleton_business_type_for_dimensions ... ok
+test csharp_codegen_applies_namespace_option ... ok
+test editor_rules_do_not_execute_in_data_sessions_or_block_cli_generation ... ok
+test codegen_publishes_to_an_external_relative_directory ... ok
+test build_status_is_read_only_and_tracks_generated_contents ... ok
+test codegen_preserves_unity_meta_without_generation_history ... ok
+test id_enum_width_and_everything_follow_active_records ... ok
+test id_as_enum_values_are_stable_flag_safe_and_rename_aware ... ok
+test generated_status_ignores_line_endings_and_preserves_equivalent_files ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\diff.rs (target\debug\deps\diff-09fa637780a23e7a.exe)
+
+running 12 tests
+test reports_git_diagnostic_for_unborn_head ... ok
+test uses_the_published_session_instead_of_rereading_working_files ... ok
+test nested_diff_keeps_each_endpoints_display_metadata ... ok
+test ignores_checkout_line_ending_differences ... ok
+test keeps_source_diff_when_head_project_is_invalid ... ok
+test mixed_file_dimensions_do_not_change_base_record ... ok
+test compares_published_session_with_heads_own_project_model ... ok
+test excludes_sources_outside_repository_with_diagnostics ... ok
+test excludes_ignored_untracked_project_sources ... ok
+test compares_absolute_dimension_paths_against_snapshot ... ok
+test respects_nested_excludes_and_keeps_force_added_files ... ok
+test reads_packed_heads_in_detached_linked_worktrees ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running tests\dimension_directories.rs (target\debug\deps\dimension_directories-fa8c120b69903ab6.exe)
+
+running 3 tests
+test directory_in_both_data_and_dimensions_is_loaded_once ... ok
+test invalid_dimension_directories_are_rejected ... ok
+test configured_dimension_directory_is_created_on_write_and_loaded_without_data_registration ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\dimension_records.rs (target\debug\deps\dimension_records-7238a4b92880b5d8.exe)
+
+running 10 tests
+test new_overrides_require_an_explicit_destination ... ok
+test new_destination_and_config_are_not_published_when_a_later_operation_fails ... ok
+test new_destination_does_not_overwrite_an_external_config_change ... ok
+test missing_overlay_targets_are_diagnosed_without_rewriting_sources ... ok
+test optional_none_is_written_as_an_explicit_override ... ok
+test record_rename_updates_references_in_each_original_overlay_file ... ok
+test inherited_record_rename_and_delete_update_all_overlay_files ... ok
+test singleton_overrides_use_selected_files_and_preserve_other_fields_and_comments ... ok
+test new_destination_is_loaded_before_publication_and_registered_for_explicit_inputs ... ok
+test one_overlay_change_rebuilds_only_its_dependency_closure_and_preserves_origins ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\file_tree_dimensions.rs (target\debug\deps\file_tree_dimensions-df6950746a7294ed.exe)
+
+running 1 test
+test selected_dimension_sources_keep_physical_tree_and_header_metadata ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\incremental_generation.rs (target\debug\deps\incremental_generation-1866eff910d11d15.exe)
+
+running 3 tests
+test unchanged_disk_refresh_reuses_sources_and_preserves_existing_diagnostics ... ok
+test unchanged_source_diagnostics_survive_validation_and_other_file_mutations ... ok
+test disk_refresh_matches_full_generations_through_errors_membership_and_templates ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\incremental_source_failures.rs (target\debug\deps\incremental_source_failures-ad3379b487a1d840.exe)
+
+running 2 tests
+test failed_disk_read_does_not_match_the_last_successful_text_override ... ok
+test source_discovery_diagnostics_keep_their_order_across_cached_refreshes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\membership_updates.rs (target\debug\deps\membership_updates-f1214ed68616210d.exe)
+
+running 1 test
+test member_mutations_reuse_values_and_preserve_checks_sources_and_failed_writes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\named_rule_queries.rs (target\debug\deps\named_rule_queries-866dd892ed2e15a2.exe)
+
+running 5 tests
+test data_checks_do_not_shadow_a_constant_named_id_without_an_id_field ... ok
+test data_dimension_rule_results_have_complete_object_coordinates ... ok
+test explanations_read_the_evaluated_variant_and_preserve_target_base_after_references ... ok
+test anonymous_rules_can_be_listed_inspected_and_selected_individually ... ok
+test named_rule_queries_group_roots_and_include_all_dependencies_and_messages ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\paths.rs (target\debug\deps\paths-9f668ee63bad3d45.exe)
+
+running 3 tests
+test external_paths_keep_root_and_component_boundaries ... ok
+test windows_normal_and_verbatim_paths_have_the_same_identity ... ok
+test identities_survive_file_creation_and_deletion ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\project.rs (target\debug\deps\project-b343ee285a7125c9.exe)
+
+running 11 tests
+test default_init_template_has_no_export_or_provider_fields ... ok
+test rejects_removed_sources_and_outputs_without_fallback ... ok
+test rejects_non_path_data_entries ... ok
+test parses_only_data_and_codegen_contract ... ok
+test validation_reports_missing_codegen_and_missing_data_path ... ok
+test rejects_configured_inputs_that_contain_one_another ... ok
+test init_creates_schema_and_data_directories ... ok
+test creates_nested_file_and_recursively_deletes_configured_directory ... ok
+test adds_existing_inputs_to_project_config ... ok
+test absolute_config_paths_are_converted_on_read_and_saved_relatively ... ok
+test external_config_paths_are_saved_relative_for_every_directory_kind ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\template_rejection.rs (target\debug\deps\template_rejection-04b5a3bc57ace587.exe)
+
+running 1 test
+test template_cascade_preserves_health_source_locations_old_snapshots_and_recovery ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\value_semantics.rs (target\debug\deps\value_semantics-c8f43a945379484d.exe)
+
+running 2 tests
+test cell_edits_preserve_explicit_templates_inside_string_objects ... ok
+test unsetting_an_option_only_restores_a_declared_default ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_staging-a86ee58cd22fe2f3.exe)
+
+running 11 tests
+test tests::finished_directory_removal_deletes_backup_recursively ... ok
+test tests::restoring_a_removed_file_preserves_external_recreation ... ok
+test tests::staged_file_detects_conflicting_destination ... ok
+test tests::finished_staged_file_publishes_new_contents ... ok
+test tests::unfinished_staged_file_restores_previous_contents ... ok
+test transaction::tests::partial_publication_restores_written_files_and_reports_them ... ok
+test tests::dropping_a_reported_restoration_failure_does_not_retry_publication ... ok
+test transaction::tests::restoration_conflict_preserves_external_changes_and_reports_the_failure ... ok
+test tests::restoring_a_file_preserves_external_contents_and_its_backup ... ok
+test tests::restoring_output_directories_preserves_external_additions ... ok
+test tests::unfinished_staged_directory_restores_previous_directory ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (target\debug\deps\coflow_storage-22bbbb685a832add.exe)
+
+running 1 test
+test tests::local_updates_copy_only_touched_pages_and_preserve_snapshot ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests cfd_editor_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests cfd_editor_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_checker
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_codegen
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_codegen_csharp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_diagnostics
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_format
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_language
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_lsp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_model
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_observability
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_runtime
+
+running 1 test
+test crates\coflow-runtime\src\sessions\runtime.rs - sessions::runtime::ReadOnlyProjectSession (line 452) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+   Doc-tests coflow_staging
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coflow_storage
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

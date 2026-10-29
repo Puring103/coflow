@@ -1,0 +1,25 @@
+{
+  "run": "cli-all-10k",
+  "utc": "2026-10-28T14:09:16.7855947Z",
+  "reason": "Adaptive stratified sampling after representative writes exceeded 40s. Completed repeated cases retained; remaining slow cases move to one sample with explicit per-command bounds.",
+  "process_id": 37016,
+  "completed_metrics": [
+    "project_inspect",
+    "schema_inspect",
+    "data_get",
+    "data_list",
+    "filter_sort",
+    "data_search",
+    "data_refs",
+    "check_structure",
+    "check_rules",
+    "stats_field",
+    "dimension_get",
+    "dimension_missing",
+    "dimension_diff",
+    "dimension_query",
+    "set_field",
+    "set_field_rules",
+    "set_noop"
+  ]
+}

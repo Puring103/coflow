@@ -16,36 +16,39 @@ internal static class CfdParser
 {
     public static CfdDocument Parse(CfdSource source)
     {
-        var parser = new Parser(source);
+        var parser = new Parser(source, new CfdNamePool());
         return parser.ParseDocument();
     }
 
     public static CfdValueNode ParseValue(CfdSource source)
     {
-        var parser = new Parser(source);
+        var parser = new Parser(source, new CfdNamePool());
         return parser.ParseSingleValue();
     }
 
     public static IReadOnlyList<CfdDocument> ParseAll(IEnumerable<CfdSource> sources)
     {
         var documents = new List<CfdDocument>();
+        var names = new CfdNamePool();
         foreach (var source in sources)
-            documents.Add(Parse(source));
+            documents.Add(new Parser(source, names).ParseDocument());
         return documents;
     }
 
     private sealed class Parser
     {
         private readonly CfdSource _source;
+        private readonly CfdNamePool _names;
         private readonly HashSet<(string Type, string Id)> _recordIds = new();
         private int _index;
         private int _depth;
         private int _line = 1;
         private int _column = 1;
 
-        public Parser(CfdSource source)
+        public Parser(CfdSource source, CfdNamePool names)
         {
             _source = source;
+            _names = names;
         }
 
         public CfdDocument ParseDocument()
@@ -246,14 +249,16 @@ internal static class CfdParser
             if (Peek() != '(')
             {
                 var save = (_index, _line, _column);
-                var token = ParseName("value");
+                // 仅判断是否为内联类型标记，普通标量不为这次前瞻分配重复 token。
+                var token = ReadName("value");
                 SkipTrivia();
                 if (Match('{'))
                 {
-                    if (!IsQualifiedName(token))
+                    var type = _names.GetOrAdd(token);
+                    if (!IsQualifiedName(type))
                         Error("CFD-SYNTAX-007", "invalid object type", SpanFrom(start));
                     var fields = ParseFields();
-                    return new CfdObjectValue(token, fields, SpanFrom(start));
+                    return new CfdObjectValue(type, fields, SpanFrom(start));
                 }
                 (_index, _line, _column) = save;
             }
@@ -463,43 +468,50 @@ internal static class CfdParser
         private string ParseKey(string expected)
         {
             SkipTrivia();
-            if (Match('"')) return ParseString();
+            if (Match('"'))
+            {
+                var value = ParseString();
+                return expected == "field name" ? _names.GetOrAdd(value.AsSpan()) : value;
+            }
+            if (expected == "field name") return _names.GetOrAdd(ReadName(expected));
             return ParseName(expected);
         }
 
-        private string ParseName(string expected)
+        private string ParseName(string expected) => ReadName(expected).ToString();
+
+        private ReadOnlySpan<char> ReadName(string expected)
         {
             SkipTrivia();
             if (Match('"'))
             {
                 var value = ParseString();
                 Error("CFD-SYNTAX-007", $"{expected} must be an unquoted name", CurrentSpan());
-                return value;
+                return value.AsSpan();
             }
-            var builder = new StringBuilder();
+            var start = _index;
             while (!End)
             {
                 var character = Peek();
                 if (character == ':' && _source.Text.AsSpan(_index).StartsWith("::"))
                 {
-                    builder.Append(Read()).Append(Read());
+                    Read(); Read();
                     continue;
                 }
                 if (char.IsWhiteSpace(character) || "{}[],:=#;|^&()@\"".Contains(character)) break;
-                builder.Append(Read());
+                Read();
             }
-            if (builder.Length == 0)
+            if (_index == start)
             {
                 Error("CFD-SYNTAX-007", $"expected {expected}", CurrentSpan());
-                return "_";
+                return "_".AsSpan();
             }
-            return builder.ToString();
+            return _source.Text.AsSpan(start, _index - start);
         }
 
         private string ParseTypeName(string expected)
         {
             var start = Cursor;
-            var name = ParseName(expected);
+            var name = _names.GetOrAdd(ReadName(expected));
             if (!IsQualifiedName(name))
                 Error("CFD-SYNTAX-007", $"invalid {expected}", SpanFrom(start));
             return name;

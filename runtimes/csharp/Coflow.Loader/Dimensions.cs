@@ -42,6 +42,7 @@ internal sealed class DimensionSelection
     internal DimensionSelection With(string dimension, string variant)
     {
         if (dimension == null || variant == null) throw new ArgumentNullException();
+        if (_values.TryGetValue(dimension, out var current) && current == variant) return this;
         var values = new SortedDictionary<string, string>(_values, StringComparer.Ordinal) { [dimension] = variant };
         return new DimensionSelection(values);
     }

@@ -1,0 +1,1826 @@
+{
+  "directory": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\managed-r6",
+  "audited_at": "2026-10-28T23:15:22.946Z",
+  "audit_status": "complete",
+  "method": "Read-only audit of archived plans, metadata and operation results. Only fully validated operation metrics are eligible for pairs; partial runs remain separate. Does not rerun benchmarks or hash current binaries.",
+  "counts": {
+    "pending": 0,
+    "completed": 144,
+    "partial": 0,
+    "censored": 0,
+    "failed": 0
+  },
+  "process_counts": {
+    "pending": 0,
+    "completed": 144,
+    "censored": 0,
+    "failed": 0
+  },
+  "completed_pairs": [
+    {
+      "scenario": "csharp-scalar20-1k",
+      "round": 1,
+      "metrics": 10
+    },
+    {
+      "scenario": "mono-scalar20-1k",
+      "round": 1,
+      "metrics": 10
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 1,
+      "metrics": 9
+    },
+    {
+      "scenario": "mono-scalar20-100k",
+      "round": 1,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-width8-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width8-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-complex-100k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "mono-complex-100k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "csharp-templates-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-templates-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 1,
+      "metrics": 13
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 1,
+      "metrics": 13
+    },
+    {
+      "scenario": "csharp-dim10-sparse-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-sparse-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-dense-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-dense-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-no-templates-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-no-templates-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-scalar20-1k",
+      "round": 2,
+      "metrics": 10
+    },
+    {
+      "scenario": "mono-scalar20-1k",
+      "round": 2,
+      "metrics": 10
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 2,
+      "metrics": 9
+    },
+    {
+      "scenario": "mono-scalar20-100k",
+      "round": 2,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-width8-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width8-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-complex-100k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "mono-complex-100k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "csharp-templates-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-templates-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 2,
+      "metrics": 13
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 2,
+      "metrics": 13
+    },
+    {
+      "scenario": "csharp-dim10-sparse-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-sparse-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-dense-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-dense-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-no-templates-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-no-templates-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-scalar20-1k",
+      "round": 3,
+      "metrics": 10
+    },
+    {
+      "scenario": "mono-scalar20-1k",
+      "round": 3,
+      "metrics": 10
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 3,
+      "metrics": 9
+    },
+    {
+      "scenario": "mono-scalar20-100k",
+      "round": 3,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-width8-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width8-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-complex-100k",
+      "round": 3,
+      "metrics": 5
+    },
+    {
+      "scenario": "mono-complex-100k",
+      "round": 3,
+      "metrics": 5
+    },
+    {
+      "scenario": "csharp-templates-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-templates-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 3,
+      "metrics": 13
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 3,
+      "metrics": 13
+    },
+    {
+      "scenario": "csharp-dim10-sparse-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-sparse-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-dense-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-dense-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-no-templates-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-no-templates-10k",
+      "round": 3,
+      "metrics": 1
+    }
+  ],
+  "partial_pairs": [],
+  "operation_failures": [],
+  "issues": [],
+  "runs": [
+    {
+      "id": "csharp-scalar20-1k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227254909,
+      "end": 1793227256521.6272,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-1k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227256930,
+      "end": 1793227258244.7107,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227258628,
+      "end": 1793227259595.9192,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227260003,
+      "end": 1793227260700.5586,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227261090,
+      "end": 1793227305737.671,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227306082,
+      "end": 1793227333585.3926,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227333955,
+      "end": 1793227420756.581,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227421131,
+      "end": 1793227462074.165,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-width8-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227462444,
+      "end": 1793227464122.8662,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width8-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227464516,
+      "end": 1793227465885.3003,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227466264,
+      "end": 1793227467339.3174,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227467771,
+      "end": 1793227468595.4211,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227468975,
+      "end": 1793227475208.769,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227475590,
+      "end": 1793227479133.9004,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227479509,
+      "end": 1793227491226.1401,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227491612,
+      "end": 1793227495834.7842,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227496215,
+      "end": 1793227498617.9402,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227498995,
+      "end": 1793227500819.9597,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227501200,
+      "end": 1793227503293.5686,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227503691,
+      "end": 1793227504952.0525,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-complex-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227505344,
+      "end": 1793227537545.7131,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-complex-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227537898,
+      "end": 1793227558152.894,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227558510,
+      "end": 1793227617557.4458,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227617916,
+      "end": 1793227648298.732,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227648636,
+      "end": 1793227654760.0613,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227655164,
+      "end": 1793227659880.4285,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227660258,
+      "end": 1793227668523.3882,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227668896,
+      "end": 1793227674095.18,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227674478,
+      "end": 1793227680621.7476,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227681010,
+      "end": 1793227685532.1304,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227685911,
+      "end": 1793227694400.8552,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227694780,
+      "end": 1793227699958.7524,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227700347,
+      "end": 1793227720095.3628,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227720439,
+      "end": 1793227731130.4612,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227731517,
+      "end": 1793227766456.578,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227766803,
+      "end": 1793227781410.1848,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227781759,
+      "end": 1793227795628.9424,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227795987,
+      "end": 1793227801238.1016,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227801617,
+      "end": 1793227823758.8333,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227824107,
+      "end": 1793227829633.5315,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227830018,
+      "end": 1793227846099.4592,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227846442,
+      "end": 1793227852877.0557,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227853260,
+      "end": 1793227878441.8525,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227878801,
+      "end": 1793227885984.259,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227886375,
+      "end": 1793227899699.3992,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227900050,
+      "end": 1793227904613.5908,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227904999,
+      "end": 1793227925523.0999,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227925883,
+      "end": 1793227930248.8013,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-scalar20-1k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227930639,
+      "end": 1793227931992.292,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-1k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227932375,
+      "end": 1793227934002.87,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227934386,
+      "end": 1793227935073.229,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227935453,
+      "end": 1793227936449.7732,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227936837,
+      "end": 1793227964431.5056,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227964781,
+      "end": 1793228008520.4133,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228008883,
+      "end": 1793228050019.4192,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228050368,
+      "end": 1793228136969.8796,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-width8-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228137341,
+      "end": 1793228138689.9194,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width8-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228139077,
+      "end": 1793228140738.0703,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228141130,
+      "end": 1793228141868.3862,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228142251,
+      "end": 1793228143352.131,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228143768,
+      "end": 1793228147191.2312,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228147576,
+      "end": 1793228153533.2214,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228153916,
+      "end": 1793228158112.2786,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228158499,
+      "end": 1793228170256.841,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228170634,
+      "end": 1793228172432.7954,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228172811,
+      "end": 1793228175189.0847,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228175565,
+      "end": 1793228176816.6748,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228177235,
+      "end": 1793228179416.1084,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-complex-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228179805,
+      "end": 1793228200101.4873,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-complex-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228200443,
+      "end": 1793228233468.851,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228233814,
+      "end": 1793228263842.5452,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228264192,
+      "end": 1793228323070.499,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228323420,
+      "end": 1793228328284.4717,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228328669,
+      "end": 1793228334792.701,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228335175,
+      "end": 1793228340340.573,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228340720,
+      "end": 1793228348993.214,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228349382,
+      "end": 1793228354119.3298,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228354501,
+      "end": 1793228360531.6384,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228360920,
+      "end": 1793228366085.2004,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228366467,
+      "end": 1793228374878.089,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228375258,
+      "end": 1793228386277.0562,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228386662,
+      "end": 1793228406483.277,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228406828,
+      "end": 1793228421538.7085,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228421893,
+      "end": 1793228457472.6826,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228457844,
+      "end": 1793228463252.7305,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228463643,
+      "end": 1793228477969.428,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228478318,
+      "end": 1793228483861.1846,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228484246,
+      "end": 1793228506682.7354,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228507026,
+      "end": 1793228513470.7178,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228513858,
+      "end": 1793228529772.3013,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228530116,
+      "end": 1793228537305.4944,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228537690,
+      "end": 1793228563118.2588,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228563465,
+      "end": 1793228568087.1118,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228568467,
+      "end": 1793228581636.7014,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228581995,
+      "end": 1793228586387.8525,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228586775,
+      "end": 1793228607087.1157,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-scalar20-1k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228607429,
+      "end": 1793228609058.0334,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-1k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228609450,
+      "end": 1793228610814.809,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228611192,
+      "end": 1793228612151.565,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228612533,
+      "end": 1793228613217.3196,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228613600,
+      "end": 1793228658439.0803,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228658787,
+      "end": 1793228686312.1418,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228686656,
+      "end": 1793228773497.053,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228773867,
+      "end": 1793228814788.768,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-width8-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228815144,
+      "end": 1793228816828.4612,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width8-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228817215,
+      "end": 1793228818568.2278,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228818956,
+      "end": 1793228819990.5125,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228820378,
+      "end": 1793228821176.2893,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228821562,
+      "end": 1793228827653.4685,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228828041,
+      "end": 1793228831561.1106,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228831946,
+      "end": 1793228843766.078,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228844108,
+      "end": 1793228848278.9065,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228848668,
+      "end": 1793228851040.4026,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228851422,
+      "end": 1793228853222.7573,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228853605,
+      "end": 1793228855695.805,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228856079,
+      "end": 1793228857309.869,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-complex-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228857693,
+      "end": 1793228889327.6885,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-complex-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228889699,
+      "end": 1793228910374.8333,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228910719,
+      "end": 1793228969316.7305,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228969684,
+      "end": 1793228999638.4583,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793228999985,
+      "end": 1793229006326.666,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229006713,
+      "end": 1793229011360.174,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229011742,
+      "end": 1793229020063.0886,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229020441,
+      "end": 1793229025659.5337,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229026045,
+      "end": 1793229032103.8196,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229032492,
+      "end": 1793229037156.36,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229037539,
+      "end": 1793229045934.7085,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229046309,
+      "end": 1793229051410.3562,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229051790,
+      "end": 1793229071973.829,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229072322,
+      "end": 1793229083286.9377,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229083671,
+      "end": 1793229120450.3037,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229120812,
+      "end": 1793229135493.8962,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229135839,
+      "end": 1793229150121.3467,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229150473,
+      "end": 1793229155880.456,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229156280,
+      "end": 1793229178680.7825,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229179025,
+      "end": 1793229184663.8455,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229185057,
+      "end": 1793229200985.6772,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229201339,
+      "end": 1793229207772.8022,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229208152,
+      "end": 1793229233464.9766,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229233808,
+      "end": 1793229241050.5537,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229241440,
+      "end": 1793229254624.1345,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229254972,
+      "end": 1793229259544.803,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229259932,
+      "end": 1793229280356.113,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229280700,
+      "end": 1793229285000.9648,
+      "audit_issues": 0,
+      "metrics": 1
+    }
+  ]
+}

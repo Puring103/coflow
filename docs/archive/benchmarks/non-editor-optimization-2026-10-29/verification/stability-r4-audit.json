@@ -1,0 +1,101 @@
+{
+  "directory": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\stability-r4",
+  "audited_at": "2026-10-28T23:22:25.988Z",
+  "audit_status": "complete",
+  "method": "Read-only audit of archived plans, metadata and operation results. Only fully validated operation metrics are eligible for pairs; partial runs remain separate. Does not rerun benchmarks or hash current binaries.",
+  "counts": {
+    "pending": 0,
+    "completed": 6,
+    "partial": 0,
+    "censored": 0,
+    "failed": 0
+  },
+  "process_counts": {
+    "pending": 0,
+    "completed": 6,
+    "censored": 0,
+    "failed": 0
+  },
+  "completed_pairs": [
+    {
+      "scenario": "rust-main-100k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-main-100k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-main-100k",
+      "round": 3,
+      "metrics": 5
+    }
+  ],
+  "partial_pairs": [],
+  "operation_failures": [],
+  "issues": [],
+  "runs": [
+    {
+      "id": "rust-main-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229285460,
+      "end": 1793229326714.2314,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229327088,
+      "end": 1793229367779.7422,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229368134,
+      "end": 1793229408775.4526,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229409134,
+      "end": 1793229450470.7842,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229450839,
+      "end": 1793229492149.5376,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793229492519,
+      "end": 1793229533269.9077,
+      "audit_issues": 0,
+      "metrics": 5
+    }
+  ]
+}

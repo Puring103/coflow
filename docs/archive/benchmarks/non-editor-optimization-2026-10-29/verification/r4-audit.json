@@ -1,0 +1,4513 @@
+{
+  "directory": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r4",
+  "audited_at": "2026-10-28T22:42:35.315Z",
+  "audit_status": "complete_with_censored_or_failed_runs",
+  "method": "Read-only audit of archived plans, metadata and operation results. Only fully validated operation metrics are eligible for pairs; partial runs remain separate. Does not rerun benchmarks or hash current binaries.",
+  "counts": {
+    "pending": 0,
+    "completed": 276,
+    "partial": 3,
+    "censored": 6,
+    "failed": 0
+  },
+  "process_counts": {
+    "pending": 0,
+    "completed": 276,
+    "censored": 6,
+    "failed": 3
+  },
+  "completed_pairs": [
+    {
+      "scenario": "rust-structures-literal-100k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "rust-hot-100k",
+      "round": 1,
+      "metrics": 3
+    },
+    {
+      "scenario": "rust-invalid-fanin-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "cli-all-1k",
+      "round": 1,
+      "metrics": 39
+    },
+    {
+      "scenario": "cli-common-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "cli-width100-10k",
+      "round": 1,
+      "metrics": 2
+    },
+    {
+      "scenario": "cli-dim10-sparse-10k",
+      "round": 1,
+      "metrics": 3
+    },
+    {
+      "scenario": "cli-dim10-dense-10k",
+      "round": 1,
+      "metrics": 3
+    },
+    {
+      "scenario": "cli-all-1k",
+      "round": 2,
+      "metrics": 39
+    },
+    {
+      "scenario": "cli-common-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "cli-width100-10k",
+      "round": 2,
+      "metrics": 2
+    },
+    {
+      "scenario": "cli-dim10-sparse-10k",
+      "round": 2,
+      "metrics": 3
+    },
+    {
+      "scenario": "cli-dim10-dense-10k",
+      "round": 2,
+      "metrics": 3
+    },
+    {
+      "scenario": "cli-all-1k",
+      "round": 3,
+      "metrics": 39
+    },
+    {
+      "scenario": "cli-common-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "cli-width100-10k",
+      "round": 3,
+      "metrics": 2
+    },
+    {
+      "scenario": "cli-dim10-sparse-10k",
+      "round": 3,
+      "metrics": 3
+    },
+    {
+      "scenario": "cli-dim10-dense-10k",
+      "round": 3,
+      "metrics": 3
+    },
+    {
+      "scenario": "csharp-scalar20-1k",
+      "round": 1,
+      "metrics": 10
+    },
+    {
+      "scenario": "mono-scalar20-1k",
+      "round": 1,
+      "metrics": 10
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 1,
+      "metrics": 9
+    },
+    {
+      "scenario": "mono-scalar20-100k",
+      "round": 1,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-width8-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width8-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-complex-100k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "mono-complex-100k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "csharp-templates-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-templates-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 1,
+      "metrics": 13
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 1,
+      "metrics": 13
+    },
+    {
+      "scenario": "csharp-dim10-sparse-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-sparse-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-dense-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-dense-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-no-templates-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-no-templates-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-scalar20-1k",
+      "round": 2,
+      "metrics": 10
+    },
+    {
+      "scenario": "mono-scalar20-1k",
+      "round": 2,
+      "metrics": 10
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 2,
+      "metrics": 9
+    },
+    {
+      "scenario": "mono-scalar20-100k",
+      "round": 2,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-width8-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width8-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-complex-100k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "mono-complex-100k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "csharp-templates-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-templates-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 2,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 2,
+      "metrics": 13
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 2,
+      "metrics": 13
+    },
+    {
+      "scenario": "csharp-dim10-sparse-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-sparse-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-dense-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-dense-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-no-templates-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-no-templates-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-scalar20-1k",
+      "round": 3,
+      "metrics": 10
+    },
+    {
+      "scenario": "mono-scalar20-1k",
+      "round": 3,
+      "metrics": 10
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 3,
+      "metrics": 9
+    },
+    {
+      "scenario": "mono-scalar20-100k",
+      "round": 3,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-width8-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width8-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-complex-100k",
+      "round": 3,
+      "metrics": 5
+    },
+    {
+      "scenario": "mono-complex-100k",
+      "round": 3,
+      "metrics": 5
+    },
+    {
+      "scenario": "csharp-templates-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-templates-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 3,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 3,
+      "metrics": 13
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 3,
+      "metrics": 13
+    },
+    {
+      "scenario": "csharp-dim10-sparse-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-sparse-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-dense-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-dense-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "csharp-dim10-no-templates-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "mono-dim10-no-templates-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-all-1k",
+      "round": 1,
+      "metrics": 32
+    },
+    {
+      "scenario": "rust-common-10k",
+      "round": 1,
+      "metrics": 11
+    },
+    {
+      "scenario": "rust-main-100k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "rust-budget-20000",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-2000",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-no-templates-10k",
+      "round": 1,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "round": 1,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-singlefile-10k",
+      "round": 1,
+      "metrics": 3
+    },
+    {
+      "scenario": "rust-dim10-existing-sparse-10k",
+      "round": 1,
+      "metrics": 2
+    },
+    {
+      "scenario": "rust-dim10-existing-dense-10k",
+      "round": 1,
+      "metrics": 2
+    },
+    {
+      "scenario": "engine-model-10000",
+      "round": 1,
+      "metrics": 23
+    },
+    {
+      "scenario": "rust-all-1k",
+      "round": 2,
+      "metrics": 32
+    },
+    {
+      "scenario": "rust-common-10k",
+      "round": 2,
+      "metrics": 11
+    },
+    {
+      "scenario": "rust-main-100k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "round": 2,
+      "metrics": 4
+    },
+    {
+      "scenario": "rust-hot-100k",
+      "round": 2,
+      "metrics": 3
+    },
+    {
+      "scenario": "rust-budget-20000",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-2000",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-no-templates-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-fanin-10k",
+      "round": 2,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "round": 2,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-singlefile-10k",
+      "round": 2,
+      "metrics": 3
+    },
+    {
+      "scenario": "rust-dim10-existing-sparse-10k",
+      "round": 2,
+      "metrics": 2
+    },
+    {
+      "scenario": "rust-dim10-existing-dense-10k",
+      "round": 2,
+      "metrics": 2
+    },
+    {
+      "scenario": "engine-model-10000",
+      "round": 2,
+      "metrics": 23
+    },
+    {
+      "scenario": "rust-all-1k",
+      "round": 3,
+      "metrics": 32
+    },
+    {
+      "scenario": "rust-common-10k",
+      "round": 3,
+      "metrics": 11
+    },
+    {
+      "scenario": "rust-main-100k",
+      "round": 3,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "round": 3,
+      "metrics": 4
+    },
+    {
+      "scenario": "rust-hot-100k",
+      "round": 3,
+      "metrics": 3
+    },
+    {
+      "scenario": "rust-budget-20000",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-2000",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-no-templates-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-invalid-fanin-10k",
+      "round": 3,
+      "metrics": 1
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "round": 3,
+      "metrics": 5
+    },
+    {
+      "scenario": "rust-singlefile-10k",
+      "round": 3,
+      "metrics": 3
+    },
+    {
+      "scenario": "rust-dim10-existing-sparse-10k",
+      "round": 3,
+      "metrics": 2
+    },
+    {
+      "scenario": "rust-dim10-existing-dense-10k",
+      "round": 3,
+      "metrics": 2
+    },
+    {
+      "scenario": "engine-model-10000",
+      "round": 3,
+      "metrics": 23
+    }
+  ],
+  "partial_pairs": [
+    {
+      "scenario": "cli-main-100k",
+      "round": 1,
+      "metrics": 2,
+      "baseline_status": "partial",
+      "optimized_status": "completed",
+      "validated_metrics": [
+        "data_get",
+        "check_rules"
+      ]
+    },
+    {
+      "scenario": "cli-main-100k",
+      "round": 2,
+      "metrics": 2,
+      "baseline_status": "partial",
+      "optimized_status": "completed",
+      "validated_metrics": [
+        "data_get",
+        "check_rules"
+      ]
+    },
+    {
+      "scenario": "cli-main-100k",
+      "round": 3,
+      "metrics": 2,
+      "baseline_status": "partial",
+      "optimized_status": "completed",
+      "validated_metrics": [
+        "data_get",
+        "check_rules"
+      ]
+    }
+  ],
+  "operation_failures": [
+    {
+      "run": "cli-main-100k-r1-baseline",
+      "metric": "set_field",
+      "classification": "censored_timeout",
+      "timeout_command": "data set --type Row --id r000000 --path value --value-cfd 1000000",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120278.5366,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: data set --type Row --id r000000 --path value --value-cfd 1000000\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120278.5366,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r1-baseline",
+      "metric": "batch_same_file",
+      "classification": "censored_timeout",
+      "timeout_command": "apply --input - --rules",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120283.0923,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120283.0923,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r1-baseline",
+      "metric": "batch_cross_file",
+      "classification": "censored_timeout",
+      "timeout_command": "apply --input - --rules",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120370.7091,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120370.7091,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r2-baseline",
+      "metric": "set_field",
+      "classification": "censored_timeout",
+      "timeout_command": "data set --type Row --id r000000 --path value --value-cfd 1000000",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120284.1505,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: data set --type Row --id r000000 --path value --value-cfd 1000000\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120284.1505,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r2-baseline",
+      "metric": "batch_same_file",
+      "classification": "censored_timeout",
+      "timeout_command": "apply --input - --rules",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120255.7174,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120255.7174,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r2-baseline",
+      "metric": "batch_cross_file",
+      "classification": "censored_timeout",
+      "timeout_command": "apply --input - --rules",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120290.9815,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120290.9815,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r3-baseline",
+      "metric": "set_field",
+      "classification": "censored_timeout",
+      "timeout_command": "data set --type Row --id r000000 --path value --value-cfd 1000000",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120271.0935,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: data set --type Row --id r000000 --path value --value-cfd 1000000\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120271.0935,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r3-baseline",
+      "metric": "batch_same_file",
+      "classification": "censored_timeout",
+      "timeout_command": "apply --input - --rules",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120264.0248,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120264.0248,
+        "exit_code": null,
+        "stderr": ""
+      }
+    },
+    {
+      "run": "cli-main-100k-r3-baseline",
+      "metric": "batch_cross_file",
+      "classification": "censored_timeout",
+      "timeout_command": "apply --input - --rules",
+      "timeout_ms": 120000,
+      "recorded_elapsed_ms": 120277.8349,
+      "retained_unaccepted_samples": 0,
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "failure": {
+        "elapsed_ms": 120277.8349,
+        "exit_code": null,
+        "stderr": ""
+      }
+    }
+  ],
+  "issues": [],
+  "runs": [
+    {
+      "id": "rust-structures-literal-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216591399,
+      "end": 1793216707632.5698,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-literal-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216708040,
+      "end": 1793216781549.1333,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-hot-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216781930,
+      "end": 1793216838552.781,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-hot-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216838942,
+      "end": 1793216894665.6104,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-invalid-100000-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216895079,
+      "end": 1793216910762.757,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216911140,
+      "end": 1793216911965.1526,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793216912382,
+      "end": 1793216913181.6392,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "cli-all-1k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221709112,
+      "end": 1793221778107.666,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 39,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "project_inspect",
+        "schema_inspect",
+        "data_get",
+        "data_list",
+        "filter_sort",
+        "data_search",
+        "data_refs",
+        "check_structure",
+        "check_rules",
+        "stats_field",
+        "dimension_get",
+        "dimension_missing",
+        "dimension_diff",
+        "dimension_query",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file",
+        "set_where",
+        "array_insert",
+        "array_remove",
+        "array_move",
+        "dict_set",
+        "dict_remove",
+        "create_record",
+        "delete_record",
+        "rename_record",
+        "transfer_record",
+        "unset_field",
+        "dimension_set",
+        "dimension_add_variant",
+        "dimension_clear",
+        "source_write",
+        "reject_invalid_value",
+        "reject_invalid_source",
+        "repair_invalid_source",
+        "revision_conflict"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 39
+    },
+    {
+      "id": "cli-all-1k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221778533,
+      "end": 1793221801420.5254,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 39,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "project_inspect",
+        "schema_inspect",
+        "data_get",
+        "data_list",
+        "filter_sort",
+        "data_search",
+        "data_refs",
+        "check_structure",
+        "check_rules",
+        "stats_field",
+        "dimension_get",
+        "dimension_missing",
+        "dimension_diff",
+        "dimension_query",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file",
+        "set_where",
+        "array_insert",
+        "array_remove",
+        "array_move",
+        "dict_set",
+        "dict_remove",
+        "create_record",
+        "delete_record",
+        "rename_record",
+        "transfer_record",
+        "unset_field",
+        "dimension_set",
+        "dimension_add_variant",
+        "dimension_clear",
+        "source_write",
+        "reject_invalid_value",
+        "reject_invalid_source",
+        "repair_invalid_source",
+        "revision_conflict"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 39
+    },
+    {
+      "id": "cli-common-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221801858,
+      "end": 1793221999377.4612,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 8,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "cli-common-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221999836,
+      "end": 1793222026077.9224,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 8,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "cli-main-100k-r1-baseline",
+      "status": "partial",
+      "process_status": "failed",
+      "exit_code": 1,
+      "start": 1793222026502,
+      "end": 1793222438853.2183,
+      "report_success": false,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 3,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-main-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793223565755,
+      "end": 1793223720069.6543,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 5,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "cli-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793223720510,
+      "end": 1793223790161.044,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "set_field"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793223790619,
+      "end": 1793223807786.187,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "set_field"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-dim10-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793223808241,
+      "end": 1793223924771.0972,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793223925226,
+      "end": 1793223941650.5256,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-dense-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793223942085,
+      "end": 1793224105465.5652,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-dense-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224105926,
+      "end": 1793224141081.6038,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-all-1k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224141508,
+      "end": 1793224164562.37,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 39,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "project_inspect",
+        "schema_inspect",
+        "data_get",
+        "data_list",
+        "filter_sort",
+        "data_search",
+        "data_refs",
+        "check_structure",
+        "check_rules",
+        "stats_field",
+        "dimension_get",
+        "dimension_missing",
+        "dimension_diff",
+        "dimension_query",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file",
+        "set_where",
+        "array_insert",
+        "array_remove",
+        "array_move",
+        "dict_set",
+        "dict_remove",
+        "create_record",
+        "delete_record",
+        "rename_record",
+        "transfer_record",
+        "unset_field",
+        "dimension_set",
+        "dimension_add_variant",
+        "dimension_clear",
+        "source_write",
+        "reject_invalid_value",
+        "reject_invalid_source",
+        "repair_invalid_source",
+        "revision_conflict"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 39
+    },
+    {
+      "id": "cli-all-1k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224165014,
+      "end": 1793224233842.068,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 39,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "project_inspect",
+        "schema_inspect",
+        "data_get",
+        "data_list",
+        "filter_sort",
+        "data_search",
+        "data_refs",
+        "check_structure",
+        "check_rules",
+        "stats_field",
+        "dimension_get",
+        "dimension_missing",
+        "dimension_diff",
+        "dimension_query",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file",
+        "set_where",
+        "array_insert",
+        "array_remove",
+        "array_move",
+        "dict_set",
+        "dict_remove",
+        "create_record",
+        "delete_record",
+        "rename_record",
+        "transfer_record",
+        "unset_field",
+        "dimension_set",
+        "dimension_add_variant",
+        "dimension_clear",
+        "source_write",
+        "reject_invalid_value",
+        "reject_invalid_source",
+        "repair_invalid_source",
+        "revision_conflict"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 39
+    },
+    {
+      "id": "cli-common-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224734760,
+      "end": 1793224761072.6548,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 8,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "cli-common-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224761515,
+      "end": 1793224960807.4453,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 8,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "cli-main-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224961261,
+      "end": 1793225115585.7192,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 5,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "cli-main-100k-r2-baseline",
+      "status": "partial",
+      "process_status": "failed",
+      "exit_code": 1,
+      "start": 1793225116026,
+      "end": 1793225528000.6143,
+      "report_success": false,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 3,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-width100-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225528452,
+      "end": 1793225545550.7954,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "set_field"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-width100-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225545981,
+      "end": 1793225615282.869,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "set_field"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-dim10-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225615736,
+      "end": 1793225632017.5657,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225632447,
+      "end": 1793225748421.256,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-dense-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225748853,
+      "end": 1793225784391.172,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-dense-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225784820,
+      "end": 1793225948108.6582,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-all-1k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793225948581,
+      "end": 1793226017347.958,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 39,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "project_inspect",
+        "schema_inspect",
+        "data_get",
+        "data_list",
+        "filter_sort",
+        "data_search",
+        "data_refs",
+        "check_structure",
+        "check_rules",
+        "stats_field",
+        "dimension_get",
+        "dimension_missing",
+        "dimension_diff",
+        "dimension_query",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file",
+        "set_where",
+        "array_insert",
+        "array_remove",
+        "array_move",
+        "dict_set",
+        "dict_remove",
+        "create_record",
+        "delete_record",
+        "rename_record",
+        "transfer_record",
+        "unset_field",
+        "dimension_set",
+        "dimension_add_variant",
+        "dimension_clear",
+        "source_write",
+        "reject_invalid_value",
+        "reject_invalid_source",
+        "repair_invalid_source",
+        "revision_conflict"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 39
+    },
+    {
+      "id": "cli-all-1k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226017789,
+      "end": 1793226040452.8333,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 39,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "project_inspect",
+        "schema_inspect",
+        "data_get",
+        "data_list",
+        "filter_sort",
+        "data_search",
+        "data_refs",
+        "check_structure",
+        "check_rules",
+        "stats_field",
+        "dimension_get",
+        "dimension_missing",
+        "dimension_diff",
+        "dimension_query",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file",
+        "set_where",
+        "array_insert",
+        "array_remove",
+        "array_move",
+        "dict_set",
+        "dict_remove",
+        "create_record",
+        "delete_record",
+        "rename_record",
+        "transfer_record",
+        "unset_field",
+        "dimension_set",
+        "dimension_add_variant",
+        "dimension_clear",
+        "source_write",
+        "reject_invalid_value",
+        "reject_invalid_source",
+        "repair_invalid_source",
+        "revision_conflict"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 39
+    },
+    {
+      "id": "cli-common-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226040879,
+      "end": 1793226238164.7976,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 8,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "cli-common-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226238614,
+      "end": 1793226265055.0283,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 8,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "set_field_rules",
+        "set_noop",
+        "set_preview",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "cli-main-100k-r3-baseline",
+      "status": "partial",
+      "process_status": "failed",
+      "exit_code": 1,
+      "start": 1793226265483,
+      "end": 1793226677301.5508,
+      "report_success": false,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 3,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-main-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226677747,
+      "end": 1793226831936.4153,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 5,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "check_rules",
+        "set_field",
+        "batch_same_file",
+        "batch_cross_file"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "cli-width100-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226832394,
+      "end": 1793226901281.4895,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "set_field"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-width100-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226901715,
+      "end": 1793226918796.453,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 2,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "data_get",
+        "set_field"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "cli-dim10-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793226919247,
+      "end": 1793227035174.538,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227035633,
+      "end": 1793227052162.9138,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-dense-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227052598,
+      "end": 1793227216349.7522,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "cli-dim10-dense-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793227216799,
+      "end": 1793227252184.0881,
+      "report_success": true,
+      "report_finalized": true,
+      "operation_counts": {
+        "validated": 3,
+        "censored": 0,
+        "failed": 0,
+        "unfinished": 0,
+        "missing": 0
+      },
+      "validated_metrics": [
+        "dimension_query",
+        "dimension_set",
+        "dimension_clear"
+      ],
+      "unfinished_metrics": [],
+      "missing_metrics": [],
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "csharp-scalar20-1k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219753548,
+      "end": 1793219755159.8655,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-1k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219755546,
+      "end": 1793219756876.625,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219757292,
+      "end": 1793219759089.706,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219759479,
+      "end": 1793219760202.9705,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793214753421,
+      "end": 1793214828380.7285,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793214828766,
+      "end": 1793214874734.784,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219760593,
+      "end": 1793219848217.3667,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219848584,
+      "end": 1793219892902.758,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-width8-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219893251,
+      "end": 1793219894971.078,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width8-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219895377,
+      "end": 1793219896855.166,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219897235,
+      "end": 1793219898286.7834,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219898679,
+      "end": 1793219899424.329,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219899810,
+      "end": 1793219905924.3286,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219906310,
+      "end": 1793219909737.1133,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219910146,
+      "end": 1793219922203.1565,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219922554,
+      "end": 1793219926703.8408,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219927088,
+      "end": 1793219929456.5037,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219929844,
+      "end": 1793219931652.4329,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219932032,
+      "end": 1793219934123.6248,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219934516,
+      "end": 1793219935836.5288,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-complex-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219936221,
+      "end": 1793219968474.3098,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-complex-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219968822,
+      "end": 1793219988166.111,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219988511,
+      "end": 1793220047594.5378,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220047946,
+      "end": 1793220078057.455,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220078405,
+      "end": 1793220084599.933,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220084984,
+      "end": 1793220089551.354,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220089934,
+      "end": 1793220098189.3708,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220098570,
+      "end": 1793220103831.4587,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220104216,
+      "end": 1793220110249.4922,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220110636,
+      "end": 1793220116632.7214,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220117010,
+      "end": 1793220125417.2227,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220125801,
+      "end": 1793220139899.473,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793214875154,
+      "end": 1793214907689.9458,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793214908115,
+      "end": 1793214925049.7444,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220140268,
+      "end": 1793220175730.2866,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220176118,
+      "end": 1793220190555.6487,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220190904,
+      "end": 1793220205216.3225,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220205580,
+      "end": 1793220210823.591,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220211207,
+      "end": 1793220233471.7144,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220233816,
+      "end": 1793220238945.2898,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220239330,
+      "end": 1793220255518.202,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220255893,
+      "end": 1793220262130.0972,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220262517,
+      "end": 1793220287809.058,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220288155,
+      "end": 1793220294887.931,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220295274,
+      "end": 1793220308437.2285,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220308781,
+      "end": 1793220313244.8926,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220313634,
+      "end": 1793220333958.6982,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220334354,
+      "end": 1793220338363.359,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-scalar20-1k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220338750,
+      "end": 1793220340187.9302,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-1k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220340569,
+      "end": 1793220342176.5637,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220342567,
+      "end": 1793220343285.3438,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220343670,
+      "end": 1793220344636.4,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220345041,
+      "end": 1793220372507.1147,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220372861,
+      "end": 1793220416816.4932,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220417182,
+      "end": 1793220461370.9187,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220461747,
+      "end": 1793220548194.552,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-width8-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220548563,
+      "end": 1793220549996.4983,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width8-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220550385,
+      "end": 1793220552132.7966,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220552522,
+      "end": 1793220553271.998,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220553657,
+      "end": 1793220554751.7124,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220555161,
+      "end": 1793220558673.8774,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220559063,
+      "end": 1793220565258.511,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220565646,
+      "end": 1793220569812.6455,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220570193,
+      "end": 1793220582007.4536,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220582364,
+      "end": 1793220584153.8853,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220584540,
+      "end": 1793220586964.438,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220587346,
+      "end": 1793220588651.2693,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220589030,
+      "end": 1793220591150.5881,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-complex-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220591543,
+      "end": 1793220610040.3726,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-complex-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220610394,
+      "end": 1793220642711.2517,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220643080,
+      "end": 1793220672934.9575,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220673278,
+      "end": 1793220732319.2754,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220732667,
+      "end": 1793220737642.7205,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220738029,
+      "end": 1793220744282.3992,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220744660,
+      "end": 1793220749917.6245,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220750300,
+      "end": 1793220758554.6145,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220758947,
+      "end": 1793220764860.0361,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220765240,
+      "end": 1793220771335.5837,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220771714,
+      "end": 1793220785251.512,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220785592,
+      "end": 1793220794016.646,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220794401,
+      "end": 1793220805284.3618,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220805662,
+      "end": 1793220825449.2,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220825789,
+      "end": 1793220840215.1455,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220840562,
+      "end": 1793220876001.5117,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220876358,
+      "end": 1793220881532.1902,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220881919,
+      "end": 1793220895860.9038,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220896206,
+      "end": 1793220901401.7173,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220901794,
+      "end": 1793220924029.4678,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220924380,
+      "end": 1793220930658.2827,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220931054,
+      "end": 1793220946484.3638,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220946841,
+      "end": 1793220953665.1445,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220954053,
+      "end": 1793220979368.8916,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220979721,
+      "end": 1793220984169.293,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220984579,
+      "end": 1793220997845.4524,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793220998191,
+      "end": 1793221002207.4285,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221002592,
+      "end": 1793221022986.7505,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-scalar20-1k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221023333,
+      "end": 1793221024979.1504,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-1k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221025371,
+      "end": 1793221026693.9504,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221027076,
+      "end": 1793221028041.9585,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "mono-scalar20-1k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221028432,
+      "end": 1793221029167.6267,
+      "audit_issues": 0,
+      "metrics": 10
+    },
+    {
+      "id": "csharp-scalar20-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221029557,
+      "end": 1793221073954.2046,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221074325,
+      "end": 1793221101860.239,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221102207,
+      "end": 1793221188585.9563,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "mono-scalar20-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221188936,
+      "end": 1793221233557.7114,
+      "audit_issues": 0,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-width8-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221233918,
+      "end": 1793221235626.225,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width8-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221236016,
+      "end": 1793221237363.3267,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221237740,
+      "end": 1793221238774.255,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width8-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221239165,
+      "end": 1793221239913.8342,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221240328,
+      "end": 1793221246355.9346,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221246744,
+      "end": 1793221250126.5833,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221250526,
+      "end": 1793221262640.8196,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221262996,
+      "end": 1793221267163.8047,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221267556,
+      "end": 1793221269881.595,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221270261,
+      "end": 1793221272002.3047,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221272388,
+      "end": 1793221274528.9316,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221274913,
+      "end": 1793221276184.4617,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-complex-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221276586,
+      "end": 1793221307737.63,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-complex-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221308100,
+      "end": 1793221326622.6582,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221326972,
+      "end": 1793221385938.185,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "mono-complex-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221386300,
+      "end": 1793221416249.8308,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "csharp-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221416602,
+      "end": 1793221422846.3674,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221423239,
+      "end": 1793221428110.368,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221428491,
+      "end": 1793221436862.8838,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221437243,
+      "end": 1793221442469.5935,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221442851,
+      "end": 1793221448935.2998,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221449327,
+      "end": 1793221455270.201,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221455649,
+      "end": 1793221463937.631,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221464320,
+      "end": 1793221477944.4973,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221478292,
+      "end": 1793221497991.2815,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221498345,
+      "end": 1793221509275.4663,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221509658,
+      "end": 1793221544663.5398,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221545011,
+      "end": 1793221559230.659,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221559579,
+      "end": 1793221573763.8633,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221574112,
+      "end": 1793221579276.8523,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221579664,
+      "end": 1793221603524.9988,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221603866,
+      "end": 1793221609013.793,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221609419,
+      "end": 1793221625174.1765,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-dense-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221625526,
+      "end": 1793221631731.1523,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221632115,
+      "end": 1793221657881.178,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-dense-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221658223,
+      "end": 1793221665016.8499,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221665414,
+      "end": 1793221678395.163,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "csharp-dim10-no-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221678741,
+      "end": 1793221683078.8276,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221683464,
+      "end": 1793221704109.5022,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "mono-dim10-no-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793221704460,
+      "end": 1793221708493.034,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-all-1k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217088606,
+      "end": 1793217109110.1292,
+      "audit_issues": 0,
+      "metrics": 32
+    },
+    {
+      "id": "rust-all-1k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217109497,
+      "end": 1793217114497.7993,
+      "audit_issues": 0,
+      "metrics": 32
+    },
+    {
+      "id": "rust-common-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217114926,
+      "end": 1793217139292.5122,
+      "audit_issues": 0,
+      "metrics": 11
+    },
+    {
+      "id": "rust-common-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217139678,
+      "end": 1793217160789.1116,
+      "audit_issues": 0,
+      "metrics": 11
+    },
+    {
+      "id": "rust-main-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217161178,
+      "end": 1793217235041.2986,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217235423,
+      "end": 1793217307596.7412,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-structures-100k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217308011,
+      "end": 1793217434381.8281,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-100k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217434792,
+      "end": 1793217532680.4146,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-budget-20000-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217533071,
+      "end": 1793217579770.9688,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-budget-20000-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217580182,
+      "end": 1793217580716.122,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-2000-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217581124,
+      "end": 1793217612709.7705,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-2000-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217613097,
+      "end": 1793217613310.0962,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-10000-r1-baseline",
+      "status": "censored",
+      "process_status": "censored",
+      "exit_code": -1,
+      "start": 1793217613713,
+      "end": 1793217733757.7104
+    },
+    {
+      "id": "rust-invalid-10000-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217734152,
+      "end": 1793217735114.8223,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217735528,
+      "end": 1793217736522.7732,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217736933,
+      "end": 1793217737736.9543,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-recovery-10k-r1-baseline",
+      "status": "censored",
+      "process_status": "censored",
+      "exit_code": -1,
+      "start": 1793217738140,
+      "end": 1793217858220.9785
+    },
+    {
+      "id": "rust-recovery-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217858616,
+      "end": 1793217860047.698,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217860462,
+      "end": 1793217876320.986,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217876707,
+      "end": 1793217892351.2217,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-singlefile-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217892728,
+      "end": 1793217895479.5696,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-singlefile-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217895908,
+      "end": 1793217898613.9553,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217899064,
+      "end": 1793217913451.6943,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217913841,
+      "end": 1793217927949.329,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217928368,
+      "end": 1793217964774.614,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217965163,
+      "end": 1793217990619.2578,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "engine-model-10000-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793217991011,
+      "end": 1793218001202.4773,
+      "audit_issues": 0,
+      "metrics": 23
+    },
+    {
+      "id": "engine-model-10000-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218001643,
+      "end": 1793218011182.5603,
+      "audit_issues": 0,
+      "metrics": 23
+    },
+    {
+      "id": "rust-all-1k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218011617,
+      "end": 1793218016543.261,
+      "audit_issues": 0,
+      "metrics": 32
+    },
+    {
+      "id": "rust-all-1k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218016980,
+      "end": 1793218037460.978,
+      "audit_issues": 0,
+      "metrics": 32
+    },
+    {
+      "id": "rust-common-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218037850,
+      "end": 1793218059380.297,
+      "audit_issues": 0,
+      "metrics": 11
+    },
+    {
+      "id": "rust-common-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218059782,
+      "end": 1793218084656.8843,
+      "audit_issues": 0,
+      "metrics": 11
+    },
+    {
+      "id": "rust-main-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218085063,
+      "end": 1793218158558.11,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218158966,
+      "end": 1793218221718.9778,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-structures-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218222086,
+      "end": 1793218276766.8616,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218277153,
+      "end": 1793218347052.1113,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-literal-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218347411,
+      "end": 1793218388730.8518,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-literal-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218389088,
+      "end": 1793218455179.269,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-hot-100k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218455560,
+      "end": 1793218488109.1106,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-hot-100k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218488486,
+      "end": 1793218521234.3735,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-budget-20000-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218521619,
+      "end": 1793218522149.9014,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-budget-20000-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218522551,
+      "end": 1793218544447.4055,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-2000-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218544815,
+      "end": 1793218545024.2273,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-2000-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218545403,
+      "end": 1793218566025.4006,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-10000-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218566377,
+      "end": 1793218567340.0735,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-10000-r2-baseline",
+      "status": "censored",
+      "process_status": "censored",
+      "exit_code": -1,
+      "start": 1793218567739,
+      "end": 1793218687841.4463
+    },
+    {
+      "id": "rust-invalid-100000-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218688218,
+      "end": 1793218698136.4785,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218698527,
+      "end": 1793218699329.9033,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218699726,
+      "end": 1793218700710.187,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218701105,
+      "end": 1793218701903.409,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218702305,
+      "end": 1793218703131.4182,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-recovery-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218703529,
+      "end": 1793218704978.6763,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-recovery-10k-r2-baseline",
+      "status": "censored",
+      "process_status": "censored",
+      "exit_code": -1,
+      "start": 1793218705368,
+      "end": 1793218825438.7969
+    },
+    {
+      "id": "rust-width100-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218825797,
+      "end": 1793218835752.4963,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-width100-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218836138,
+      "end": 1793218846267.072,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-singlefile-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218846658,
+      "end": 1793218849338.587,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-singlefile-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218849732,
+      "end": 1793218852448.4624,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218852832,
+      "end": 1793218861728.4373,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218862125,
+      "end": 1793218871294.928,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218871686,
+      "end": 1793218886930.2368,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218887280,
+      "end": 1793218908684.5957,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "engine-model-10000-r2-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218909045,
+      "end": 1793218915778.4597,
+      "audit_issues": 0,
+      "metrics": 23
+    },
+    {
+      "id": "engine-model-10000-r2-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218916167,
+      "end": 1793218923255.3247,
+      "audit_issues": 0,
+      "metrics": 23
+    },
+    {
+      "id": "rust-all-1k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218923641,
+      "end": 1793218936959.1804,
+      "audit_issues": 0,
+      "metrics": 32
+    },
+    {
+      "id": "rust-all-1k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218937311,
+      "end": 1793218941409.1804,
+      "audit_issues": 0,
+      "metrics": 32
+    },
+    {
+      "id": "rust-common-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218941796,
+      "end": 1793218956308.2666,
+      "audit_issues": 0,
+      "metrics": 11
+    },
+    {
+      "id": "rust-common-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218956658,
+      "end": 1793218969443.253,
+      "audit_issues": 0,
+      "metrics": 11
+    },
+    {
+      "id": "rust-main-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793218969805,
+      "end": 1793219011286.6707,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219011653,
+      "end": 1793219052498.6958,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-structures-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219052859,
+      "end": 1793219122482.0994,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219122859,
+      "end": 1793219178019.8816,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-literal-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219178398,
+      "end": 1793219244516.3975,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-literal-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219244900,
+      "end": 1793219286374.7563,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "rust-hot-100k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219286730,
+      "end": 1793219319827.428,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-hot-100k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219320212,
+      "end": 1793219352492.149,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-budget-20000-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219352876,
+      "end": 1793219374761.4077,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-budget-20000-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219375136,
+      "end": 1793219375656.75,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-2000-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219376060,
+      "end": 1793219395705.9326,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-2000-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219396059,
+      "end": 1793219396266.847,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-10000-r3-baseline",
+      "status": "censored",
+      "process_status": "censored",
+      "exit_code": -1,
+      "start": 1793219396645,
+      "end": 1793219516693.8083
+    },
+    {
+      "id": "rust-invalid-10000-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219517077,
+      "end": 1793219518030.859,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-100000-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219518436,
+      "end": 1793219528371.9504,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219528772,
+      "end": 1793219529755.1826,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219530150,
+      "end": 1793219530949.8826,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219531363,
+      "end": 1793219532172.81,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219532569,
+      "end": 1793219533365.6826,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-recovery-10k-r3-baseline",
+      "status": "censored",
+      "process_status": "censored",
+      "exit_code": -1,
+      "start": 1793219533763,
+      "end": 1793219653876.3582
+    },
+    {
+      "id": "rust-recovery-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219654254,
+      "end": 1793219655691.0571,
+      "audit_issues": 0,
+      "metrics": 1
+    },
+    {
+      "id": "rust-width100-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219656087,
+      "end": 1793219666234.3118,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-width100-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219666622,
+      "end": 1793219676584.0671,
+      "audit_issues": 0,
+      "metrics": 5
+    },
+    {
+      "id": "rust-singlefile-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219676971,
+      "end": 1793219679683.7048,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-singlefile-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219680068,
+      "end": 1793219682749.6353,
+      "audit_issues": 0,
+      "metrics": 3
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219683139,
+      "end": 1793219692267.5676,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219692662,
+      "end": 1793219701483.1887,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219701868,
+      "end": 1793219723113.8967,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219723472,
+      "end": 1793219738702.5586,
+      "audit_issues": 0,
+      "metrics": 2
+    },
+    {
+      "id": "engine-model-10000-r3-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219739055,
+      "end": 1793219746100.637,
+      "audit_issues": 0,
+      "metrics": 23
+    },
+    {
+      "id": "engine-model-10000-r3-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793219746500,
+      "end": 1793219753100.655,
+      "audit_issues": 0,
+      "metrics": 23
+    }
+  ]
+}

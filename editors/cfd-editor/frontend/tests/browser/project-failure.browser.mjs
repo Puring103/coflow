@@ -24,7 +24,7 @@ test('failed project load keeps Git diff, tabs and navigation usable', async () 
           if (command === 'load_project') throw new Error('项目配置不存在')
           if (command === 'get_project_diff') { window.diffRequests++; throw new Error('无效会话') }
           if (command === 'list_frontend_plugins') return { plugins: [], errors: [] }
-          if (command === 'plugin:app|version') return '0.14.0'
+          if (command === 'plugin:app|version') return '0.15.0'
           if (command === 'plugin:event|listen') return 1
           return null
         },

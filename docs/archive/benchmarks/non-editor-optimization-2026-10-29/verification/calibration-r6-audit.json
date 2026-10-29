@@ -1,0 +1,201 @@
+{
+  "directory": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\calibration-r6",
+  "audited_at": "2026-10-28T22:37:14.271Z",
+  "audit_status": "complete",
+  "method": "Read-only audit of archived plans, metadata and operation results. Only fully validated operation metrics are eligible for pairs; partial runs remain separate. Does not rerun benchmarks or hash current binaries.",
+  "counts": {
+    "pending": 0,
+    "completed": 14,
+    "partial": 0,
+    "censored": 0,
+    "failed": 0
+  },
+  "process_counts": {
+    "pending": 0,
+    "completed": 14,
+    "censored": 0,
+    "failed": 0
+  },
+  "completed_pairs": [
+    {
+      "scenario": "csharp-width100-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-width100-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-tables32-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "mono-tables32-10k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "csharp-ring-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-ring-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "mono-dim1-sparse-10k",
+      "round": 1,
+      "metrics": 13
+    }
+  ],
+  "partial_pairs": [],
+  "operation_failures": [],
+  "issues": [],
+  "runs": [
+    {
+      "id": "csharp-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224556564,
+      "end": 1793224562620.1248,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224563006,
+      "end": 1793224566638.7534,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224567029,
+      "end": 1793224578759.8384,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-width100-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224579147,
+      "end": 1793224583307.7566,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224583725,
+      "end": 1793224586175.075,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-tables32-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224586572,
+      "end": 1793224588302.8296,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224588688,
+      "end": 1793224590797.968,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "mono-tables32-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224591192,
+      "end": 1793224592474.647,
+      "audit_issues": 0,
+      "metrics": 4
+    },
+    {
+      "id": "csharp-ring-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224592863,
+      "end": 1793224599051.3323,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-ring-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224599444,
+      "end": 1793224604435.5823,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224604816,
+      "end": 1793224613052.4995,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-ring-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224613521,
+      "end": 1793224618627.5254,
+      "audit_issues": 0,
+      "metrics": 8
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r1-baseline",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224619001,
+      "end": 1793224654083.7583,
+      "audit_issues": 0,
+      "metrics": 13
+    },
+    {
+      "id": "mono-dim1-sparse-10k-r1-optimized",
+      "status": "completed",
+      "process_status": "completed",
+      "exit_code": 0,
+      "start": 1793224654433,
+      "end": 1793224669083.4875,
+      "audit_issues": 0,
+      "metrics": 13
+    }
+  ]
+}

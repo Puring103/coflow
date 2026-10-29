@@ -1,0 +1,5852 @@
+{
+  "method": "Arithmetic median of per-process medians. Paired ratios use the same scenario and round. Missing/failed/censored operations are never imputed. These are descriptive measurements, not statistical confidence intervals.",
+  "comparisons": [
+    {
+      "scenario": "engine-model-10000",
+      "metric": "model_build",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 19.241999999999997,
+      "optimized_ms": 19.8919,
+      "improvement_percent": -3.3775075355992223,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 19.241999999999997,
+          "optimized_ms": 19.8919,
+          "ratio": 1.0337750753559922
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "model_clone_10000_f8",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 10000,
+      "baseline_ms": 0.8778,
+      "optimized_ms": 0.7563,
+      "improvement_percent": 13.841421736158587,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.8778,
+          "optimized_ms": 0.7563,
+          "ratio": 0.8615857826384141
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "model_build",
+      "records": 10000,
+      "fields": 32,
+      "operations_per_sample": 1,
+      "baseline_ms": 84.6055,
+      "optimized_ms": 84.7362,
+      "improvement_percent": -0.15448168263292317,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 84.6055,
+          "optimized_ms": 84.7362,
+          "ratio": 1.0015448168263292
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "model_clone_10000_f32",
+      "records": 10000,
+      "fields": 32,
+      "operations_per_sample": 10000,
+      "baseline_ms": 0.761,
+      "optimized_ms": 0.7625000000000001,
+      "improvement_percent": -0.1971090670170872,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.761,
+          "optimized_ms": 0.7625000000000001,
+          "ratio": 1.0019710906701709
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "model_build",
+      "records": 10000,
+      "fields": 128,
+      "operations_per_sample": 1,
+      "baseline_ms": 420.2812,
+      "optimized_ms": 415.5413,
+      "improvement_percent": 1.127792535093175,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 420.2812,
+          "optimized_ms": 415.5413,
+          "ratio": 0.9887220746490682
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "model_clone_10000_f128",
+      "records": 10000,
+      "fields": 128,
+      "operations_per_sample": 10000,
+      "baseline_ms": 0.7563,
+      "optimized_ms": 0.7665000000000001,
+      "improvement_percent": -1.348671162237225,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.7563,
+          "optimized_ms": 0.7665000000000001,
+          "ratio": 1.0134867116223722
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_build_sparse_v1",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 65.2948,
+      "optimized_ms": 64.43939999999999,
+      "improvement_percent": 1.3100583813718703,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 65.2948,
+          "optimized_ms": 64.43939999999999,
+          "ratio": 0.9868994161862813
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_sparse_v1",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 110.6195,
+      "optimized_ms": 5.759399999999999,
+      "improvement_percent": 94.79350385781892,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 110.6195,
+          "optimized_ms": 5.759399999999999,
+          "ratio": 0.052064961421810795
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_same_sparse_v1",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.0005,
+      "optimized_ms": 0.00039999999999999996,
+      "improvement_percent": 20.000000000000007,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0005,
+          "optimized_ms": 0.00039999999999999996,
+          "ratio": 0.7999999999999999
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_build_dense_v1",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 131.66559999999998,
+      "optimized_ms": 122.6744,
+      "improvement_percent": 6.828814815714946,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 131.66559999999998,
+          "optimized_ms": 122.6744,
+          "ratio": 0.9317118518428505
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_dense_v1",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 109.1335,
+      "optimized_ms": 97.24470000000001,
+      "improvement_percent": 10.893813540296971,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 109.1335,
+          "optimized_ms": 97.24470000000001,
+          "ratio": 0.8910618645970303
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_same_dense_v1",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.0012,
+      "optimized_ms": 0.0005,
+      "improvement_percent": 58.33333333333333,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0012,
+          "optimized_ms": 0.0005,
+          "ratio": 0.4166666666666667
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_build_sparse_v10",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 476.203,
+      "optimized_ms": 437.13259999999997,
+      "improvement_percent": 8.204568219855823,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 476.203,
+          "optimized_ms": 437.13259999999997,
+          "ratio": 0.9179543178014418
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_sparse_v10",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 101.7928,
+      "optimized_ms": 10.1283,
+      "improvement_percent": 90.0500821276161,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 101.7928,
+          "optimized_ms": 10.1283,
+          "ratio": 0.09949917872383901
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_same_sparse_v10",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.001,
+      "optimized_ms": 0.00039999999999999996,
+      "improvement_percent": 60.00000000000001,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.001,
+          "optimized_ms": 0.00039999999999999996,
+          "ratio": 0.39999999999999997
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_build_dense_v10",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 699.9621000000001,
+      "optimized_ms": 678.3421,
+      "improvement_percent": 3.0887386617075574,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 699.9621000000001,
+          "optimized_ms": 678.3421,
+          "ratio": 0.9691126133829244
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_dense_v10",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 106.29560000000001,
+      "optimized_ms": 100.5562,
+      "improvement_percent": 5.399470909426174,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 106.29560000000001,
+          "optimized_ms": 100.5562,
+          "ratio": 0.9460052909057383
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "dimension_project_same_dense_v10",
+      "records": 10000,
+      "fields": 8,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.0005,
+      "optimized_ms": 0.0011,
+      "improvement_percent": -120.00000000000001,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0005,
+          "optimized_ms": 0.0011,
+          "ratio": 2.2
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "parse_100_broken_false",
+      "records": 100,
+      "fields": 1,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.0494,
+      "optimized_ms": 0.0436,
+      "improvement_percent": 11.740890688259109,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0494,
+          "optimized_ms": 0.0436,
+          "ratio": 0.8825910931174089
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "parse_100_broken_true",
+      "records": 100,
+      "fields": 1,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.11309999999999999,
+      "optimized_ms": 0.1115,
+      "improvement_percent": 1.4146772767462346,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.11309999999999999,
+          "optimized_ms": 0.1115,
+          "ratio": 0.9858532272325377
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "parse_1000_broken_false",
+      "records": 1000,
+      "fields": 1,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.4098,
+      "optimized_ms": 0.4066,
+      "improvement_percent": 0.7808687164470474,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.4098,
+          "optimized_ms": 0.4066,
+          "ratio": 0.9921913128355295
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "parse_1000_broken_true",
+      "records": 1000,
+      "fields": 1,
+      "operations_per_sample": 1,
+      "baseline_ms": 1.1565,
+      "optimized_ms": 0.9579,
+      "improvement_percent": 17.17250324254216,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1.1565,
+          "optimized_ms": 0.9579,
+          "ratio": 0.8282749675745784
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "engine-model-10000",
+      "metric": "parse_5000_broken_false",
+      "records": 5000,
+      "fields": 1,
+      "operations_per_sample": 1,
+      "baseline_ms": 2.2723,
+      "optimized_ms": 2.0228,
+      "improvement_percent": 10.98006425207938,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 2.2723,
+          "optimized_ms": 2.0228,
+          "ratio": 0.8901993574792062
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-baseline.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "engine-model-10000-r1-optimized.stdout.ndjson",
+          "samples": 3,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "load_checks",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 58.7731,
+      "optimized_ms": 58.799549999999996,
+      "improvement_percent": -0.045003581570468576,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 58.4917,
+          "optimized_ms": 61.2073,
+          "ratio": 1.046427099913321
+        },
+        {
+          "round": 2,
+          "baseline_ms": 59.054500000000004,
+          "optimized_ms": 56.391799999999996,
+          "ratio": 0.9549111414032799
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "load_no_checks",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 37.8419,
+      "optimized_ms": 38.096149999999994,
+      "improvement_percent": -0.6718742980664105,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 38.536,
+          "optimized_ms": 38.8902,
+          "ratio": 1.0091914054390698
+        },
+        {
+          "round": 2,
+          "baseline_ms": 37.147800000000004,
+          "optimized_ms": 37.302099999999996,
+          "ratio": 1.0041536780105416
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "field_lookup",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 0.28559999999999997,
+      "optimized_ms": 0.33240000000000003,
+      "improvement_percent": -16.38655462184877,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.2928,
+          "optimized_ms": 0.347,
+          "ratio": 1.1851092896174862
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.2784,
+          "optimized_ms": 0.3178,
+          "ratio": 1.1415229885057474
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "record_scan",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 0.03205,
+      "optimized_ms": 0.028999999999999998,
+      "improvement_percent": 9.51638065522622,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0373,
+          "optimized_ms": 0.0327,
+          "ratio": 0.8766756032171582
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.0268,
+          "optimized_ms": 0.0253,
+          "ratio": 0.9440298507462687
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "references",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 0.23985,
+      "optimized_ms": 0.2372,
+      "improvement_percent": 1.1048572024181857,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.2503,
+          "optimized_ms": 0.24159999999999998,
+          "ratio": 0.9652417099480621
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.2294,
+          "optimized_ms": 0.2328,
+          "ratio": 1.014821272885789
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "validate_same",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.0561,
+      "optimized_ms": 0.0663,
+      "improvement_percent": -18.181818181818187,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0524,
+          "optimized_ms": 0.0772,
+          "ratio": 1.4732824427480917
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.0598,
+          "optimized_ms": 0.0554,
+          "ratio": 0.9264214046822742
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "validate_changed",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 3.0482,
+      "optimized_ms": 2.96125,
+      "improvement_percent": 2.8525031165933967,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 3.1096,
+          "optimized_ms": 2.9187000000000003,
+          "ratio": 0.9386094674556215
+        },
+        {
+          "round": 2,
+          "baseline_ms": 2.9868,
+          "optimized_ms": 3.0038,
+          "ratio": 1.0056917101915093
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "validate_invalid",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6199.091399999999,
+      "optimized_ms": 31.6271,
+      "improvement_percent": 99.48981071645436,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6148.4815,
+          "optimized_ms": 32.3655,
+          "ratio": 0.005263982659783558
+        },
+        {
+          "round": 2,
+          "baseline_ms": 6249.7013,
+          "optimized_ms": 30.8887,
+          "ratio": 0.004942428208528942
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "refresh_same",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 3.2536500000000004,
+      "optimized_ms": 1.6099999999999999,
+      "improvement_percent": 50.51711155164201,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 3.0723000000000003,
+          "optimized_ms": 1.2953000000000001,
+          "ratio": 0.42160596295934644
+        },
+        {
+          "round": 2,
+          "baseline_ms": 3.435,
+          "optimized_ms": 1.9246999999999999,
+          "ratio": 0.5603202328966521
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "error_recovery",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 77.39259999999999,
+      "optimized_ms": 47.82915,
+      "improvement_percent": 38.19932396637403,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 75.3776,
+          "optimized_ms": 48.447900000000004,
+          "ratio": 0.6427360382925432
+        },
+        {
+          "round": 2,
+          "baseline_ms": 79.40759999999999,
+          "optimized_ms": 47.2104,
+          "ratio": 0.5945325132606956
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "set_scalar",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 10.0626,
+      "optimized_ms": 6.38225,
+      "improvement_percent": 36.57454335857532,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 9.079600000000001,
+          "optimized_ms": 6.6946,
+          "ratio": 0.7373232300982422
+        },
+        {
+          "round": 2,
+          "baseline_ms": 11.045599999999999,
+          "optimized_ms": 6.0699,
+          "ratio": 0.5495310349822554
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "set_dependency",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 7.388350000000001,
+      "optimized_ms": 6.187950000000001,
+      "improvement_percent": 16.247199983758208,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 9.739700000000001,
+          "optimized_ms": 5.4783,
+          "ratio": 0.5624711233405546
+        },
+        {
+          "round": 2,
+          "baseline_ms": 5.037,
+          "optimized_ms": 6.897600000000001,
+          "ratio": 1.369386539606909
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "set_noop",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.028900000000000002,
+      "optimized_ms": 0.02515,
+      "improvement_percent": 12.975778546712814,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0286,
+          "optimized_ms": 0.0309,
+          "ratio": 1.0804195804195804
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.0292,
+          "optimized_ms": 0.0194,
+          "ratio": 0.6643835616438356
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "unset_field",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 12.578499999999998,
+      "optimized_ms": 13.52375,
+      "improvement_percent": -7.514807011964875,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 9.786299999999999,
+          "optimized_ms": 12.664299999999999,
+          "ratio": 1.2940845876378202
+        },
+        {
+          "round": 2,
+          "baseline_ms": 15.3707,
+          "optimized_ms": 14.3832,
+          "ratio": 0.9357543898456154
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "batch_grouped",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 100,
+      "baseline_ms": 17.4533,
+      "optimized_ms": 10.93675,
+      "improvement_percent": 37.33706519683956,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 18.364700000000003,
+          "optimized_ms": 11.712399999999999,
+          "ratio": 0.6377670204250544
+        },
+        {
+          "round": 2,
+          "baseline_ms": 16.5419,
+          "optimized_ms": 10.1611,
+          "ratio": 0.6142643831724288
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "batch_interleaved",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 100,
+      "baseline_ms": 99.2494,
+      "optimized_ms": 50.710049999999995,
+      "improvement_percent": 48.90644175178893,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 103.8286,
+          "optimized_ms": 50.5348,
+          "ratio": 0.48671368004576776
+        },
+        {
+          "round": 2,
+          "baseline_ms": 94.6702,
+          "optimized_ms": 50.8853,
+          "ratio": 0.537500713001557
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "array_element",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 5.3,
+      "optimized_ms": 5.54565,
+      "improvement_percent": -4.634905660377364,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 5.3095,
+          "optimized_ms": 5.4776,
+          "ratio": 1.0316602316602317
+        },
+        {
+          "round": 2,
+          "baseline_ms": 5.2905,
+          "optimized_ms": 5.6137,
+          "ratio": 1.061090634155562
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "array_replace",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 9.3909,
+      "optimized_ms": 5.35255,
+      "improvement_percent": 43.002800583543646,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 9.1767,
+          "optimized_ms": 5.2663,
+          "ratio": 0.5738773197336733
+        },
+        {
+          "round": 2,
+          "baseline_ms": 9.6051,
+          "optimized_ms": 5.4388,
+          "ratio": 0.5662408512144589
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "dict_element",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 9.106300000000001,
+      "optimized_ms": 5.5729500000000005,
+      "improvement_percent": 38.80115963673501,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 9.672500000000001,
+          "optimized_ms": 5.7765,
+          "ratio": 0.5972085810286896
+        },
+        {
+          "round": 2,
+          "baseline_ms": 8.5401,
+          "optimized_ms": 5.3694,
+          "ratio": 0.6287280008430813
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "dict_replace",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 8.964949999999998,
+      "optimized_ms": 5.440149999999999,
+      "improvement_percent": 39.317564515139516,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 8.7929,
+          "optimized_ms": 5.4148,
+          "ratio": 0.6158150325831068
+        },
+        {
+          "round": 2,
+          "baseline_ms": 9.136999999999999,
+          "optimized_ms": 5.4655,
+          "ratio": 0.598172266608296
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "nested_field",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 8.89735,
+      "optimized_ms": 6.321149999999999,
+      "improvement_percent": 28.954688755640724,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 8.9743,
+          "optimized_ms": 5.4742999999999995,
+          "ratio": 0.6099974371260154
+        },
+        {
+          "round": 2,
+          "baseline_ms": 8.820400000000001,
+          "optimized_ms": 7.168,
+          "ratio": 0.8126615572989886
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "option_field",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 8.3401,
+      "optimized_ms": 5.682449999999999,
+      "improvement_percent": 31.865924869006367,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 8.400400000000001,
+          "optimized_ms": 5.925599999999999,
+          "ratio": 0.7053949811913717
+        },
+        {
+          "round": 2,
+          "baseline_ms": 8.2798,
+          "optimized_ms": 5.4393,
+          "ratio": 0.6569361578782097
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "insert_record",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 78.68955,
+      "optimized_ms": 44.071650000000005,
+      "improvement_percent": 43.99300796611493,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 78.2363,
+          "optimized_ms": 43.673700000000004,
+          "ratio": 0.558228085939647
+        },
+        {
+          "round": 2,
+          "baseline_ms": 79.1428,
+          "optimized_ms": 44.4696,
+          "ratio": 0.5618906584048076
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "delete_record",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 73.46245,
+      "optimized_ms": 57.79745,
+      "improvement_percent": 21.323819175646886,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 55.6159,
+          "optimized_ms": 57.8262,
+          "ratio": 1.039742231987615
+        },
+        {
+          "round": 2,
+          "baseline_ms": 91.309,
+          "optimized_ms": 57.7687,
+          "ratio": 0.6326725733498342
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "rename_record",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 104.25065000000001,
+      "optimized_ms": 57.207449999999994,
+      "improvement_percent": 45.12509034715851,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 106.09190000000001,
+          "optimized_ms": 57.677899999999994,
+          "ratio": 0.543659789295884
+        },
+        {
+          "round": 2,
+          "baseline_ms": 102.40939999999999,
+          "optimized_ms": 56.737,
+          "ratio": 0.5540214081910451
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "swap_records",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 78.03165,
+      "optimized_ms": 82.77584999999999,
+      "improvement_percent": -6.079840680031756,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 75.9196,
+          "optimized_ms": 87.5748,
+          "ratio": 1.1535203030574448
+        },
+        {
+          "round": 2,
+          "baseline_ms": 80.1437,
+          "optimized_ms": 77.9769,
+          "ratio": 0.9729635641978097
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "transfer_record",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 94.09135,
+      "optimized_ms": 91.4111,
+      "improvement_percent": 2.848561530895244,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 97.5529,
+          "optimized_ms": 95.217,
+          "ratio": 0.9760550429561807
+        },
+        {
+          "round": 2,
+          "baseline_ms": 90.6298,
+          "optimized_ms": 87.6052,
+          "ratio": 0.9666268710733114
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "dimension_set",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 87.03375,
+      "optimized_ms": 87.53654999999999,
+      "improvement_percent": -0.5777069240380905,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 88.8255,
+          "optimized_ms": 89.88759999999999,
+          "ratio": 1.0119571519439798
+        },
+        {
+          "round": 2,
+          "baseline_ms": 85.242,
+          "optimized_ms": 85.18549999999999,
+          "ratio": 0.9993371812017549
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "dimension_add",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 87.78185,
+      "optimized_ms": 83.32105,
+      "improvement_percent": 5.081688298890952,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 84.19980000000001,
+          "optimized_ms": 78.9002,
+          "ratio": 0.937059232919793
+        },
+        {
+          "round": 2,
+          "baseline_ms": 91.3639,
+          "optimized_ms": 87.7419,
+          "ratio": 0.9603563333001328
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "dimension_clear",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 10.1825,
+      "optimized_ms": 7.98855,
+      "improvement_percent": 21.546280383010064,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 8.886,
+          "optimized_ms": 5.8774,
+          "ratio": 0.6614224623002476
+        },
+        {
+          "round": 2,
+          "baseline_ms": 11.479,
+          "optimized_ms": 10.0997,
+          "ratio": 0.8798414496036241
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "dimension_lookup",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 0.2508,
+      "optimized_ms": 0.25170000000000003,
+      "improvement_percent": -0.3588516746411585,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.1893,
+          "optimized_ms": 0.3115,
+          "ratio": 1.6455361859482303
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.3123,
+          "optimized_ms": 0.19190000000000002,
+          "ratio": 0.6144732628882484
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-all-1k",
+      "metric": "external_conflict",
+      "records": 1000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 11.139199999999999,
+      "optimized_ms": 8.99905,
+      "improvement_percent": 19.212780091927595,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 13.2498,
+          "optimized_ms": 9.064900000000002,
+          "ratio": 0.6841537230750654
+        },
+        {
+          "round": 2,
+          "baseline_ms": 9.028599999999999,
+          "optimized_ms": 8.933200000000001,
+          "ratio": 0.9894335777418428
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-all-1k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-all-1k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-budget-20000",
+      "metric": "load_budget_rejected",
+      "records": 20000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 46429.147399999994,
+      "optimized_ms": 451.61899999999997,
+      "improvement_percent": 99.02729422078511,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 46429.147399999994,
+          "optimized_ms": 451.61899999999997,
+          "ratio": 0.009727057792148905
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-budget-20000-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-budget-20000-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "load_checks",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 541.76455,
+      "optimized_ms": 542.3822,
+      "improvement_percent": -0.11400709034949941,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 540.7021,
+          "optimized_ms": 546.2135999999999,
+          "ratio": 1.0101932283969306
+        },
+        {
+          "round": 2,
+          "baseline_ms": 542.827,
+          "optimized_ms": 538.5508,
+          "ratio": 0.9921223520569168
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "load_no_checks",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 304.51535,
+      "optimized_ms": 299.47905000000003,
+      "improvement_percent": 1.653873934433836,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 300.9542,
+          "optimized_ms": 299.4311,
+          "ratio": 0.9949390970453311
+        },
+        {
+          "round": 2,
+          "baseline_ms": 308.07649999999995,
+          "optimized_ms": 299.527,
+          "ratio": 0.9722487758722267
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "set_scalar",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 23.1026,
+      "optimized_ms": 23.8114,
+      "improvement_percent": -3.0680529464216066,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 22.799799999999998,
+          "optimized_ms": 24.3731,
+          "ratio": 1.0690049912718533
+        },
+        {
+          "round": 2,
+          "baseline_ms": 23.4054,
+          "optimized_ms": 23.2497,
+          "ratio": 0.9933476889948474
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "set_noop",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 0.025750000000000002,
+      "optimized_ms": 0.0242,
+      "improvement_percent": 6.0194174757281615,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 0.0269,
+          "optimized_ms": 0.024300000000000002,
+          "ratio": 0.9033457249070632
+        },
+        {
+          "round": 2,
+          "baseline_ms": 0.0246,
+          "optimized_ms": 0.0241,
+          "ratio": 0.9796747967479674
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "batch_grouped",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 130.3455,
+      "optimized_ms": 129.21439999999998,
+      "improvement_percent": 0.8677706556804776,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 130.177,
+          "optimized_ms": 127.50259999999999,
+          "ratio": 0.9794556642110357
+        },
+        {
+          "round": 2,
+          "baseline_ms": 130.51399999999998,
+          "optimized_ms": 130.9262,
+          "ratio": 1.0031582818701443
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "batch_interleaved",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 482.4009,
+      "optimized_ms": 471.7692,
+      "improvement_percent": 2.2039137986682777,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 473.3189,
+          "optimized_ms": 472.3592,
+          "ratio": 0.9979724029613015
+        },
+        {
+          "round": 2,
+          "baseline_ms": 491.4829,
+          "optimized_ms": 471.17920000000004,
+          "ratio": 0.9586888984336994
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "insert_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 837.95085,
+      "optimized_ms": 831.9125,
+      "improvement_percent": 0.7206090906166973,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 842.1446,
+          "optimized_ms": 828.8155,
+          "ratio": 0.9841724330952192
+        },
+        {
+          "round": 2,
+          "baseline_ms": 833.7571,
+          "optimized_ms": 835.0095,
+          "ratio": 1.0015021161438984
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "delete_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 863.3908,
+      "optimized_ms": 851.32605,
+      "improvement_percent": 1.3973683759428535,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 858.9636,
+          "optimized_ms": 858.5682,
+          "ratio": 0.9995396778163824
+        },
+        {
+          "round": 2,
+          "baseline_ms": 867.818,
+          "optimized_ms": 844.0839,
+          "ratio": 0.9726508323173753
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "rename_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 929.3961999999999,
+      "optimized_ms": 890.8068,
+      "improvement_percent": 4.152093585060923,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 962.8742,
+          "optimized_ms": 888.7297,
+          "ratio": 0.922996690533405
+        },
+        {
+          "round": 2,
+          "baseline_ms": 895.9182,
+          "optimized_ms": 892.8838999999999,
+          "ratio": 0.9966131952671572
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "transfer_record",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 901.53455,
+      "optimized_ms": 929.51335,
+      "improvement_percent": -3.103463977060006,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 919.3823,
+          "optimized_ms": 954.072,
+          "ratio": 1.0377315290929574
+        },
+        {
+          "round": 2,
+          "baseline_ms": 883.6868,
+          "optimized_ms": 904.9547,
+          "ratio": 1.0240672373967792
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-common-10k",
+      "metric": "refresh_same",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 3.4356999999999998,
+      "optimized_ms": 3.3288,
+      "improvement_percent": 3.1114474488459276,
+      "paired_rounds": 2,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 3.7755,
+          "optimized_ms": 3.4543,
+          "ratio": 0.9149251754734472
+        },
+        {
+          "round": 2,
+          "baseline_ms": 3.0959,
+          "optimized_ms": 3.2033,
+          "ratio": 1.0346910429923448
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-common-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 2,
+          "source": "rust-common-10k-r2-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-dim10-existing-dense-10k",
+      "metric": "dimension_existing_set",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 2757.1282,
+      "optimized_ms": 411.659,
+      "improvement_percent": 85.06928332168232,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 2757.1282,
+          "optimized_ms": 411.659,
+          "ratio": 0.14930716678317676
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-dense-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-dense-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-dim10-existing-dense-10k",
+      "metric": "dimension_existing_clear",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 3514.4356000000002,
+      "optimized_ms": 791.8849,
+      "improvement_percent": 77.46765085124906,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 3514.4356000000002,
+          "optimized_ms": 791.8849,
+          "ratio": 0.22532349148750938
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-dense-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-dense-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-dim10-existing-sparse-10k",
+      "metric": "dimension_existing_set",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 35.1674,
+      "optimized_ms": 8.0229,
+      "improvement_percent": 77.18654208158694,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 35.1674,
+          "optimized_ms": 8.0229,
+          "ratio": 0.22813457918413074
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-dim10-existing-sparse-10k",
+      "metric": "dimension_existing_clear",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 61.7949,
+      "optimized_ms": 15.1275,
+      "improvement_percent": 75.5198244515324,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 61.7949,
+          "optimized_ms": 15.1275,
+          "ratio": 0.24480175548467592
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-sparse-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-dim10-existing-sparse-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-hot-100k",
+      "metric": "set_scalar",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 51.31555,
+      "optimized_ms": 48.90165,
+      "improvement_percent": 4.704032208560571,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 51.31555,
+          "optimized_ms": 48.90165,
+          "ratio": 0.9529596779143943
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-hot-100k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 58.700500000000005,
+          "p99_ms": 60.9002
+        },
+        {
+          "round": 1,
+          "source": "rust-hot-100k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 53.6718,
+          "p99_ms": 56.3542
+        }
+      ]
+    },
+    {
+      "scenario": "rust-hot-100k",
+      "metric": "set_dependency",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 47.020799999999994,
+      "optimized_ms": 49.4752,
+      "improvement_percent": -5.219817612631017,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 47.020799999999994,
+          "optimized_ms": 49.4752,
+          "ratio": 1.0521981761263102
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-hot-100k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 54.089999999999996,
+          "p99_ms": 59.4318
+        },
+        {
+          "round": 1,
+          "source": "rust-hot-100k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 56.685,
+          "p99_ms": 106.5231
+        }
+      ]
+    },
+    {
+      "scenario": "rust-hot-100k",
+      "metric": "refresh_same",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 22.88145,
+      "optimized_ms": 23.64145,
+      "improvement_percent": -3.3214678265581776,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 22.88145,
+          "optimized_ms": 23.64145,
+          "ratio": 1.0332146782655818
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-hot-100k-r1-baseline.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 24.932,
+          "p99_ms": 25.6617
+        },
+        {
+          "round": 1,
+          "source": "rust-hot-100k-r1-optimized.stdout.ndjson",
+          "samples": 100,
+          "p95_ms": 25.3188,
+          "p99_ms": 28.3349
+        }
+      ]
+    },
+    {
+      "scenario": "rust-invalid-10000",
+      "metric": "validate_invalid",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": null,
+      "optimized_ms": 350.09180000000003,
+      "improvement_percent": null,
+      "paired_rounds": 0,
+      "all_paired_rounds_faster": false,
+      "pairs": [],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-invalid-10000-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-invalid-2000",
+      "metric": "validate_invalid",
+      "records": 2000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 31422.3086,
+      "optimized_ms": 67.3284,
+      "improvement_percent": 99.78573057486935,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 31422.3086,
+          "optimized_ms": 67.3284,
+          "ratio": 0.002142694251306538
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-invalid-2000-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-invalid-2000-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-invalid-fanin-10k",
+      "metric": "validate_invalid",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 206.59730000000002,
+      "optimized_ms": 197.9147,
+      "improvement_percent": 4.202668669919696,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 206.59730000000002,
+          "optimized_ms": 197.9147,
+          "ratio": 0.957973313300803
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-invalid-fanin-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-invalid-fanin-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-invalid-no-templates-10k",
+      "metric": "validate_invalid",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 402.507,
+      "optimized_ms": 402.54699999999997,
+      "improvement_percent": -0.00993771536892396,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 402.507,
+          "optimized_ms": 402.54699999999997,
+          "ratio": 1.0000993771536892
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-invalid-no-templates-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-invalid-no-templates-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-main-100k",
+      "metric": "load_checks",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6276.2033,
+      "optimized_ms": 6244.3908,
+      "improvement_percent": 0.5068749127358552,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6276.2033,
+          "optimized_ms": 6244.3908,
+          "ratio": 0.9949312508726414
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-main-100k",
+      "metric": "load_no_checks",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 4304.0482999999995,
+      "optimized_ms": 4501.106400000001,
+      "improvement_percent": -4.578436073777348,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 4304.0482999999995,
+          "optimized_ms": 4501.106400000001,
+          "ratio": 1.0457843607377735
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-main-100k",
+      "metric": "set_scalar",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 51.2831,
+      "optimized_ms": 52.1997,
+      "improvement_percent": -1.78733344903097,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 51.2831,
+          "optimized_ms": 52.1997,
+          "ratio": 1.0178733344903097
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-main-100k",
+      "metric": "batch_grouped",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 123.75229999999999,
+      "optimized_ms": 121.31649999999999,
+      "improvement_percent": 1.9682866500258966,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 123.75229999999999,
+          "optimized_ms": 121.31649999999999,
+          "ratio": 0.980317133499741
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-main-100k",
+      "metric": "batch_interleaved",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 5055.5738,
+      "optimized_ms": 5080.9768,
+      "improvement_percent": -0.5024751097491675,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 5055.5738,
+          "optimized_ms": 5080.9768,
+          "ratio": 1.0050247510974917
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-main-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-recovery-10k",
+      "metric": "error_recovery",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": null,
+      "optimized_ms": 448.73720000000003,
+      "improvement_percent": null,
+      "paired_rounds": 0,
+      "all_paired_rounds_faster": false,
+      "pairs": [],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-recovery-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-singlefile-10k",
+      "metric": "load_checks",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 449.92470000000003,
+      "optimized_ms": 445.2651,
+      "improvement_percent": 1.0356399637539426,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 449.92470000000003,
+          "optimized_ms": 445.2651,
+          "ratio": 0.9896436003624606
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-singlefile-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-singlefile-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-singlefile-10k",
+      "metric": "set_scalar",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 198.4369,
+      "optimized_ms": 197.523,
+      "improvement_percent": 0.4605494240234598,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 198.4369,
+          "optimized_ms": 197.523,
+          "ratio": 0.9953945057597654
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-singlefile-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-singlefile-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-singlefile-10k",
+      "metric": "batch_grouped",
+      "records": 10000,
+      "fields": 20,
+      "operations_per_sample": 1000,
+      "baseline_ms": 259.9694,
+      "optimized_ms": 258.4265,
+      "improvement_percent": 0.5934929264752031,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 259.9694,
+          "optimized_ms": 258.4265,
+          "ratio": 0.994065070735248
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-singlefile-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-singlefile-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "metric": "insert_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6367.2214,
+      "optimized_ms": 6785.8838,
+      "improvement_percent": -6.575276304982891,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6367.2214,
+          "optimized_ms": 6785.8838,
+          "ratio": 1.065752763049829
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "metric": "delete_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6434.0975,
+      "optimized_ms": 6875.6106,
+      "improvement_percent": -6.862082832907035,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6434.0975,
+          "optimized_ms": 6875.6106,
+          "ratio": 1.0686208283290703
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "metric": "rename_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6578.4879,
+      "optimized_ms": 6906.103800000001,
+      "improvement_percent": -4.980109486862494,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6578.4879,
+          "optimized_ms": 6906.103800000001,
+          "ratio": 1.049801094868625
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-100k",
+      "metric": "transfer_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6493.8988,
+      "optimized_ms": 6763.5966,
+      "improvement_percent": -4.153095209922264,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6493.8988,
+          "optimized_ms": 6763.5966,
+          "ratio": 1.0415309520992226
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "insert_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6000.0491,
+      "optimized_ms": 4174.6432,
+      "improvement_percent": 30.42318270362153,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6000.0491,
+          "optimized_ms": 4174.6432,
+          "ratio": 0.6957681729637847
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "delete_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 5947.841,
+      "optimized_ms": 4133.7939,
+      "improvement_percent": 30.499253426579497,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 5947.841,
+          "optimized_ms": 4133.7939,
+          "ratio": 0.695007465734205
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "rename_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6174.3796,
+      "optimized_ms": 4260.8126999999995,
+      "improvement_percent": 30.992051411934586,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6174.3796,
+          "optimized_ms": 4260.8126999999995,
+          "ratio": 0.6900794858806542
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-structures-literal-100k",
+      "metric": "transfer_record",
+      "records": 100000,
+      "fields": 20,
+      "operations_per_sample": 1,
+      "baseline_ms": 6024.7949,
+      "optimized_ms": 4198.070000000001,
+      "improvement_percent": 30.320117619273635,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 6024.7949,
+          "optimized_ms": 4198.070000000001,
+          "ratio": 0.6967988238072637
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "metric": "load_checks",
+      "records": 10000,
+      "fields": 100,
+      "operations_per_sample": 1,
+      "baseline_ms": 1078.7269,
+      "optimized_ms": 1091.5600000000002,
+      "improvement_percent": -1.1896523577932694,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1078.7269,
+          "optimized_ms": 1091.5600000000002,
+          "ratio": 1.0118965235779327
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "metric": "load_no_checks",
+      "records": 10000,
+      "fields": 100,
+      "operations_per_sample": 1,
+      "baseline_ms": 794.0519,
+      "optimized_ms": 800.7244000000001,
+      "improvement_percent": -0.8403103122100797,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 794.0519,
+          "optimized_ms": 800.7244000000001,
+          "ratio": 1.0084031031221008
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "metric": "set_scalar",
+      "records": 10000,
+      "fields": 100,
+      "operations_per_sample": 1,
+      "baseline_ms": 131.4069,
+      "optimized_ms": 124.7483,
+      "improvement_percent": 5.06716161784504,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 131.4069,
+          "optimized_ms": 124.7483,
+          "ratio": 0.9493283838215496
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "metric": "batch_grouped",
+      "records": 10000,
+      "fields": 100,
+      "operations_per_sample": 1000,
+      "baseline_ms": 301.8778,
+      "optimized_ms": 305.7613,
+      "improvement_percent": -1.2864476950607218,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 301.8778,
+          "optimized_ms": 305.7613,
+          "ratio": 1.0128644769506072
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    },
+    {
+      "scenario": "rust-width100-10k",
+      "metric": "batch_interleaved",
+      "records": 10000,
+      "fields": 100,
+      "operations_per_sample": 1000,
+      "baseline_ms": 1472.7271,
+      "optimized_ms": 1463.2835,
+      "improvement_percent": 0.6412321739716842,
+      "paired_rounds": 1,
+      "all_paired_rounds_faster": false,
+      "pairs": [
+        {
+          "round": 1,
+          "baseline_ms": 1472.7271,
+          "optimized_ms": 1463.2835,
+          "ratio": 0.9935876782602832
+        }
+      ],
+      "memory": {
+        "median_allocated_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_allocated_current_thread_bytes": {
+          "baseline": null,
+          "optimized": null
+        },
+        "median_retained_delta_bytes": {
+          "baseline": null,
+          "optimized": null
+        }
+      },
+      "evidence": [
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-baseline.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        {
+          "round": 1,
+          "source": "rust-width100-10k-r1-optimized.stdout.ndjson",
+          "samples": 1,
+          "p95_ms": null,
+          "p99_ms": null
+        }
+      ]
+    }
+  ],
+  "censored": [
+    {
+      "source": "rust-invalid-10000-r1-baseline.meta.json",
+      "timed_out": true,
+      "exit_code": -1,
+      "timeout_seconds": 120
+    },
+    {
+      "source": "rust-recovery-10k-r1-baseline.meta.json",
+      "timed_out": true,
+      "exit_code": -1,
+      "timeout_seconds": 120
+    }
+  ],
+  "failures": []
+}
