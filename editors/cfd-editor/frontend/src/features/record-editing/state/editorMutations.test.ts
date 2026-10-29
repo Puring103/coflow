@@ -6,7 +6,9 @@ import type { BatchWriteFieldOutcome } from '../../../bindings/BatchWriteFieldOu
 import type { WriteDimensionValueOutcome } from '../../../bindings/WriteDimensionValueOutcome'
 import type { InsertRecordOutcome } from '../../../bindings/InsertRecordOutcome'
 import type { DeleteRecordOutcome } from '../../../bindings/DeleteRecordOutcome'
-import { committed, MutationHistoryController, superseded } from '../../workspace/state/editorState'
+import type { RecordRestoreSnapshot } from '../../../bindings/RecordRestoreSnapshot'
+import type { RecordCoordinate } from '../../../bindings/RecordCoordinate'
+import { committed, MutationHistoryController, superseded, type EditEntry } from '../../workspace/state/editorState'
 import { EditorMutationController, type EditorMutationBackend, type EditorMutationPort } from './editorMutations'
 
 const coordinate = { actual_type: 'Item', id: 'sword' }
@@ -37,7 +39,7 @@ function backend(
 ): EditorMutationBackend {
   return {
     createLinkedRecord: vi.fn(),
-    applyMutationBatch: vi.fn(async () => ({ revision: 4, diagnostics: [], affected_files: ['data/items.cfd'], renamed: [] })),
+    applyMutationBatch: vi.fn(async () => ({ revision: 4, diagnostics: [], affected_files: ['data/items.cfd'], renamed: [], deleted_snapshots: [] })),
     writeFields: vi.fn(),
     writeField,
     writeDimensionValue,
@@ -150,6 +152,161 @@ describe('EditorMutationController', () => {
     await mutations.redo()
     expect(fakeBackend.insertRecord).toHaveBeenCalledTimes(2)
     expect(history.getSnapshot().undo).toHaveLength(1)
+  })
+
+  it('restores source snapshots and refreshes them after redo', async () => {
+    const fakeBackend = backend(vi.fn())
+    const first = { record: coordinate, patches: [{ file: 'data/items.cfd', offset: 10, expected_digest: 'first', before_context: 'before', after_context: 'after', at_start: false, at_end: false, content: 'sword: Item {}' }] }
+    const latest = { ...first, patches: [{ ...first.patches[0], expected_digest: 'latest', offset: 20 }] }
+    fakeBackend.deleteRecord = vi.fn()
+      .mockResolvedValueOnce({ ...recordsOutcome(2), deleted_snapshot: first })
+      .mockResolvedValueOnce({ ...recordsOutcome(5), deleted_snapshot: latest })
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    await mutations.deleteRecord('data/items.cfd', coordinate)
+    await mutations.undo()
+    expect(fakeBackend.applyMutationBatch).toHaveBeenLastCalledWith(1, [{ op: 'restore_record', snapshot: first }])
+    await mutations.redo()
+    await mutations.undo()
+    expect(fakeBackend.applyMutationBatch).toHaveBeenLastCalledWith(1, [{ op: 'restore_record', snapshot: latest }])
+    expect(fakeBackend.insertRecord).not.toHaveBeenCalled()
+  })
+
+  it('restores batch deletions in reverse order through one transaction', async () => {
+    const fakeBackend = backend(vi.fn())
+    const first = { record: coordinate, patches: [] }
+    const secondCoordinate = { ...coordinate, id: 'shield' }
+    const second = { record: secondCoordinate, patches: [] }
+    fakeBackend.deleteRecord = vi.fn()
+      .mockResolvedValueOnce({ ...recordsOutcome(2), deleted_snapshot: first })
+      .mockResolvedValueOnce({ ...recordsOutcome(3), deleted_snapshot: second })
+    let generation = { sessionId: 1, revision: 1 }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    await mutations.withHistoryBatch(async () => {
+      await mutations.deleteRecord('data/items.cfd', coordinate)
+      await mutations.deleteRecord('data/items.cfd', secondCoordinate)
+    })
+    await mutations.undo()
+    expect(fakeBackend.applyMutationBatch).toHaveBeenLastCalledWith(1, [
+      { op: 'restore_record', snapshot: second }, { op: 'restore_record', snapshot: first },
+    ])
+  })
+
+  it.each([
+    { reuse: false, graph: false }, { reuse: true, graph: false },
+    { reuse: false, graph: true }, { reuse: true, graph: true },
+  ])('replays renamed deletions repeatedly without confusing reused IDs ($reuse, graph=$graph)', async ({ reuse, graph }) => {
+    const file = 'data/items.cfd'
+    const a = { actual_type: 'Item', id: 'a' }
+    const b = { actual_type: 'Item', id: 'b' }
+    const makeSnapshot = (record: RecordCoordinate, content: string, token: string): RecordRestoreSnapshot => ({
+      record, patches: [{ file, offset: 0, expected_digest: token, before_context: '', after_context: '', at_start: true, at_end: true, content }],
+    })
+    // A/B 表示不同记录身份；每次删除产生新的来源令牌，恢复旧快照会被拒绝。
+    let records = new Map<string, string>()
+    let tokens = new Map([['A', 'initial-A'], ['B', 'initial-B']])
+    let revision = 3
+    let serial = 0
+    const initialA = makeSnapshot(b, 'A', 'initial-A')
+    const initialB = makeSnapshot(b, 'B', 'initial-B')
+    const entries: EditEntry[] = [
+      ...(graph ? [{ kind: 'graph-layout' as const, revision: 1, viewKey: 'view', oldPositions: {}, newPositions: {} }] : []),
+      ...(reuse ? [{ kind: 'delete' as const, revision: 1, filePath: file, coordinate: b, snapshot: initialB }] : []),
+      { kind: 'field', revision: 2, filePath: file, coordinate: b, fieldPath: [{ kind: 'field', value: 'id' }], oldValue: { kind: 'string', value: 'a' }, newValue: { kind: 'string', value: 'b' } },
+      { kind: 'delete', revision: 3, filePath: file, coordinate: b, snapshot: initialA },
+    ]
+    const fakeBackend = backend(vi.fn())
+    fakeBackend.applyMutationBatch = vi.fn(async (_session, operations) => {
+      const candidate = new Map(records)
+      const nextTokens = new Map(tokens)
+      const renamed: [RecordCoordinate, RecordCoordinate][] = []
+      const deleted_snapshots: RecordRestoreSnapshot[] = []
+      for (const operation of operations) {
+        if (operation.op === 'restore_record') {
+          const patch = operation.snapshot.patches[0]
+          expect(candidate.has(operation.snapshot.record.id)).toBe(false)
+          expect(patch.expected_digest).toBe(nextTokens.get(patch.content))
+          candidate.set(operation.snapshot.record.id, patch.content)
+        } else if (operation.op === 'delete_record') {
+          const content = candidate.get(operation.record.id)
+          expect(content).toBeDefined()
+          const token = `deleted-${++serial}`
+          nextTokens.set(content!, token)
+          deleted_snapshots.push(makeSnapshot(operation.record, content!, token))
+          candidate.delete(operation.record.id)
+        } else if (operation.op === 'set_field') {
+          expect(operation.path).toEqual([{ kind: 'field', value: 'id' }])
+          if (operation.value.kind !== 'cfd' || operation.value.value.kind !== 'string') throw new Error('expected record ID')
+          const next = { ...operation.record, id: operation.value.value.value }
+          const content = candidate.get(operation.record.id)
+          expect(content).toBeDefined()
+          expect(candidate.has(next.id)).toBe(false)
+          candidate.delete(operation.record.id)
+          candidate.set(next.id, content!)
+          renamed.push([operation.record, next])
+        } else throw new Error(`unexpected operation ${operation.op}`)
+      }
+      records = candidate
+      tokens = nextTokens
+      return { revision: ++revision, renamed, deleted_snapshots, diagnostics: [], affected_files: [file] }
+    })
+    fakeBackend.writeField = vi.fn(async (session, record, path, value) => {
+      const outcome = await fakeBackend.applyMutationBatch(session, [{ op: 'set_field', file, record, path, value: { kind: 'cfd', value } }])
+      const renamed = outcome.renamed[0]?.[1] ?? null
+      return { ...outcome, renamed, row: { ...row, coordinate: renamed ?? record }, old_value: null, new_value: null }
+    })
+    fakeBackend.deleteRecord = vi.fn(async (session, record) => {
+      const outcome = await fakeBackend.applyMutationBatch(session, [{ op: 'delete_record', file, record }])
+      return { ...recordsOutcome(outcome.revision), deleted_snapshot: outcome.deleted_snapshots[0] ?? null }
+    })
+    let generation = { sessionId: 1, revision }
+    const port: EditorMutationPort = {
+      currentGeneration: () => generation,
+      publish: vi.fn(async request => {
+        generation = { sessionId: request.sessionId, revision: request.revision }
+        return committed(undefined)
+      }),
+      applyGraphPositions: vi.fn(async () => committed(undefined)),
+      rebindCoordinate: vi.fn(), recoverPublication: vi.fn(() => false), reportError: vi.fn(),
+    }
+    const history = new MutationHistoryController()
+    history.record({ kind: 'batch', revision, entries })
+    const mutations = new EditorMutationController(fakeBackend, port, history)
+    const unchanged = structuredClone(history.getSnapshot())
+    vi.mocked(fakeBackend.applyMutationBatch).mockRejectedValueOnce(new Error('source changed'))
+    await mutations.undo()
+    expect(history.getSnapshot()).toEqual(unchanged)
+    expect([...records]).toEqual([])
+    vi.mocked(port.reportError).mockClear()
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await mutations.undo()
+      expect([...records].sort()).toEqual(reuse ? [['a', 'A'], ['b', 'B']] : [['a', 'A']])
+      expect(history.getSnapshot().redo).toHaveLength(1)
+      await mutations.redo()
+      expect([...records]).toEqual([])
+      expect(history.getSnapshot().undo).toHaveLength(1)
+    }
+    expect(port.reportError).not.toHaveBeenCalled()
+    expect(port.rebindCoordinate).toHaveBeenCalledWith(file, b, a)
+    expect(port.rebindCoordinate).toHaveBeenCalledWith(file, a, b)
   })
 
   it('collapses a batched insert and relation write into one undo step', async () => {

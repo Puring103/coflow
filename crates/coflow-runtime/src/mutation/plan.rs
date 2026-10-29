@@ -109,9 +109,12 @@ fn prepare_planned_op(
             MutationOp::UnsetField { record, file, path },
             pending_inserts,
         ),
-        op @ (MutationOp::SetDimensionValue { .. } | MutationOp::ClearDimensionValue { .. }) => {
-            prepare_one(session, op, pending_inserts)
-        }
+        op @ (MutationOp::RestoreRecord { .. }
+        | MutationOp::SetDimensionValue { .. }
+        | MutationOp::ClearDimensionValue { .. }
+        | MutationOp::SwapRecords { .. }
+        | MutationOp::MoveRecord { .. }
+        | MutationOp::TransferRecord { .. }) => prepare_one(session, op, pending_inserts),
         MutationOp::InsertRecord {
             file,
             actual_type,
@@ -172,9 +175,6 @@ fn prepare_planned_op(
                 file.as_deref(),
             )
         }
-        op @ (MutationOp::SwapRecords { .. }
-        | MutationOp::MoveRecord { .. }
-        | MutationOp::TransferRecord { .. }) => prepare_one(session, op, pending_inserts),
     }
 }
 
@@ -406,6 +406,7 @@ fn mutation_invariant_error(message: &str) -> DiagnosticSet {
 
 pub(super) const fn mutation_op_name(op: &MutationOp) -> &'static str {
     match op {
+        MutationOp::RestoreRecord { .. } => "restore_record",
         MutationOp::InsertRecord { .. } => "insert_record",
         MutationOp::SetField { .. } => "set_field",
         MutationOp::UnsetField { .. } => "unset_field",

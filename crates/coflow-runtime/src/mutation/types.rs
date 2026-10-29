@@ -57,6 +57,9 @@ pub struct MutationRequest {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub enum MutationOp {
+    RestoreRecord {
+        snapshot: RecordRestoreSnapshot,
+    },
     InsertRecord {
         file: String,
         #[serde(rename = "type")]
@@ -123,6 +126,35 @@ pub enum MutationOp {
         #[serde(default)]
         source_file: Option<String>,
     },
+}
+
+/// 删除操作的精确逆补丁；仅保存被删除文本和定位上下文，不保存整文件历史副本。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct RecordRestoreSnapshot {
+    pub record: RecordCoordinate,
+    pub patches: Vec<SourceRestorePatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct SourceRestorePatch {
+    pub file: String,
+    pub offset: usize,
+    pub expected_digest: String,
+    pub before_context: String,
+    pub after_context: String,
+    pub at_start: bool,
+    pub at_end: bool,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -264,6 +296,9 @@ pub enum CreateRequiredInput {
 
 #[derive(Debug, Clone)]
 pub(crate) enum PreparedMutationOp {
+    RestoreRecord {
+        snapshot: RecordRestoreSnapshot,
+    },
     InsertRecord {
         file: String,
         actual_type: TypeName,
@@ -338,7 +373,15 @@ impl PreparedMutationOp {
     pub(crate) fn report_metadata(
         &self,
     ) -> (&'static str, Option<RecordCoordinate>, Option<String>) {
+        let located = |operation: &'static str, record: &RecordCoordinate, file: &str| {
+            (operation, Some(record.clone()), Some(file.to_owned()))
+        };
         match self {
+            Self::RestoreRecord { snapshot } => (
+                "restore_record",
+                Some(snapshot.record.clone()),
+                snapshot.patches.first().map(|patch| patch.file.clone()),
+            ),
             Self::InsertRecord {
                 file,
                 actual_type,
@@ -349,24 +392,18 @@ impl PreparedMutationOp {
                 Some(RecordCoordinate::new(actual_type.clone(), id.clone())),
                 Some(file.clone()),
             ),
-            Self::CancelledInsert { record, write_file } => (
-                "insert_record",
-                Some(record.clone()),
-                Some(write_file.clone()),
-            ),
+            Self::CancelledInsert { record, write_file } => {
+                located("insert_record", record, write_file)
+            }
             Self::SetField {
                 record, write_file, ..
             }
             | Self::FoldedSetField {
                 record, write_file, ..
-            } => ("set_field", Some(record.clone()), Some(write_file.clone())),
+            } => located("set_field", record, write_file),
             Self::UnsetField {
                 record, write_file, ..
-            } => (
-                "unset_field",
-                Some(record.clone()),
-                Some(write_file.clone()),
-            ),
+            } => located("unset_field", record, write_file),
             Self::WriteDimensionValue {
                 record,
                 new_value,
@@ -406,11 +443,9 @@ impl PreparedMutationOp {
                 record,
                 report_file,
             } => ("delete_record", Some(record.clone()), report_file.clone()),
-            Self::FoldedDeleteRecord { record, write_file } => (
-                "delete_record",
-                Some(record.clone()),
-                Some(write_file.clone()),
-            ),
+            Self::FoldedDeleteRecord { record, write_file } => {
+                located("delete_record", record, write_file)
+            }
             Self::SwapRecords {
                 first, report_file, ..
             } => (
@@ -465,6 +500,8 @@ pub struct MutationReport {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationAppliedOp {
+    #[serde(skip)]
+    pub restore: Option<RecordRestoreSnapshot>,
     pub index: usize,
     pub op: String,
     pub record: Option<RecordCoordinate>,

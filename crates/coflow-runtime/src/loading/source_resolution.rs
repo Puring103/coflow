@@ -4,7 +4,7 @@ use crate::api::{
     CfdSource, CfdSourcePath, Diagnostic, DiagnosticSet, Label, Severity, SourceLocation,
 };
 use crate::cfd_loader::CfdLoader;
-use crate::project::{discover_directory_files, Project, SourceConfig};
+use crate::project::{discover_directory_files_by_extension, Project, SourceConfig};
 
 pub(crate) struct ResolvedLoaderSource {
     pub(crate) source: CfdSource,
@@ -45,7 +45,7 @@ impl<'a> SourceResolver<'a> {
         configured: &ConfiguredSource,
     ) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
         let directory = configured.location.path();
-        let files = discover_directory_files(directory).map_err(|error| {
+        let files = discover_directory_files_by_extension(directory, "cfd").map_err(|error| {
             DiagnosticSet::one(project_diagnostic(
                 self.project.config_path(),
                 error.to_string(),
@@ -53,9 +53,6 @@ impl<'a> SourceResolver<'a> {
         })?;
         let mut resolved = Vec::new();
         for path in files {
-            if path.extension().and_then(|extension| extension.to_str()) != Some("cfd") {
-                continue;
-            }
             let file_source = ConfiguredSource {
                 display_name: path.display().to_string(),
                 location: CfdSourcePath::new(path.clone()),

@@ -253,16 +253,34 @@ impl SessionStore {
         Some(bootstrap)
     }
 
+    #[cfg(test)]
     pub(crate) fn has_external_file_changes(
         &self,
         id: u32,
         paths: &[std::path::PathBuf],
     ) -> Result<bool, EditorError> {
+        Ok(!self.external_project_file_changes(id, paths)?.is_empty())
+    }
+
+    pub(crate) fn external_project_file_changes(
+        &self,
+        id: u32,
+        paths: &[std::path::PathBuf],
+    ) -> Result<Vec<std::path::PathBuf>, EditorError> {
         let entry = self.session(id)?;
         let session = entry.state.read();
-        Ok(session
-            .revisions
-            .has_external_change(&session.project_root, paths))
+        let relevant = session.relevant_source_changes(paths)?;
+        // 同一读锁内完成来源过滤与发布指纹校验，避免重复扫描和两次读取之间的代次漂移。
+        Ok(
+            if session
+                .revisions
+                .has_external_change(&session.project_root, &relevant)
+            {
+                relevant
+            } else {
+                Vec::new()
+            },
+        )
     }
 
     pub fn close_session(&self, id: u32) -> Result<(), EditorError> {

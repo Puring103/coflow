@@ -19,6 +19,10 @@ competition.
 A mutation plan is the validated execution plan for one batch of record changes. It resolves CFD
 write targets, source spans, writer requests, and reference rewrite actions once. Preflight,
 transaction enlistment, and staged writes consume the same plan.
+Record deletion produces source restoration patches from the same staged writes, including dimension overrides.
+Restore and identity-changing batches advance an in-memory candidate between dependent operation groups,
+then publish all source and project-file changes together. Every project file keeps its original disk expectation
+throughout the transaction, while its final contents include all staged changes.
 
 ## Code artifact release
 

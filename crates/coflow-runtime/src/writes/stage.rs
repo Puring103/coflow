@@ -23,6 +23,23 @@ pub(crate) fn stage_mutation_op(
 ) -> Result<WriteOutcome, DiagnosticSet> {
     match (op, execution) {
         (
+            PreparedMutationOp::RestoreRecord { snapshot },
+            MutationExecutionPlan::Restore { writer, sources },
+        ) => {
+            for (patch, source) in snapshot.patches.iter().zip(sources) {
+                writer.restore_source_patch(source.location.path(), patch)?;
+            }
+            Ok(WriteOutcome {
+                inserted: Some(snapshot.record.clone()),
+                affected_files: snapshot
+                    .patches
+                    .iter()
+                    .map(|patch| patch.file.clone())
+                    .collect(),
+                ..WriteOutcome::default()
+            })
+        }
+        (
             PreparedMutationOp::InsertRecord {
                 file,
                 actual_type,

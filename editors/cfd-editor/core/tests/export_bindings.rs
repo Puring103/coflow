@@ -62,7 +62,7 @@ fn export_bindings() {
     export_type::<t::CreateRecordFieldDraft>("CreateRecordFieldDraft");
     export_type::<t::DeleteRecordOutcome>("DeleteRecordOutcome");
     export_type::<t::ReorderRecordsOutcome>("ReorderRecordsOutcome");
-    export_type::<t::DeletedRecordSnapshot>("DeletedRecordSnapshot");
+    export_type::<coflow_runtime::RecordRestoreSnapshot>("RecordRestoreSnapshot");
     export_type::<t::GraphData>("GraphData");
     export_type::<t::GraphNode>("GraphNode");
     export_type::<t::GraphEdge>("GraphEdge");

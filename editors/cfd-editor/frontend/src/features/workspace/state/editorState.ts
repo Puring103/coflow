@@ -1,3 +1,4 @@
+import type { RecordRestoreSnapshot } from '../../../bindings/RecordRestoreSnapshot'
 import type { FlatDiagnostic } from '../../../bindings/FlatDiagnostic'
 import type { ProjectBootstrap } from '../../../bindings/ProjectBootstrap'
 import type { RecordCoordinate } from '../../../bindings/RecordCoordinate'
@@ -207,7 +208,7 @@ export interface DeleteEditEntry {
   revision: number
   filePath: string
   coordinate: RecordCoordinate
-  snapshot: FieldValue
+  snapshot: RecordRestoreSnapshot
 }
 
 export type ReorderEditEntry = SwapRecordsEditEntry | MoveRecordEditEntry | TransferRecordEditEntry
@@ -258,6 +259,7 @@ export class MutationHistoryController {
   private historyVersion = 0
   private batchDepth = 0
   private batchEntries: EditEntry[] = []
+  private replayingBatch: BatchEditEntry | null = null
 
   getSnapshot = (): MutationHistorySnapshot => this.snapshot
 
@@ -315,10 +317,12 @@ export class MutationHistoryController {
 
   rebind(oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate): void {
     if (sameCoordinate(oldCoordinate, newCoordinate)) return
+    // 正在回放的批次保存各操作发生时的坐标；整体改写会混淆改名前后及重复使用的 ID。
+    const rebind = (entry: EditEntry) => entry === this.replayingBatch ? entry : rebindEntry(entry, oldCoordinate, newCoordinate)
     this.publish({
       ...this.snapshot,
-      undo: this.snapshot.undo.map(entry => rebindEntry(entry, oldCoordinate, newCoordinate)),
-      redo: this.snapshot.redo.map(entry => rebindEntry(entry, oldCoordinate, newCoordinate)),
+      undo: this.snapshot.undo.map(rebind),
+      redo: this.snapshot.redo.map(rebind),
     })
   }
 
@@ -345,10 +349,13 @@ export class MutationHistoryController {
     const version = this.historyVersion
     this.publish({ ...this.snapshot, busy: true })
     let result: MutationResult<unknown>
+    this.replayingBatch = entry.kind === 'batch' ? entry : null
     try {
       result = await execute(entry)
     } catch {
       result = failed()
+    } finally {
+      this.replayingBatch = null
     }
 
     const currentSource = direction === 'undo' ? this.snapshot.undo : this.snapshot.redo

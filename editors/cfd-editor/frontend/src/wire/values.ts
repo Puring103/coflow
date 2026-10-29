@@ -2,7 +2,6 @@ import type { CfdDictKey } from '../bindings/CfdDictKey'
 import type { CfdObject } from '../bindings/CfdObject'
 import type { CfdPathSegment } from '../bindings/CfdPathSegment'
 import type { CfdValue } from '../bindings/CfdValue'
-import type { DeletedRecordSnapshot } from '../bindings/DeletedRecordSnapshot'
 import type { FieldCell } from '../bindings/FieldCell'
 import type { FieldAnnotation } from '../bindings/FieldAnnotation'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -108,10 +107,6 @@ export function makeObjectValue(actualType: string, fields: FieldCell[] = []): F
       fields: fieldMap,
     },
   }
-}
-
-export function deletedSnapshotValue(snapshot: DeletedRecordSnapshot): FieldValue {
-  return { kind: 'object', value: snapshot.record.object }
 }
 
 export function nullValue(): FieldValue {

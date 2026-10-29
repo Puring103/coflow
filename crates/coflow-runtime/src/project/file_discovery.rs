@@ -96,6 +96,20 @@ pub fn discover_directory_files(root: &Path) -> Result<Vec<PathBuf>, DirectoryDi
         .map(|files| files.into_iter().map(|file| file.path).collect::<Vec<_>>())
 }
 
+/// 按入口扩展名筛选后再按物理身份去重，与加载器和文件监听共用同一链接边界。
+///
+/// # Errors
+/// Returns a directory discovery error when an included input cannot be read or escapes the root.
+pub fn discover_directory_files_by_extension(
+    root: &Path,
+    extension: &str,
+) -> Result<Vec<PathBuf>, DirectoryDiscoveryError> {
+    discover_directory_files_with(root, &|path| {
+        path.extension().is_some_and(|value| value == extension)
+    })
+    .map(|files| files.into_iter().map(|file| file.path).collect())
+}
+
 pub(crate) fn discover_directory_files_with(
     root: &Path,
     include_file: &dyn Fn(&Path) -> bool,

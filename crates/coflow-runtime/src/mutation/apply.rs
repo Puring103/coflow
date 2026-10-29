@@ -29,6 +29,19 @@ impl ProjectSession {
         F: FnOnce(&Self, &[MutationAppliedOp]) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
     {
         tracing::info!(event = "mutation_plan_started");
+        if request.ops.iter().any(|op| {
+            matches!(op, super::MutationOp::RestoreRecord { .. })
+                || (request.ops.len() > 1 && changes_record_identity(op))
+        }) && !request.ops.iter().any(|op| {
+            matches!(
+                op,
+                super::MutationOp::SwapRecords { .. }
+                    | super::MutationOp::MoveRecord { .. }
+                    | super::MutationOp::TransferRecord { .. }
+            )
+        }) {
+            return execute_structural_sequence(self, request, prepare_additional_files);
+        }
         let (planned, mut failed, write_ok, stopped) = plan_mutations(self, request);
         if stopped || planned.is_empty() {
             return report_without_publish(self, write_ok, failed);
@@ -76,6 +89,44 @@ where
         &[MutationAppliedOp],
     ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
 {
+    let staged = match stage_executable(session, catalog, executable) {
+        Ok(staged) => staged,
+        Err(failure) => {
+            failed.push(failure);
+            return report_without_publish(session, false, failed);
+        }
+    };
+    let impact = mutation_impact(executable, &staged);
+    let writer = catalog.writer();
+    let rebuilt = match writer.source_overrides().and_then(|overrides| {
+        let preloaded = writer.take_preloaded_sources()?;
+        rebuild_after_mutation(session, &impact, &overrides, preloaded)
+    }) {
+        Ok(rebuilt) => rebuilt,
+        Err(diagnostics) => {
+            if let Some(last) = executable.last() {
+                failed.push(failed_op(&last.planned, diagnostics));
+            }
+            return report_without_publish(session, false, failed);
+        }
+    };
+    publish_staged(
+        session,
+        catalog,
+        write_ok,
+        failed,
+        executable,
+        staged,
+        rebuilt,
+        prepare_additional_files,
+    )
+}
+
+fn stage_executable(
+    session: &ProjectSession,
+    catalog: &CfdSourceCatalog,
+    executable: &[ExecutableMutation],
+) -> Result<Vec<MutationAppliedOp>, MutationFailedOp> {
     let mut staged = Vec::with_capacity(executable.len());
     let mut cursor = 0;
     while cursor < executable.len() {
@@ -87,61 +138,73 @@ where
             match stage_independent_field_writes(session, &executable[cursor..end]) {
                 Ok(applied) => staged.extend(applied),
                 Err(failure) => {
-                    failed.push(failure);
-                    return report_without_publish(session, false, failed);
+                    return Err(failure);
                 }
             }
             cursor = end;
         } else {
             let item = &executable[cursor];
             match stage_mutation_op(session, &item.planned.op, &item.execution) {
-                Ok(outcome) => staged.push(applied_op(&item.planned, outcome)),
+                Ok(outcome) => {
+                    let mut applied = applied_op(&item.planned, outcome);
+                    if let super::PreparedMutationOp::DeleteRecord { record, .. } = &item.planned.op
+                    {
+                        match catalog
+                            .writer()
+                            .take_record_restore(record, session.project.root_dir())
+                        {
+                            Ok(snapshot) => applied.restore = Some(snapshot),
+                            Err(diagnostics) => {
+                                return Err(failed_op(&item.planned, diagnostics));
+                            }
+                        }
+                    }
+                    staged.push(applied);
+                }
                 Err(diagnostics) => {
-                    failed.push(failed_op(&item.planned, diagnostics));
-                    return report_without_publish(session, false, failed);
+                    return Err(failed_op(&item.planned, diagnostics));
                 }
             }
             cursor += 1;
         }
     }
 
-    // 物理文件可以乱序暂存，语义影响必须按原计划和对应的结果成对计算。
     staged.sort_by_key(|applied| applied.index);
-    let impact = MutationImpact::from_operations(
+    Ok(staged)
+}
+
+fn mutation_impact(
+    executable: &[ExecutableMutation],
+    staged: &[MutationAppliedOp],
+) -> MutationImpact {
+    // 物理文件可以乱序暂存，语义影响按原计划和对应结果成对计算。
+    MutationImpact::from_operations(
         executable
             .iter()
-            .zip(&staged)
+            .zip(staged)
             .map(|(item, applied)| (&item.planned.op, &applied.outcome)),
-    );
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn publish_staged<F>(
+    session: &mut ProjectSession,
+    catalog: &CfdSourceCatalog,
+    write_ok: bool,
+    mut failed: Vec<MutationFailedOp>,
+    executable: &[ExecutableMutation],
+    staged: Vec<MutationAppliedOp>,
+    rebuilt: crate::sessions::session_build::SessionBuildOutput,
+    prepare_additional_files: F,
+) -> MutationReport
+where
+    F: FnOnce(
+        &ProjectSession,
+        &[MutationAppliedOp],
+    ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+{
+    let impact = mutation_impact(executable, &staged);
     let writer = catalog.writer();
-    let source_overrides = match writer.source_overrides() {
-        Ok(source_overrides) => source_overrides,
-        Err(diagnostics) => {
-            if let Some(last) = executable.last() {
-                failed.push(failed_op(&last.planned, diagnostics));
-            }
-            return report_without_publish(session, false, failed);
-        }
-    };
-    let preloaded_sources = match writer.take_preloaded_sources() {
-        Ok(sources) => sources,
-        Err(diagnostics) => {
-            if let Some(last) = executable.last() {
-                failed.push(failed_op(&last.planned, diagnostics));
-            }
-            return report_without_publish(session, false, failed);
-        }
-    };
-    let rebuilt =
-        match rebuild_after_mutation(session, &impact, &source_overrides, preloaded_sources) {
-            Ok(rebuilt) => rebuilt,
-            Err(diagnostics) => {
-                if let Some(last) = executable.last() {
-                    failed.push(failed_op(&last.planned, diagnostics));
-                }
-                return report_without_publish(session, false, failed);
-            }
-        };
     let new_session = rebuilt.session;
     let mut additional_files = match prepare_additional_files(&new_session, &staged) {
         Ok(files) => files,
@@ -217,6 +280,140 @@ where
         published_files,
         diagnostics,
     }
+}
+
+fn changes_record_identity(op: &super::MutationOp) -> bool {
+    match op {
+        super::MutationOp::RenameRecord { .. } => true,
+        super::MutationOp::SetField { path, .. } => {
+            matches!(path.as_slice(), [crate::CfdPathSegment::Field(field)] if field == "id")
+        }
+        _ => false,
+    }
+}
+
+/// 恢复与改名段推进内存候选模型，使后续操作使用当时的记录身份；连续恢复共用一次重建，最终只发布一次。
+#[allow(clippy::too_many_lines)]
+fn execute_structural_sequence<F>(
+    session: &mut ProjectSession,
+    request: MutationRequest,
+    prepare_additional_files: F,
+) -> MutationReport
+where
+    F: FnOnce(
+        &ProjectSession,
+        &[MutationAppliedOp],
+    ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
+{
+    let catalog = CfdSourceCatalog::staged_writes();
+    let writer = catalog.writer();
+    let mut operations = request.ops.into_iter().peekable();
+    let mut candidate: Option<crate::sessions::session_build::SessionBuildOutput> = None;
+    let mut executable = Vec::new();
+    let mut applied = Vec::new();
+    let mut failed = Vec::new();
+    let mut write_ok = true;
+    let mut offset = 0;
+    let mut project_updates = std::collections::BTreeMap::new();
+    while let Some(first) = operations.next() {
+        let restore = matches!(first, super::MutationOp::RestoreRecord { .. });
+        let identity_change = changes_record_identity(&first);
+        let mut group = vec![first];
+        while !identity_change
+            && operations.peek().is_some_and(|op| {
+                !changes_record_identity(op)
+                    && matches!(op, super::MutationOp::RestoreRecord { .. }) == restore
+            })
+        {
+            if let Some(next) = operations.next() {
+                group.push(next);
+            }
+        }
+        let count = group.len();
+        let current = candidate
+            .as_ref()
+            .map_or(&*session, |output| &output.session);
+        let (mut planned, mut group_failed, group_ok, stopped) = plan_mutations(
+            current,
+            MutationRequest {
+                stop_on_write_error: request.stop_on_write_error,
+                ops: group,
+            },
+        );
+        for op in &mut planned {
+            op.index += offset;
+        }
+        for failure in &mut group_failed {
+            failure.index += offset;
+        }
+        offset += count;
+        failed.extend(group_failed);
+        write_ok &= group_ok;
+        if stopped {
+            return report_without_publish(session, false, failed);
+        }
+        if planned.is_empty() {
+            continue;
+        }
+        let group_execution = match prepare_execution_plans(current, &catalog, planned) {
+            Ok(execution) => execution,
+            Err(failure) => {
+                failed.push(failure);
+                return report_without_publish(session, false, failed);
+            }
+        };
+        let group_applied = match stage_executable(current, &catalog, &group_execution) {
+            Ok(applied) => applied,
+            Err(failure) => {
+                failed.push(failure);
+                return report_without_publish(session, false, failed);
+            }
+        };
+        let impact = mutation_impact(&group_execution, &group_applied);
+        let rebuilt = writer.source_overrides().and_then(|overrides| {
+            let preloaded = writer.take_preloaded_sources()?;
+            rebuild_after_mutation(current, &impact, &overrides, preloaded)
+        });
+        match rebuilt {
+            Ok(mut output) => {
+                for update in std::mem::take(&mut output.project_file_updates) {
+                    // 多段都扩展 data 配置时，发布前置条件始终针对事务开始时的磁盘内容。
+                    match project_updates.entry(update.path().to_path_buf()) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(update);
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            let pending: &mut ProjectFileUpdate = entry.get_mut();
+                            pending.contents = update.contents;
+                        }
+                    }
+                }
+                candidate = Some(output);
+            }
+            Err(diagnostics) => {
+                if let Some(last) = group_execution.last() {
+                    failed.push(failed_op(&last.planned, diagnostics));
+                }
+                return report_without_publish(session, false, failed);
+            }
+        }
+        executable.extend(group_execution);
+        applied.extend(group_applied);
+    }
+    let Some(mut rebuilt) = candidate else {
+        return report_without_publish(session, write_ok, failed);
+    };
+    rebuilt.project_file_updates = project_updates.into_values().collect();
+    publish_staged(
+        session,
+        &catalog,
+        write_ok,
+        failed,
+        &executable,
+        applied,
+        rebuilt,
+        prepare_additional_files,
+    )
 }
 
 fn stage_independent_field_writes(
@@ -330,6 +527,7 @@ fn prepare_execution_plans(
 fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> MutationAppliedOp {
     let (op, record, file) = planned.op.report_metadata();
     MutationAppliedOp {
+        restore: None,
         index: planned.index,
         op: op.to_string(),
         record,

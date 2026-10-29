@@ -30,8 +30,8 @@ pub use project::{
 pub use records::{
     BatchMutationOutcome, BatchWriteFieldEditOutcome, BatchWriteFieldInput, BatchWriteFieldOutcome,
     CollectionEdit, ColumnContentMetrics, CreateLinkedRecordInput, CreateRecordDraft,
-    CreateRecordFieldDraft, DeleteRecordOutcome, DeletedRecordSnapshot, DimensionFileRecords,
-    DimensionFileRow, EnumVariantOption, FieldAnnotation, FieldCell, FieldDiagnostic, FileRecords,
+    CreateRecordFieldDraft, DeleteRecordOutcome, DimensionFileRecords, DimensionFileRow,
+    EnumVariantOption, FieldAnnotation, FieldCell, FieldDiagnostic, FileRecords,
     InsertRecordOutcome, LinkedRecordOutcome, RecordColumn, RecordRow, RenameRecordOutcome,
     ReorderRecordsOutcome, WriteDimensionValueOutcome, WriteFieldOutcome,
 };

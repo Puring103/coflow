@@ -9,6 +9,7 @@ mod batch;
 mod dimensions;
 mod patch;
 mod render;
+mod restore;
 mod schema_nav;
 mod target;
 
@@ -54,6 +55,7 @@ pub(crate) struct CfdWriter {
 
 #[derive(Debug, Default)]
 struct WriteWorkspace {
+    deletions: Vec<crate::SourceRestorePatch>,
     files: std::collections::BTreeMap<std::path::PathBuf, WorkspaceFile>,
 }
 
@@ -495,7 +497,7 @@ impl CfdWriter {
                 ))
             })?;
         let span = delete_record_span(&source, record.span);
-        let new_source = format!("{}{}", &source[..span.start], &source[span.end..]);
+        let new_source = self.capture_removals(path, &source, &[span])?;
         self.write_source(path, &new_source)?;
         Ok(WriteOutcome::default())
     }

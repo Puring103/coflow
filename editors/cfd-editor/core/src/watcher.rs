@@ -211,14 +211,14 @@ fn watch_loop(
                         Ok(Ok(_)) => {}
                         Ok(Err(err)) => emit_watch_error(events, session_id, err.to_string()),
                         Err(RecvTimeoutError::Timeout) => {
-                            let relevant_paths = filter_relevant_paths(&pending_paths);
-                            let external =
-                                sessions.has_external_file_changes(session_id, &relevant_paths);
+                            let changes = sessions.external_project_file_changes(
+                                session_id,
+                                &filter_relevant_paths(&pending_paths),
+                            );
                             pending_paths.clear();
-                            match external {
-                                Ok(false) => break,
-                                Ok(true) => {
-                                    if emit_reload(sessions, events, session_id, &relevant_paths) {
+                            match changes {
+                                Ok(paths) if !paths.is_empty() => {
+                                    if emit_reload(sessions, events, session_id, &paths) {
                                         if let Some(registry) = registry.upgrade() {
                                             if let Err(err) =
                                                 registry.refresh_session(session_id, project_root)
@@ -228,6 +228,7 @@ fn watch_loop(
                                         }
                                     }
                                 }
+                                Ok(_) => {}
                                 Err(err) => emit_watch_error(events, session_id, err.message),
                             }
                             break;
@@ -377,6 +378,153 @@ mod tests {
             }
             super::EditorEvent::ProjectReloaded(_) => panic!("expected structured error"),
         };
+    }
+
+    #[test]
+    fn only_configured_inputs_and_membership_changes_trigger_reload() {
+        let root = tempfile::tempdir().expect("project");
+        let external = tempfile::tempdir().expect("external inputs");
+        std::fs::create_dir_all(root.path().join("schema")).expect("schema dir");
+        std::fs::create_dir_all(root.path().join("target/data")).expect("data dir");
+        std::fs::write(
+            root.path().join("schema/main.cft"),
+            "table Item { value: int; }",
+        )
+        .expect("schema");
+        std::fs::write(
+            root.path().join("target/data/base.cfd"),
+            "a: Item { value: 1 }",
+        )
+        .expect("data");
+        std::fs::write(root.path().join("coflow.yaml"), format!("schema: schema/\ndata: [target/data/, '{}']\ncodegen: [{{ language: csharp, dir: generated }}]\n", external.path().to_string_lossy().replace('\\', "/"))).expect("config");
+        let sessions = super::SessionStore::new().expect("store");
+        let session = sessions
+            .load_project(&root.path().join("coflow.yaml"))
+            .expect("load")
+            .session_id;
+        for relative in [
+            "README.md",
+            "target/data/README.md",
+            "target/data/unused.cft",
+            "schema/unused.cfd",
+            "unconfigured.cfd",
+        ] {
+            let path = root.path().join(relative);
+            std::fs::write(&path, "unrelated").expect("unrelated file");
+            assert!(
+                !sessions
+                    .has_external_file_changes(session, &[path])
+                    .expect("classify"),
+                "{relative}"
+            );
+        }
+        assert!(!sessions
+            .has_external_file_changes(session, &[root.path().to_path_buf()])
+            .expect("parent metadata"));
+        for path in [
+            root.path().join("schema/main.cft"),
+            root.path().join("target/data/base.cfd"),
+            root.path().join("coflow.yaml"),
+        ] {
+            assert!(sessions
+                .has_external_file_changes(session, &[path])
+                .expect("configured input"));
+        }
+        let moved = root.path().join("target/data/moved");
+        std::fs::create_dir(&moved).expect("moved dir");
+        std::fs::write(moved.join("new.cfd"), "b: Item { value: 2 }").expect("new data");
+        assert!(sessions
+            .has_external_file_changes(session, std::slice::from_ref(&moved))
+            .expect("directory-only creation"));
+        sessions.reload_session(session).expect("reload creation");
+        std::fs::remove_dir_all(&moved).expect("remove configured source directory");
+        assert!(sessions
+            .has_external_file_changes(session, &[moved])
+            .expect("directory-only removal"));
+        let external_path = external.path().join("external.cfd");
+        std::fs::write(&external_path, "external: Item { value: 3 }").expect("external data");
+        assert!(sessions
+            .has_external_file_changes(session, &[external_path])
+            .expect("external input"));
+    }
+
+    #[test]
+    fn cfd_alias_discovery_filters_entries_before_physical_identity_deduplication() {
+        let root = tempfile::tempdir().expect("project");
+        let data = root.path().join("data");
+        std::fs::create_dir(&data).expect("data dir");
+        std::fs::write(
+            root.path().join("coflow.yaml"),
+            "schema: schema.cft\ndata: data/\ncodegen: [{ language: csharp, dir: generated }]\n",
+        )
+        .expect("config");
+        std::fs::write(root.path().join("schema.cft"), "table Item { value: int; }")
+            .expect("schema");
+        let sessions = super::SessionStore::new().expect("store");
+        let session = sessions
+            .load_project(&root.path().join("coflow.yaml"))
+            .expect("load")
+            .session_id;
+        let target = data.join("a-source.txt");
+        let alias = data.join("z-source.cfd");
+        std::fs::write(&target, "linked: Item { value: 1 }").expect("target");
+        #[cfg(windows)]
+        let result = std::os::windows::fs::symlink_file(&target, &alias);
+        #[cfg(unix)]
+        let result = std::os::unix::fs::symlink(&target, &alias);
+        if let Err(error) = result {
+            if error.kind() == std::io::ErrorKind::PermissionDenied {
+                return;
+            }
+            panic!("create source link: {error}");
+        }
+        assert!(sessions
+            .has_external_file_changes(session, &[alias])
+            .expect("alias event"));
+        assert!(sessions
+            .has_external_file_changes(session, std::slice::from_ref(&data))
+            .expect("directory event"));
+        sessions.reload_session(session).expect("load alias");
+        let renamed = sessions
+            .rename_record_id(
+                session,
+                &coflow_runtime::RecordCoordinate::try_new("Item", "linked").expect("record"),
+                "loaded",
+            )
+            .expect("alias record was loaded");
+        assert_eq!(renamed.diagnostics, []);
+        std::fs::write(&target, "loaded: Item { value: 2 }").expect("physical target change");
+        assert!(sessions
+            .has_external_file_changes(session, &[target])
+            .expect("physical target event"));
+    }
+
+    #[test]
+    fn internal_write_parent_events_do_not_discard_history() {
+        let root = tempfile::tempdir().expect("project");
+        std::fs::write(
+            root.path().join("coflow.yaml"),
+            "schema: schema.cft\ndata: data.cfd\ncodegen: [{ language: csharp, dir: generated }]\n",
+        )
+        .expect("config");
+        std::fs::write(root.path().join("schema.cft"), "table Item { value: int; }")
+            .expect("schema");
+        let data = root.path().join("data.cfd");
+        std::fs::write(&data, "a: Item { value: 1 }").expect("data");
+        let sessions = super::SessionStore::new().expect("store");
+        let session = sessions
+            .load_project(&root.path().join("coflow.yaml"))
+            .expect("load")
+            .session_id;
+        sessions
+            .delete_record(
+                session,
+                &coflow_runtime::RecordCoordinate::try_new("Item", "a").expect("coordinate"),
+            )
+            .expect("delete");
+        assert!(!sessions
+            .has_external_file_changes(session, &[root.path().to_path_buf(), data])
+            .expect("internal events"));
     }
 
     #[test]

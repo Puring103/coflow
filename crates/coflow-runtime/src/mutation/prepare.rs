@@ -118,6 +118,27 @@ pub(super) fn prepare_one(
     pending_records: &BTreeMap<RecordCoordinate, usize>,
 ) -> Result<PreparedMutationOp, DiagnosticSet> {
     match op {
+        MutationOp::RestoreRecord { snapshot } => {
+            ensure_type_can_insert(session, &snapshot.record.actual_type)?;
+            ensure_record_id_available(
+                session,
+                &snapshot.record.actual_type,
+                &snapshot.record.id,
+                None,
+                "MUTATION-INSERT",
+                "MUTATION-INSERT-CONFLICT",
+            )?;
+            if snapshot.patches.is_empty() {
+                return Err(one_mutation_error(
+                    "MUTATION-INSERT",
+                    "record restore snapshot is empty",
+                ));
+            }
+            for patch in &snapshot.patches {
+                ensure_source_file(session, &patch.file)?;
+            }
+            Ok(PreparedMutationOp::RestoreRecord { snapshot })
+        }
         MutationOp::InsertRecord {
             file,
             actual_type,
@@ -150,6 +171,31 @@ pub(super) fn prepare_one(
                 id: coordinate.id,
                 fields,
             })
+        }
+        MutationOp::SetField {
+            record,
+            file,
+            path,
+            value,
+        } if matches!(path.as_slice(), [CfdPathSegment::Field(field)] if field == "id") => {
+            // id 是记录身份而非声明字段；沿用改名管线同步引用、维度来源与枚举编号。
+            let CfdValue::String(new_id) =
+                coerce_mutation_value(session, &CftValueType::String, value, pending_records)?
+            else {
+                return Err(one_mutation_error(
+                    "MUTATION-RENAME",
+                    "record ids must be strings",
+                ));
+            };
+            prepare_one(
+                session,
+                MutationOp::RenameRecord {
+                    record,
+                    file,
+                    new_id,
+                },
+                pending_records,
+            )
         }
         MutationOp::SetField {
             record,

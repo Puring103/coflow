@@ -27,7 +27,9 @@ pub use config::{DimensionConfig, OutputConfig, ProjectConfig, SchemaConfig, Sou
 pub use config_write::{
     add_project_input, create_project_file, delete_project_entry, ProjectInputKind,
 };
-pub use file_discovery::{discover_directory_files, DirectoryDiscoveryError};
+pub use file_discovery::{
+    discover_directory_files, discover_directory_files_by_extension, DirectoryDiscoveryError,
+};
 pub use init::{init_project, InitOutcome, DEFAULT_PROJECT_YAML};
 pub use paths::{
     canonicalize_path, normalize_path, normalized_path_identity, path_is_same_or_descendant,

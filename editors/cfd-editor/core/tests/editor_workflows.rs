@@ -1649,3 +1649,285 @@ fn linked_record_creation_and_inverse_batch_publish_one_generation_each() {
         1
     );
 }
+
+#[test]
+fn deletion_undo_restores_exact_sources_dimensions_and_group_order_atomically() {
+    let root = project_directory("delete-restore-");
+    fs::create_dir(root.path().join("data")).unwrap();
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen: [{ language: csharp, dir: generated }]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schema.cft"),
+        "table Item { @localized title: string; value: int = 7; }",
+    )
+    .unwrap();
+    let base =
+        "Item {\n  a { title: \"A\" }\n  b { title: \"B\" }\n  c { title: \"C\", value: 9 }\n}\n";
+    let japanese = "# 日本語\nlanguage[ja] { a: Item { title: \"エー\" } b: Item { title: \"ビー\" } }\nlanguage[en] { b: Item { title: \"Bee\" } }\n";
+    fs::write(root.path().join("data/base.cfd"), base).unwrap();
+    fs::write(root.path().join("data/ja.cfd"), japanese).unwrap();
+    let store = SessionStore::new().unwrap();
+    let session = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    let b = RecordCoordinate::try_new("Item", "b").unwrap();
+    let c = RecordCoordinate::try_new("Item", "c").unwrap();
+    let first = store.delete_record(session, &b).unwrap();
+    let second = store.delete_record(session, &c).unwrap();
+    let patches = vec![
+        coflow_runtime::MutationOp::RestoreRecord {
+            snapshot: second.deleted_snapshot.unwrap(),
+        },
+        coflow_runtime::MutationOp::RestoreRecord {
+            snapshot: first.deleted_snapshot.clone().unwrap(),
+        },
+    ];
+    let restored = store.apply_mutation_batch(session, patches).unwrap();
+    assert_eq!(restored.revision, second.revision + 1);
+    assert_eq!(
+        fs::read_to_string(root.path().join("data/base.cfd")).unwrap(),
+        base
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("data/ja.cfd")).unwrap(),
+        japanese
+    );
+    let records = store.get_file_records(session, "data/base.cfd").unwrap();
+    assert_eq!(
+        records
+            .records
+            .iter()
+            .map(|record| record.coordinate.id.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b", "c"],
+        "{restored:?}"
+    );
+    // 再次删除/恢复保持原始快照可重放，默认值不会变为显式赋值。
+    store.delete_record(session, &b).unwrap();
+    store
+        .apply_mutation_batch(
+            session,
+            vec![coflow_runtime::MutationOp::RestoreRecord {
+                snapshot: first.deleted_snapshot.unwrap(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(root.path().join("data/base.cfd")).unwrap(),
+        base
+    );
+}
+
+#[test]
+fn deletion_restore_conflict_keeps_all_files_and_generation_unchanged() {
+    let root = project_directory("delete-conflict-");
+    fs::create_dir(root.path().join("data")).unwrap();
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data/\ncodegen: [{ language: csharp, dir: generated }]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schema.cft"),
+        "table Item { @localized title: string; }",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("data/base.cfd"),
+        "a: Item { title: \"A\" }\nb: Item { title: \"B\" }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("data/ja.cfd"),
+        "language[ja] { b: Item { title: \"ビー\" } }\n",
+    )
+    .unwrap();
+    let store = SessionStore::new().unwrap();
+    let session = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    let deleted = store
+        .delete_record(session, &RecordCoordinate::try_new("Item", "b").unwrap())
+        .unwrap();
+    let overlay = fs::read_to_string(root.path().join("data/ja.cfd")).unwrap();
+    let external = "a: Item { title: \"externally changed\" }\n";
+    fs::write(root.path().join("data/base.cfd"), external).unwrap();
+    let failure = store.apply_mutation_batch(
+        session,
+        vec![coflow_runtime::MutationOp::RestoreRecord {
+            snapshot: deleted.deleted_snapshot.unwrap(),
+        }],
+    );
+    assert!(failure.is_err());
+    assert_eq!(
+        fs::read_to_string(root.path().join("data/base.cfd")).unwrap(),
+        external
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("data/ja.cfd")).unwrap(),
+        overlay
+    );
+    assert_eq!(
+        store
+            .get_file_records(session, "data/base.cfd")
+            .unwrap()
+            .revision,
+        deleted.revision
+    );
+}
+
+#[test]
+fn deletion_restore_mixed_batch_uses_candidate_records_and_publishes_once() {
+    let root = project_directory("delete-mixed-");
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen: [{ language: csharp, dir: generated }]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schema.cft"),
+        "table Item { title: string; }",
+    )
+    .unwrap();
+    let original = "a: Item { title: \"A\" }\nb: Item { title: \"B\" }\n";
+    let path = root.path().join("data.cfd");
+    fs::write(&path, original).unwrap();
+    let store = SessionStore::new().unwrap();
+    let session = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    let a = RecordCoordinate::try_new("Item", "a").unwrap();
+    let b = RecordCoordinate::try_new("Item", "b").unwrap();
+    store
+        .write_field(
+            session,
+            &b,
+            &[field("title")],
+            &CfdValue::String("changed B".into()),
+        )
+        .unwrap();
+    let deleted = store.delete_record(session, &b).unwrap();
+    let changed = store
+        .write_field(
+            session,
+            &a,
+            &[field("title")],
+            &CfdValue::String("changed A".into()),
+        )
+        .unwrap();
+    let restore = coflow_runtime::MutationOp::RestoreRecord {
+        snapshot: deleted.deleted_snapshot.unwrap(),
+    };
+    let write = |record, name: &str, value: &str| coflow_runtime::MutationOp::SetField {
+        record,
+        file: None,
+        path: vec![field(name)],
+        value: coflow_runtime::MutationValue::Cfd(CfdValue::String(value.into())),
+    };
+    let undone = store
+        .apply_mutation_batch(
+            session,
+            vec![
+                write(a, "title", "A"),
+                restore,
+                write(b.clone(), "title", "B"),
+            ],
+        )
+        .unwrap();
+    assert_eq!(undone.revision, changed.revision + 1);
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    let deleted = store.delete_record(session, &b).unwrap();
+    let before = fs::read_to_string(&path).unwrap();
+    assert!(store
+        .apply_mutation_batch(
+            session,
+            vec![
+                coflow_runtime::MutationOp::RestoreRecord {
+                    snapshot: deleted.deleted_snapshot.unwrap()
+                },
+                write(b, "unknown", "invalid")
+            ]
+        )
+        .is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    assert_eq!(
+        store
+            .get_file_records(session, "data.cfd")
+            .unwrap()
+            .revision,
+        deleted.revision
+    );
+}
+
+#[test]
+fn deletion_batch_after_rename_replays_the_current_identity_atomically() {
+    let root = project_directory("delete-rename-");
+    fs::write(
+        root.path().join("coflow.yaml"),
+        "schema: schema.cft\ndata: data.cfd\ncodegen: [{ language: csharp, dir: generated }]\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("schema.cft"), "table Item { value: int; }").unwrap();
+    let original = "a: Item { value: 1 }\n";
+    let path = root.path().join("data.cfd");
+    fs::write(&path, original).unwrap();
+    let store = SessionStore::new().unwrap();
+    let session = store
+        .load_project(&root.path().join("coflow.yaml"))
+        .unwrap()
+        .session_id;
+    let a = RecordCoordinate::try_new("Item", "a").unwrap();
+    let b = RecordCoordinate::try_new("Item", "b").unwrap();
+    store.rename_record_id(session, &a, "b").unwrap();
+    let deleted = store.delete_record(session, &b).unwrap();
+    let rename = |record, id: &str| coflow_runtime::MutationOp::SetField {
+        record,
+        file: None,
+        path: vec![field("id")],
+        value: coflow_runtime::MutationValue::Cfd(CfdValue::String(id.into())),
+    };
+    let undone = store
+        .apply_mutation_batch(
+            session,
+            vec![
+                coflow_runtime::MutationOp::RestoreRecord {
+                    snapshot: deleted.deleted_snapshot.unwrap(),
+                },
+                rename(b.clone(), "a"),
+            ],
+        )
+        .unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    let redone = store
+        .apply_mutation_batch(
+            session,
+            vec![
+                rename(a, "b"),
+                coflow_runtime::MutationOp::DeleteRecord {
+                    record: b.clone(),
+                    file: None,
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(redone.revision, undone.revision + 1);
+    assert_eq!(redone.deleted_snapshots.len(), 1);
+    store
+        .apply_mutation_batch(
+            session,
+            vec![
+                coflow_runtime::MutationOp::RestoreRecord {
+                    snapshot: redone.deleted_snapshots[0].clone(),
+                },
+                rename(b, "a"),
+            ],
+        )
+        .unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+}

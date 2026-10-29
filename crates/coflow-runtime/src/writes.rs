@@ -118,6 +118,9 @@ impl MutationImpact {
             } => {
                 self.add_structural_record(&RecordCoordinate::new(actual_type.clone(), id.clone()));
             }
+            PreparedMutationOp::RestoreRecord { snapshot } => {
+                self.add_structural_record(&snapshot.record);
+            }
             PreparedMutationOp::CancelledInsert { record, .. }
             | PreparedMutationOp::DeleteRecord { record, .. }
             | PreparedMutationOp::FoldedDeleteRecord { record, .. } => {

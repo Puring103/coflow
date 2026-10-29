@@ -16,6 +16,10 @@ use super::writer::{
 use crate::write_rules;
 
 pub(crate) enum MutationExecutionPlan {
+    Restore {
+        writer: Arc<CfdWriter>,
+        sources: Vec<CfdSource>,
+    },
     Insert(InsertPlan),
     WriteField(WriteFieldPlan),
     UnsetField(WriteFieldPlan),
@@ -24,7 +28,9 @@ pub(crate) enum MutationExecutionPlan {
     Delete(DeletePlan),
     Reorder(ReorderPlan),
     Transfer(TransferPlan),
-    Noop { coordinate: RecordCoordinate },
+    Noop {
+        coordinate: RecordCoordinate,
+    },
     Folded,
 }
 
@@ -139,6 +145,14 @@ pub(crate) fn prepare_mutation_execution(
     allow_noop: bool,
 ) -> Result<MutationExecutionPlan, DiagnosticSet> {
     match op {
+        PreparedMutationOp::RestoreRecord { snapshot } => Ok(MutationExecutionPlan::Restore {
+            writer: catalog.writer(),
+            sources: snapshot
+                .patches
+                .iter()
+                .map(|patch| source_for_file(session, &patch.file))
+                .collect::<Result<_, _>>()?,
+        }),
         PreparedMutationOp::InsertRecord { file, .. } => {
             let source = source_for_file(session, file)?;
             let writer = lookup_source_writer(catalog);

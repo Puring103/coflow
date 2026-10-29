@@ -1,3 +1,4 @@
+import type { RecordRestoreSnapshot } from '../../../bindings/RecordRestoreSnapshot'
 import type { CreateLinkedRecordInput } from '../../../bindings/CreateLinkedRecordInput'
 import type { LinkedRecordOutcome } from '../../../bindings/LinkedRecordOutcome'
 import { historyOperations } from './mutations/atomicHistory'
@@ -17,7 +18,7 @@ import type { RenameRecordOutcome } from '../../../bindings/RenameRecordOutcome'
 import type { ReorderRecordsOutcome } from '../../../bindings/ReorderRecordsOutcome'
 import type { WriteFieldOutcome } from '../../../bindings/WriteFieldOutcome'
 import type { WriteDimensionValueOutcome } from '../../../bindings/WriteDimensionValueOutcome'
-import { cloneValue, deletedSnapshotValue, fieldPathField, type FieldPathSegment, type FieldValue } from '../../../wire'
+import { cloneValue, fieldPathField, type FieldPathSegment, type FieldValue } from '../../../wire'
 import { committed, failed, MutationHistoryController, superseded, type BatchEditEntry, type EditEntry, type MutationPublicationRequest, type MutationResult, type EditorGenerationIdentity, type GraphPositions } from '../../workspace/state/editorState'
 import { replayBatch, replayEntry, type ReplayDriver } from './mutations/historyReplay'
 
@@ -490,6 +491,8 @@ export class EditorMutationController {
         this.writeFieldsInternal(filePath, writes, { recordHistory: false }),
       deleteRecord: (filePath, coordinate) =>
         this.deleteRecordInternal(filePath, coordinate, { recordHistory: false }),
+      restoreRecord: (filePath, snapshot) => this.execute('恢复记录失败', filePath,
+        sessionId => this.backend.applyMutationBatch(sessionId, [{ op: 'restore_record', snapshot }]), undefined, () => undefined),
       insertRecord: (filePath, recordId, actualType, fields) =>
         this.insertRecordInternal(filePath, recordId, actualType, fields, { recordHistory: false }),
       swapRecords: (filePath, first, second) =>
@@ -528,7 +531,19 @@ export class EditorMutationController {
       const file = fallbackFile && 'file' in fallbackFile ? fallbackFile.file ?? '' : ''
       return this.executeWithPendingFieldReplay(() => this.execute('批量历史回放失败', file,
         sessionId => this.backend.applyMutationBatch(sessionId, operations), undefined,
-        outcome => { for (const [oldCoordinate, newCoordinate] of outcome.renamed) this.applyRename(file, oldCoordinate, newCoordinate) },
+        outcome => {
+          for (const [oldCoordinate, newCoordinate] of outcome.renamed) this.applyRename(file, oldCoordinate, newCoordinate)
+          // 同一 ID 可在批内先删除、再改名占用、再删除；按实际顺序消费快照，不能始终取首项。
+          const snapshots = [...outcome.deleted_snapshots]
+          const refresh = (item: EditEntry): void => {
+            if (item.kind === 'batch') item.entries.forEach(refresh)
+            if (item.kind === 'delete' && direction === 'redo') {
+              const index = snapshots.findIndex(snapshot => snapshot.record.actual_type === item.coordinate.actual_type && snapshot.record.id === item.coordinate.id)
+              if (index >= 0) item.snapshot = structuredClone(snapshots.splice(index, 1)[0])
+            }
+          }
+          refresh(entry)
+        },
       ))
     }
     const result = await replayBatch(entry, direction, sub => (
@@ -737,7 +752,7 @@ export class EditorMutationController {
     filePath: string,
     coordinate: RecordCoordinate,
     options: MutationOptions,
-  ): Promise<MutationResult<void>> {
+  ): Promise<MutationResult<RecordRestoreSnapshot | null>> {
     return this.execute(
       '删除记录失败',
       filePath,
@@ -751,9 +766,10 @@ export class EditorMutationController {
             revision: outcome.revision,
             filePath,
             coordinate,
-            snapshot: deletedSnapshotValue(outcome.deleted_snapshot),
+            snapshot: structuredClone(outcome.deleted_snapshot),
           })
         }
+        return outcome.deleted_snapshot
       },
     )
   }

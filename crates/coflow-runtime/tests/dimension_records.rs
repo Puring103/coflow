@@ -416,3 +416,62 @@ fn record_rename_updates_references_in_each_original_overlay_file() {
         .into_diagnostics()
         .is_empty());
 }
+
+#[test]
+fn restore_sequence_keeps_original_config_expectation_across_dimension_destinations() {
+    let dir = project(
+        "table Item { @localized title: string; }",
+        "a: Item { title: \"A\" }\nb: Item { title: \"B\" }",
+        &[],
+    );
+    fs::write(dir.path().join("coflow.yaml"), "schema: schema.cft\ndata: [data/base.cfd]\ncodegen: [{ language: csharp, dir: generated }]\n").expect("explicit inputs");
+    let mut session = Runtime::new()
+        .open_write_session(Project::open(Some(dir.path())).expect("project"))
+        .expect("session");
+    let deleted = coflow_runtime::commands::apply_project_mutation(
+        &mut session,
+        MutationRequest {
+            stop_on_write_error: true,
+            ops: vec![MutationOp::DeleteRecord {
+                record: RecordCoordinate::try_new("Item", "b").expect("record"),
+                file: None,
+            }],
+        },
+    )
+    .expect("delete");
+    let snapshot = deleted.applied[0].restore.clone().expect("source snapshot");
+    apply(
+        &mut session,
+        vec![
+            set(
+                coordinate("Item", "a", "title", "ja"),
+                Some("data/new-ja.cfd"),
+                CfdValue::String("エー".into()),
+            ),
+            MutationOp::RestoreRecord { snapshot },
+            set(
+                coordinate("Item", "b", "title", "en"),
+                Some("data/new-en.cfd"),
+                CfdValue::String("Bee".into()),
+            ),
+        ],
+    );
+    let config = fs::read_to_string(dir.path().join("coflow.yaml"))
+        .expect("config")
+        .replace('\\', "/");
+    assert!(
+        config.contains("data/new-ja.cfd") && config.contains("data/new-en.cfd"),
+        "{config}"
+    );
+    let reopened = Runtime::new()
+        .open_read_only_session(Project::open(Some(dir.path())).expect("project"))
+        .expect("reopen");
+    assert_eq!(
+        reopened
+            .queries()
+            .dimension_value(&coordinate("Item", "b", "title", "en"))
+            .expect("overlay")
+            .state,
+        DimensionValueState::Value(CfdValue::String("Bee".into()))
+    );
+}

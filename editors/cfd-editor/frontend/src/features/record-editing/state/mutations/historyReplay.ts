@@ -1,10 +1,11 @@
+import type { RecordRestoreSnapshot } from '../../../../bindings/RecordRestoreSnapshot'
 import type { BatchWriteFieldInput } from '../../../../bindings/BatchWriteFieldInput'
 import type { DimensionValueCoordinate } from '../../../../bindings/DimensionValueCoordinate'
 import type { DimensionValueState } from '../../../../bindings/DimensionValueState'
 import type { RecordCoordinate } from '../../../../bindings/RecordCoordinate'
 import type { FieldPathSegment, FieldValue } from '../../../../wire'
 import { cloneValue } from '../../../../wire'
-import type { BatchEditEntry, EditEntry, MutationResult } from '../../../workspace/state/editorState'
+import type { BatchEditEntry, EditEntry, FieldEditEntry, MutationResult } from '../../../workspace/state/editorState'
 import { failed } from '../../../workspace/state/editorState'
 
 /** 回放驱动：控制器内部写入方法的最小端口，undo/redo 只经此表分发。 */
@@ -26,7 +27,8 @@ export interface ReplayDriver {
     filePath: string,
     writes: BatchWriteFieldInput[],
   ): Promise<MutationResult<unknown>>
-  deleteRecord(filePath: string, coordinate: RecordCoordinate): Promise<MutationResult<unknown>>
+  deleteRecord(filePath: string, coordinate: RecordCoordinate): Promise<MutationResult<RecordRestoreSnapshot | null>>
+  restoreRecord(filePath: string, snapshot: RecordRestoreSnapshot): Promise<MutationResult<unknown>>
   insertRecord(
     filePath: string,
     recordId: string,
@@ -65,7 +67,7 @@ const REPLAY_TABLE: Record<EditEntry['kind'], Handler> = {
     const field = entry as Extract<EditEntry, { kind: 'field' }>
     return driver.writeField(
       field.filePath,
-      field.coordinate,
+      fieldCoordinate(field, direction),
       field.fieldPath,
       direction === 'undo' ? field.oldValue : field.newValue,
     )
@@ -75,7 +77,7 @@ const REPLAY_TABLE: Record<EditEntry['kind'], Handler> = {
     return driver.writeFields(
       batch.edits[0]?.filePath ?? '',
       batch.edits.map(edit => ({
-        coordinate: edit.coordinate,
+        coordinate: fieldCoordinate(edit, direction),
         field_path: edit.fieldPath,
         new_value: cloneValue(direction === 'undo' ? edit.oldValue : edit.newValue),
       })),
@@ -87,11 +89,13 @@ const REPLAY_TABLE: Record<EditEntry['kind'], Handler> = {
       ? driver.deleteRecord(insert.filePath, insert.coordinate)
       : driver.insertRecord(insert.filePath, insert.coordinate.id, insert.coordinate.actual_type, insert.fields)
   },
-  delete: (driver, entry, direction) => {
+  delete: async (driver, entry, direction) => {
     const deleted = entry as Extract<EditEntry, { kind: 'delete' }>
-    return direction === 'undo'
-      ? driver.insertRecord(deleted.filePath, deleted.coordinate.id, deleted.coordinate.actual_type, deleted.snapshot)
-      : driver.deleteRecord(deleted.filePath, deleted.coordinate)
+    if (direction === 'undo') return driver.restoreRecord(deleted.filePath, deleted.snapshot)
+    const result = await driver.deleteRecord(deleted.filePath, deleted.coordinate)
+    // redo 的实际删除可能拥有新的邻接源码，下一次 undo 使用本次事务返回的逆补丁。
+    if (result.status === 'committed' && result.value) deleted.snapshot = structuredClone(result.value)
+    return result
   },
   'swap-records': (driver, entry) => {
     const swap = entry as Extract<EditEntry, { kind: 'swap-records' }>
@@ -114,6 +118,17 @@ const REPLAY_TABLE: Record<EditEntry['kind'], Handler> = {
   batch: () => {
     throw new Error('batch entries are expanded by the caller')
   },
+}
+
+function fieldCoordinate(
+  entry: Pick<FieldEditEntry, 'coordinate' | 'fieldPath' | 'oldValue' | 'newValue'>,
+  direction: ReplayDirection,
+): RecordCoordinate {
+  // 改名条目记录操作完成后的坐标；两个方向都从值快照取执行前的 ID，原子和逐条回放共用。
+  const previous = direction === 'undo' ? entry.newValue : entry.oldValue
+  if (entry.fieldPath.length !== 1 || entry.fieldPath[0].kind !== 'field'
+    || entry.fieldPath[0].value !== 'id' || previous.kind !== 'string') return entry.coordinate
+  return { ...entry.coordinate, id: previous.value }
 }
 
 export function replayEntry(

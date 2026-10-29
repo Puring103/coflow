@@ -7,7 +7,6 @@ use super::super::{
     mutation_apply::{apply_collection_edit, finalize_mutation, write_field_in_session},
     row_build::{
         file_records_for_session, record_container_index, record_type_index, reorder_file_path,
-        snapshot_record_before_delete,
     },
     SessionStore,
 };
@@ -276,16 +275,10 @@ impl SessionStore {
         let session_lock = &entry.state;
         let mut session = session_lock.write();
         session.ensure_writable()?;
-        let deleted_snapshot = snapshot_record_before_delete(&session, coordinate);
-        let file_path = deleted_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.display_path.clone())
-            .or_else(|| {
-                session
-                    .queries()
-                    .file_for_record(&coordinate.actual_type, &coordinate.id)
-                    .map(str::to_string)
-            })
+        let file_path = session
+            .queries()
+            .file_for_record(&coordinate.actual_type, &coordinate.id)
+            .map(str::to_owned)
             .ok_or_else(|| {
                 EditorError::not_found(format!(
                     "record `{}.{}` not found",
@@ -304,6 +297,10 @@ impl SessionStore {
         )
         .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "delete record failed")?;
+        let deleted_snapshot = report
+            .applied
+            .iter()
+            .find_map(|applied| applied.restore.clone());
         let file_records = file_records_for_session(&session, &file_path);
         Ok(DeleteRecordOutcome {
             revision: session.revisions.current(),
@@ -448,6 +445,11 @@ impl SessionStore {
         .map_err(api_diagnostics_to_editor_error)?;
         let report = finalize_mutation(&mut session, report, "批量编辑失败")?;
         Ok(crate::editor::types::BatchMutationOutcome {
+            deleted_snapshots: report
+                .applied
+                .iter()
+                .filter_map(|applied| applied.restore.clone())
+                .collect(),
             revision: session.revisions.current(),
             renamed: report
                 .applied

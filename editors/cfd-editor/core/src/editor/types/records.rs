@@ -1,5 +1,5 @@
 //! record row wire types.
-use coflow_runtime::{CfdDictKey, CfdRecord, CfdValue, DimensionValueState, RecordCoordinate};
+use coflow_runtime::{CfdDictKey, CfdValue, DimensionValueState, RecordCoordinate};
 pub use coflow_runtime::{CreateFieldSource, CreateRequiredInput};
 use coflow_runtime::{FlatDiagnostic, WriterCapabilities};
 use serde::{Deserialize, Serialize};
@@ -458,11 +458,8 @@ pub struct DeleteRecordOutcome {
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,
-    /// Authoritative snapshot of the deleted record so the front-end's undo
-    /// can re-insert it. `None` only when the record was missing before
-    /// deletion (defensive — should not happen in normal flows).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deleted_snapshot: Option<DeletedRecordSnapshot>,
+    /// 删除事务产生的源补丁，恢复原始记录、维度覆盖及原始位置。
+    pub deleted_snapshot: Option<coflow_runtime::RecordRestoreSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -480,17 +477,6 @@ pub struct ReorderRecordsOutcome {
     pub old_index: Option<usize>,
     #[serde(default)]
     pub new_index: Option<usize>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct DeletedRecordSnapshot {
-    pub record: CfdRecord,
-    pub display_path: String,
 }
 
 #[cfg(test)]
@@ -533,6 +519,7 @@ mod tests {
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct BatchMutationOutcome {
+    pub deleted_snapshots: Vec<coflow_runtime::RecordRestoreSnapshot>,
     pub revision: u32,
     pub diagnostics: Vec<FlatDiagnostic>,
     pub affected_files: Vec<String>,

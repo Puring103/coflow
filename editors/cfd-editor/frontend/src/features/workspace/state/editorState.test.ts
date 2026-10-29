@@ -266,6 +266,19 @@ it('advances renamed history after coordinate rebinding during undo', async () =
   expect(history.getSnapshot().redo).toHaveLength(1)
   expect(history.getSnapshot().redo[0]).toMatchObject({ coordinate: { id: 'old' } })
 })
+
+it('keeps the replaying batch timeline while rebinding other history', async () => {
+  const history = new MutationHistoryController()
+  history.record(fieldEntry('new'))
+  history.record({ kind: 'batch', revision: 2, entries: [fieldEntry('new'), fieldEntry('other')] })
+  await history.undo(async entry => {
+    if (entry.kind !== 'batch') throw new Error('expected batch')
+    history.rebind({ actual_type: 'Item', id: 'new' }, { actual_type: 'Item', id: 'old' })
+    return committed(undefined)
+  })
+  expect(history.getSnapshot().undo[0]).toMatchObject({ coordinate: { id: 'old' } })
+  expect(history.getSnapshot().redo[0]).toMatchObject({ entries: [{ coordinate: { id: 'new' } }, { coordinate: { id: 'other' } }] })
+})
 it('retains only unfinished batch entries after a partial replay', async () => {
   const history = new MutationHistoryController()
   history.record({ kind: 'batch', revision: 2, entries: [fieldEntry('first'), fieldEntry('second')] })

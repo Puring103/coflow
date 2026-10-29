@@ -154,7 +154,15 @@ impl CfdWriter {
                 patches.push((record.span, String::new()));
             }
         }
-        let result = super::patch::replace_spans(&text, &patches)?;
+        let result = if request.new_id.is_none() {
+            self.capture_removals(
+                path,
+                &text,
+                &patches.iter().map(|(span, _)| *span).collect::<Vec<_>>(),
+            )?
+        } else {
+            super::patch::replace_spans(&text, &patches)?
+        };
         if result == text {
             return Ok(DimensionSourceResult { changed: false });
         }

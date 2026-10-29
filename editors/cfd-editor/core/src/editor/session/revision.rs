@@ -5,6 +5,122 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+impl super::EditorSession {
+    /// 监听范围可以覆盖项目根，重载范围仅包含配置与已加载或配置范围内的输入。
+    pub(super) fn relevant_source_changes(
+        &self,
+        paths: &[PathBuf],
+    ) -> Result<Vec<PathBuf>, crate::editor::EditorError> {
+        use coflow_runtime::{
+            normalized_path_identity as identity, path_is_same_or_descendant as within,
+        };
+        let project = self.engine.project();
+        let known = self
+            .schema_files
+            .iter()
+            .map(String::as_str)
+            .chain(self.queries().source_files())
+            .map(|file| project.resolve_path(Path::new(file)))
+            .collect::<Vec<_>>();
+        let known_ids = known
+            .iter()
+            .map(|path| identity(path))
+            .collect::<std::collections::HashSet<_>>();
+        let configured = project
+            .config()
+            .schema
+            .paths()
+            .iter()
+            .map(|path| (project.resolve_path(path), "cft"))
+            .chain(
+                project
+                    .cfd_input_paths()
+                    .map(|path| (project.resolve_path(path), "cfd")),
+            )
+            .collect::<Vec<_>>();
+        let config_id = identity(project.config_path());
+        let mut relevant = Vec::new();
+        let mut scanned_roots = std::collections::HashSet::new();
+        for path in paths {
+            // 保留入口扩展名；物理身份只用于归属和去重，不能把 .cfd 链接误判成其 .txt 实体。
+            let path = if path.is_absolute() {
+                path.clone()
+            } else {
+                self.project_root.join(path)
+            };
+            if path.is_dir() {
+                // 目录移动可能只产生目录事件；只展开新增/删除的输入，避免内部写入的父目录事件清空历史。
+                for file in &known {
+                    if within(file, &path) && !file.exists() {
+                        relevant.push(file.clone());
+                    }
+                }
+                for (root, extension) in &configured {
+                    if (within(root, &path) || within(&path, root) || entry_within(&path, root))
+                        && scanned_roots.insert((identity(root), *extension))
+                    {
+                        collect_new_sources(root, extension, &known_ids, &mut relevant)?;
+                    }
+                }
+            } else if identity(&path) == config_id
+                || known_ids.contains(&identity(&path))
+                || configured.iter().any(|(root, extension)| {
+                    (within(&path, root) || entry_within(&path, root))
+                        && path.extension().is_some_and(|value| value == *extension)
+                })
+            {
+                relevant.push(path);
+            } else {
+                // 删除或移出目录后已无法读取目录元数据，以原有输入身份识别影响。
+                relevant.extend(known.iter().filter(|file| within(file, &path)).cloned());
+            }
+        }
+        relevant.sort();
+        relevant.dedup();
+        Ok(relevant)
+    }
+}
+
+/// 文件入口本身可能链接到配置边界外；仍需触发加载，让统一发现逻辑报告越界诊断。
+fn entry_within(path: &Path, root: &Path) -> bool {
+    let entry = path.parent().zip(path.file_name()).map_or_else(
+        || path.to_path_buf(),
+        |(parent, name)| coflow_runtime::normalize_path(parent).join(name),
+    );
+    let mut entry = coflow_runtime::path_to_slash(&entry);
+    let mut root = coflow_runtime::path_to_slash(root);
+    if cfg!(windows) {
+        entry.make_ascii_lowercase();
+        root.make_ascii_lowercase();
+    }
+    entry == root
+        || entry
+            .strip_prefix(root.trim_end_matches('/'))
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn collect_new_sources(
+    root: &Path,
+    extension: &str,
+    known: &std::collections::HashSet<String>,
+    output: &mut Vec<PathBuf>,
+) -> Result<(), crate::editor::EditorError> {
+    let paths = if root.is_dir() {
+        coflow_runtime::discover_directory_files_by_extension(root, extension)
+            .map_err(|error| crate::editor::EditorError::other(error.to_string()))?
+    } else if root.is_file() {
+        vec![root.to_path_buf()]
+    } else {
+        Vec::new()
+    };
+    output.extend(
+        paths
+            .into_iter()
+            .filter(|path| !known.contains(&coflow_runtime::normalized_path_identity(path))),
+    );
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct RevisionTicket(u32);
 

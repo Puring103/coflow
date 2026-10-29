@@ -21,7 +21,8 @@ export async function historyOperations(entry: EditEntry, direction: 'undo' | 'r
       if (fields.kind !== 'object') throw new Error('记录快照不是对象')
       return push({ op: 'insert_record', file, id, type, fields: { kind: 'cfd', value: fields.value.fields }, materialization: 'minimal' })
     },
-    deleteRecord: (file, record) => push({ op: 'delete_record', file, record }),
+    restoreRecord: (_file, snapshot) => push({ op: 'restore_record', snapshot }),
+    deleteRecord: async (file, record) => { await push({ op: 'delete_record', file, record }); return committed(null) },
     swapRecords: (file, first, second) => push({ op: 'swap_records', file, first, second }),
     moveRecord: (file, record, target_index) => push({ op: 'move_record', file, record, target_index }),
     transferRecord: (source_file, destination_file, record, target_index) => push({ op: 'transfer_record', source_file, destination_file, record, target_index }),
