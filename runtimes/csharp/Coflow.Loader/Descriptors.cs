@@ -50,10 +50,24 @@ public enum CfdTypeKind { Table, Data, Singleton }
 
 public abstract class CfdType
 {
+    private readonly Dictionary<string, CfdField> _fieldsByName;
     protected CfdType(string name, CfdTypeKind kind, Type valueType, IReadOnlyList<CfdField> fields, string? parent, bool abstractType)
-    { Name = name; Kind = kind; ValueType = valueType; Fields = fields; Parent = parent; IsAbstract = abstractType; }
+    {
+        Name = name; Kind = kind; ValueType = valueType; Parent = parent; IsAbstract = abstractType;
+        // 描述符在类型创建时复制并建立索引，所有记录与维度视图共享稳定的字段布局。
+        var snapshot = new CfdField[fields.Count];
+        _fieldsByName = new Dictionary<string, CfdField>(fields.Count, StringComparer.Ordinal);
+        for (var index = 0; index < snapshot.Length; index++)
+        {
+            var field = fields[index];
+            snapshot[index] = field;
+            _fieldsByName.Add(field.Name, field);
+        }
+        Fields = snapshot;
+    }
     public string Name { get; }
     internal IReadOnlyList<CfdField> Fields { get; }
+    internal CfdField? FindField(string name) => _fieldsByName.TryGetValue(name, out var field) ? field : null;
     internal CfdTypeKind Kind { get; }
     internal Type ValueType { get; }
     internal abstract object BuildTable(IReadOnlyList<RecordState> records);

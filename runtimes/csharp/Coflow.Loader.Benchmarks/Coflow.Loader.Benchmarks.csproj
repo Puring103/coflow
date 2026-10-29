@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LoaderSourceRoot Condition="'$(LoaderSourceRoot)' == ''">../Coflow.Loader</LoaderSourceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 链接源码以测量内部构造阶段；LoaderSourceRoot 可绑定基线提交的独立副本。 -->
+    <Compile Include="$(LoaderSourceRoot)/*.cs" />
+    <Compile Include="$(LoaderSourceRoot)/Cfd/*.cs" />
+  </ItemGroup>
+</Project>

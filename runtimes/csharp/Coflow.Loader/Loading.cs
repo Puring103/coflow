@@ -105,8 +105,9 @@ internal sealed class LoadContext
         }
     }
     internal IReadOnlyList<string> DimensionVariants(string dimension)
-        => Variants.TryGetValue(dimension, out var variants) ? System.Array.AsReadOnly(variants.ToArray())
+        => _variantNames.TryGetValue(dimension, out var variants) ? variants
         : throw new ArgumentException($"Unknown dimension `{dimension}`.", nameof(dimension));
+    private readonly Dictionary<string, IReadOnlyList<string>> _variantNames = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
     private readonly Dictionary<(string Root, string Id), RecordState> _recordsByIdentity = new Dictionary<(string Root, string Id), RecordState>();
     private readonly Dictionary<string, List<RecordState>> _recordsById = new Dictionary<string, List<RecordState>>(StringComparer.Ordinal);
     private readonly IReadOnlyDictionary<string, CfdValueNode> _constants;
@@ -170,7 +171,7 @@ internal sealed class LoadContext
                     if (!overrides.TryGetValue(record, out var fields)) overrides.Add(record, fields = new Dictionary<string, Dictionary<string, CfdValueNode>>(StringComparer.Ordinal));
                     foreach (var field in target.Fields)
                     {
-                        var descriptor = record.Type.Fields.FirstOrDefault(candidate => candidate.Name == field.Name);
+                        var descriptor = record.Type.FindField(field.Name);
                         if (descriptor == null || descriptor.Type.Dimension != block.Dimension)
                             throw Error("CFD-DIMENSION", $"field `{field.Name}` is not bound to dimension `{block.Dimension}`", document.Path, field.Span);
                         if (!fields.TryGetValue(field.Name, out var values)) fields.Add(field.Name, values = new Dictionary<string, CfdValueNode>(StringComparer.Ordinal));
@@ -186,6 +187,9 @@ internal sealed class LoadContext
             overrides.TryGetValue(record, out var fields);
             record.Reader = new CfdReader(this, record.Type, record.Node.Fields, record.Path, record.Node.Span, record.Node.Id, fields, record: record);
         }
+        // 已发现变体在加载结束后固定，所有记录复用一次排序后的只读列表。
+        foreach (var dimension in Variants)
+            _variantNames.Add(dimension.Key, System.Array.AsReadOnly(dimension.Value.ToArray()));
     }
     private void Track(CfdValueNode node, string path)
     {
@@ -270,7 +274,7 @@ public sealed class CfdReader
     private readonly RecordState? _record;
     internal DimensionSelection Selection { get; }
     internal CfdReader InView(DimensionSelection selection)
-        => new CfdReader(_context, _type, _nodes.Select(pair => new CfdFieldNode(pair.Key, pair.Value, pair.Value.Span)).ToArray(), Path, _span, _id, _overrides, selection, _record);
+        => new CfdReader(this, selection);
     internal object For(string dimension, string variant)
     {
         _context.DimensionVariants(dimension);
@@ -279,7 +283,7 @@ public sealed class CfdReader
     internal IReadOnlyList<string> Variants(string dimension) => _context.DimensionVariants(dimension);
     internal bool HasVariant(string field, string variant)
     {
-        var descriptor = _type.Fields.FirstOrDefault(candidate => candidate.Name == field)
+        var descriptor = _type.FindField(field)
             ?? throw new ArgumentException($"Unknown field `{field}`.", nameof(field));
         if (descriptor.Type.Dimension == null) throw new ArgumentException($"Field `{field}` is not bound to a dimension.", nameof(field));
         return _overrides.TryGetValue(field, out var variants) && variants.ContainsKey(variant);
@@ -297,6 +301,13 @@ public sealed class CfdReader
     }
     internal void Validate() { foreach (var field in _type.Fields) Read(field.Name); }
     internal string Path { get; }
+    private CfdReader(CfdReader source, DimensionSelection selection)
+    {
+        // 源节点和覆盖索引已在基础读取器中校验；视图只分配独立求值缓存。
+        _context = source._context; _type = source._type; _span = source._span; _id = source._id;
+        Path = source.Path; _record = source._record; Selection = selection;
+        _nodes = source._nodes; _overrides = source._overrides;
+    }
     internal CfdReader(LoadContext context, CfdType type, IReadOnlyList<CfdFieldNode> nodes, string path, CfdSpan span, string? id = null, IReadOnlyDictionary<string, Dictionary<string, CfdValueNode>>? overrides = null, DimensionSelection? selection = null, RecordState? record = null)
     {
         _context = context; _type = type; _span = span; _id = id; Path = path; Selection = selection ?? DimensionSelection.Empty; _record = record;
@@ -310,7 +321,7 @@ public sealed class CfdReader
         _nodes = fieldsByName;
         _overrides = overrides ?? new Dictionary<string, Dictionary<string, CfdValueNode>>();
         foreach (var field in nodes)
-            if (!type.Fields.Any(descriptor => descriptor.Name == field.Name)) throw Error(field.Value, "CFD-FIELD", $"unknown field `{field.Name}`");
+            if (type.FindField(field.Name) == null) throw Error(field.Value, "CFD-FIELD", $"unknown field `{field.Name}`");
     }
     public T Get<T>(string field) => (T)Read(field)!;
     private object? Read(string field)
@@ -321,7 +332,7 @@ public sealed class CfdReader
         _context.EnterRead(Path, _span);
         try
         {
-            var descriptor = _type.Fields.FirstOrDefault(candidate => candidate.Name == field) ?? throw LoadContext.Error("CFD-FIELD", $"unknown field `{field}`", Path, _span);
+            var descriptor = _type.FindField(field) ?? throw LoadContext.Error("CFD-FIELD", $"unknown field `{field}`", Path, _span);
             var node = SourceNode(descriptor)
                 ?? throw LoadContext.Error("CFD-MISSING", $"missing required field `{field}`", Path, _span);
             value = descriptor.Type.Read(_context, node, this);
@@ -356,7 +367,7 @@ public sealed class CfdReader
     private string? ReadPath(IReadOnlyList<string> path, CfdValueNode template)
     {
         if (path.Count == 0) throw Error(template, "CFD-INTERPOLATION", "empty field path");
-        var descriptor = _type.Fields.FirstOrDefault(field => field.Name == path[0]);
+        var descriptor = _type.FindField(path[0]);
         if (path.Count == 1)
         {
             var value = Read(path[0]);
