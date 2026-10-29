@@ -1,0 +1,223 @@
+{
+  "baseline_ref": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "date": "2026-10-30",
+  "method": "VitePress production index.html modulepreload hrefs plus the app entry, unique local JavaScript assets. Raw bytes and gzip level 9 bytes. Excludes later dynamic imports, HTML, CSS and images. This is artifact size, not network latency or browser runtime measurement.",
+  "before": {
+    "modulepreloads": 45,
+    "initial_js_bytes": 2379409,
+    "initial_js_gzip_bytes": 692968,
+    "assets": {
+      "assets/chunks/ishikawaDiagram-FXEZZL3T.DgiJKjFT.js": {
+        "bytes": 17587,
+        "gzip_bytes": 6638
+      },
+      "assets/chunks/swimlanesDiagram-G3AALYLV.4M4PigjV.js": {
+        "bytes": 572,
+        "gzip_bytes": 379
+      },
+      "assets/chunks/architectureDiagram-ZJ3FMSHR.BEXIcRJn.js": {
+        "bytes": 151516,
+        "gzip_bytes": 42632
+      },
+      "assets/chunks/diagram-WEI45ONY.vOFNz7Bb.js": {
+        "bytes": 6097,
+        "gzip_bytes": 2594
+      },
+      "assets/chunks/stateDiagram-2N3HPSRC.C0fNV0Tu.js": {
+        "bytes": 10447,
+        "gzip_bytes": 3660
+      },
+      "assets/chunks/classDiagram-OUVF2IWQ.6RxAYl-B.js": {
+        "bytes": 491,
+        "gzip_bytes": 330
+      },
+      "assets/chunks/xychartDiagram-FW5EYKEG.Dfce7344.js": {
+        "bytes": 41954,
+        "gzip_bytes": 11949
+      },
+      "assets/chunks/abnfDiagram-VRR7QNED.Ccv96w3-.js": {
+        "bytes": 1833,
+        "gzip_bytes": 905
+      },
+      "assets/chunks/infoDiagram-FWYZ7A6U.BbFXKT3J.js": {
+        "bytes": 606,
+        "gzip_bytes": 413
+      },
+      "assets/chunks/cynefinDiagram-TSTJHNR4.lW2iurhP.js": {
+        "bytes": 10121,
+        "gzip_bytes": 3618
+      },
+      "assets/chunks/erDiagram-Q63AITRT.CcptDrM5.js": {
+        "bytes": 27235,
+        "gzip_bytes": 9369
+      },
+      "assets/chunks/pieDiagram-ENE6RG2P.uVWfgWtF.js": {
+        "bytes": 6376,
+        "gzip_bytes": 2667
+      },
+      "assets/chunks/cose-bilkent-JH36ORCC.pmthULL4.js": {
+        "bytes": 81567,
+        "gzip_bytes": 22273
+      },
+      "assets/chunks/wardleyDiagram-EHGQE667.CqMup7Xt.js": {
+        "bytes": 26122,
+        "gzip_bytes": 6884
+      },
+      "assets/index.md.BM7iBvWf.lean.js": {
+        "bytes": 480,
+        "gzip_bytes": 346
+      },
+      "assets/chunks/diagram-G47NLZAW.DFLP5IBz.js": {
+        "bytes": 16099,
+        "gzip_bytes": 5744
+      },
+      "assets/chunks/c4Diagram-LMCZKHZV.7RXtve-X.js": {
+        "bytes": 69976,
+        "gzip_bytes": 19441
+      },
+      "assets/chunks/classDiagram-v2-EOCWNBFH.6RxAYl-B.js": {
+        "bytes": 491,
+        "gzip_bytes": 330
+      },
+      "assets/chunks/requirementDiagram-TGXJPOKE.XGUMHXuk.js": {
+        "bytes": 31228,
+        "gzip_bytes": 9700
+      },
+      "assets/chunks/diagram-FQU43EPY.CxkyON3E.js": {
+        "bytes": 10847,
+        "gzip_bytes": 4183
+      },
+      "assets/chunks/sankeyDiagram-HTMAVEWB.CMj7lZhP.js": {
+        "bytes": 23411,
+        "gzip_bytes": 8543
+      },
+      "assets/chunks/ganttDiagram-NO4QXBWP.BAGjxix0.js": {
+        "bytes": 69368,
+        "gzip_bytes": 23159
+      },
+      "assets/chunks/virtual_mermaid-config.CWdJVFWC.js": {
+        "bytes": 111,
+        "gzip_bytes": 119
+      },
+      "assets/chunks/diagram-OA4YK3LP.CjmRykNg.js": {
+        "bytes": 8498,
+        "gzip_bytes": 3788
+      },
+      "assets/chunks/flowDiagram-23GEKE2U.BU6puZzZ.js": {
+        "bytes": 61390,
+        "gzip_bytes": 19387
+      },
+      "assets/chunks/pegDiagram-2B236MQR.6ox5LYh2.js": {
+        "bytes": 1980,
+        "gzip_bytes": 939
+      },
+      "assets/chunks/diagram-NH7WQ7WH.IkoDOD18.js": {
+        "bytes": 4268,
+        "gzip_bytes": 1855
+      },
+      "assets/chunks/vennDiagram-L72KCM5P.V6y1oL5S.js": {
+        "bytes": 42392,
+        "gzip_bytes": 15664
+      },
+      "assets/chunks/katex.C5jXJg4s.js": {
+        "bytes": 261329,
+        "gzip_bytes": 76749
+      },
+      "assets/chunks/quadrantDiagram-ABIIQ3AL.DQuwbxZA.js": {
+        "bytes": 34513,
+        "gzip_bytes": 9996
+      },
+      "assets/chunks/PrototypeHome.vue_vue_type_script_setup_true_lang.Cotwig6j.js": {
+        "bytes": 101780,
+        "gzip_bytes": 23542
+      },
+      "assets/chunks/timeline-definition-FHXFAJF6.D4FSCtt4.js": {
+        "bytes": 31383,
+        "gzip_bytes": 10376
+      },
+      "assets/chunks/blockDiagram-677ZJIJ3.PUr0Ri-4.js": {
+        "bytes": 75150,
+        "gzip_bytes": 21348
+      },
+      "assets/chunks/railroadDiagram-RFXS5EU6.Gl9y5-mw.js": {
+        "bytes": 1630,
+        "gzip_bytes": 768
+      },
+      "assets/chunks/swimlanes-5IMT3BWC.pvMfF0Mp.js": {
+        "bytes": 120293,
+        "gzip_bytes": 43583
+      },
+      "assets/chunks/ebnfDiagram-CCIWWBDH.DhLMyxPa.js": {
+        "bytes": 2029,
+        "gzip_bytes": 894
+      },
+      "assets/chunks/kanban-definition-HUTT4EX6.B9sVLDyy.js": {
+        "bytes": 20721,
+        "gzip_bytes": 7227
+      },
+      "assets/chunks/mindmap-definition-LN4V7U3C.DgboURPU.js": {
+        "bytes": 23383,
+        "gzip_bytes": 7818
+      },
+      "assets/chunks/dagre-VKFMJZFB.xysE6kMu.js": {
+        "bytes": 8927,
+        "gzip_bytes": 3407
+      },
+      "assets/app.DkhxuvFp.js": {
+        "bytes": 637739,
+        "gzip_bytes": 151462
+      },
+      "assets/chunks/gitGraphDiagram-IHSO6WYX.BKLt-KLK.js": {
+        "bytes": 29959,
+        "gzip_bytes": 8840
+      },
+      "assets/chunks/framework.Dyo2Jhbd.js": {
+        "bytes": 111647,
+        "gzip_bytes": 43945
+      },
+      "assets/chunks/journeyDiagram-5HDEW3XC.B0-DV2bT.js": {
+        "bytes": 23608,
+        "gzip_bytes": 8311
+      },
+      "assets/chunks/stateDiagram-v2-6OUMAXLB.DhgkHLbm.js": {
+        "bytes": 452,
+        "gzip_bytes": 314
+      },
+      "assets/chunks/sequenceDiagram-DBY2YBRQ.DaWvDZLo.js": {
+        "bytes": 117445,
+        "gzip_bytes": 30951
+      },
+      "assets/chunks/theme.WaoYgOJX.js": {
+        "bytes": 54358,
+        "gzip_bytes": 15928
+      }
+    }
+  },
+  "after": {
+    "modulepreloads": 4,
+    "initial_js_bytes": 217614,
+    "initial_js_gzip_bytes": 73277,
+    "assets": {
+      "assets/chunks/theme.BtwW1WQ_.js": {
+        "bytes": 54358,
+        "gzip_bytes": 15931
+      },
+      "assets/chunks/PrototypeHome.vue_vue_type_script_setup_true_lang.DIlE8ZV3.js": {
+        "bytes": 49779,
+        "gzip_bytes": 12317
+      },
+      "assets/app.BkLJpeQw.js": {
+        "bytes": 1352,
+        "gzip_bytes": 736
+      },
+      "assets/chunks/framework.BWuWLRhz.js": {
+        "bytes": 111645,
+        "gzip_bytes": 43943
+      },
+      "assets/index.md.CVGgmfAo.lean.js": {
+        "bytes": 480,
+        "gzip_bytes": 350
+      }
+    }
+  }
+}

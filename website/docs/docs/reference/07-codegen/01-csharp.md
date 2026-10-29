@@ -97,6 +97,8 @@ bool found = data.Table<Item>().TryGet(ItemId.shield, out var shield);
 
 `Get` 在 id 不存在时抛出 `KeyNotFoundException`，`TryGet` 返回 false。字符串索引仍可按 CFD id 查询。映射包含当前记录，已有编号在增删记录后保持稳定。
 
+将 `coflow.enum.lock.json` 纳入版本控制。同一枚举中的记录 ID 必须具有不同编号；合并锁文件时保留已发布映射并解决编号冲突，再重新生成。
+
 ## 按使用位置选择维度
 
 ```csharp

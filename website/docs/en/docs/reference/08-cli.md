@@ -490,7 +490,7 @@ Read explicit or effective values of one record.
 
 ### `data search`
 
-Search text in record IDs and values.
+Search record IDs and full values using case-sensitive substring matching, including nested objects, collections, dictionary keys and values, and rendered templates. Use `--dimension` to search effective values in a dimension selection. Output summary length does not limit matching.
 
 | Parameter | Requirement | Values and defaults |
 | --- | --- | --- |

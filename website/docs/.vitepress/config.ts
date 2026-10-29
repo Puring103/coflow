@@ -1,5 +1,4 @@
 import { defineConfig } from 'vitepress'
-import { withMermaid } from 'vitepress-plugin-mermaid'
 import cfdGrammar from '../../../editors/vscode-coflow/syntaxes/cfd.tmLanguage.json'
 import cftGrammar from '../../../editors/vscode-coflow/syntaxes/cft.tmLanguage.json'
 
@@ -48,7 +47,7 @@ function navigation(english: boolean) {
   }
 }
 
-export default withMermaid(defineConfig({
+export default defineConfig({
   title: 'Coflow',
   description: 'AI 原生的数据配置工作流。人与AI共同配置；同一份数据，多种视图，自由切换。',
   base: pagesBase,
@@ -86,12 +85,6 @@ export default withMermaid(defineConfig({
       { ...cfdGrammar, name: 'cfd', aliases: ['CFD'] }
     ]
   },
-  mermaid: {
-    theme: 'default',
-    flowchart: {
-      curve: 'basis'
-    }
-  },
   lastUpdated: true,
   themeConfig: {
     logo: { light: '/logo.svg', dark: '/logo-dark.svg', alt: 'Coflow' },
@@ -120,4 +113,4 @@ export default withMermaid(defineConfig({
       copyright: 'Copyright © 2026 Coflow contributors'
     }
   }
-}))
+})

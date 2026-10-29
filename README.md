@@ -33,7 +33,11 @@ coflow --help
 
 ## Quick start
 
+Download the examples and run the showcase from the repository directory:
+
 ```powershell
+git clone https://github.com/Puring103/coflow.git
+cd coflow
 coflow check --rules --project examples/showcase
 coflow codegen --project examples/showcase
 ```

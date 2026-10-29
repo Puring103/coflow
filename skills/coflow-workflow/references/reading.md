@@ -15,6 +15,8 @@ coflow schema refs --symbol Item.price --json
 
 `context` 返回相关声明、规则、样例和引用候选，不代表全部记录。用 `--examples`、`--ref-limit`、`--depth`、`--budget` 控制读取量；budget 是序列化字符预算。查全部目标用 list 并翻页。
 
+`data search --text` 按大小写敏感的子串匹配记录 ID 和完整值，包含嵌套对象、集合、字典键值及模板渲染结果。需要搜索维度中的有效值时加 `--dimension 名称=变体`；输出摘要截断不影响匹配范围。
+
 `data refs` 查记录引用，删除或改名之前可用于了解影响；`schema refs` 查类型或字段的声明使用位置。继承树查询需要子类型时显式使用 `--include-derived`，返回记录的实际类型用于后续写入。
 
 ## 查询条件

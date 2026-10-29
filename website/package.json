@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "vitepress dev docs",
     "build": "vitepress build docs",
+    "test:browser": "npm run build && node --test tests/*.browser.mjs",
     "preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "mermaid": "^11.16.0",
-    "vitepress": "^1.6.4",
-    "vitepress-plugin-mermaid": "^2.0.17"
+    "playwright": "^1.64.1",
+    "vitepress": "^1.6.4"
   }
 }

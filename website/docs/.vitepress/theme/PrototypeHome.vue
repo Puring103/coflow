@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useData, withBase } from 'vitepress'
 import prototypeDocument from './home-template.html?raw'
-import prototypeStyles from './home.css?raw'
+import './home.css'
 
 const host = ref<HTMLElement | null>(null)
 const { lang } = useData()
@@ -34,7 +34,6 @@ const prototypeBody = computed(() => {
 
 const cleanups: Array<() => void> = []
 let revealObserver: IntersectionObserver | null = null
-let styleElement: HTMLStyleElement | null = null
 let previousTheme: string | undefined
 
 function listen(target: EventTarget, event: string, handler: EventListener, options?: AddEventListenerOptions) {
@@ -43,11 +42,6 @@ function listen(target: EventTarget, event: string, handler: EventListener, opti
 }
 
 onMounted(async () => {
-  styleElement = document.createElement('style')
-  styleElement.dataset.coflowPrototype = 'home'
-  styleElement.textContent = prototypeStyles
-  document.head.appendChild(styleElement)
-
   previousTheme = document.documentElement.dataset.theme
   const forcedTheme = new URLSearchParams(location.search).get('theme')
   const savedTheme = localStorage.getItem('coflow-theme')
@@ -164,21 +158,27 @@ onMounted(async () => {
   cleanups.push(() => formulaController.abort())
   // public 插件使用完整 URL 交给浏览器加载，避免开发服务器将其纳入源码转换。
   const formulaModuleUrl = new URL(withBase('/examples/chemistry/plugin.js'), window.location.origin).href
-  const formulaModule = await import(/* @vite-ignore */ formulaModuleUrl)
-  if (formulaController.signal.aborted) return
-  const formulaContext = () => ({ value: { kind: 'object', value: { actual_type: 'Formula', fields: {
-    expression: { kind: 'string', value: formulaInput.value },
-  } } } })
-  const formulaView = formulaModule.mountFormula(formulaContext(), {
-    element: formulaOutput, signal: formulaController.signal,
-    replace: (content: Node) => formulaOutput.replaceChildren(content),
-  })
-  listen(formulaInput, 'input', () => formulaView.update(formulaContext()))
-  root.querySelectorAll<HTMLButtonElement>('[data-formula]').forEach(button => {
-    listen(button, 'click', () => {
-      formulaInput.value = button.dataset.formula!
-      formulaView.update(formulaContext())
+  // 演示资源独立加载；页面内容、导航和动效不等待插件网络请求。
+  void import(/* @vite-ignore */ formulaModuleUrl).then((formulaModule) => {
+    if (formulaController.signal.aborted) return
+    const formulaContext = () => ({ value: { kind: 'object', value: { actual_type: 'Formula', fields: {
+      expression: { kind: 'string', value: formulaInput.value },
+    } } } })
+    const formulaView = formulaModule.mountFormula(formulaContext(), {
+      element: formulaOutput, signal: formulaController.signal,
+      replace: (content: Node) => formulaOutput.replaceChildren(content),
     })
+    listen(formulaInput, 'input', () => formulaView.update(formulaContext()))
+    root.querySelectorAll<HTMLButtonElement>('[data-formula]').forEach(button => {
+      listen(button, 'click', () => {
+        formulaInput.value = button.dataset.formula!
+        formulaView.update(formulaContext())
+      })
+    })
+  }).catch(() => {
+    if (formulaController.signal.aborted) return
+    formulaOutput.textContent = english.value ? 'Formula demo is unavailable.' : '公式演示暂时不可用。'
+    formulaOutput.setAttribute('role', 'status')
   })
 
   const stageList = root.querySelector<HTMLElement>('.stage-list')
@@ -225,11 +225,19 @@ onMounted(async () => {
         if (!entry.isIntersecting) return
         const element = entry.target as HTMLElement
         const delay = Number(element.dataset.revealDelay ?? index * 60)
-        window.setTimeout(() => element.classList.add('is-visible'), delay)
+        const timer = window.setTimeout(() => {
+          element.classList.remove('is-pending')
+          element.classList.add('is-visible')
+        }, delay)
+        cleanups.push(() => window.clearTimeout(timer))
         observer.unobserve(element)
       })
     }, { rootMargin: '0px 0px -12% 0px', threshold: 0.12 })
-    reveals.forEach((element) => revealObserver?.observe(element))
+    // SSR 与首屏内容直接可见，仅给屏外内容添加渐入状态。
+    reveals.forEach((element) => {
+      if (element.getBoundingClientRect().top >= innerHeight) element.classList.add('is-pending')
+      revealObserver?.observe(element)
+    })
   }
 
   updateThemeControl()
@@ -239,7 +247,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   revealObserver?.disconnect()
   cleanups.splice(0).forEach((cleanup) => cleanup())
-  styleElement?.remove()
   if (previousTheme === undefined) delete document.documentElement.dataset.theme
   else document.documentElement.dataset.theme = previousTheme
 })

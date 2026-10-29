@@ -213,13 +213,6 @@ coflow explain REF-001 --json
 | `WRITE-TRANSFER-FILE` | Invalid transfer file | Source or destination violates requirements | Use valid CFD files and verify source scope. |
 | `WRITE-TRANSFER-INDEX` | Transfer position out of bounds | Insertion exceeds target record count | Use a valid insertion position. |
 | `WRITE-TRANSFER-ORIGIN` | Unwritable transfer source | Record lacks writable source text | Use records with CFD source origins. |
-| `SELF-UPDATE-CONFIG` | Invalid update configuration | Service parameters are missing or unreadable | Check service config and version information. |
-| `SELF-UPDATE-CONFIRM` | Update confirmation read failed | Input channel cannot read confirmation | Use an interactive terminal or explicit --yes. |
-| `SELF-UPDATE-INSTALL` | CLI update install failed | Download, replacement or installation failed | Check network, install path and permissions. |
-| `SELF-UPDATE-OUTPUT` | Update prompt output failed | Terminal cannot display confirmation | Check terminal I/O channels. |
-| `SELF-UPDATE-PLATFORM` | Unsupported update platform | No artifact for this OS or architecture | Use a release artifact for a supported platform. |
-| `SELF-UPDATE-RELEASE` | Release lookup failed | Release data unavailable or artifact missing | Check network and release service response. |
-| `SELF-UPDATE-VERSION` | Invalid update version | Installed or remote version cannot be parsed | Check installation and release identifiers. |
 | `SKILL-HOME` | Skill home unavailable | Global install cannot locate a user directory | Configure a valid user or agent config directory. |
 | `SKILL-DIR-CREATE` | Skill directory creation failed | Target directory cannot be created | Check path and write permissions. |
 | `SKILL-REMOVE` | Skill removal failed | Installed files cannot be removed | Check permissions and open-file locks. |

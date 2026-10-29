@@ -97,6 +97,8 @@ bool found = data.Table<Item>().TryGet(ItemId.shield, out var shield);
 
 `Get` throws `KeyNotFoundException` when absent; `TryGet` returns false. String indexing still accepts CFD IDs. The mapping contains current records and preserves existing numbers when records are added or removed.
 
+Keep `coflow.enum.lock.json` in version control. Record IDs in the same enum must have distinct numbers. When merging the lock file, preserve published mappings and resolve number conflicts before generating again.
+
 ## Select dimensions per consumer
 
 ```csharp
