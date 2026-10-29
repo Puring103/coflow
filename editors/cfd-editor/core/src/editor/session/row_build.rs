@@ -10,22 +10,8 @@ use super::build::{session_capabilities_for_file, SessionSnapshotParts};
 use super::{ColumnStats, EditorSession};
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
-    DeletedRecordSnapshot, EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
+    EditorError, FileRecords, FileTypeOption, ProjectBootstrap, RecordColumn,
 };
-
-/// 删除前快照：落盘前捕获 `(CfdRecord, display_path)`，undo 为尽力而为。
-pub(crate) fn snapshot_record_before_delete(
-    session: &EditorSession,
-    coordinate: &coflow_runtime::RecordCoordinate,
-) -> Option<DeletedRecordSnapshot> {
-    session
-        .queries()
-        .record_view(&coordinate.actual_type, &coordinate.id)
-        .map(|view| DeletedRecordSnapshot {
-            record: view.record.clone(),
-            display_path: view.display_path.to_string(),
-        })
-}
 
 /// 单文件的全量行快照：列统计在单次遍历中算好，避免前端二次聚合。
 pub(crate) fn file_records_for_session(session: &EditorSession, file_path: &str) -> FileRecords {

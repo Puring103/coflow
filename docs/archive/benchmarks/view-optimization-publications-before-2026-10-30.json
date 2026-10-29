@@ -1,0 +1,3039 @@
+{
+  "date": "2026-10-29T18:48:06.163Z",
+  "ref": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "diff": "Cargo.lock                                         |    2 +\n README.md                                          |    4 +\n README.zh-CN.md                                    |    4 +\n crates/coflow-codegen-csharp/src/emit.rs           |  156 ++-\n crates/coflow-codegen-csharp/src/lib.rs            |   35 +-\n crates/coflow-codegen-csharp/src/tests.rs          |   66 +-\n crates/coflow-lsp/src/tests/cft.rs                 |   28 +\n crates/coflow-lsp/src/text.rs                      |    3 +-\n .../coflow-runtime/src/automation/explanations.rs  |   49 -\n crates/coflow-runtime/src/automation/mod.rs        |    3 +-\n crates/coflow-runtime/src/automation/query.rs      |    2 +-\n crates/coflow-runtime/src/cfd_loader/writer.rs     |    4 +-\n .../src/cfd_loader/writer/dimensions.rs            |   10 +-\n crates/coflow-runtime/src/commands/id_as_enum.rs   |  187 ++-\n crates/coflow-runtime/src/inspection/search.rs     |   37 +-\n crates/coflow-runtime/src/lib.rs                   |    1 +\n .../src/loading/source_resolution.rs               |    7 +-\n crates/coflow-runtime/src/mutation/apply.rs        |  272 +++-\n crates/coflow-runtime/src/mutation/mod.rs          |    1 +\n crates/coflow-runtime/src/mutation/plan.rs         |    7 +-\n crates/coflow-runtime/src/mutation/prepare.rs      |   46 +\n crates/coflow-runtime/src/mutation/types.rs        |   42 +\n .../coflow-runtime/src/project/file_discovery.rs   |   14 +\n crates/coflow-runtime/src/project/mod.rs           |    4 +-\n crates/coflow-runtime/src/writes.rs                |    3 +\n crates/coflow-runtime/src/writes/plan.rs           |   16 +-\n crates/coflow-runtime/src/writes/stage.rs          |   17 +\n crates/coflow-runtime/tests/automation.rs          |   63 +\n crates/coflow-runtime/tests/commands.rs            |   41 +\n crates/coflow-runtime/tests/dimension_records.rs   |   59 +\n docs/README.md                                     |    1 +\n docs/architecture/project-generations.md           |    4 +\n docs/archive/README.md                             |    3 +\n docs/codegen-design/csharp-runtime.zh-CN.md        |   14 +-\n docs/editor-design/performance.md                  |    8 +-\n docs/editor-design/plugins.md                      |    2 +\n docs/editor-design/views.md                        |    4 +\n editors/cfd-editor/core/src/editor/session/mod.rs  |   24 +-\n .../src/editor/session/operations/mutations.rs     |   24 +-\n .../cfd-editor/core/src/editor/session/revision.rs |  116 ++\n .../core/src/editor/session/row_build.rs           |   16 +-\n editors/cfd-editor/core/src/editor/types.rs        |    2 +-\n .../cfd-editor/core/src/editor/types/records.rs    |   21 +-\n editors/cfd-editor/core/src/watcher.rs             |  162 ++-\n editors/cfd-editor/core/tests/editor_workflows.rs  |  282 +++++\n editors/cfd-editor/core/tests/export_bindings.rs   |    2 +-\n .../frontend/src/bindings/BatchMutationOutcome.ts  |    3 +-\n .../frontend/src/bindings/DeleteRecordOutcome.ts   |    8 +-\n .../frontend/src/bindings/DeletedRecordSnapshot.ts |    4 -\n .../cfd-editor/frontend/src/bindings/MutationOp.ts |    3 +-\n .../src/features/graph/components/GraphNode.tsx    |   39 +-\n .../graph/components/GraphView.state.test.ts       |   13 +-\n .../features/graph/components/GraphView.state.ts   |   16 +-\n .../src/features/graph/components/GraphView.tsx    |   35 +-\n .../record-editing/state/editorMutations.test.ts   |  161 ++-\n .../record-editing/state/editorMutations.ts        |   24 +-\n .../state/mutations/atomicHistory.ts               |    3 +-\n .../state/mutations/historyReplay.ts               |   31 +-\n .../table/components/DimensionTableView.tsx        |   41 +-\n .../features/workspace/state/editorState.test.ts   |   13 +\n .../src/features/workspace/state/editorState.ts    |   13 +-\n editors/cfd-editor/frontend/src/wire/values.ts     |    5 -\n .../frontend/tests/browser/graph-acceptance.mjs    |   66 +-\n .../frontend/tests/browser/graph.browser.mjs       |   11 +-\n .../frontend/tests/browser/performance.mjs         |    2 +-\n editors/cfd-editor/src-tauri/Cargo.toml            |    2 +\n editors/cfd-editor/src-tauri/src/plugins/store.rs  |  201 ++-\n editors/vscode-coflow/README.md                    |    2 +\n editors/vscode-coflow/src/extension.js             |    6 +-\n editors/vscode-coflow/test/extension-unit.test.js  |   43 +\n runtimes/csharp/Coflow.Loader/Descriptors.cs       |   16 +-\n runtimes/csharp/Coflow.Loader/Dimensions.cs        |    1 +\n runtimes/csharp/Coflow.Loader/Loading.cs           |   25 +-\n skills/coflow-workflow/references/generation.md    |    2 +\n skills/coflow-workflow/references/reading.md       |    2 +\n src/cli.rs                                         |    2 -\n tests/csharp-loader-integration/app/Program.cs     |    4 +\n .../coflow.enum.lock.json                          |    3 +\n tests/csharp-loader-integration/data/base.cfd      |    1 +\n .../generated/CfdField.cs                          |    2 +-\n .../generated/CoflowData.cs                        |  301 +++--\n .../generated/ComplexValues.cs                     |    2 +-\n .../generated/ContractChild.cs                     |    2 +-\n .../generated/ContractChildNode.cs                 |    2 +-\n .../generated/ContractEntry.cs                     |   14 +-\n .../generated/ContractNode.cs                      |    2 +-\n .../generated/ContractPayload.cs                   |    2 +-\n .../generated/ContractShape.cs                     |    2 +-\n tests/csharp-loader-integration/generated/Item.cs  |    8 +-\n tests/csharp-loader-integration/generated/Node.cs  |    2 +-\n .../generated/NumericValues.cs                     |    4 +-\n .../generated/Settings.cs                          |    2 +-\n tests/csharp-loader-integration/generated/Stats.cs |    2 +-\n tests/csharp-loader-integration/generated/class.cs |    2 +-\n tests/csharp-loader-integration/schema/domain.cft  |   16 +\n website/docs/.vitepress/config.ts                  |   11 +-\n website/docs/.vitepress/theme/PrototypeHome.vue    |   55 +-\n website/docs/.vitepress/theme/home.css             |  860 ++++++-------\n .../docs/docs/reference/07-codegen/01-csharp.md    |    2 +\n website/docs/docs/reference/08-cli.md              |    2 +-\n .../docs/docs/reference/09-diagnostics/02-codes.md |    7 -\n .../docs/en/docs/reference/07-codegen/01-csharp.md |    2 +\n website/docs/en/docs/reference/08-cli.md           |    2 +-\n .../en/docs/reference/09-diagnostics/02-codes.md   |    7 -\n website/package-lock.json                          | 1334 +-------------------\n website/package.json                               |    6 +-\n 106 files changed, 2965 insertions(+), 2357 deletions(-)",
+  "baseline_ref": null,
+  "diagnostics": true,
+  "source_sha256": {
+    "src/features/graph/components/GraphView.tsx": "b564ce3a52cbea46a36711a03b080add3e2d0555bbb3d74287f0cf13411a4551",
+    "src/features/graph/components/GraphNode.tsx": "5a6eaf45debc3a764a8babed6a371d20a9ff0b79475db72020ebf120dc0efbcd",
+    "src/features/graph/components/GraphView.state.ts": "e17828b1ec6477662d3656d6f085d1d7f87f42809345f9eda607177d892a524f",
+    "src/features/graph/layout/rowGeometry.ts": "715a7ff26f1f1520f58cb490ad68e844607aa321980778f64bac08ebed3c0c0f",
+    "tests/browser/graph-performance.tsx": "2814fccedadd4ad4280cea4ea07f3f74ecac148521d0f51e185e1a24b6506e87",
+    "src/features/graph/layout/portGeometry.ts": "47506424335dd5656dd651b592c03e207dd0e9caa1ca1232126af22d4aeea1c7",
+    "src/features/graph/layout/edgeGeometry.ts": "160f641a625e7c8b5f281fc818f3f9669f6498b4f6a04db736d6c8b7d24aae69",
+    "src/features/graph/layout/portWindow.tsx": "e405f52125e95001919b2dd9d7ece98dc764c8f89c90692829fd3018966503b4"
+  },
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "logical_cpus": 20,
+  "physical_memory_bytes": 34190790656,
+  "node": "v22.23.4",
+  "method": "Serial production Chromium, 1440x900 DPR=1. navigation_ms includes module download and two RAFs. data_stable_ms starts at prepared GraphData before React render, ends after all height probes and four RAFs around initial viewport positioning; excludes backend, transfer and ELK cold layout. Standard: editable controls, at most 300 drawn edges. Dense readonly matches previous fixture. Steady intervals include RAF wait and setViewport. Update timings include React and two RAFs, exclude backend IPC. GC heap excludes native/browser allocations.",
+  "protocol": {
+    "firstSamples": 6,
+    "steadyMs": 5000,
+    "rounds": 1,
+    "updates": 0,
+    "capacityRounds": 1
+  },
+  "samples": [
+    {
+      "group": "standard-first",
+      "sample": 0,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 417.8530999999998,
+      "data_stable_ms": 622.2999999970198,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 23586818,
+      "long_tasks": [
+        {
+          "start": 86.8999999910593,
+          "duration": 58
+        },
+        {
+          "start": 174.79999999701977,
+          "duration": 128
+        },
+        {
+          "start": 324.3999999910593,
+          "duration": 94
+        }
+      ],
+      "diagnostics": [
+        {
+          "kind": "stability-effect",
+          "at": 75.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 144.20000000298023,
+          "pending": 1
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 147.3999999910593,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 147.5,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "stability-effect",
+          "at": 167.09999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 170.29999999701977
+        },
+        {
+          "kind": "stability-effect",
+          "at": 170.29999999701977,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 260.29999999701977
+        },
+        {
+          "kind": "stability-effect",
+          "at": 260.79999999701977,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 408.09999999403954
+        },
+        {
+          "kind": "stability-effect",
+          "at": 412.09999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 618,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 30
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 621.5
+        },
+        {
+          "kind": "stability-effect",
+          "at": 621.5,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 1,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 573.3848000000003,
+      "data_stable_ms": 581,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 66293562,
+      "long_tasks": [
+        {
+          "start": 78.29999999701977,
+          "duration": 52
+        },
+        {
+          "start": 161.29999999701977,
+          "duration": 118
+        },
+        {
+          "start": 286.29999999701977,
+          "duration": 108
+        }
+      ],
+      "diagnostics": [
+        {
+          "kind": "stability-effect",
+          "at": 68.70000000298023,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 130.29999999701977,
+          "pending": 1
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 133.6000000089407,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 133.70000000298023,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "stability-effect",
+          "at": 153.70000000298023,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 157.20000000298023
+        },
+        {
+          "kind": "stability-effect",
+          "at": 157.20000000298023,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 238.29999999701977
+        },
+        {
+          "kind": "stability-effect",
+          "at": 238.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 385
+        },
+        {
+          "kind": "stability-effect",
+          "at": 389.5,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 569.5,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 30
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 573.2000000029802
+        },
+        {
+          "kind": "stability-effect",
+          "at": 573.2000000029802,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 2,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 548.6405,
+      "data_stable_ms": 556.9000000059605,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 62843625,
+      "long_tasks": [
+        {
+          "start": 72.70000000298023,
+          "duration": 50
+        },
+        {
+          "start": 152.29999999701977,
+          "duration": 118
+        },
+        {
+          "start": 273.79999999701977,
+          "duration": 100
+        }
+      ],
+      "diagnostics": [
+        {
+          "kind": "stability-effect",
+          "at": 63.8999999910593,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 122.79999999701977,
+          "pending": 1
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 126.20000000298023,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 126.20000000298023,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "stability-effect",
+          "at": 145.29999999701977,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 148.5
+        },
+        {
+          "kind": "stability-effect",
+          "at": 148.5,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 228.29999999701977
+        },
+        {
+          "kind": "stability-effect",
+          "at": 228.70000000298023,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 365.8999999910593
+        },
+        {
+          "kind": "stability-effect",
+          "at": 369.59999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 544.5999999940395,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 30
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 547.5
+        },
+        {
+          "kind": "stability-effect",
+          "at": 547.5999999940395,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 3,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 544.1427999999996,
+      "data_stable_ms": 556.5999999940395,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 63239228,
+      "long_tasks": [
+        {
+          "start": 71.59999999403954,
+          "duration": 52
+        },
+        {
+          "start": 154.19999998807907,
+          "duration": 116
+        },
+        {
+          "start": 274.59999999403954,
+          "duration": 100
+        }
+      ],
+      "diagnostics": [
+        {
+          "kind": "stability-effect",
+          "at": 62.3999999910593,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 123.3999999910593,
+          "pending": 1
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 127.19999998807907,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 127.29999999701977,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "stability-effect",
+          "at": 146.79999999701977,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 150.09999999403954
+        },
+        {
+          "kind": "stability-effect",
+          "at": 150.09999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 228.09999999403954
+        },
+        {
+          "kind": "stability-effect",
+          "at": 228.5,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 366.5
+        },
+        {
+          "kind": "stability-effect",
+          "at": 370.09999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 540.7999999970198,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 30
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 544
+        },
+        {
+          "kind": "stability-effect",
+          "at": 544,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 4,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 550.5964000000004,
+      "data_stable_ms": 560.0999999940395,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 62939049,
+      "long_tasks": [
+        {
+          "start": 71.70000000298023,
+          "duration": 51
+        },
+        {
+          "start": 152.09999999403954,
+          "duration": 119
+        },
+        {
+          "start": 275.40000000596046,
+          "duration": 102
+        }
+      ],
+      "diagnostics": [
+        {
+          "kind": "stability-effect",
+          "at": 62.900000005960464,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 122,
+          "pending": 1
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 125.5,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 125.5,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "stability-effect",
+          "at": 145,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 148.09999999403954
+        },
+        {
+          "kind": "stability-effect",
+          "at": 148.20000000298023,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 228.70000000298023
+        },
+        {
+          "kind": "stability-effect",
+          "at": 229.09999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 369.29999999701977
+        },
+        {
+          "kind": "stability-effect",
+          "at": 373,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 547.0999999940395,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 30
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 550.0999999940395
+        },
+        {
+          "kind": "stability-effect",
+          "at": 550.0999999940395,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 5,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 554.6967999999997,
+      "data_stable_ms": 553.6000000089407,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 67073031,
+      "long_tasks": [
+        {
+          "start": 75.59999999403954,
+          "duration": 51
+        },
+        {
+          "start": 156.5,
+          "duration": 122
+        },
+        {
+          "start": 284,
+          "duration": 122
+        }
+      ],
+      "diagnostics": [
+        {
+          "kind": "stability-effect",
+          "at": 66,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 126.69999998807907,
+          "pending": 1
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 130,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 130.09999999403954,
+          "id": "Item::source",
+          "sameBounds": false,
+          "sameHandles": false,
+          "sameHeight": false,
+          "sameMeasured": false,
+          "handles": 33
+        },
+        {
+          "kind": "stability-effect",
+          "at": 149.29999999701977,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 152.59999999403954
+        },
+        {
+          "kind": "stability-effect",
+          "at": 152.59999999403954,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 235.09999999403954
+        },
+        {
+          "kind": "stability-effect",
+          "at": 235.5,
+          "pending": 0
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 396.29999999701977
+        },
+        {
+          "kind": "stability-effect",
+          "at": 400.79999999701977,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 550.5,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 30
+        },
+        {
+          "kind": "cancel-stability",
+          "at": 553.7999999970198
+        },
+        {
+          "kind": "stability-effect",
+          "at": 553.7999999970198,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "steady": [
+    {
+      "round": 0,
+      "intervals_ms": [
+        9.799999994039581,
+        13.399999999999977,
+        13.299999999999955,
+        39.89999999999998,
+        26.600000000000023,
+        13.300000000000068,
+        26.799999999999955,
+        13.299999999999955,
+        13.200000000000045,
+        13.399999999999977,
+        13.399999999999977,
+        13.300000000000068,
+        13.299999999999955,
+        26.700000000000045,
+        13.399999999999977,
+        13.299999999999955,
+        13.200000000000045,
+        13.399999999999977,
+        13.300000000000068,
+        13.399999999999977,
+        13.299999999999955,
+        13.300000000000068,
+        13.299999999999955,
+        13.399999999999977,
+        26.600000000000023,
+        13.400000000000091,
+        13.399999999999864,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        26.799999999999955,
+        13.200000000000045,
+        13.400000000000091,
+        13.299999999999955,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        13.299999999999955,
+        13.299999999999955,
+        13.400000000000091,
+        13.5,
+        13.099999999999909,
+        13.5,
+        13.200000000000045,
+        13.400000000000091,
+        13.299999999999955,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        13.299999999999955,
+        13.299999999999955,
+        13.300000000000182,
+        13.399999999999864,
+        13.299999999999955,
+        13.400000000000091,
+        13.5,
+        13.200000000000045,
+        13.299999999999955,
+        13.299999999999955,
+        13.400000000000091,
+        13.399999999999864,
+        13.300000000000182,
+        13.299999999999955,
+        13.399999999999864,
+        13.200000000000045,
+        13.299999999999955,
+        13.400000000000091,
+        13.400000000000091,
+        13.299999999999955,
+        13.399999999999864,
+        13.300000000000182,
+        13.399999999999864,
+        13.100000000000136,
+        13.399999999999864,
+        13.400000000000091,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        13.299999999999955,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        13.299999999999955,
+        13.299999999999955,
+        26.799999999999955,
+        13.200000000000045,
+        13.400000000000091,
+        13.200000000000045,
+        13.399999999999864,
+        13.299999999999955,
+        13.300000000000182,
+        13.399999999999864,
+        13.299999999999955,
+        13.400000000000091,
+        13.299999999999955,
+        13.5,
+        13.200000000000045,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.200000000000273,
+        13.5,
+        13.199999999999818,
+        13.400000000000091,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.300000000000182,
+        13.5,
+        13.199999999999818,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.199999999999818,
+        13.5,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.200000000000273,
+        13.5,
+        13.299999999999727,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.400000000000091,
+        13.199999999999818,
+        13.400000000000091,
+        13.400000000000091,
+        13.299999999999727,
+        13.200000000000273,
+        13.5,
+        13.199999999999818,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.400000000000091,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.5,
+        13.199999999999818,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.200000000000273,
+        13.400000000000091,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.299999999999727,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.399999999999636,
+        13.200000000000273,
+        13.400000000000091,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.299999999999727,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.5,
+        13.199999999999818,
+        13.400000000000091,
+        13.300000000000182,
+        13.299999999999727,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.299999999999727,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.400000000000091,
+        13.399999999999636,
+        13.200000000000273,
+        13.400000000000091,
+        13.399999999999636,
+        13.200000000000273,
+        13.400000000000091,
+        13.399999999999636,
+        13.200000000000273,
+        13.400000000000091,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.299999999999727,
+        13.300000000000182,
+        13.299999999999727,
+        13.300000000000182,
+        13.400000000000091,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.400000000000091,
+        13.299999999999727,
+        13.300000000000182,
+        13.299999999999727,
+        13.400000000000091,
+        13.300000000000182,
+        13.400000000000091,
+        13.300000000000182,
+        13.299999999999272,
+        13.300000000000182,
+        13.5,
+        13.199999999999818,
+        13.400000000000546,
+        13.199999999999818,
+        13.399999999999636,
+        13.200000000000728,
+        13.5,
+        13.399999999999636,
+        13.199999999999818,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.400000000000546,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.299999999999272,
+        13.400000000000546,
+        13.300000000000182,
+        13.299999999999272,
+        13.300000000000182,
+        13.400000000000546,
+        13.199999999999818,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.300000000000182,
+        13.299999999999272,
+        13.400000000000546,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.199999999999818,
+        13.400000000000546,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.399999999999636,
+        13.199999999999818,
+        13.400000000000546,
+        13.300000000000182,
+        13.299999999999272,
+        13.400000000000546,
+        13.399999999999636,
+        13.199999999999818,
+        13.400000000000546,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.399999999999636,
+        13.300000000000182,
+        13.300000000000182,
+        13.199999999999818,
+        13.400000000000546,
+        13.399999999999636,
+        13.199999999999818,
+        13.400000000000546,
+        13.399999999999636,
+        13.199999999999818,
+        13.400000000000546,
+        13.299999999999272,
+        13.300000000000182,
+        13.5,
+        13.199999999999818,
+        13.400000000000546,
+        13.300000000000182,
+        13.399999999999636,
+        13.199999999999818,
+        13.400000000000546,
+        13.299999999999272,
+        13.400000000000546,
+        13.399999999999636,
+        13.300000000000182,
+        13.199999999999818,
+        13.400000000000546,
+        13.299999999999272,
+        13.400000000000546,
+        13.300000000000182,
+        13.399999999999636,
+        13.199999999999818,
+        13.5,
+        13.199999999999818,
+        13.400000000000546,
+        13.300000000000182,
+        13.299999999999272
+      ],
+      "counts": [
+        {
+          "rows": 42,
+          "edges": 80
+        },
+        {
+          "rows": 40,
+          "edges": 67
+        },
+        {
+          "rows": 40,
+          "edges": 59
+        },
+        {
+          "rows": 39,
+          "edges": 54
+        },
+        {
+          "rows": 38,
+          "edges": 53
+        },
+        {
+          "rows": 38,
+          "edges": 55
+        }
+      ],
+      "long_tasks": [],
+      "diagnostics": [
+        {
+          "kind": "cancel-stability",
+          "at": 645.5
+        },
+        {
+          "kind": "stability-effect",
+          "at": 645.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 664.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 680.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 723.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 743.8000000119209,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 762.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 782.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 796.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 810.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 824.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 839.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 853.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 871,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 887.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 902,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 916,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 929.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 942.3000000119209,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 955,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 967.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 981.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 998.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1011.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1040.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1055.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1068.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1082.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1094.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1108.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1126.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1140.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1153.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1165.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1177,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1188.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1202.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1215.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1232.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1244.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1257.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1269.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1282.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1295.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1308.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1321.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1337.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1349.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1361.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1375.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1390,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1407.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1421,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1434.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1445.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1462,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1475.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1487.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1498.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1510.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1523.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1535,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1547.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1561.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1577.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1589.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1602.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1615.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1627.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1641.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1656.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1668.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1683.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1695.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1708.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1721.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1734.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1747.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1761.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1775.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1788.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1803.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1814.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1833.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1848.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1862.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1890.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1905.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1918.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1930,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1941.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1951.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1962.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1977.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 1988.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2004.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2014.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2030.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2042.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2058.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2069.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2085,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2096,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2111.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2122.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2133.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2148.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2163.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2175,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2187.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2200.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2214.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2227.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2241.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2254,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2267.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2282.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2294.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2307.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2320.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2334,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2347.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2360.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2375.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2387.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2400.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2413.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2427.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2440.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2453.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2467.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2480.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2493.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2506.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2520.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2533.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2546.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2560.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2573.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2586.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2600.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2613.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2627.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2640.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2653.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2667,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2679.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2693.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2707.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2720.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2733,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2746.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2759.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2772.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2786.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2800.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2814.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2826.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2839.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2853.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2866.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2879.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2893.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2906.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2920.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2933.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2947.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2959.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2973.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 2986.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3002.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3022.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3031.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3041.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3056.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3069.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3083.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3097.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3108,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3119.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3132.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3146.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3159.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3173.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3187.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3200.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3212.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3225.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3239.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3252.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3266.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3279.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3292.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3306.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3319.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3333.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3345.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3359.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3373,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3386.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3399.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3412.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3426.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3438.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3453.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3465.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3480.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3493.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3506.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3519.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3533.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3546.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3559.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3572.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3586,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3599,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3612.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3625.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3639.6000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3652.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3665.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3678.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3692.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3706,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3718.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3732.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3745.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3759.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3772.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3785.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3799,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3812.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3825.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3838.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3851.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3865.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3878.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3892.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3905.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3919.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3932.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3945.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3959,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3971.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3985.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 3998.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4012,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4025.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4038.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4052.1000000089407,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4065.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4079.7000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4092.2000000029802,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4105.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4118.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4132.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 4143.800000011921,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 59
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4147.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4158.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 4170.100000008941,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 59
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4174.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4199,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 4209.600000008941,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 60
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4213.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4251.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 4263.4000000059605,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 59
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4267.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4291.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "publish-geometry",
+          "at": 4304.5,
+          "id": "Item::source",
+          "sameBounds": true,
+          "sameHandles": true,
+          "sameHeight": true,
+          "sameMeasured": true,
+          "handles": 59
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4308.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4317.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4336.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4349.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4363.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4375.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4385.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4398.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4413.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4425.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4438.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4452.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4465.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4478.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4492,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4505.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4519.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4532.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4545.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4558.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4571.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4585.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4598.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4612.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4626,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4638.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4652.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4665.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4678.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4692.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4705.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4719.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4732,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4745.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4759.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4771.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4785.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4799.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4812.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4825.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4838.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4852.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4865.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4879,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4891.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4906.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4918.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4932.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4946.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4959.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4972.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4985.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 4998.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5012.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5025.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5044.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5055.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5066.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5078.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5092.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5106.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5119.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5132.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5145.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5159.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5172.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5185.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5198.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5212.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5226,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5239.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5252.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5265.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5278.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5292.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5305.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5318.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5332.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5345.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5359.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5372.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5386.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5398.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5412.4000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5425.70000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5439.100000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5455,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5470.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5479.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5493.600000008941,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5507.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5519.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5532.800000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5546.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5559.300000011921,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5572,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5585.9000000059605,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5599.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5612.5,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5626.20000000298,
+          "pending": 0
+        },
+        {
+          "kind": "stability-effect",
+          "at": 5639.100000008941,
+          "pending": 0
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "changes": [
+    {
+      "updates": 0,
+      "timings_ms": [],
+      "heaps_bytes": [],
+      "rows": 31,
+      "gc_heap_before": {
+        "usedSize": 32146288,
+        "totalSize": 34607104,
+        "embedderHeapUsedSize": 2801096,
+        "backingStorageSize": 1120704
+      },
+      "gc_heap_after": {
+        "usedSize": 32146520,
+        "totalSize": 32509952,
+        "embedderHeapUsedSize": 2801096,
+        "backingStorageSize": 1120704
+      },
+      "errors": [],
+      "gc_heap_unmounted": {
+        "usedSize": 20147592,
+        "totalSize": 22155264,
+        "embedderHeapUsedSize": 1163752,
+        "backingStorageSize": 960611
+      }
+    }
+  ],
+  "chromium": "156.0.4314.50",
+  "lifecycle": {
+    "items": 100,
+    "warmups": 2,
+    "cycles": 20,
+    "heaps": [
+      {
+        "cycle": 2,
+        "usedSize": 10756564,
+        "totalSize": 12460032,
+        "embedderHeapUsedSize": 7956856,
+        "backingStorageSize": 571118
+      },
+      {
+        "cycle": 12,
+        "usedSize": 11423976,
+        "totalSize": 12460032,
+        "embedderHeapUsedSize": 7590168,
+        "backingStorageSize": 571115
+      },
+      {
+        "cycle": 22,
+        "usedSize": 11635736,
+        "totalSize": 12984320,
+        "embedderHeapUsedSize": 7597320,
+        "backingStorageSize": 571118
+      }
+    ],
+    "errors": []
+  }
+}

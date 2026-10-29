@@ -1,4 +1,4 @@
-import type { Node } from '@xyflow/react'
+import { applyNodeChanges, type Node, type NodeChange } from '@xyflow/react'
 import type { GraphNode } from '../../../bindings/GraphNode'
 import { graphNodeView, type GraphNodeView } from '../../../wire'
 
@@ -42,6 +42,20 @@ export function reconcileFlowNodes(previous: Node[], incoming: Node[]): Node[] {
     return { ...old, ...node, data, position, measured: old.measured, handles: old.measured ? old.handles : node.handles }
   })
   return next.length === previous.length && next.every((node, index) => node === previous[index]) ? previous : next
+}
+
+/** 框架的几何回写携带完整节点快照；过期测量不能覆盖新记录数据或拖动位置。 */
+export function applyGraphNodeChanges(changes: NodeChange[], nodes: Node[]): Node[] {
+  if (changes.every(change => change.type !== 'replace')) return applyNodeChanges(changes, nodes)
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  const accepted = changes.flatMap((change): NodeChange[] => {
+    if (change.type !== 'replace') return [change]
+    const current = byId.get(change.id)
+    if (!current || current.data !== change.item.data) return []
+    const { handles, width, height, measured } = change.item
+    return [{ ...change, item: { ...current, handles, width, height, measured } }]
+  })
+  return accepted.length ? applyNodeChanges(accepted, nodes) : nodes
 }
 
 export type GraphFocus = { kind: 'node' | 'edge'; id: string } | null

@@ -1,0 +1,342 @@
+{
+  "date": "2026-10-29T19:00:13.187Z",
+  "ref": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "node": "v22.23.4",
+  "method": "Single Chromium process, alternating baseline/current order for each pair; production builds, unchanged fixture and four-RAF stable predicate, 1440x900 DPR=1. No profiler or diagnostic instrumentation.",
+  "source_sha256": {
+    "baseline": {
+      "src/features/graph/components/GraphView.tsx": "2a1bdbf7add8f602d4147dce4fc4d63cd3229351e92fe3a20613244d97e8cd7e",
+      "src/features/graph/components/GraphNode.tsx": "a52c6610c7635ff0a4407f558320d8b1e463a8e32975ce627638966bbeb277f4",
+      "src/features/graph/components/GraphView.state.ts": "79df65e10654846465e3e1b82e1e349484b7c35d8d2435f0c9ed9f1e725a8e3f"
+    },
+    "current": {
+      "src/features/graph/components/GraphView.tsx": "b564ce3a52cbea46a36711a03b080add3e2d0555bbb3d74287f0cf13411a4551",
+      "src/features/graph/components/GraphNode.tsx": "d5d146c49e3f355737cf3187b492d3ab3a5b718f9a4d718da31e7a66ddd91b00",
+      "src/features/graph/components/GraphView.state.ts": "e17828b1ec6477662d3656d6f085d1d7f87f42809345f9eda607177d892a524f"
+    }
+  },
+  "samples": [
+    {
+      "pair": 0,
+      "label": "baseline",
+      "data_stable_ms": 617.3999999910593,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 0,
+      "label": "current",
+      "data_stable_ms": 557,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 1,
+      "label": "current",
+      "data_stable_ms": 545.7999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 1,
+      "label": "baseline",
+      "data_stable_ms": 561.9000000059605,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 2,
+      "label": "baseline",
+      "data_stable_ms": 541.1000000089407,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 2,
+      "label": "current",
+      "data_stable_ms": 575.3999999910593,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 3,
+      "label": "current",
+      "data_stable_ms": 561.4000000059605,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 3,
+      "label": "baseline",
+      "data_stable_ms": 546.2999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 4,
+      "label": "baseline",
+      "data_stable_ms": 546.2999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 4,
+      "label": "current",
+      "data_stable_ms": 573,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 5,
+      "label": "current",
+      "data_stable_ms": 548.7999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 5,
+      "label": "baseline",
+      "data_stable_ms": 562.5,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 6,
+      "label": "baseline",
+      "data_stable_ms": 570.6999999880791,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 6,
+      "label": "current",
+      "data_stable_ms": 539.7999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 7,
+      "label": "current",
+      "data_stable_ms": 549.5,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 7,
+      "label": "baseline",
+      "data_stable_ms": 546.5,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 8,
+      "label": "baseline",
+      "data_stable_ms": 549.7999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 8,
+      "label": "current",
+      "data_stable_ms": 562.7999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 9,
+      "label": "current",
+      "data_stable_ms": 561.3000000119209,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 9,
+      "label": "baseline",
+      "data_stable_ms": 546.6999999880791,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 10,
+      "label": "baseline",
+      "data_stable_ms": 558.6000000089407,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 10,
+      "label": "current",
+      "data_stable_ms": 563.1000000089407,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 11,
+      "label": "current",
+      "data_stable_ms": 560.7000000029802,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 11,
+      "label": "baseline",
+      "data_stable_ms": 557.7000000029802,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 12,
+      "label": "baseline",
+      "data_stable_ms": 546.4000000059605,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 12,
+      "label": "current",
+      "data_stable_ms": 552.0999999940395,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 13,
+      "label": "current",
+      "data_stable_ms": 561.0999999940395,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 13,
+      "label": "baseline",
+      "data_stable_ms": 553,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 14,
+      "label": "baseline",
+      "data_stable_ms": 545.2000000029802,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 14,
+      "label": "current",
+      "data_stable_ms": 554.3000000119209,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 15,
+      "label": "current",
+      "data_stable_ms": 565.6000000089407,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 15,
+      "label": "baseline",
+      "data_stable_ms": 562.7999999970198,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 16,
+      "label": "baseline",
+      "data_stable_ms": 543.9000000059605,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 16,
+      "label": "current",
+      "data_stable_ms": 573,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 17,
+      "label": "current",
+      "data_stable_ms": 548.9000000059605,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 17,
+      "label": "baseline",
+      "data_stable_ms": 609.6000000089407,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 18,
+      "label": "baseline",
+      "data_stable_ms": 599.3000000119209,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 18,
+      "label": "current",
+      "data_stable_ms": 734.2000000029802,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 19,
+      "label": "current",
+      "data_stable_ms": 893.1999999880791,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    },
+    {
+      "pair": 19,
+      "label": "baseline",
+      "data_stable_ms": 888.3000000119209,
+      "rows": 31,
+      "edges": 24,
+      "errors": []
+    }
+  ],
+  "chromium": "156.0.4314.50"
+}

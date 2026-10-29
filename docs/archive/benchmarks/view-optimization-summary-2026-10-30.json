@@ -1,0 +1,751 @@
+{
+  "graph-baseline-short": {
+    "protocol": {
+      "firstSamples": 3,
+      "steadyMs": 5000,
+      "rounds": 1,
+      "updates": 0
+    },
+    "first": {
+      "samples": 3,
+      "p50_ms": 670.5999999940395,
+      "p95_ms": null,
+      "p99_ms": null,
+      "min_ms": 621.7000000029802,
+      "max_ms": 683.3999999910593
+    },
+    "steady": [
+      {
+        "round": 0,
+        "samples": 103,
+        "p50_ms": 53.299999999999955,
+        "p95_ms": 66.70000000000073,
+        "p99_ms": 93.39999999999964,
+        "min_ms": 10.099999994039536,
+        "max_ms": 133.29999999999995,
+        "long_tasks": 57,
+        "max_long_task_ms": 98,
+        "max_rows": 39,
+        "max_edges": 58
+      }
+    ],
+    "updates": [
+      {
+        "samples": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null,
+        "gc_heap_before": {
+          "usedSize": 36442460,
+          "totalSize": 40579072,
+          "embedderHeapUsedSize": 2798360,
+          "backingStorageSize": 1118037
+        },
+        "gc_heap_after": {
+          "usedSize": 36448836,
+          "totalSize": 37695488,
+          "embedderHeapUsedSize": 2798360,
+          "backingStorageSize": 1118037
+        },
+        "gc_heap_unmounted": {
+          "usedSize": 25004384,
+          "totalSize": 27422720,
+          "embedderHeapUsedSize": 1300624,
+          "backingStorageSize": 1118000
+        }
+      }
+    ],
+    "capacity": [],
+    "lifecycle": {
+      "items": 100,
+      "warmups": 2,
+      "cycles": 20,
+      "heaps": [
+        {
+          "cycle": 2,
+          "usedSize": 10468008,
+          "totalSize": 12984320,
+          "embedderHeapUsedSize": 7574936,
+          "backingStorageSize": 568435
+        },
+        {
+          "cycle": 12,
+          "usedSize": 11100372,
+          "totalSize": 12722176,
+          "embedderHeapUsedSize": 7673896,
+          "backingStorageSize": 568432
+        },
+        {
+          "cycle": 22,
+          "usedSize": 11190392,
+          "totalSize": 12197888,
+          "embedderHeapUsedSize": 7516912,
+          "backingStorageSize": 568435
+        }
+      ],
+      "errors": []
+    },
+    "errors": []
+  },
+  "graph-final-short": {
+    "protocol": {
+      "firstSamples": 3,
+      "steadyMs": 5000,
+      "rounds": 1,
+      "updates": 0,
+      "capacityRounds": 1
+    },
+    "first": {
+      "samples": 3,
+      "p50_ms": 562.5999999940395,
+      "p95_ms": null,
+      "p99_ms": null,
+      "min_ms": 554.4000000059605,
+      "max_ms": 631.5
+    },
+    "steady": [
+      {
+        "round": 0,
+        "samples": 250,
+        "p50_ms": 13.400000000000318,
+        "p95_ms": 26.800000000000182,
+        "p99_ms": 66.69999999999982,
+        "min_ms": 10.60000000298021,
+        "max_ms": 93.39999999999998,
+        "long_tasks": 0,
+        "max_long_task_ms": 0,
+        "max_rows": 40,
+        "max_edges": 69
+      }
+    ],
+    "updates": [
+      {
+        "samples": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null,
+        "gc_heap_before": {
+          "usedSize": 32111100,
+          "totalSize": 34869248,
+          "embedderHeapUsedSize": 2800168,
+          "backingStorageSize": 1120405
+        },
+        "gc_heap_after": {
+          "usedSize": 32111648,
+          "totalSize": 32772096,
+          "embedderHeapUsedSize": 2800168,
+          "backingStorageSize": 1120405
+        },
+        "gc_heap_unmounted": {
+          "usedSize": 20121344,
+          "totalSize": 21368832,
+          "embedderHeapUsedSize": 1326872,
+          "backingStorageSize": 960312
+        }
+      }
+    ],
+    "capacity": [],
+    "lifecycle": {
+      "items": 100,
+      "warmups": 2,
+      "cycles": 20,
+      "heaps": [
+        {
+          "cycle": 2,
+          "usedSize": 10711180,
+          "totalSize": 12460032,
+          "embedderHeapUsedSize": 7445992,
+          "backingStorageSize": 570822
+        },
+        {
+          "cycle": 12,
+          "usedSize": 11335948,
+          "totalSize": 13770752,
+          "embedderHeapUsedSize": 7534296,
+          "backingStorageSize": 570822
+        },
+        {
+          "cycle": 22,
+          "usedSize": 11624500,
+          "totalSize": 12722176,
+          "embedderHeapUsedSize": 7634424,
+          "backingStorageSize": 572226
+        }
+      ],
+      "errors": []
+    },
+    "errors": []
+  },
+  "graph-baseline-full": {
+    "protocol": {
+      "firstSamples": 30,
+      "steadyMs": 30000,
+      "rounds": 3,
+      "updates": 0,
+      "capacityRounds": 3
+    },
+    "first": {
+      "samples": 30,
+      "p50_ms": 558.6500000059605,
+      "p95_ms": 628,
+      "p99_ms": null,
+      "min_ms": 535.4000000059605,
+      "max_ms": 629.2000000029802
+    },
+    "steady": [
+      {
+        "round": 0,
+        "samples": 1032,
+        "p50_ms": 26.600000000000364,
+        "p95_ms": 80,
+        "p99_ms": 106.59999999999854,
+        "min_ms": 10.89999999701979,
+        "max_ms": 120.10000000000218,
+        "long_tasks": 124,
+        "max_long_task_ms": 115,
+        "max_rows": 49,
+        "max_edges": 156
+      },
+      {
+        "round": 1,
+        "samples": 1348,
+        "p50_ms": 13.5,
+        "p95_ms": 53.200000000000045,
+        "p99_ms": 66.59999999999854,
+        "min_ms": 9.600000008940697,
+        "max_ms": 80.20000000000073,
+        "long_tasks": 49,
+        "max_long_task_ms": 62,
+        "max_rows": 49,
+        "max_edges": 156
+      },
+      {
+        "round": 2,
+        "samples": 1374,
+        "p50_ms": 26.349999999999454,
+        "p95_ms": 40.100000000000364,
+        "p99_ms": 53.399999999999864,
+        "min_ms": 10.799999999999955,
+        "max_ms": 66.69999999999982,
+        "long_tasks": 27,
+        "max_long_task_ms": 64,
+        "max_rows": 50,
+        "max_edges": 158
+      }
+    ],
+    "updates": [
+      {
+        "samples": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null,
+        "gc_heap_before": {
+          "usedSize": 36443528,
+          "totalSize": 38219776,
+          "embedderHeapUsedSize": 2797400,
+          "backingStorageSize": 1118031
+        },
+        "gc_heap_after": {
+          "usedSize": 36449904,
+          "totalSize": 36909056,
+          "embedderHeapUsedSize": 2797400,
+          "backingStorageSize": 1118031
+        },
+        "gc_heap_unmounted": {
+          "usedSize": 25004912,
+          "totalSize": 26898432,
+          "embedderHeapUsedSize": 1271544,
+          "backingStorageSize": 1117994
+        }
+      }
+    ],
+    "capacity": [],
+    "lifecycle": {
+      "items": 100,
+      "warmups": 2,
+      "cycles": 20,
+      "heaps": [
+        {
+          "cycle": 2,
+          "usedSize": 10525512,
+          "totalSize": 11673600,
+          "embedderHeapUsedSize": 7502632,
+          "backingStorageSize": 568450
+        },
+        {
+          "cycle": 12,
+          "usedSize": 11326764,
+          "totalSize": 12197888,
+          "embedderHeapUsedSize": 7693648,
+          "backingStorageSize": 569850
+        },
+        {
+          "cycle": 22,
+          "usedSize": 11529804,
+          "totalSize": 12197888,
+          "embedderHeapUsedSize": 7652784,
+          "backingStorageSize": 569850
+        }
+      ],
+      "errors": []
+    },
+    "errors": []
+  },
+  "graph-final-full": {
+    "protocol": {
+      "firstSamples": 30,
+      "steadyMs": 30000,
+      "rounds": 3,
+      "updates": 1000,
+      "capacityRounds": 1
+    },
+    "first": {
+      "samples": 30,
+      "p50_ms": 846.0499999970198,
+      "p95_ms": 898.6000000089407,
+      "p99_ms": null,
+      "min_ms": 564.2999999970198,
+      "max_ms": 911.1999999880791
+    },
+    "steady": [
+      {
+        "round": 0,
+        "samples": 1054,
+        "p50_ms": 26.699999999999818,
+        "p95_ms": 53.39999999999782,
+        "p99_ms": 66.70000000000073,
+        "min_ms": 9.799999997019768,
+        "max_ms": 93,
+        "long_tasks": 22,
+        "max_long_task_ms": 74,
+        "max_rows": 50,
+        "max_edges": 155
+      },
+      {
+        "round": 1,
+        "samples": 1073,
+        "p50_ms": 26.600000000000364,
+        "p95_ms": 53.39999999999782,
+        "p99_ms": 65.70000000000073,
+        "min_ms": 11.10000000298021,
+        "max_ms": 93.39999999999964,
+        "long_tasks": 21,
+        "max_long_task_ms": 74,
+        "max_rows": 49,
+        "max_edges": 157
+      },
+      {
+        "round": 2,
+        "samples": 1072,
+        "p50_ms": 26.649999999999636,
+        "p95_ms": 53.30000000000109,
+        "p99_ms": 55.79999999999927,
+        "min_ms": 10.200000005960419,
+        "max_ms": 93.5,
+        "long_tasks": 21,
+        "max_long_task_ms": 87,
+        "max_rows": 50,
+        "max_edges": 158
+      }
+    ],
+    "updates": [
+      {
+        "samples": 1000,
+        "p50_ms": 58.900000005960464,
+        "p95_ms": 73.09999999403954,
+        "p99_ms": 83.20000000298023,
+        "min_ms": 29,
+        "max_ms": 87.29999999701977,
+        "gc_heap_before": {
+          "usedSize": 32125788,
+          "totalSize": 33820672,
+          "embedderHeapUsedSize": 2803976,
+          "backingStorageSize": 1120409
+        },
+        "gc_heap_after": {
+          "usedSize": 41104692,
+          "totalSize": 43696128,
+          "embedderHeapUsedSize": 2962024,
+          "backingStorageSize": 1280554
+        },
+        "gc_heap_unmounted": {
+          "usedSize": 23295280,
+          "totalSize": 25038848,
+          "embedderHeapUsedSize": 1328304,
+          "backingStorageSize": 960394
+        }
+      }
+    ],
+    "capacity": [
+      {
+        "query": "items=1000&standard&editable",
+        "data_stable_ms": 241.70000000298023,
+        "rows": 31,
+        "handles": 30,
+        "edges": 24,
+        "logical_rows": 1004,
+        "heap_bytes": 23243943,
+        "expanded": null
+      },
+      {
+        "query": "items=10000",
+        "data_stable_ms": 10797.90000000596,
+        "rows": 304,
+        "handles": 304,
+        "edges": 5159,
+        "logical_rows": 10003,
+        "heap_bytes": 291401436,
+        "expanded": null
+      },
+      {
+        "query": "items=10000&compact",
+        "data_stable_ms": 20327.5,
+        "rows": 0,
+        "handles": 304,
+        "edges": 5159,
+        "logical_rows": 10003,
+        "heap_bytes": 330109306,
+        "expanded": null
+      },
+      {
+        "query": "items=10000&kind=scalar&standard&editable",
+        "data_stable_ms": 158.8999999910593,
+        "rows": 12,
+        "handles": 10,
+        "edges": 8,
+        "logical_rows": 13,
+        "heap_bytes": 9638485,
+        "expanded": {
+          "rows": 35,
+          "height": 270399,
+          "heap_bytes": 15960990
+        }
+      },
+      {
+        "query": "items=10000&kind=objects&standard&editable",
+        "data_stable_ms": 154.59999999403954,
+        "rows": 12,
+        "handles": 10,
+        "edges": 8,
+        "logical_rows": 13,
+        "heap_bytes": 15104607,
+        "expanded": {
+          "rows": 12,
+          "height": 960400,
+          "heap_bytes": 18682687
+        }
+      },
+      {
+        "query": "items=10000&kind=dict&standard&editable",
+        "data_stable_ms": 157.29999999701977,
+        "rows": 12,
+        "handles": 10,
+        "edges": 8,
+        "logical_rows": 13,
+        "heap_bytes": 11205598,
+        "expanded": {
+          "rows": 35,
+          "height": 270415,
+          "heap_bytes": 19657586
+        }
+      },
+      {
+        "query": "items=10000&kind=strings&standard",
+        "data_stable_ms": 133.79999999701977,
+        "rows": 11,
+        "handles": 9,
+        "edges": 8,
+        "logical_rows": 12,
+        "heap_bytes": 9963687,
+        "expanded": {
+          "rows": 38,
+          "height": 250372,
+          "heap_bytes": 15462565
+        }
+      },
+      {
+        "query": "items=100000&standard&editable",
+        "data_stable_ms": 12944.59999999404,
+        "rows": 31,
+        "handles": 30,
+        "edges": 24,
+        "logical_rows": 100004,
+        "heap_bytes": 399732960,
+        "expanded": null
+      }
+    ],
+    "lifecycle": {
+      "items": 100,
+      "warmups": 2,
+      "cycles": 20,
+      "heaps": [
+        {
+          "cycle": 2,
+          "usedSize": 10770316,
+          "totalSize": 12460032,
+          "embedderHeapUsedSize": 7938080,
+          "backingStorageSize": 570824
+        },
+        {
+          "cycle": 12,
+          "usedSize": 11308552,
+          "totalSize": 12984320,
+          "embedderHeapUsedSize": 7635888,
+          "backingStorageSize": 570824
+        },
+        {
+          "cycle": 22,
+          "usedSize": 11599052,
+          "totalSize": 12984320,
+          "embedderHeapUsedSize": 7761896,
+          "backingStorageSize": 572228
+        }
+      ],
+      "errors": []
+    },
+    "errors": []
+  },
+  "graph-final-verified": {
+    "protocol": {
+      "firstSamples": 30,
+      "steadyMs": 30000,
+      "rounds": 3,
+      "updates": 1000,
+      "capacityRounds": 1
+    },
+    "first": {
+      "samples": 30,
+      "p50_ms": 847.9499999955297,
+      "p95_ms": 897.5,
+      "p99_ms": null,
+      "min_ms": 581,
+      "max_ms": 918.5
+    },
+    "steady": [
+      {
+        "round": 0,
+        "samples": 1403,
+        "p50_ms": 13.400000000001455,
+        "p95_ms": 53.19999999999891,
+        "p99_ms": 53.70000000000073,
+        "min_ms": 10.200000000000045,
+        "max_ms": 159.9000000000001,
+        "long_tasks": 24,
+        "max_long_task_ms": 74,
+        "max_rows": 50,
+        "max_edges": 156
+      },
+      {
+        "round": 1,
+        "samples": 1981,
+        "p50_ms": 13.30000000000291,
+        "p95_ms": 26.700000000000728,
+        "p99_ms": 26.799999999999272,
+        "min_ms": 10.799999999999955,
+        "max_ms": 53.69999999999891,
+        "long_tasks": 0,
+        "max_long_task_ms": 0,
+        "max_rows": 50,
+        "max_edges": 156
+      },
+      {
+        "round": 2,
+        "samples": 2013,
+        "p50_ms": 13.30000000000291,
+        "p95_ms": 26.700000000000728,
+        "p99_ms": 26.799999999999272,
+        "min_ms": 10.799999999999955,
+        "max_ms": 40,
+        "long_tasks": 0,
+        "max_long_task_ms": 0,
+        "max_rows": 50,
+        "max_edges": 156
+      }
+    ],
+    "updates": [
+      {
+        "samples": 1000,
+        "p50_ms": 32.0,
+        "p95_ms": 40.79999999701977,
+        "p99_ms": 45.70000000298023,
+        "min_ms": 27.099999994039536,
+        "max_ms": 48.19999998807907,
+        "gc_heap_before": {
+          "usedSize": 32004612,
+          "totalSize": 34869248,
+          "embedderHeapUsedSize": 2801024,
+          "backingStorageSize": 1120991
+        },
+        "gc_heap_after": {
+          "usedSize": 41074836,
+          "totalSize": 42647552,
+          "embedderHeapUsedSize": 2713624,
+          "backingStorageSize": 1281147
+        },
+        "gc_heap_unmounted": {
+          "usedSize": 23267728,
+          "totalSize": 25038848,
+          "embedderHeapUsedSize": 1163312,
+          "backingStorageSize": 960987
+        }
+      }
+    ],
+    "capacity": [
+      {
+        "query": "items=1000&standard&editable",
+        "data_stable_ms": 198.5,
+        "rows": 31,
+        "handles": 30,
+        "edges": 24,
+        "logical_rows": 1004,
+        "heap_bytes": 23197942,
+        "expanded": null
+      },
+      {
+        "query": "items=10000",
+        "data_stable_ms": 10486.10000000894,
+        "rows": 304,
+        "handles": 304,
+        "edges": 5159,
+        "logical_rows": 10003,
+        "heap_bytes": 209844683,
+        "expanded": null
+      },
+      {
+        "query": "items=10000&compact",
+        "data_stable_ms": 11076.39999999106,
+        "rows": 0,
+        "handles": 304,
+        "edges": 5159,
+        "logical_rows": 10003,
+        "heap_bytes": 252714348,
+        "expanded": null
+      },
+      {
+        "query": "items=10000&kind=scalar&standard&editable",
+        "data_stable_ms": 154.59999999403954,
+        "rows": 12,
+        "handles": 10,
+        "edges": 8,
+        "logical_rows": 13,
+        "heap_bytes": 8006605,
+        "expanded": {
+          "rows": 35,
+          "height": 270399,
+          "heap_bytes": 14008900
+        }
+      },
+      {
+        "query": "items=10000&kind=objects&standard&editable",
+        "data_stable_ms": 163.09999999403954,
+        "rows": 12,
+        "handles": 10,
+        "edges": 8,
+        "logical_rows": 13,
+        "heap_bytes": 12107208,
+        "expanded": {
+          "rows": 12,
+          "height": 960400,
+          "heap_bytes": 15454921
+        }
+      },
+      {
+        "query": "items=10000&kind=dict&standard&editable",
+        "data_stable_ms": 161.59999999403954,
+        "rows": 12,
+        "handles": 10,
+        "edges": 8,
+        "logical_rows": 13,
+        "heap_bytes": 10281225,
+        "expanded": {
+          "rows": 35,
+          "height": 270415,
+          "heap_bytes": 19156271
+        }
+      },
+      {
+        "query": "items=10000&kind=strings&standard",
+        "data_stable_ms": 139.29999999701977,
+        "rows": 11,
+        "handles": 9,
+        "edges": 8,
+        "logical_rows": 12,
+        "heap_bytes": 9986486,
+        "expanded": {
+          "rows": 38,
+          "height": 250372,
+          "heap_bytes": 13070733
+        }
+      },
+      {
+        "query": "items=100000&standard&editable",
+        "data_stable_ms": 8362.70000000298,
+        "rows": 31,
+        "handles": 30,
+        "edges": 24,
+        "logical_rows": 100004,
+        "heap_bytes": 407166800,
+        "expanded": null
+      }
+    ],
+    "lifecycle": {
+      "items": 100,
+      "warmups": 2,
+      "cycles": 20,
+      "heaps": [
+        {
+          "cycle": 2,
+          "usedSize": 10910752,
+          "totalSize": 11935744,
+          "embedderHeapUsedSize": 7643672,
+          "backingStorageSize": 571407
+        },
+        {
+          "cycle": 12,
+          "usedSize": 11520604,
+          "totalSize": 12460032,
+          "embedderHeapUsedSize": 7639648,
+          "backingStorageSize": 571407
+        },
+        {
+          "cycle": 22,
+          "usedSize": 11646080,
+          "totalSize": 12460032,
+          "embedderHeapUsedSize": 7691408,
+          "backingStorageSize": 571404
+        }
+      ],
+      "errors": []
+    },
+    "errors": []
+  },
+  "paired": {
+    "baseline": {
+      "samples": 20,
+      "p50_ms": 555.3500000014901,
+      "p95_ms": 617.3999999910593,
+      "min_ms": 541.1000000089407,
+      "max_ms": 888.3000000119209
+    },
+    "current": {
+      "samples": 20,
+      "p50_ms": 561.2000000029802,
+      "p95_ms": 734.2000000029802,
+      "min_ms": 539.7999999970198,
+      "max_ms": 893.1999999880791
+    },
+    "current_minus_baseline": {
+      "samples": 20,
+      "p50_ms": 5.299999982118607,
+      "p95_ms": 34.29999998211861,
+      "min_ms": -60.70000000298023,
+      "max_ms": 134.8999999910593
+    }
+  }
+}

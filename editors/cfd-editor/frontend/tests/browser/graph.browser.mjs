@@ -10,7 +10,7 @@ const settle = () => page.evaluate(() => new Promise(resolve => requestAnimation
 before(async () => {
   server = await createServer({ root: fileURLToPath(new URL('../..', import.meta.url)), server: { port: 0, strictPort: false, host: '127.0.0.1' } })
   await server.listen()
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH })
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.setDefaultTimeout(7000)
   page.on('pageerror', error => errors.push(error.message))
@@ -123,7 +123,8 @@ test('public node geometry keeps an unmounted source anchor reconnectable from t
 
 async function openFixture(query) {
   await page.goto(`${server.resolvedUrls.local[0]}tests/browser/graph-performance.html?${query}`)
-  await page.waitForFunction(() => window.graphFlow?.getNodes().length > 0)
+  // 等待夹具的初始定位完成，再执行用户平移，避免其初始化 RAF 覆盖测试视口。
+  await page.waitForFunction(() => window.graphStableAt !== undefined)
   await settle()
   await page.evaluate(() => window.graphFlow.setViewport({ x: 100, y: 100, zoom: 1 }))
   await page.waitForFunction(() => window.graphFlow.getNodes().every(node => node.data.geometry.pendingCount === 0))
@@ -144,11 +145,16 @@ test('ten thousand duplicate references retain full geometry with bounded rows a
       const node = window.graphFlow.getNode('Item::source')
       const root = document.querySelector('.graph-node[data-nodeid="Item::source"]')
       return { rows: root.querySelectorAll('.dc-row').length, handles: root.querySelectorAll('.react-flow__handle').length,
-        logical: window.graphFlow.getInternalNode(node.id).internals.handleBounds.source.length,
-        unchanged: node.handles === window.beforeGeometry.handles && node.data.geometry === window.beforeGeometry.model && node.height === window.beforeGeometry.height }
+        logical: node.data.outgoingPaths.length,
+        published: window.graphFlow.getInternalNode(node.id).internals.handleBounds.source.length,
+        edges: window.graphFlow.getEdges().length,
+        anchored: window.graphFlow.getEdges().every(edge => edge.source !== node.id || node.handles.some(handle => handle.id === edge.sourceHandle)),
+        unchanged: node.data.geometry === window.beforeGeometry.model && node.height === window.beforeGeometry.height }
     })
     assert.equal(metrics.logical, count + 1)
     assert.ok(metrics.rows <= 200 && metrics.handles <= 200, JSON.stringify(metrics))
+    assert.ok(metrics.published <= metrics.handles + metrics.edges, JSON.stringify(metrics))
+    assert.equal(metrics.anchored, true)
     assert.equal(metrics.unchanged, true)
     counts.push(metrics.rows)
     await page.evaluate(() => window.graphHarness.setCompact(true))

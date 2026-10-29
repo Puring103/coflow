@@ -1,9 +1,10 @@
 import { build, preview } from 'vite'
 import { chromium } from 'playwright'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir, cpus, totalmem } from 'node:os'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
@@ -13,19 +14,46 @@ const firstSamples = Number(process.env.GRAPH_PERF_FIRST_SAMPLES ?? 30)
 const steadyMs = Number(process.env.GRAPH_PERF_STEADY_MS ?? 30000)
 const rounds = Number(process.env.GRAPH_PERF_ROUNDS ?? 3)
 const updates = Number(process.env.GRAPH_PERF_UPDATES ?? 1000)
+const capacityRounds = Number(process.env.GRAPH_PERF_CAPACITY_ROUNDS ?? rounds)
+const diagnostics = process.env.GRAPH_PERF_DIAGNOSTICS === '1'
+const baselineRef = process.env.GRAPH_PERF_BASELINE_REF
+const sourcePaths = ['src/features/graph/components/GraphView.tsx', 'src/features/graph/components/GraphNode.tsx', 'src/features/graph/components/GraphView.state.ts', 'src/features/graph/layout/rowGeometry.ts', 'tests/browser/graph-performance.tsx']
+const overrides = new Map()
+if (baselineRef) {
+  // 构建时替换归档版本的图适配层，不修改共享工作区或夹具。
+  for (const path of sourcePaths.slice(0, 3)) overrides.set(resolve(root, path).replaceAll('\\', '/').toLowerCase(),
+    execFileSync('git', ['show', `${baselineRef}:editors/cfd-editor/frontend/${path}`], { cwd: root, encoding: 'utf8' }))
+} else sourcePaths.push('src/features/graph/layout/portGeometry.ts', 'src/features/graph/layout/edgeGeometry.ts', 'src/features/graph/layout/portWindow.tsx')
+const sourceText = path => overrides.get(resolve(root, path).replaceAll('\\', '/').toLowerCase()) ?? readFileSync(join(root, path))
+let overridesUsed = 0
 const samples = [], steady = [], changes = []
 const result = {
   date: new Date().toISOString(), ref: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
   diff: execFileSync('git', ['diff', '--stat'], { cwd: root, encoding: 'utf8' }).trim(),
+  baseline_ref: baselineRef ?? null, diagnostics,
+  source_sha256: Object.fromEntries(sourcePaths.map(path => [path, createHash('sha256').update(sourceText(path)).digest('hex')])),
   cpu: cpus()[0]?.model, logical_cpus: cpus().length, physical_memory_bytes: totalmem(), node: process.version,
-  method: 'Serial production Chromium, 1440x900 DPR=1. navigation_ms includes module download and two RAFs. data_stable_ms starts at prepared GraphData before React render, ends after all height probes and two RAFs; excludes backend, transfer and ELK cold layout. Standard: editable controls, at most 300 drawn edges. Dense readonly matches previous fixture. Steady intervals include RAF wait and setViewport. Update timings include React and two RAFs, exclude backend IPC. GC heap excludes native/browser allocations.',
-  protocol: { firstSamples, steadyMs, rounds, updates }, samples, steady, changes,
+  method: 'Serial production Chromium, 1440x900 DPR=1. navigation_ms includes module download and two RAFs. data_stable_ms starts at prepared GraphData before React render, ends after all height probes and four RAFs around initial viewport positioning; excludes backend, transfer and ELK cold layout. Standard: editable controls, at most 300 drawn edges. Dense readonly matches previous fixture. Steady intervals include RAF wait and setViewport. Update timings include React and two RAFs, exclude backend IPC. GC heap excludes native/browser allocations.',
+  protocol: { firstSamples, steadyMs, rounds, updates, capacityRounds }, samples, steady, changes,
 }
 const save = () => writeFileSync(output, JSON.stringify(result, null, 2) + '\n')
-await build({ root, logLevel: 'error', build: { outDir, emptyOutDir: true,
+await build({ root, logLevel: 'error', plugins: [{ name: 'graph-baseline', enforce: 'pre', load(id) {
+  const source = overrides.get(id.replaceAll('\\', '/').toLowerCase())
+  if (source !== undefined) overridesUsed++
+  return source
+}, transform(code, id) {
+  if (!diagnostics) return
+  const path = id.replaceAll('\\', '/')
+  // 诊断只注入独立构建，记录真实几何回写和严格静稳 effect 重启，不改变等待判据。
+  if (path.endsWith('/GraphNode.tsx')) return code.replaceAll('flow.updateNode(id,', 'globalThis.__graphUpdateNode(flow, id,')
+  if (path.endsWith('/graph-performance.tsx')) return code
+    .replace('    if (!nodes.length', "    globalThis.__graphDiagnostics.push({ kind: 'stability-effect', at: performance.now(), pending: nodes.reduce((count, node) => count + node.data.geometry.pendingCount, 0) });\n    if (!nodes.length")
+    .replace('return () => cancelAnimationFrame(frame)', "return () => { globalThis.__graphDiagnostics.push({ kind: 'cancel-stability', at: performance.now() }); cancelAnimationFrame(frame) }")
+} }], build: { outDir, emptyOutDir: true,
   rollupOptions: { input: join(root, 'tests/browser/graph-performance.html') } } })
+if (baselineRef && overridesUsed !== 3) throw new Error(`Expected 3 graph baseline overrides, got ${overridesUsed}`)
 const server = await preview({ root, logLevel: 'error', build: { outDir }, preview: { host: '127.0.0.1', port: 0 } })
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH })
 result.chromium = browser.version()
 const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 async function open(query) {
@@ -35,6 +63,25 @@ async function open(query) {
   await page.addInitScript(() => {
     window.perfLongTasks = []
     new PerformanceObserver(list => window.perfLongTasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))).observe({ type: 'longtask', buffered: true })
+  })
+  if (diagnostics) await page.addInitScript(() => {
+    window.__graphDiagnostics = []
+    document.fonts.addEventListener('loadingdone', () => window.__graphDiagnostics.push({ kind: 'font-loaded', at: performance.now() }))
+    window.__graphUpdateNode = (flow, id, patch) => {
+      const previous = flow.getNode(id)
+      const bounds = flow.getInternalNode(id)?.internals.handleBounds
+      const indexed = new Map([...(bounds?.source ?? []), ...(bounds?.target ?? [])].map(handle => [handle.id, handle]))
+      const sameBounds = indexed.size === patch.handles.length && patch.handles.every(handle => {
+        const bound = indexed.get(handle.id)
+        return bound && ['x', 'y', 'width', 'height'].every(key => Math.abs(bound[key] - handle[key]) < .05)
+      })
+      window.__graphDiagnostics.push({ kind: 'publish-geometry', at: performance.now(), id,
+        sameBounds, sameHandles: JSON.stringify(previous?.handles) === JSON.stringify(patch.handles),
+        sameHeight: previous?.height === patch.height,
+        sameMeasured: previous?.measured?.width === patch.measured.width && previous?.measured?.height === patch.measured.height,
+        handles: patch.handles.length })
+      flow.updateNode(id, patch)
+    }
   })
   const start = performance.now()
   await page.goto(`${server.resolvedUrls.local[0]}tests/browser/graph-performance.html?${query}`, { timeout: 180000 })
@@ -50,6 +97,7 @@ async function open(query) {
     logical_rows: window.graphFlow.getNodes().reduce((count, node) => count + node.data.geometry.rows.length, 0),
     height: window.graphFlow.getNode('Item::source').data.geometry.height,
     heap_bytes: performance.memory?.usedJSHeapSize ?? null, long_tasks: window.perfLongTasks,
+    diagnostics: window.__graphDiagnostics,
   }))
   return { page, sample: { query, navigation_ms, ...metrics, errors } }
 }
@@ -68,6 +116,7 @@ try {
     if (profiler) { await profiler.send('Profiler.enable'); await profiler.send('Profiler.start') }
     const frames = await current.page.evaluate(async duration => {
       window.perfLongTasks.length = 0
+      if (window.__graphDiagnostics) window.__graphDiagnostics.length = 0
       const intervals = [], counts = []
       const start = performance.now()
       let previous = start
@@ -80,7 +129,7 @@ try {
         if (intervals.length % 60 === 0) counts.push({ rows: document.querySelectorAll('.dc-row').length, edges: document.querySelectorAll('.react-flow__edge').length })
       }
       await new Promise(requestAnimationFrame)
-      return { intervals_ms: intervals, counts, long_tasks: window.perfLongTasks }
+      return { intervals_ms: intervals, counts, long_tasks: window.perfLongTasks, diagnostics: window.__graphDiagnostics }
     }, steadyMs)
     steady.push({ round, ...frames, errors: current.sample.errors })
     if (profiler) {
@@ -90,7 +139,7 @@ try {
     await current.page.close(); console.log(`steady ${round + 1}/${rounds}`); save()
   }
   // 密集连线与 100k 压力单列，不能混入标准场景的 P95。
-  if (process.env.GRAPH_PERF_CAPACITY !== '0') for (let round = 0; round < rounds; round++) for (const query of [
+  if (process.env.GRAPH_PERF_CAPACITY !== '0') for (let round = 0; round < capacityRounds; round++) for (const query of [
     'items=1000&standard&editable', 'items=10000', 'items=10000&compact',
     'items=10000&kind=scalar&standard&editable', 'items=10000&kind=objects&standard&editable',
     'items=10000&kind=dict&standard&editable', 'items=10000&kind=strings&standard',
@@ -128,6 +177,7 @@ try {
       }) }))
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       timings.push(performance.now() - start)
+      if (window.graphFlow.getNode('Item::source').data.graphNode.fields.find(field => field.name === 'name').value.value !== `Changed ${i}`) throw new Error(`Graph update ${i} was lost`)
       if (i % 100 === 0) heaps.push(performance.memory?.usedJSHeapSize ?? null)
       if (i % 25 === 0) { window.graphHarness.setCompact((i / 25) % 2 === 0); await new Promise(requestAnimationFrame) }
     }

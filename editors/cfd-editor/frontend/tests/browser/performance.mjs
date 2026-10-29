@@ -27,7 +27,7 @@ await build({ root, logLevel: 'error', plugins: [{ name: 'committed-baseline', e
 if (baseline && overridesUsed === 0) throw new Error('Baseline source override did not run')
 console.log(JSON.stringify({ baseline, overridesUsed }))
 const server = await preview({ root, logLevel: 'error', build: { outDir }, preview: { port: 0, host: '127.0.0.1' } })
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH })
 const results = []
 try {
   const scenarios = process.env.PERF_SCENARIOS ? JSON.parse(process.env.PERF_SCENARIOS) : (process.argv.includes('--profile') ? [[10000,100,true]] : [[1000,6,false],[10000,6,false],[1000,60,false],[3000,60,true],[10000,100,true]])

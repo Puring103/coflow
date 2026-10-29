@@ -1,8 +1,11 @@
-import { nodeTypes, geometryHandles, GraphGeometryProbeHost, type NodeData } from './GraphNode'
+import { nodeTypes, GraphGeometryProbeHost, type NodeData } from './GraphNode'
+import { geometryHandles, GraphPortWindow } from '../layout/portGeometry'
+import { GraphPortWindowContext } from '../layout/portWindow'
+import { GraphEdgeGeometry } from '../layout/edgeGeometry'
 import type { CreateLinkedRecordInput } from '../../../bindings/CreateLinkedRecordInput'
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ReactFlow, Background, Controls, MiniMap, ConnectionLineType, SelectionMode, ControlButton, getViewportForBounds, ViewportPortal, type Node, type Edge, type ReactFlowInstance, type Connection, applyNodeChanges, type NodeChange } from '@xyflow/react'
+import { ReactFlow, Background, Controls, MiniMap, ConnectionLineType, SelectionMode, ControlButton, getViewportForBounds, ViewportPortal, type Node, type Edge, type ReactFlowInstance, type Connection, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../../../bindings/GraphData'
 
@@ -26,7 +29,7 @@ import { useEditorLookups } from '../../workspace/context/editContext'
 import { SearchableSelect } from '../../../shared/ui/SearchableSelect'
 import { Icon } from '../../../shared/ui/Icon'
 import type { GraphPositions } from '../../workspace/state/editorState'
-import { graphHighlights, polylineIntersectsRect, reconcileFlowNodes, reconcileGraphViews, sameGraphValue, selectedNodeBounds, type GraphFocus, type GraphRect } from './GraphView.state'
+import { applyGraphNodeChanges, graphHighlights, polylineIntersectsRect, reconcileFlowNodes, reconcileGraphViews, sameGraphValue, selectedNodeBounds, type GraphFocus, type GraphRect } from './GraphView.state'
 import { CreateRecordDialog } from '../../record-editing/components/CreateRecordDialog'
 import { RecordContextMenu } from '../../record-editing/components/RecordContextMenu'
 import { ConfirmDialog, TextInputDialog } from '../../../shared/ui/ActionDialog'
@@ -421,8 +424,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           type: 'cfd',
           initialWidth: 280,
           initialHeight: geometry.height,
-          // 尚未进入屏幕的节点也提供端口几何，使跨越视口的连线可以绘制。
-          handles: geometryHandles(geometry, outgoingPaths),
+          // 绘制层按可见连线与行窗口补齐端口，完整逻辑端口由 geometry 保存。
+          handles: geometryHandles(geometry, []),
           position: retainedPositions.current.get(n.id) ?? positions.get(n.id) ?? { x: 0, y: 0 },
           data: {
             graphNode: n,
@@ -515,7 +518,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
       for (const change of adjusted) {
         if (change.type === 'position' && change.position) retainedPositions.current.set(change.id, change.position)
       }
-      return applyNodeChanges(adjusted, current)
+      return applyGraphNodeChanges(adjusted, current)
     })
   }, [])
   const reactFlowRef = useRef<ReactFlowInstance<Node, Edge> | null>(null)
@@ -791,18 +794,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   }, [forwardEdges, backEdges, positions, compactNodes, relations, fileCapabilities, onWriteField, onCollectionEdit, selectedElement, selectedEdgeIds])
 
   // 画布裁剪依据真实端口折线，不能用超高节点的外框代替连线的可见性。
-  const edgeGeometry = useMemo(() => {
-    const nodes = new Map(rfNodes.map(node => [node.id, node]))
-    return rfEdges.map(edge => {
-      const source = nodes.get(edge.source), target = nodes.get(edge.target)
-      if (!source || !target) return { edge, points: [] }
-      const sourceGeometry = (source.data as NodeData).geometry
-      const targetGeometry = (target.data as NodeData).geometry
-      const from = { x: source.position.x + 280, y: source.position.y + sourceGeometry.center(edge.sourceHandle?.slice(5) ?? '') }
-      const to = { x: target.position.x, y: target.position.y + targetGeometry.borderTop + targetGeometry.headerHeight / 2 }
-      return { edge, points: [from, { x: from.x + 28, y: from.y }, { x: to.x - 28, y: to.y }, to] }
-    })
-  }, [rfEdges, rfNodes])
+  const edgeGeometryCache = useMemo(() => new GraphEdgeGeometry(), [viewKey])
+  const edgeGeometry = edgeGeometryCache.project(rfNodes, rfEdges)
   const drawnEdges = useMemo(() => {
     // 圆角偏离原折线最多 14px，另保留命中宽度和屏幕 overscan；跨屏线段同样命中。
     const margin = 36 / drawingViewport.zoom + 14
@@ -814,6 +807,8 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     }
     return edgeGeometry.filter(({ edge, points }) => edge.selected || edge.id === reconnectEdgeRef.current?.id || polylineIntersectsRect(points, rect)).map(({ edge }) => edge)
   }, [edgeGeometry, drawingViewport, drawingSize])
+  const portWindow = useMemo(() => new GraphPortWindow(), [viewKey])
+  const published = portWindow.project(rfNodes, drawnEdges, drawingViewport, drawingSize.height, dragSource.current)
 
   // ── Imperative hover highlight (zero re-renders) ────────────────────────
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
@@ -1131,10 +1126,11 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
           </div>
         ) : (
           <>
+            <GraphPortWindowContext.Provider value={published.paths}>
             <GraphEdgeViewport left={-drawingViewport.x / drawingViewport.zoom - 50} top={-drawingViewport.y / drawingViewport.zoom - 50}
               width={drawingSize.width / drawingViewport.zoom + 100} height={drawingSize.height / drawingViewport.zoom + 100}>
             <ReactFlow
-            nodes={rfNodes}
+            nodes={published.nodes}
             defaultViewport={viewportRef.current}
             edges={drawnEdges}
             nodeTypes={nodeTypes}
@@ -1314,6 +1310,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
             </ViewportPortal>
             </ReactFlow>
             </GraphEdgeViewport>
+            </GraphPortWindowContext.Provider>
           {!connectionError && <div className="graph-hint" title="点击节点打开侧边面板，Ctrl+点击跳转到记录视图">
             点击节点查看 · Ctrl+点击跳转
           </div>}

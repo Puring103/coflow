@@ -1,0 +1,509 @@
+{
+  "date": "2026-10-29T17:34:56.871Z",
+  "ref": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "diff": "crates/coflow-codegen-csharp/src/emit.rs           | 127 ++++++++-------\n crates/coflow-codegen-csharp/src/lib.rs            |  29 ++--\n crates/coflow-lsp/src/tests/cft.rs                 |  22 +++\n crates/coflow-lsp/src/text.rs                      |   3 +-\n crates/coflow-runtime/src/automation/query.rs      |   2 +-\n crates/coflow-runtime/src/commands/id_as_enum.rs   | 172 +++++++++++++--------\n crates/coflow-runtime/src/inspection/search.rs     |  37 +++--\n crates/coflow-runtime/tests/automation.rs          |  40 +++++\n .../frontend/tests/browser/graph-acceptance.mjs    |   2 +-\n editors/vscode-coflow/src/extension.js             |   6 +-\n runtimes/csharp/Coflow.Loader/Descriptors.cs       |  16 +-\n runtimes/csharp/Coflow.Loader/Loading.cs           |  19 ++-\n 12 files changed, 315 insertions(+), 160 deletions(-)",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "logical_cpus": 20,
+  "physical_memory_bytes": 34190790656,
+  "node": "v22.23.4",
+  "method": "Serial production Chromium, 1440x900 DPR=1. navigation_ms includes module download and two RAFs. data_stable_ms starts at prepared GraphData before React render, ends after all height probes and two RAFs; excludes backend, transfer and ELK cold layout. Standard: editable controls, at most 300 drawn edges. Dense readonly matches previous fixture. Steady intervals include RAF wait and setViewport. Update timings include React and two RAFs, exclude backend IPC. GC heap excludes native/browser allocations.",
+  "protocol": {
+    "firstSamples": 3,
+    "steadyMs": 5000,
+    "rounds": 1,
+    "updates": 0
+  },
+  "samples": [
+    {
+      "group": "standard-first",
+      "sample": 0,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 678.4138000000003,
+      "data_stable_ms": 670.5999999940395,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 27959300,
+      "long_tasks": [
+        {
+          "start": 89.20000000298023,
+          "duration": 70
+        },
+        {
+          "start": 204.59999999403954,
+          "duration": 137
+        },
+        {
+          "start": 365.29999999701977,
+          "duration": 164
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 1,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 697.7275,
+      "data_stable_ms": 683.3999999910593,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 68012109,
+      "long_tasks": [
+        {
+          "start": 90,
+          "duration": 59
+        },
+        {
+          "start": 190.19999998807907,
+          "duration": 124
+        },
+        {
+          "start": 314.69999998807907,
+          "duration": 263
+        }
+      ],
+      "errors": []
+    },
+    {
+      "group": "standard-first",
+      "sample": 2,
+      "query": "items=10000&standard&editable",
+      "navigation_ms": 642.1356000000005,
+      "data_stable_ms": 621.7000000029802,
+      "elements": 940,
+      "rows": 31,
+      "handles": 30,
+      "edges": 24,
+      "logical_rows": 10004,
+      "height": 310121,
+      "heap_bytes": 74520116,
+      "long_tasks": [
+        {
+          "start": 93.70000000298023,
+          "duration": 62
+        },
+        {
+          "start": 201.30000001192093,
+          "duration": 142
+        },
+        {
+          "start": 344.20000000298023,
+          "duration": 186
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "steady": [
+    {
+      "round": 0,
+      "intervals_ms": [
+        10.099999994039536,
+        13.299999999999955,
+        133.29999999999995,
+        53.40000000000009,
+        53.299999999999955,
+        53.299999999999955,
+        53.40000000000009,
+        53.200000000000045,
+        53.399999999999864,
+        53.30000000000018,
+        53.399999999999864,
+        53.40000000000009,
+        53.200000000000045,
+        53.399999999999864,
+        53.299999999999955,
+        40,
+        53.30000000000018,
+        53.399999999999864,
+        53.200000000000045,
+        53.40000000000009,
+        40,
+        53.29999999999973,
+        53.40000000000009,
+        26.59999999999991,
+        26.800000000000182,
+        39.90000000000009,
+        26.59999999999991,
+        26.90000000000009,
+        26.5,
+        26.59999999999991,
+        26.699999999999818,
+        26.600000000000364,
+        40.09999999999991,
+        26.699999999999818,
+        26.59999999999991,
+        26.700000000000273,
+        26.59999999999991,
+        26.699999999999818,
+        26.600000000000364,
+        40,
+        26.799999999999727,
+        26.700000000000273,
+        26.59999999999991,
+        26.5,
+        26.90000000000009,
+        26.5,
+        26.699999999999818,
+        26.699999999999818,
+        39.90000000000009,
+        66.80000000000018,
+        66.69999999999982,
+        66.59999999999991,
+        66.70000000000027,
+        66.69999999999982,
+        66.59999999999991,
+        66.70000000000027,
+        53.19999999999982,
+        66.70000000000027,
+        66.69999999999982,
+        66.69999999999982,
+        53.30000000000018,
+        66.69999999999982,
+        53.30000000000018,
+        66.69999999999982,
+        53.40000000000009,
+        53.20000000000027,
+        66.80000000000018,
+        53.19999999999982,
+        53.399999999999636,
+        53.30000000000018,
+        39.899999999999636,
+        53.400000000000546,
+        53.399999999999636,
+        39.900000000000546,
+        53.399999999999636,
+        53.19999999999982,
+        40.100000000000364,
+        53.30000000000018,
+        53.5,
+        39.79999999999927,
+        53.400000000000546,
+        40,
+        53.30000000000018,
+        40.099999999999454,
+        53.19999999999982,
+        53.30000000000018,
+        53.400000000000546,
+        93.39999999999964,
+        53.399999999999636,
+        53.100000000000364,
+        53.399999999999636,
+        53.400000000000546,
+        53.30000000000018,
+        53.29999999999927,
+        66.70000000000073,
+        53.29999999999927,
+        66.70000000000073,
+        66.79999999999927,
+        53.20000000000073,
+        53.29999999999927,
+        66.70000000000073,
+        66.69999999999982,
+        53.30000000000018
+      ],
+      "counts": [
+        {
+          "rows": 39,
+          "edges": 58
+        }
+      ],
+      "long_tasks": [
+        {
+          "start": 1184.9000000059605,
+          "duration": 51
+        },
+        {
+          "start": 1237,
+          "duration": 52
+        },
+        {
+          "start": 1289.7000000029802,
+          "duration": 52
+        },
+        {
+          "start": 1343,
+          "duration": 56
+        },
+        {
+          "start": 1400.5,
+          "duration": 55
+        },
+        {
+          "start": 1456.2000000029802,
+          "duration": 54
+        },
+        {
+          "start": 1511.2000000029802,
+          "duration": 51
+        },
+        {
+          "start": 1613.0999999940395,
+          "duration": 51
+        },
+        {
+          "start": 1664.7000000029802,
+          "duration": 52
+        },
+        {
+          "start": 1717.2000000029802,
+          "duration": 55
+        },
+        {
+          "start": 1772.5,
+          "duration": 50
+        },
+        {
+          "start": 1823.4000000059605,
+          "duration": 50
+        },
+        {
+          "start": 1923.2000000029802,
+          "duration": 50
+        },
+        {
+          "start": 1974.2999999970198,
+          "duration": 50
+        },
+        {
+          "start": 2025,
+          "duration": 50
+        },
+        {
+          "start": 2175,
+          "duration": 51
+        },
+        {
+          "start": 2976.2000000029802,
+          "duration": 64
+        },
+        {
+          "start": 3041.0999999940395,
+          "duration": 66
+        },
+        {
+          "start": 3108.2000000029802,
+          "duration": 69
+        },
+        {
+          "start": 3179.2999999970198,
+          "duration": 65
+        },
+        {
+          "start": 3245.4000000059605,
+          "duration": 64
+        },
+        {
+          "start": 3310.7000000029802,
+          "duration": 65
+        },
+        {
+          "start": 3377.0999999940395,
+          "duration": 68
+        },
+        {
+          "start": 3445.7999999970198,
+          "duration": 53
+        },
+        {
+          "start": 3499.7999999970198,
+          "duration": 60
+        },
+        {
+          "start": 3560.7000000029802,
+          "duration": 65
+        },
+        {
+          "start": 3626.7000000029802,
+          "duration": 62
+        },
+        {
+          "start": 3689.9000000059605,
+          "duration": 63
+        },
+        {
+          "start": 3754.5999999940395,
+          "duration": 58
+        },
+        {
+          "start": 3812.9000000059605,
+          "duration": 59
+        },
+        {
+          "start": 3872.5,
+          "duration": 57
+        },
+        {
+          "start": 3930.5,
+          "duration": 58
+        },
+        {
+          "start": 3988.9000000059605,
+          "duration": 57
+        },
+        {
+          "start": 4046.2999999970198,
+          "duration": 55
+        },
+        {
+          "start": 4103.0999999940395,
+          "duration": 53
+        },
+        {
+          "start": 4156.9000000059605,
+          "duration": 51
+        },
+        {
+          "start": 4208.29999999702,
+          "duration": 61
+        },
+        {
+          "start": 4306.9000000059605,
+          "duration": 51
+        },
+        {
+          "start": 4358.20000000298,
+          "duration": 50
+        },
+        {
+          "start": 4939.29999999702,
+          "duration": 51
+        },
+        {
+          "start": 5040.4000000059605,
+          "duration": 50
+        },
+        {
+          "start": 5091.9000000059605,
+          "duration": 98
+        },
+        {
+          "start": 5190.5,
+          "duration": 55
+        },
+        {
+          "start": 5246.5999999940395,
+          "duration": 51
+        },
+        {
+          "start": 5298.9000000059605,
+          "duration": 50
+        },
+        {
+          "start": 5402.79999999702,
+          "duration": 52
+        },
+        {
+          "start": 5461.9000000059605,
+          "duration": 52
+        },
+        {
+          "start": 5519.4000000059605,
+          "duration": 54
+        },
+        {
+          "start": 5574.5,
+          "duration": 57
+        },
+        {
+          "start": 5638.9000000059605,
+          "duration": 53
+        },
+        {
+          "start": 5697.5,
+          "duration": 57
+        },
+        {
+          "start": 5755.70000000298,
+          "duration": 58
+        },
+        {
+          "start": 5820.4000000059605,
+          "duration": 53
+        },
+        {
+          "start": 5879.5999999940395,
+          "duration": 53
+        },
+        {
+          "start": 5938.5999999940395,
+          "duration": 60
+        },
+        {
+          "start": 5999.9000000059605,
+          "duration": 58
+        },
+        {
+          "start": 6065.9000000059605,
+          "duration": 59
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "changes": [
+    {
+      "updates": 0,
+      "timings_ms": [],
+      "heaps_bytes": [],
+      "rows": 31,
+      "gc_heap_before": {
+        "usedSize": 36442460,
+        "totalSize": 40579072,
+        "embedderHeapUsedSize": 2798360,
+        "backingStorageSize": 1118037
+      },
+      "gc_heap_after": {
+        "usedSize": 36448836,
+        "totalSize": 37695488,
+        "embedderHeapUsedSize": 2798360,
+        "backingStorageSize": 1118037
+      },
+      "errors": [],
+      "gc_heap_unmounted": {
+        "usedSize": 25004384,
+        "totalSize": 27422720,
+        "embedderHeapUsedSize": 1300624,
+        "backingStorageSize": 1118000
+      }
+    }
+  ],
+  "chromium": "156.0.4314.50",
+  "lifecycle": {
+    "items": 100,
+    "warmups": 2,
+    "cycles": 20,
+    "heaps": [
+      {
+        "cycle": 2,
+        "usedSize": 10468008,
+        "totalSize": 12984320,
+        "embedderHeapUsedSize": 7574936,
+        "backingStorageSize": 568435
+      },
+      {
+        "cycle": 12,
+        "usedSize": 11100372,
+        "totalSize": 12722176,
+        "embedderHeapUsedSize": 7673896,
+        "backingStorageSize": 568432
+      },
+      {
+        "cycle": 22,
+        "usedSize": 11190392,
+        "totalSize": 12197888,
+        "embedderHeapUsedSize": 7516912,
+        "backingStorageSize": 568435
+      }
+    ],
+    "errors": []
+  }
+}

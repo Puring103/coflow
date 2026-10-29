@@ -51,6 +51,8 @@ interface Props {
   onFocusRequestConsumed?: (request: number) => void
 }
 
+const EMPTY_RECORD_GROUPS: EditorProjectSettings['record_groups'] = {}
+
 export interface DimensionCellSelection { row: number; column: number }
 
 export function dimensionRowId(row: DimensionFileRow): string {
@@ -136,7 +138,7 @@ export function DimensionTableView({
   data: sourceData,
   mode,
   onModeChange,
-  recordGroupsByFile = {},
+  recordGroupsByFile = EMPTY_RECORD_GROUPS,
   onRenameGroup,
   onColorGroup,
   onWrite,
@@ -152,11 +154,25 @@ export function DimensionTableView({
   useContentMotion(contentRef, `${sourceData.file_path}:${mode}`)
   const [addingVariant, setAddingVariant] = useState(false)
   const [draftVariants, setDraftVariants] = useState<string[]>([])
+  // 筛选摘要按快照中的行身份缓存；连续输入只比较字符串，避免反复遍历所有变体值。
+  const searchRows = useMemo(() => new WeakMap<DimensionFileRow, string>(), [sourceData.rows])
+  const filteredRows = useMemo(() => {
+    if (!query) return sourceData.rows
+    const needle = query.toLowerCase()
+    return sourceData.rows.filter(row => {
+      let text = searchRows.get(row)
+      if (text === undefined) {
+        text = `${row.coordinate.actual_type}.${row.coordinate.id} ${row.field} ${valueSummary(row.default_value)} ${Object.values(row.values).map(v => v?.kind === 'value' ? valueSummary(v.value) : '').join(' ')}`.toLowerCase()
+        searchRows.set(row, text)
+      }
+      return text.includes(needle)
+    })
+  }, [sourceData.rows, query, searchRows])
   // 新变体先作为当前文件的待填列，首次填值时与覆盖文件一起持久化。
   const data = useMemo(() => ({ ...sourceData,
-    variants: [...new Set([...sourceData.variants, ...draftVariants])],
-    rows: sourceData.rows.filter(row => !query || `${row.coordinate.actual_type}.${row.coordinate.id} ${row.field} ${valueSummary(row.default_value)} ${Object.values(row.values).map(v => v?.kind === 'value' ? valueSummary(v.value) : '').join(' ')}`.toLowerCase().includes(query.toLowerCase())),
-  }), [sourceData, draftVariants, query])
+    variants: [...new Set([...sourceData.variants, ...draftVariants])], rows: filteredRows,
+  }), [sourceData, draftVariants, filteredRows])
+  const rowsByKey = useMemo(() => new Map(data.rows.map(row => [dimensionRowId(row), row])), [data.rows])
   const [selectedKey, setSelectedKey] = useState(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const [recordField, setRecordField] = useState(0)
@@ -165,10 +181,10 @@ export function DimensionTableView({
   useSelectionSlide(listRef, '.selected')
   const recordRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (!data.rows.some(row => dimensionRowId(row) === selectedKey)) {
+    if (!rowsByKey.has(selectedKey)) {
       setSelectedKey(data.rows[0] ? dimensionRowId(data.rows[0]) : '')
     }
-  }, [data, selectedKey])
+  }, [data.rows, rowsByKey, selectedKey])
   const items = useMemo(
     () => organizeDimensionRows(data.rows, recordGroupsByFile, collapsedGroups),
     [data.rows, recordGroupsByFile, collapsedGroups],
@@ -177,10 +193,11 @@ export function DimensionTableView({
     () => items.flatMap(item => item.kind === 'row' ? [item.row] : []),
     [items],
   )
-  const selected = data.rows.find(row => dimensionRowId(row) === selectedKey) ?? data.rows[0]
-  const fields = [...new Set(data.rows.map(row => row.field))]
-  const showRowField = fields.length > 1
-  const showRowType = new Set(data.rows.map(row => row.coordinate.actual_type)).size > 1
+  // 每个列表项直接读取索引，避免完整列表渲染时执行 N 次线性查找。
+  const visibleRowIndexes = useMemo(() => new Map(visibleRows.map((row, index) => [row, index])), [visibleRows])
+  const selected = rowsByKey.get(selectedKey) ?? data.rows[0]
+  const showRowField = useMemo(() => data.rows.some(row => row.field !== data.rows[0]?.field), [data.rows])
+  const showRowType = useMemo(() => data.rows.some(row => row.coordinate.actual_type !== data.rows[0]?.coordinate.actual_type), [data.rows])
   const toggleGroup = (key: string) => setCollapsedGroups(current => {
     const next = new Set(current)
     if (next.has(key)) next.delete(key); else next.add(key)
@@ -229,7 +246,7 @@ export function DimensionTableView({
             ref={listRef}
             onKeyDown={event => {
               if (!isDirection(event.key)) return
-              const index = Math.max(0, visibleRows.findIndex(row => dimensionRowId(row) === selectedKey))
+              const index = selected ? (visibleRowIndexes.get(selected) ?? 0) : 0
               if (event.key === 'ArrowLeft') {
                 event.preventDefault()
                 onExitLeft?.()
@@ -277,7 +294,7 @@ export function DimensionTableView({
                 type="button"
                 className={`rv-sidebar-item ${dimensionRowId(item.row) === selectedKey ? 'selected' : ''}${item.group?.color ? ' has-group-color' : ''}`}
                 style={recordGroupColorStyle(item.group?.color)}
-                data-record-index={visibleRows.indexOf(item.row)}
+                data-record-index={visibleRowIndexes.get(item.row)}
                 onClick={() => { setSelectedKey(dimensionRowId(item.row)); setRecordField(0) }}
               >
                 {showRowType ? `${item.row.coordinate.actual_type}.` : ''}{item.row.coordinate.id}{showRowField ? ` · ${item.row.field}` : ''}

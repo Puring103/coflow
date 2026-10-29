@@ -1,5 +1,5 @@
 import { motionRecordKey } from '../../record-editing/hooks/useMutationFeedback'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, memo } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, memo } from 'react'
 import { Handle, Position, useReactFlow, useViewport, useInternalNode, type NodeProps, type Node } from '@xyflow/react'
 
 import { useReferenceShortName } from '../../record-editing/components/ShortNameContext'
@@ -14,6 +14,8 @@ import { typeColor } from '../../../shared/lib/typeColor'
 
 import { GraphRowGeometry } from '../layout/rowGeometry'
 import { GraphRowWindowContext } from '../layout/rowWindow'
+import { GraphPortWindowContext } from '../layout/portWindow'
+import { geometryHandles, geometryIsPublished } from '../layout/portGeometry'
 import { type RelationProjection } from './GraphView.relations'
 
 // ─── Node data ───────────────────────────────────────────────────────────────
@@ -144,11 +146,19 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
     expandedPaths: relation.expanded, appendPaths: relation.appendPaths,
   } : undefined, [relation])
   const outgoingSet = useMemo(() => new Set(outgoingPaths), [outgoingPaths])
-  const handles = useMemo(() => geometryHandles(geometry, outgoingPaths), [geometry, geometryVersion, outgoingPaths])
+  const publishedPaths = useContext(GraphPortWindowContext)?.get(id) ?? outgoingPaths
+  const handles = useMemo(() => geometryHandles(geometry, publishedPaths), [geometry, geometryVersion, publishedPaths])
+  const lastPublication = useRef<{ geometry: GraphRowGeometry; version: number } | null>(null)
   const publishGeometry = useCallback(() => {
-    // React Flow 的尺寸观察会从 DOM 重新收集端口；随后用公开 API 恢复完整逻辑几何。
+    // 数据代际改变后取消旧测量帧，避免把旧行高写入新的节点。
+    if (flow.getNode(id)?.data !== data) return
+    // 控制节点已包含当前窗口端口时不重复回写；几何版本变化仍发布一次以通知代际订阅者。
+    if (lastPublication.current?.geometry === geometry && lastPublication.current.version === geometryVersion
+      && geometryIsPublished(flow.getInternalNode(id), geometry, handles)) return
+    lastPublication.current = { geometry, version: geometryVersion }
+    // 尺寸观察会重新收集 DOM 端口；随后恢复当前绘制层所需的屏外端口。
     flow.updateNode(id, { handles, width: 280, height: geometry.height, measured: { width: 280, height: geometry.height } })
-  }, [flow, id, handles, geometry, geometryVersion])
+  }, [flow, id, data, handles, geometry, geometryVersion])
 
   const localTop = -viewport.y / viewport.zoom - (internal?.internals.positionAbsolute.y ?? 0)
   const [handleFirst, handleEnd] = geometry.range(localTop - 180, localTop + canvasHeight / viewport.zoom + 180)
@@ -185,6 +195,8 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
     cancelAnimationFrame(publishFrame.current)
     publishFrame.current = requestAnimationFrame(() => publishRef.current())
   }, [])
+  // ResizeObserver 给出不受画布缩放影响的 CSS 高度；平移时复用已有行尺寸。
+  const measuredElements = useRef(new WeakMap<Element, number>())
   const measureRows = useCallback(() => {
     const root = rootRef.current
     if (!root) return
@@ -192,12 +204,12 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
     const dynamic = new Set<string>()
     root.querySelectorAll<HTMLElement>('.dc-row[data-field-path-wire], [data-geometry-key]').forEach(row => {
       const key = row.dataset.geometryKey ?? row.dataset.fieldPathWire!
-      rows.set(key, row.getBoundingClientRect().height / zoomRef.current)
+      rows.set(key, measuredElements.current.get(row) ?? row.getBoundingClientRect().height / zoomRef.current)
       if (row.matches(':focus-within') || row.querySelector('.string-value-error, [aria-invalid="true"]')) dynamic.add(key)
     })
     const style = getComputedStyle(root)
     geometry.measure(rows, headerRef.current ? {
-      height: headerRef.current.getBoundingClientRect().height / zoomRef.current,
+      height: measuredElements.current.get(headerRef.current) ?? headerRef.current.getBoundingClientRect().height / zoomRef.current,
       top: parseFloat(style.borderTopWidth), bottom: parseFloat(style.borderBottomWidth),
     } : undefined, dynamic)
   }, [geometry])
@@ -209,8 +221,9 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
     const canvas = root.closest<HTMLElement>('.react-flow')
     let previousSize = ''
     const observer = new ResizeObserver(entries => {
+      for (const entry of entries) measuredElements.current.set(entry.target, entry.borderBoxSize[0].blockSize)
       measureRows()
-      // 只有节点外框真正变动才重新发布全量端口；窗口切换只测量新挂载的行。
+      // 只有节点外框真正变动才重新发布绘制端口；窗口切换只测量新挂载的行。
       if (entries.some(entry => entry.target === root)) {
         const size = `${root.offsetWidth}:${root.offsetHeight}`
         if (size !== previousSize) { previousSize = size; schedulePublish() }
@@ -234,7 +247,7 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
     for (const row of next) if (!observedRows.current.has(row)) rowObserver.current?.observe(row)
     observedRows.current = next
     measureRows()
-  }, [geometry, geometryVersion, compact, handleFirst, handleEnd, pinned, rowExpandKey, viewport.zoom, measureRows])
+  }, [geometry, geometryVersion, compact, handleFirst, handleEnd, pinned, rowExpandKey, measureRows])
   useLayoutEffect(schedulePublish, [handles, geometryVersion, schedulePublish])
 
   const interactionFrame = useRef(0)
@@ -353,15 +366,6 @@ const CfdNodeContent = memo(function CfdNodeContent({ id, data, shortName }: Pic
   )
 })
 
-export function geometryHandles(geometry: GraphRowGeometry, outgoingPaths: string[]) {
-  return [
-    // 与 CSS 的 16px Handle 及 1px 左右边框一致，保持公开几何与实际命中框相同。
-    { id: '__in', type: 'target' as const, position: Position.Left, x: -7, y: geometry.borderTop + geometry.headerHeight / 2 - 8, width: 16, height: 16 },
-    ...outgoingPaths.map(path => ({ id: `path-${path}`, type: 'source' as const, position: Position.Right,
-      x: 271, y: geometry.center(path) - 8, width: 16, height: 16 })),
-  ]
-}
-
 /** 屏外节点也按帧完成未知行高，每帧最多取 12 个样本，不同步挂载整棵字段树。 */
 export function GraphGeometryProbeHost({ nodes }: { nodes: Node[] }) {
   const [batch, setBatch] = useState(0)
@@ -374,6 +378,7 @@ function GraphGeometryProbe({ id, data, onMeasured }: { id: string; data: NodeDa
   const { graphNode: node, geometry, relation } = data
   const root = useRef<HTMLDivElement>(null)
   const flow = useReactFlow()
+  const publishedPaths = useContext(GraphPortWindowContext)?.get(id) ?? data.outgoingPaths
   const shortName = useReferenceShortName(node.actual_type, node.record_id)
   const [pinned] = useState(() => new Set(geometry.probes(12)))
   useLayoutEffect(() => {
@@ -387,11 +392,12 @@ function GraphGeometryProbe({ id, data, onMeasured }: { id: string; data: NodeDa
     const style = getComputedStyle(element)
     geometry.measure(rows, { height: header.getBoundingClientRect().height, top: parseFloat(style.borderTopWidth), bottom: parseFloat(style.borderBottomWidth) })
     const frame = requestAnimationFrame(() => {
-      flow.updateNode(id, { handles: geometryHandles(geometry, data.outgoingPaths), width: 280, height: geometry.height, measured: { width: 280, height: geometry.height } })
+      if (flow.getNode(id)?.data !== data) return
+      flow.updateNode(id, { handles: geometryHandles(geometry, publishedPaths), width: 280, height: geometry.height, measured: { width: 280, height: geometry.height } })
       onMeasured()
     })
     return () => cancelAnimationFrame(frame)
-  }, [geometry, pinned, flow, id, data, onMeasured])
+  }, [geometry, pinned, flow, id, data, publishedPaths, onMeasured])
   return <div ref={root} className="graph-node graph-geometry-probe" aria-hidden inert
     style={{ position: 'fixed', left: -10000, top: 0, width: 280, visibility: 'hidden', pointerEvents: 'none' }}>
     <GraphNodeHeader recordId={node.record_id} shortName={shortName} actualType={node.actual_type} />

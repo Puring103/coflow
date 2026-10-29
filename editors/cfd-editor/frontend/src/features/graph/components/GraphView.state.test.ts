@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import type { Node } from '@xyflow/react'
-import { graphHighlights, polylineIntersectsRect, reconcileFlowNodes, sameGraphValue, selectedNodeBounds, segmentIntersectsRect } from './GraphView.state'
+import { applyGraphNodeChanges, graphHighlights, polylineIntersectsRect, reconcileFlowNodes, sameGraphValue, selectedNodeBounds, segmentIntersectsRect } from './GraphView.state'
 
 const node = (id: string): Node => ({ id, position: { x: 10, y: 20 },
   data: { value: 12n, expanded: new Set(['items']) }, measured: { width: 280, height: 160 } })
 
 describe('graph incremental state', () => {
+  it('ignores stale geometry snapshots and preserves the current drag position when measurements arrive', () => {
+    const old = node('a')
+    const current = { ...old, data: { ...old.data, value: 13n }, position: { x: 500, y: 600 } }
+    const nodes = [current]
+    expect(applyGraphNodeChanges([{ type: 'replace', id: old.id, item: { ...old, height: 800 } }], nodes)).toBe(nodes)
+    const next = applyGraphNodeChanges([{ type: 'replace', id: old.id,
+      item: { ...current, position: old.position, height: 900, measured: { width: 280, height: 900 } } }], nodes)
+    expect(next[0].data).toBe(current.data)
+    expect(next[0].position).toBe(current.position)
+    expect(next[0].height).toBe(900)
+  })
   it('preserves unchanged nodes and the entire unchanged array', () => {
     const previous = [node('a'), node('b')]
     expect(reconcileFlowNodes(previous, structuredClone(previous))).toBe(previous)
