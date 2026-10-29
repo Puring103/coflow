@@ -4,6 +4,10 @@
 
 | 资料 | 类型 | 当前对应文档 |
 | --- | --- | --- |
+| [0.15.0 C# Loader 优化](benchmarks/csharp-loader-0.15.0.md) | 解析、加载、稀疏与密集变体、维度访问和多表注册的 48 项对照 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
+| [C# Loader 与编号分配优化](benchmarks/csharp-loader-2026-10-30.md) | 相同宽表与维度夹具的正式数组对照、分配量、独立工作量计数 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
+| [图与表格优化测量](benchmarks/view-optimization-2026-10-30.md) | 端口窗口、几何缓存、代际测量与完整生产样本 | [编辑器性能约束](../editor-design/performance.md) |
+| [网站首屏资源体积](benchmarks/website-bundle-2026-10-30.json) | 静态构建的模块预加载与初始 JavaScript 字节数 | [本轮优化验收](../development/project-review-2026-10-30.md) |
 | [审查性能复测](benchmarks/review-performance-2026-10-28.md) | 标准图、热编辑与明确未达项 | [性能验证](../development/performance-validation.md) |
 | [核心增量与超大图节点验收](benchmarks/incremental-graph-acceptance-2026-10-26.md) | 不可变批次、字段依赖、完整端口几何、窗口化与生产基准；含未达性能项 | [增量代次契约](../runtime-design/incremental-generations.md) |
 | [全路径审查微基准](benchmarks/full-performance-audit-2026-10-26.json) | 选区集合索引与不可变值身份比较的局部算法对照 | [性能验证](../development/performance-validation.md) |
