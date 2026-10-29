@@ -58,6 +58,8 @@ You can change this in VS Code settings:
 - `coflow.diagnostics.args`
 - `coflow.diagnostics.debounceMs`
 
+`coflow.diagnostics.command` is an executable name or path. Each item in `coflow.diagnostics.args` is one argument; paths containing spaces do not need extra quotes. Arguments are passed directly to the process, including on Windows.
+
 ## Package
 
 Install `vsce` if needed, then package the extension:

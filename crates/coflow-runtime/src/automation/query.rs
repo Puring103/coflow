@@ -207,7 +207,7 @@ pub(crate) fn selected_records(
                 && !record
                     .fields()
                     .values()
-                    .any(|v| crate::value_summary(v).contains(text))
+                    .any(|value| crate::inspection::search::value_contains_text(value, text))
             {
                 continue;
             }

@@ -47,6 +47,69 @@ fn run(
     )
     .unwrap()
 }
+
+#[test]
+fn text_search_reads_full_nested_and_projected_values() {
+    let root = fixture();
+    fs::write(
+        root.path().join("schema.cft"),
+        r#"
+        data Detail { name: string; }
+        table Item {
+            @dimension("language") text: string;
+            words: [string];
+            detail: Option<Option<Detail>>;
+            map: {string: string};
+            label: string = f"rendered {self.text}";
+        }
+    "#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("data/items.cfd"),
+        format!(
+            r#"
+        a: Item {{
+            text: "{}needle_tail",
+            words: ["needle_array"],
+            detail: Some(Some({{ name: "needle_object" }})),
+            map: {{ "needle_key": "needle_value" }}
+        }}
+        language[ja] {{ a: Item {{ text: "翻訳の末尾" }} }}
+    "#,
+            "长文本".repeat(20)
+        ),
+    )
+    .unwrap();
+
+    for text in [
+        "needle_tail",
+        "needle_array",
+        "needle_object",
+        "needle_key",
+        "needle_value",
+        "rendered",
+    ] {
+        let found = run(root.path(), "data.search", &[("text", text)], None);
+        assert_eq!(found.status, Status::Success, "{found:?}");
+        assert_eq!(found.result["total"], 1, "{text}: {found:?}");
+        assert_eq!(found.result["items"][0]["id"], "a");
+    }
+    for text in ["absent", "string[1]", "needle_OBJECT"] {
+        let found = run(root.path(), "data.search", &[("text", text)], None);
+        assert_eq!(found.result["total"], 0, "{text}: {found:?}");
+    }
+    let translated = run(
+        root.path(),
+        "data.search",
+        &[("text", "翻訳"), ("dimension", "language=ja")],
+        None,
+    );
+    assert_eq!(translated.result["total"], 1, "{translated:?}");
+    let base = run(root.path(), "data.search", &[("text", "翻訳")], None);
+    assert_eq!(base.result["total"], 0, "{base:?}");
+}
+
 #[test]
 fn inherited_field_symbols_locate_the_original_declaration() {
     let root = fixture();

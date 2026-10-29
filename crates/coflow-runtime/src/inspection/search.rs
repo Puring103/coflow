@@ -3,6 +3,7 @@
 use crate::data_model::{format_cfd_dict_key, CfdValue, RecordCoordinate};
 
 use crate::{value_summary, ProjectQueries};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordSearchMode {
@@ -166,23 +167,39 @@ fn find_value_match(value: &CfdValue, query: &str, path: &str) -> Option<FieldMa
     }
 }
 
-fn scalar_text(value: &CfdValue) -> Option<String> {
+/// CLI 在完整有效值上匹配，展示摘要的截断及集合计数不参与搜索。
+pub(crate) fn value_contains_text(value: &CfdValue, query: &str) -> bool {
     match value {
-        CfdValue::OptionNone => Some("None".to_string()),
-        CfdValue::OptionSome(value) => scalar_text(value),
-        CfdValue::Bool(value) => Some(value.to_string()),
-        CfdValue::Int(value) => Some(value.to_string()),
-        CfdValue::Float(value) => Some(value.to_string()),
-        CfdValue::String(value) => Some(value.clone()),
-        CfdValue::FormattedString(value) => Some(value.rendered.clone()),
+        CfdValue::OptionSome(value) => value_contains_text(value, query),
+        CfdValue::Object(object) => object
+            .fields()
+            .values()
+            .any(|child| value_contains_text(child, query)),
+        CfdValue::Array(items) => items.iter().any(|child| value_contains_text(child, query)),
+        CfdValue::Dict(entries) => entries.iter().any(|(key, child)| {
+            format_cfd_dict_key(key).contains(query) || value_contains_text(child, query)
+        }),
+        _ => scalar_text(value).is_some_and(|text| text.contains(query)),
+    }
+}
 
-        CfdValue::Enum(value) => Some(format!(
+fn scalar_text(value: &CfdValue) -> Option<Cow<'_, str>> {
+    match value {
+        CfdValue::OptionNone => Some(Cow::Borrowed("None")),
+        CfdValue::OptionSome(value) => scalar_text(value),
+        CfdValue::Bool(value) => Some(Cow::Borrowed(if *value { "true" } else { "false" })),
+        CfdValue::Int(value) => Some(Cow::Owned(value.to_string())),
+        CfdValue::Float(value) => Some(Cow::Owned(value.to_string())),
+        CfdValue::String(value) => Some(Cow::Borrowed(value)),
+        CfdValue::FormattedString(value) => Some(Cow::Borrowed(&value.rendered)),
+
+        CfdValue::Enum(value) => Some(Cow::Owned(format!(
             "{} {} {}",
             value.enum_name,
             value.variant.as_ref().map_or("", AsRef::as_ref),
             value.value
-        )),
-        CfdValue::Ref(value) => Some(value.to_string()),
+        ))),
+        CfdValue::Ref(value) => Some(Cow::Borrowed(value.as_str())),
         CfdValue::Object(_) | CfdValue::Array(_) | CfdValue::Dict(_) => None,
     }
 }

@@ -105,6 +105,7 @@ const extension = require("../src/extension.js");
 const extensionPackage = require("../package.json");
 
 async function main() {
+  await verifyExecutableArguments();
   const extensionRoot = path.resolve(__dirname, "..");
   for (const file of jsonFilesUnder(extensionRoot)) {
     assert.doesNotThrow(
@@ -588,6 +589,48 @@ function textDocument(filePath, text) {
         : undefined;
     }
   };
+}
+
+async function verifyExecutableArguments() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "coflow lsp argv "));
+  const script = path.join(root, "server probe.cjs");
+  const executable = path.join(root, process.platform === "win32" ? "node probe.exe" : "node probe");
+  // 真正启动带空格路径的子进程；参数中的 shell 字符必须原样抵达语言服务。
+  fs.copyFileSync(process.execPath, executable);
+  fs.chmodSync(executable, 0o755);
+  fs.writeFileSync(script, `
+    let buffer = Buffer.alloc(0);
+    process.stdin.on('data', chunk => {
+      buffer = Buffer.concat([buffer, chunk]);
+      for (;;) {
+        const split = buffer.indexOf('\\r\\n\\r\\n');
+        if (split < 0) return;
+        const length = Number(/Content-Length: (\\d+)/i.exec(buffer.subarray(0, split).toString())[1]);
+        if (buffer.length < split + 4 + length) return;
+        const message = JSON.parse(buffer.subarray(split + 4, split + 4 + length));
+        buffer = buffer.subarray(split + 4 + length);
+        if (message.id === undefined) continue;
+        const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: process.argv.slice(2) }));
+        process.stdout.write('Content-Length: ' + body.length + '\\r\\n\\r\\n');
+        process.stdout.write(body);
+      }
+    });
+  `);
+  let session;
+  try {
+    const args = ["--project", path.join(root, "My Game & Config"), "--literal", 'a^b & c|d %PATH% "quoted"'];
+    session = new extension.__test.CftLspSession(executable, [script, ...args], root, { set() {} });
+    const actual = await session.request("audit/argv", {});
+    assert.deepStrictEqual(actual, args, `LSP argv must survive unchanged: ${session.lastStderr || ""}`);
+    assert.strictEqual(session.failed, false);
+  } finally {
+    if (session) {
+      const closed = new Promise(resolve => session.child.once("close", resolve));
+      session.dispose();
+      await closed;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function isIdentContinue(char) {

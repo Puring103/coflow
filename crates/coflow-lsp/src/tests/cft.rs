@@ -9,6 +9,34 @@ use coflow_language::cft::syntax::ast::Item;
 use coflow_language::cft::CftValueType;
 
 #[test]
+fn unicode_xid_names_keep_hover_definition_and_completion_receivers() {
+    for name in ["℘", "a·b", "变量\u{0301}", "𐐀key"] {
+        let source = format!("data {name} {{ a: int; }}\ntable Use {{ target: {name}; }}\n");
+        let (_cleanup, build) = test_lsp_build("lsp-unicode-xid", &source);
+        let document = first_document(&build);
+        for (start, _) in source.match_indices(name) {
+            for (relative, _) in name.char_indices() {
+                let position = position_from_byte(&source, start + relative);
+                let hover = hover_at(&build, document, &position).expect("type hover");
+                let contents = hover["contents"]["value"].as_str().expect("hover text");
+                assert!(
+                    contents.contains("CFT type") && contents.contains(name),
+                    "{hover:?}"
+                );
+                let definitions = definitions_at(&build, document, &position);
+                assert_eq!(definitions.len(), 1, "{name}: {definitions:?}");
+                assert_eq!(definitions[0]["range"]["start"]["line"], 0);
+                assert_eq!(definitions[0]["range"]["start"]["character"], 5);
+            }
+        }
+        assert_eq!(
+            receiver_chain_before_dot(&format!("{name}.a. partial")),
+            Some(vec![s(name), s("a")])
+        );
+    }
+}
+
+#[test]
 fn hover_and_definition_ignore_comment_and_string_words() {
     let source = "data Monster { key: string; }\n\
 table Item {\n\

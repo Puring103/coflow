@@ -397,8 +397,7 @@ impl From<DiagnosticSet> for Failure {
                     | "CFT-IO"
                     | "ARTIFACT-IO"
                     | "GIT-DIFF"
-            ) || diagnostic.code.starts_with("SELF-UPDATE-")
-                || diagnostic.code.starts_with("SKILL-")
+            ) || diagnostic.code.starts_with("SKILL-")
                 || diagnostic.code.starts_with("CLI-")
         });
         let conflict = diagnostics

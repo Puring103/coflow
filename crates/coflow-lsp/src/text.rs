@@ -150,7 +150,8 @@ pub(crate) fn previous_char(source: &str, offset: usize) -> Option<(usize, char)
 }
 
 pub(crate) fn is_ident_continue(ch: char) -> bool {
-    ch == '_' || ch.is_alphanumeric()
+    // 光标取词与 CFT/CFD 词法使用同一 XID 规则，保留中点、组合字符等合法名称。
+    coflow_language::lexical::is_identifier_continue(ch)
 }
 
 pub(crate) fn last_ident(text: &str) -> Option<&str> {

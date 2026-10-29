@@ -491,10 +491,8 @@ class CftLspSession {
     this.failed = false;
     this.disposed = false;
 
-    this.child = cp.spawn(command, args, {
-      cwd,
-      shell: process.platform === "win32"
-    });
+    // 直接传递 argv，避免 Windows shell 拆分含空格路径或解释参数中的特殊字符。
+    this.child = cp.spawn(command, args, { cwd, windowsHide: true });
 
     this.child.stdout.on("data", (chunk) => this.handleStdout(chunk));
     this.child.stderr.setEncoding("utf8");
