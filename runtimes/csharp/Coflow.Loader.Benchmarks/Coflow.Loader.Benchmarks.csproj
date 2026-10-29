@@ -4,7 +4,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UseBoundLoader Condition="'$(UseBoundLoader)' == '' and '$(LoaderSourceRoot)' == ''">true</UseBoundLoader>
+    <UseBoundLoader Condition="'$(UseBoundLoader)' == ''">false</UseBoundLoader>
     <LoaderSourceRoot Condition="'$(LoaderSourceRoot)' == ''">../Coflow.Loader</LoaderSourceRoot>
+    <DefineConstants Condition="'$(UseBoundLoader)' == 'true'">$(DefineConstants);CFD_BOUND_LOADER</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <!-- 链接源码以测量内部构造阶段；LoaderSourceRoot 可绑定基线提交的独立副本。 -->

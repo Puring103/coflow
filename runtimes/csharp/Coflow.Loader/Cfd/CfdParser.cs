@@ -241,12 +241,11 @@ internal static class CfdParser
                 return new CfdSomeValue(value, SpanFrom(start));
             }
 
-            // A type marker followed by a block is an inline object. Rewind and
-            // parse a bit expression for all other unquoted values.
+            // 首个名称只扫描一次；普通标量不创建仅用于探测的位表达式节点。
             if (Peek() != '(')
             {
-                var save = (_index, _line, _column);
                 var token = ParseName("value");
+                var tokenSpan = SpanFrom(start);
                 SkipTrivia();
                 if (Match('{'))
                 {
@@ -255,12 +254,12 @@ internal static class CfdParser
                     var fields = ParseFields();
                     return new CfdObjectValue(token, fields, SpanFrom(start));
                 }
-                (_index, _line, _column) = save;
+                if (End || BitPrecedence(Peek()) == 0)
+                    return new CfdScalarValue(token, SpanFrom(start));
+                var first = CfdBitExpression.Value(token, tokenSpan);
+                return new CfdBitExpressionValue(ParseBitExpression(1, first), SpanFrom(start));
             }
-            var (expression, isExpression) = ParseBitOrExpression();
-            return isExpression
-                ? new CfdBitExpressionValue(expression, SpanFrom(start))
-                : new CfdScalarValue(((CfdBitExpressionKind.Value)expression.Kind).Text, SpanFrom(start));
+            return new CfdBitExpressionValue(ParseBitExpression(), SpanFrom(start));
         }
 
         private CfdValueNode ParseDictionary(Position start)
@@ -385,35 +384,27 @@ internal static class CfdParser
 
         private static bool IsIdentifier(string value) => CfdIdentifiers.IsIdentifier(value);
 
-        private (CfdBitExpression Expression, bool IsExpression) ParseBitOrExpression() =>
-            ParseBitBinary(ParseBitXorExpression, '|', CfdBitOperator.Or);
+        private static int BitPrecedence(char symbol) => symbol switch { '|' => 1, '^' => 2, '&' => 3, _ => 0 };
 
-        private (CfdBitExpression Expression, bool IsExpression) ParseBitXorExpression() =>
-            ParseBitBinary(ParseBitAndExpression, '^', CfdBitOperator.Xor);
-
-        private (CfdBitExpression Expression, bool IsExpression) ParseBitAndExpression() =>
-            ParseBitBinary(ParseBitPrimary, '&', CfdBitOperator.And);
-
-        private (CfdBitExpression Expression, bool IsExpression) ParseBitBinary(
-            Func<(CfdBitExpression Expression, bool IsExpression)> operand,
-            char symbol,
-            CfdBitOperator operation)
+        private CfdBitExpression ParseBitExpression(int minimumPrecedence = 1, CfdBitExpression? left = null)
         {
-            var (left, isExpression) = operand();
+            left ??= ParseBitPrimary();
             while (true)
             {
                 SkipTrivia();
-                if (!Match(symbol)) break;
-                var (right, _) = operand();
+                var precedence = End ? 0 : BitPrecedence(Peek());
+                if (precedence < minimumPrecedence) break;
+                var operation = Read() switch { '|' => CfdBitOperator.Or, '^' => CfdBitOperator.Xor, _ => CfdBitOperator.And };
+                // 右侧只吸收更高优先级，保留同级左结合；链式表达式不增加解析栈深度。
+                var right = ParseBitExpression(precedence + 1);
                 var span = new CfdSpan(left.Span.StartLine, left.Span.StartColumn, right.Span.EndLine, right.Span.EndColumn);
                 if (_depth + Math.Max(left.Depth, right.Depth) + 1 > 256) Error("CFD-LIMIT", "bit expression depth exceeds 256 levels", span);
                 left = CfdBitExpression.Binary(operation, left, right, span);
-                isExpression = true;
             }
-            return (left, isExpression);
+            return left;
         }
 
-        private (CfdBitExpression Expression, bool IsExpression) ParseBitPrimary()
+        private CfdBitExpression ParseBitPrimary()
         {
             SkipTrivia();
             var start = Cursor;
@@ -423,25 +414,34 @@ internal static class CfdParser
                 EnterNesting();
                 try
                 {
-                    var (expression, _) = ParseBitOrExpression();
+                    var expression = ParseBitExpression();
                     SkipTrivia();
                     Expect(')', "expected `)` after bit expression");
-                    return (expression.WithSpan(SpanFrom(start)), true);
+                    return expression.WithSpan(SpanFrom(start));
                 }
                 finally { _depth--; }
             }
             var token = ParseName("flag expression operand");
-            return (CfdBitExpression.Value(token, SpanFrom(start)), false);
+            return CfdBitExpression.Value(token, SpanFrom(start));
         }
 
         private string ParseString()
         {
-            var builder = new StringBuilder();
+            var segmentStart = _index;
+            StringBuilder? builder = null;
             while (!End)
             {
                 var character = Read();
-                if (character == '"') return builder.ToString();
-                if (character != '\\') { builder.Append(character); continue; }
+                if (character == '"')
+                {
+                    var length = _index - segmentStart - 1;
+                    // 无转义字符串直接复制源区间；逐字符读取仍准确维护换行与 UTF-16 列号。
+                    if (builder == null) return _source.Text.Substring(segmentStart, length);
+                    return builder.Append(_source.Text, segmentStart, length).ToString();
+                }
+                if (character != '\\') continue;
+                builder ??= new StringBuilder();
+                builder.Append(_source.Text, segmentStart, _index - segmentStart - 1);
                 if (End) break;
                 var escaped = Read();
                 builder.Append(escaped switch
@@ -449,9 +449,10 @@ internal static class CfdParser
                     'n' => '\n', 'r' => '\r', 't' => '\t', '"' => '"', '\\' => '\\',
                     _ => UnsupportedEscape(escaped),
                 });
+                segmentStart = _index;
             }
             Error("CFD-SYNTAX-006", "unterminated string", CurrentSpan());
-            return builder.ToString();
+            return string.Empty;
         }
 
         private char UnsupportedEscape(char escaped)
@@ -476,24 +477,26 @@ internal static class CfdParser
                 Error("CFD-SYNTAX-007", $"{expected} must be an unquoted name", CurrentSpan());
                 return value;
             }
-            var builder = new StringBuilder();
+            var start = _index;
             while (!End)
             {
                 var character = Peek();
                 if (character == ':' && _source.Text.AsSpan(_index).StartsWith("::"))
                 {
-                    builder.Append(Read()).Append(Read());
+                    Read();
+                    Read();
                     continue;
                 }
                 if (char.IsWhiteSpace(character) || "{}[],:=#;|^&()@\"".Contains(character)) break;
-                builder.Append(Read());
+                Read();
             }
-            if (builder.Length == 0)
+            if (_index == start)
             {
                 Error("CFD-SYNTAX-007", $"expected {expected}", CurrentSpan());
                 return "_";
             }
-            return builder.ToString();
+            // 名称无需解码，扫描边界后一次构造，避免每个字段名都分配字符缓冲区。
+            return _source.Text.Substring(start, _index - start);
         }
 
         private string ParseTypeName(string expected)

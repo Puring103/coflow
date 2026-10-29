@@ -127,6 +127,47 @@ fn id_as_enum_values_are_stable_flag_safe_and_rename_aware() {
 }
 
 #[test]
+fn id_as_enum_rejects_duplicate_lock_values_without_publishing() {
+    for is_flag in [false, true] {
+        let dir = write_id_as_enum_project(
+            is_flag,
+            "alpha: Item { name: \"Alpha\" } beta: Item { name: \"Beta\" }",
+        );
+        let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("project");
+        coflow_runtime::commands::generate_project_code(&project).expect("initial code");
+        let output = dir.path().join("generated/csharp/CoflowData.cs");
+        let before = fs::read(&output).expect("existing code");
+        let lock = dir.path().join("coflow.enum.lock.json");
+        let invalid = r#"{"ItemId":{"alpha":1,"beta":1}}"#;
+        fs::write(&lock, invalid).expect("conflicting lock");
+        let error = coflow_runtime::commands::generate_project_code(&project)
+            .expect_err("duplicate mapping");
+        assert!(error.to_string().contains("duplicate stable value"));
+        assert!(error.to_string().contains("alpha") && error.to_string().contains("beta"));
+        assert_eq!(fs::read(&output).expect("preserved code"), before);
+        assert_eq!(fs::read_to_string(&lock).expect("preserved lock"), invalid);
+    }
+}
+
+#[test]
+fn id_as_enum_reuses_free_values_and_preserves_existing_sparse_mapping() {
+    let dir = write_id_as_enum_project(false, "a: Item { name: \"A\" } b: Item { name: \"B\" } c: Item { name: \"C\" } d: Item { name: \"D\" }");
+    fs::write(
+        dir.path().join("coflow.enum.lock.json"),
+        r#"{"ItemId":{"a":0,"c":4,"removed":1}}"#,
+    )
+    .expect("sparse lock");
+    let project = Project::open(Some(&dir.path().join("coflow.yaml"))).expect("project");
+    coflow_runtime::commands::generate_project_code(&project).expect("generate");
+    let values = active_enum_values(&dir);
+    assert_eq!(values["a"], 0);
+    assert_eq!(values["b"], 1);
+    assert_eq!(values["c"], 4);
+    assert_eq!(values["d"], 2);
+    assert!(!values.contains_key("removed"));
+}
+
+#[test]
 fn project_uses_data_paths_and_direct_code_outputs() {
     let project = write_project();
     let opened =

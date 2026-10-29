@@ -9,3 +9,4 @@ beta: Item {
 Settings: Settings { start: &Item::alpha }
 
 keyword: class { namespace: "public" }
+collision: NamedCollision {}

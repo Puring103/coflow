@@ -25,9 +25,12 @@ public sealed class CfdValueType<T> : CfdValueType
     private readonly string? _dimension;
     internal CfdValueType(Func<LoadContext, CfdValueNode, CfdReader, T> read, bool optional = false, string? namedType = null, string? dimension = null, Func<T, string?>? formatScalar = null)
     { _read = read; _optional = optional; _namedType = namedType; _dimension = dimension; _formatScalar = formatScalar; }
-    internal override string? FormatScalar(object? value) => _formatScalar == null ? null : _formatScalar((T)value!);
+    internal string? FormatValue(T value) => _formatScalar == null ? null : _formatScalar(value);
+    internal override string? FormatScalar(object? value) => FormatValue((T)value!);
     internal override string? Dimension => _dimension;
-    internal override object? Read(LoadContext context, CfdValueNode node, CfdReader owner) => _read(context, context.ResolveConstant(node), owner);
+    // 泛型组合保持 T，只有字段缓存的 object 边界需要装箱。
+    internal T ReadValue(LoadContext context, CfdValueNode node, CfdReader owner) => _read(context, context.ResolveConstant(node), owner);
+    internal override object? Read(LoadContext context, CfdValueNode node, CfdReader owner) => ReadValue(context, node, owner);
     internal override string? NamedType => _namedType;
     internal override bool IsOptional => _optional;
 }
@@ -50,24 +53,24 @@ public enum CfdTypeKind { Table, Data, Singleton }
 
 public abstract class CfdType
 {
-    private readonly Dictionary<string, CfdField> _fieldsByName;
+    private readonly Dictionary<string, int> _ordinals;
     protected CfdType(string name, CfdTypeKind kind, Type valueType, IReadOnlyList<CfdField> fields, string? parent, bool abstractType)
     {
         Name = name; Kind = kind; ValueType = valueType; Parent = parent; IsAbstract = abstractType;
         // 描述符在类型创建时复制并建立索引，所有记录与维度视图共享稳定的字段布局。
         var snapshot = new CfdField[fields.Count];
-        _fieldsByName = new Dictionary<string, CfdField>(fields.Count, StringComparer.Ordinal);
+        _ordinals = new Dictionary<string, int>(fields.Count, StringComparer.Ordinal);
         for (var index = 0; index < snapshot.Length; index++)
         {
             var field = fields[index];
             snapshot[index] = field;
-            _fieldsByName.Add(field.Name, field);
+            _ordinals.Add(field.Name, index);
         }
         Fields = snapshot;
     }
     public string Name { get; }
-    internal IReadOnlyList<CfdField> Fields { get; }
-    internal CfdField? FindField(string name) => _fieldsByName.TryGetValue(name, out var field) ? field : null;
+    internal CfdField[] Fields { get; }
+    internal int FindOrdinal(string name) => _ordinals.TryGetValue(name, out var ordinal) ? ordinal : -1;
     internal CfdTypeKind Kind { get; }
     internal Type ValueType { get; }
     internal abstract object BuildTable(IReadOnlyList<RecordState> records);
@@ -96,12 +99,12 @@ public sealed class CfdType<T> : CfdType
     internal override object Construct(CfdReader reader) => _construct!(reader)!;
     internal override object BuildTable(IReadOnlyList<RecordState> records)
     {
-        var values = new Dictionary<string, T>(StringComparer.Ordinal);
-        foreach (var record in records) if (record.Value is T value) values.Add(record.Node.Id, value);
+        var values = new Dictionary<string, T>(records.Count, StringComparer.Ordinal);
+        foreach (var record in records) values.Add(record.Node.Id, (T)record.Value);
         return new Table<T>(values);
     }
     internal override object BuildSingleton(IReadOnlyList<RecordState> records)
-        => records.Single(record => record.Value is T).Value;
+        => records[0].Value;
 }
 
 public static class CfdDefaults
@@ -189,20 +192,34 @@ public static class CfdValues
         if (node is CfdNoneValue) return Option<T>.None;
         // 裸值与 Some(value) 均只物化一层，内部 None 留给下一层描述读取。
         var inner = node is CfdSomeValue some ? some.Value : node;
-        return Option<T>.Some((T)type.Read(context, inner, owner)!);
+        var value = type.ReadValue(context, inner, owner);
+        return owner.ValidationOnly ? default : Option<T>.Some(value);
     }, true, type.NamedType);
-    public static CfdValueType<IReadOnlyList<T>> List<T>(CfdValueType<T> type) => new CfdValueType<IReadOnlyList<T>>((context, node, owner) => node is CfdArrayValue array ? System.Array.AsReadOnly(array.Items.Select(value => (T)type.Read(context, value, owner)!).ToArray()) : throw owner.Error(node, "CFD-TYPE", "expected array"));
+    public static CfdValueType<IReadOnlyList<T>> List<T>(CfdValueType<T> type) => new CfdValueType<IReadOnlyList<T>>((context, node, owner) =>
+    {
+        if (!(node is CfdArrayValue array)) throw owner.Error(node, "CFD-TYPE", "expected array");
+        var values = owner.ValidationOnly ? null : new T[array.Items.Count];
+        for (var index = 0; index < array.Items.Count; index++)
+        {
+            var value = type.ReadValue(context, array.Items[index], owner);
+            if (values != null) values[index] = value;
+        }
+        return values == null ? null! : System.Array.AsReadOnly(values);
+    });
     public static CfdValueType<IReadOnlyDictionary<K, V>> Dictionary<K, V>(CfdValueType<K> keyType, CfdValueType<V> valueType) where K : notnull => new CfdValueType<IReadOnlyDictionary<K, V>>((context, node, owner) =>
     {
         if (!(node is CfdDictionaryValue dictionary)) throw owner.Error(node, "CFD-TYPE", "expected dictionary");
-        var values = new Dictionary<K, V>();
+        var values = owner.ValidationOnly ? null : new Dictionary<K, V>(dictionary.Entries.Count);
+        // 校验和物化共用类型、顺序与重复键检查；仅校验时保留键集合即可。
+        var keys = owner.ValidationOnly ? new HashSet<K>() : null;
         foreach (var entry in dictionary.Entries)
         {
-            var key = (K)keyType.Read(context, entry.Key, owner)!;
-            if (values.ContainsKey(key)) throw owner.Error(entry.Key, "CFD-DUPLICATE", "duplicate dictionary key");
-            values.Add(key, (V)valueType.Read(context, entry.Value, owner)!);
+            var key = keyType.ReadValue(context, entry.Key, owner);
+            if (values != null ? values.ContainsKey(key) : !keys!.Add(key)) throw owner.Error(entry.Key, "CFD-DUPLICATE", "duplicate dictionary key");
+            var value = valueType.ReadValue(context, entry.Value, owner);
+            values?.Add(key, value);
         }
-        return new ReadOnlyDictionary<K, V>(values);
+        return values == null ? null! : new ReadOnlyDictionary<K, V>(values);
     });
     public static CfdValueType<T> Object<T>(string type) => new CfdValueType<T>((context, node, owner) => context.ReadObject<T>(type, node, owner), namedType: type);
     public static CfdValueType<T> Reference<T>(string type) where T : class => new CfdValueType<T>((context, node, owner) => context.ReadReference<T>(type, node, owner), namedType: type);
@@ -261,6 +278,6 @@ public static class CfdValues
         return Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
     });
     public static CfdValueType<T> Dimension<T>(string dimension, CfdValueType<T> type)
-        => new CfdValueType<T>((context, node, owner) => (T)type.Read(context, node, owner)!, type.IsOptional, type.NamedType, dimension, value => type.FormatScalar(value));
+        => new CfdValueType<T>((context, node, owner) => type.ReadValue(context, node, owner), type.IsOptional, type.NamedType, dimension, type.FormatValue);
 }
 }

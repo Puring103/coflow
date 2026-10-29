@@ -34,6 +34,7 @@ fn all(files: &[GeneratedFile]) -> String {
         .replace("global::Coflow.Loader.", "")
         .replace("global::System.Collections.Generic.", "")
         .replace("global::System.", "")
+        .replace("global::", "")
 }
 
 #[test]
@@ -76,7 +77,8 @@ fn inheritance_preserves_shared_record_identity() {
     assert!(text.contains("public abstract partial class Base"));
     assert!(text.contains("public partial class Child : Base"));
     assert!(text.contains("internal Child(string id) : base(id)"));
-    assert!(text.contains("value.name = reader.Get<string>(\"name\")"));
+    assert!(text.contains("value.name = reader.Get<string>(0)"));
+    assert!(text.contains("value.count = reader.Get<int>(1)"));
     assert!(text.contains("parent: \"Base\""));
     assert!(text.contains("abstractType: true"));
 }
@@ -134,7 +136,7 @@ fn enums_flags_constants_and_namespaces_use_loader_contracts() {
         all(&emit::generate(&schema, "Game.Config", &IdAsEnumValues::new()).expect("generate"));
     assert!(text.contains("namespace Game.Config"));
     assert!(text.contains("[Flags]"));
-    assert!(text.contains("bits => (Flags)bits"));
+    assert!(text.contains("bits => (Game.Config.Flags)bits"));
     assert!(text.contains("[\"SIZE\"] = CfdDefaults.Int(3L)"));
 }
 
@@ -215,9 +217,68 @@ fn language_names_are_escaped_only_in_generated_csharp_identifiers() {
     assert!(text.contains("public string @namespace"));
     assert!(text.contains("public enum @event"));
     assert!(text.contains("@public = 0"));
-    assert!(text.contains("value.@namespace = reader.Get<string>(\"namespace\")"));
-    assert!(text.contains("CfdType<@class>(\"class\""));
-    assert!(text.contains("[\"public\"] = @event.@public"));
+    assert!(text.contains("value.@namespace = reader.Get<string>(0)"));
+    assert!(text.contains("CfdType<@namespace.@class.@class>(\"class\""));
+    assert!(text.contains("[\"public\"] = @namespace.@class.@event.@public"));
+}
+
+#[test]
+fn generated_member_names_do_not_shadow_business_types() {
+    let schema = schema("enum Types { Normal } enum Constants { Normal } enum Table { Normal } table Item { types: Types; constants: Constants; table_value: Table; }");
+    for namespace in ["", "Game.Config"] {
+        let files = emit::generate(&schema, namespace, &IdAsEnumValues::new()).expect("generate");
+        let source = files
+            .iter()
+            .find(|file| file.relative_path == *"CoflowData.cs")
+            .expect("loader");
+        let prefix = if namespace.is_empty() {
+            "global::"
+        } else {
+            "global::Game.Config."
+        };
+        for name in ["Types", "Constants", "Table"] {
+            assert!(source.contents.contains(&format!("{prefix}{name}.Normal")));
+        }
+    }
+}
+
+#[test]
+fn inherited_id_enum_mapping_is_shared_and_rejects_duplicate_values() {
+    let schema = schema("enum Ids {} @idAsEnum(Ids) abstract table Base {} table First: Base {} table Second: Base {}");
+    let mut values = IdAsEnumValues::from([(
+        "Ids".into(),
+        std::collections::BTreeMap::from([("a".into(), 0), ("b".into(), 1)]),
+    )]);
+    let text = all(&emit::generate(&schema, "Game.Config", &values).expect("generate"));
+    assert_eq!(text.matches("new TableIdMap<").count(), 1);
+    assert!(text.contains("internal static class Ids_Cft_"));
+    assert_eq!(text.matches("Game.Config.Ids.a] = \"a\"").count(), 1);
+    assert_eq!(text.matches(".GetId(id)").count(), 3);
+    values
+        .get_mut("Ids")
+        .expect("mapping")
+        .insert("b".into(), 0);
+    assert!(emit::generate(&schema, "Game.Config", &values)
+        .expect_err("duplicate value")
+        .to_string()
+        .contains("duplicate stable value"));
+}
+
+#[test]
+fn id_enum_generator_rejects_invalid_stable_values() {
+    for (annotation, value) in [("", -1), ("@flag", 0), ("@flag", 3)] {
+        let schema = schema(&format!(
+            "{annotation} enum Ids {{}} @idAsEnum(Ids) table Row {{}}"
+        ));
+        let values = IdAsEnumValues::from([(
+            "Ids".into(),
+            std::collections::BTreeMap::from([("row".into(), value)]),
+        )]);
+        assert!(emit::generate(&schema, "", &values)
+            .expect_err("invalid stable value")
+            .to_string()
+            .contains("invalid stable value"));
+    }
 }
 
 #[test]

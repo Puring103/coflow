@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-30",
+  "comparison": "本轮优化前的已优化Loader与0.15.0候选实现",
+  "baselineCommit": "7854472451e57ff8c4b805fef0cd525ba9c2e393",
+  "initialProjectCommit": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "runtime": [
+    "Microsoft.AspNetCore.App 8.0.32 [C:\\Program Files\\dotnet\\shared\\Microsoft.AspNetCore.App]",
+    "Microsoft.NETCore.App 8.0.32 [C:\\Program Files\\dotnet\\shared\\Microsoft.NETCore.App]",
+    "Microsoft.NETCore.App 10.0.13 [C:\\Program Files\\dotnet\\shared\\Microsoft.NETCore.App]",
+    "Microsoft.WindowsDesktop.App 8.0.32 [C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App]",
+    "Microsoft.WindowsDesktop.App 10.0.13 [C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App]"
+  ],
+  "sdk": "8.0.426",
+  "os": {
+    "Caption": "Microsoft Windows 11 家庭版",
+    "Version": "10.0.26300",
+    "TotalVisibleMemorySize": 33389444
+  },
+  "cpu": {
+    "Name": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "NumberOfCores": 14,
+    "NumberOfLogicalProcessors": 20
+  },
+  "configuration": "Release",
+  "DOTNET_TieredCompilation": "0",
+  "command": "--suite all --records 500 --samples 7 --warmups 2",
+  "execution": "baseline then optimized; no concurrent agent builds or tests",
+  "baselineSources": [
+    {
+      "path": "Coflow.Loader.csproj",
+      "sha256": "60120e34d9b93bc8b43e94018ca8453265698e23a53a4d674f81b33ec10f75aa"
+    },
+    {
+      "path": "Descriptors.cs",
+      "sha256": "0c402af2579f4607b64d3efd03205e6082aeaaa83480a8b17639b7bde3317f90"
+    },
+    {
+      "path": "Dimensions.cs",
+      "sha256": "5ff09532ad32bfaa360ddec5477a55fb6a47b1b3d2f2ca16d730682a6c1c6c18"
+    },
+    {
+      "path": "Loading.cs",
+      "sha256": "55ccc52aec23d54f794cfb9c8c2047b90032842310bd16217016641e6c33a75e"
+    },
+    {
+      "path": "Option.cs",
+      "sha256": "323589599862d7fd47751414d2b5b73d31d22f9c9fd805960d101a8a97031fa6"
+    },
+    {
+      "path": "Table.cs",
+      "sha256": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884"
+    },
+    {
+      "path": "Cfd/CfdDiagnostics.cs",
+      "sha256": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014"
+    },
+    {
+      "path": "Cfd/CfdIdentifiers.cs",
+      "sha256": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34"
+    },
+    {
+      "path": "Cfd/CfdNodes.cs",
+      "sha256": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81"
+    },
+    {
+      "path": "Cfd/CfdParser.cs",
+      "sha256": "0f6bd9636365684e24bb772e2e5074d034685b0991e4cd056bc6a01f28db3c6c"
+    },
+    {
+      "path": "Cfd/CfdSource.cs",
+      "sha256": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92"
+    },
+    {
+      "path": "Cfd/CfdSpan.cs",
+      "sha256": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00"
+    },
+    {
+      "path": "Cfd/CfdXid.Generated.cs",
+      "sha256": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546"
+    },
+    {
+      "path": "Compatibility/IsExternalInit.cs",
+      "sha256": "0a12270825b5301dc0a9490c73810de94413517649b2438030a5ae6d8b3990c2"
+    }
+  ],
+  "optimizedSources": [
+    {
+      "path": "Coflow.Loader.csproj",
+      "sha256": "e64bde518d2b13359fa9a520290b769e994e82714634e733a5b66a6fd5928786"
+    },
+    {
+      "path": "Descriptors.cs",
+      "sha256": "5850a978782c9c9cfdb045a83a9e1076c52226b8b3fd34443f8ea3bb8741aa73"
+    },
+    {
+      "path": "Dimensions.cs",
+      "sha256": "3c1f1e8f731422a5f115678795b13e2f290ad448195e6488e9084d8b1c367bc2"
+    },
+    {
+      "path": "Loading.cs",
+      "sha256": "71282340c3284a76623249f0dbaa4ec5639f70febb07e04c16c4a52023ab5d26"
+    },
+    {
+      "path": "Option.cs",
+      "sha256": "323589599862d7fd47751414d2b5b73d31d22f9c9fd805960d101a8a97031fa6"
+    },
+    {
+      "path": "Table.cs",
+      "sha256": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884"
+    },
+    {
+      "path": "Cfd/CfdDiagnostics.cs",
+      "sha256": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014"
+    },
+    {
+      "path": "Cfd/CfdIdentifiers.cs",
+      "sha256": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34"
+    },
+    {
+      "path": "Cfd/CfdNodes.cs",
+      "sha256": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81"
+    },
+    {
+      "path": "Cfd/CfdParser.cs",
+      "sha256": "5e1b38140b8b0c521ec1e3a85c20d9ec8397cda12f393dfbfee672f45fb29e77"
+    },
+    {
+      "path": "Cfd/CfdSource.cs",
+      "sha256": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92"
+    },
+    {
+      "path": "Cfd/CfdSpan.cs",
+      "sha256": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00"
+    },
+    {
+      "path": "Cfd/CfdXid.Generated.cs",
+      "sha256": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546"
+    },
+    {
+      "path": "Compatibility/IsExternalInit.cs",
+      "sha256": "0a12270825b5301dc0a9490c73810de94413517649b2438030a5ae6d8b3990c2"
+    }
+  ],
+  "benchmarkSources": [
+    {
+      "path": "BenchmarkRunner.cs",
+      "sha256": "60bbab21cbe54ae14ca54985973159b349a1797f1b29ee78ab426cb20ea15227"
+    },
+    {
+      "path": "Coflow.Loader.Benchmarks.csproj",
+      "sha256": "fd03b930a8db50451e2e36d7245a1c5b78246eea85548117d3de19ce3183dc4c"
+    },
+    {
+      "path": "Fixtures.cs",
+      "sha256": "e5622392b56c41f159c9579356817602d07cffe339c1e7241896785a9082b2e3"
+    },
+    {
+      "path": "Program.cs",
+      "sha256": "b065f5078e667c11cc5276e3e8a8d522dc4bde793d5dbb2aa451db52e7c94496"
+    }
+  ],
+  "baselineBinarySha256": "d6d65d149fd8e0246ec2ca29857a8783af9e92738bfa9ec45691cdc5df20199f",
+  "optimizedBinarySha256": "6604a9eba6cf9904ff1a7b9ac124268ce2226214d4f04c79ac73c0de3c3f2d2e"
+}

@@ -1,0 +1,342 @@
+{
+  "baseline": [
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "phase": "construction",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        544032,
+        544032,
+        544032,
+        544032,
+        544032
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "phase": "full-load",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        544032,
+        544032,
+        544032,
+        544032,
+        544032
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 3,
+      "phase": "construction",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        2176035,
+        2176035,
+        2176035,
+        2176035,
+        2176035
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 3,
+      "phase": "full-load",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        2176035,
+        2176035,
+        2176035,
+        2176035,
+        2176035
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "phase": "construction",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        8320128,
+        8320128,
+        8320128,
+        8320128,
+        8320128
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "phase": "full-load",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        8320128,
+        8320128,
+        8320128,
+        8320128,
+        8320128
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "phase": "construction",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        33280131,
+        33280131,
+        33280131,
+        33280131,
+        33280131
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "phase": "full-load",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        33280131,
+        33280131,
+        33280131,
+        33280131,
+        33280131
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "phase": "construction",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        131584512,
+        131584512,
+        131584512,
+        131584512,
+        131584512
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "phase": "full-load",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        131584512,
+        131584512,
+        131584512,
+        131584512,
+        131584512
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 3,
+      "phase": "construction",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        526336515,
+        526336515,
+        526336515,
+        526336515,
+        526336515
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 3,
+      "phase": "full-load",
+      "schemaDescriptorReads": 0,
+      "sourceDescriptorReads": [
+        526336515,
+        526336515,
+        526336515,
+        526336515,
+        526336515
+      ]
+    }
+  ],
+  "optimized": [
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "phase": "construction",
+      "schemaDescriptorReads": 32,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "phase": "full-load",
+      "schemaDescriptorReads": 32,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 3,
+      "phase": "construction",
+      "schemaDescriptorReads": 32,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 3,
+      "phase": "full-load",
+      "schemaDescriptorReads": 32,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "phase": "construction",
+      "schemaDescriptorReads": 128,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "phase": "full-load",
+      "schemaDescriptorReads": 128,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "phase": "construction",
+      "schemaDescriptorReads": 128,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "phase": "full-load",
+      "schemaDescriptorReads": 128,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "phase": "construction",
+      "schemaDescriptorReads": 512,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "phase": "full-load",
+      "schemaDescriptorReads": 512,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 3,
+      "phase": "construction",
+      "schemaDescriptorReads": 512,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 3,
+      "phase": "full-load",
+      "schemaDescriptorReads": 512,
+      "sourceDescriptorReads": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

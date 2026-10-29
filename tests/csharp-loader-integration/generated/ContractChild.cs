@@ -3,7 +3,7 @@
 
 namespace Game.Config
 {
-public sealed partial class ContractChild : ContractBase
+public sealed partial class ContractChild : global::Game.Config.ContractBase
 {
     internal ContractChild() { }
     public int score { get; internal set; } = default!;

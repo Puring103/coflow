@@ -12,7 +12,7 @@ public partial class NumericValues : global::Coflow.Loader.ICfdRecord
     public long wide { get; internal set; } = default!;
     public float rounded { get; internal set; } = default!;
     public double precise { get; internal set; } = default!;
-    public NumericBits bits { get; internal set; } = default!;
-    public NumericCode code { get; internal set; } = default!;
+    public global::Game.Config.NumericBits bits { get; internal set; } = default!;
+    public global::Game.Config.NumericCode code { get; internal set; } = default!;
 }
 }

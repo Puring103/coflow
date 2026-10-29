@@ -5,6 +5,6 @@ namespace Game.Config
 {
 public partial struct CfdField
 {
-    public Empty settings { get; internal set; }
+    public global::Game.Config.Empty settings { get; internal set; }
 }
 }

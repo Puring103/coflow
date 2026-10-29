@@ -18,6 +18,10 @@ internal static class Program
         var loaded = CoflowData.Load(sources);
         Require(loaded.Success, string.Join("; ", loaded.Diagnostics));
         var data = loaded.Data;
+        var collision = data.Table<NamedCollision>().Get(Ids.collision);
+        Require(collision.types == Types.Normal && collision.constants == Constants.Normal
+            && collision.table_value == Game.Config.Table.Normal && collision.load == Game.Config.Load.Normal
+            && collision.singleton_value == Singleton.Normal, "generated helper names never shadow business enum types");
         var alpha = data.Table<Item>()["alpha"];
         var beta = data.Table<Item>()["beta"];
         Require(data.Table<@class>()["keyword"].@namespace == "public" && data.Table<@class>()["keyword"].state == @event.@public, "C# keywords are escaped in all generated declarations and accesses");

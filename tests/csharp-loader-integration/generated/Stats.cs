@@ -6,6 +6,6 @@ namespace Game.Config
 public partial struct Stats
 {
     public int hp { get; internal set; }
-    public CfdField extra { get; internal set; }
+    public global::Game.Config.CfdField extra { get; internal set; }
 }
 }

@@ -3,14 +3,14 @@
 
 namespace Game.Config
 {
-public partial class Item : Entity
+public partial class Item : global::Game.Config.Entity
 {
     internal Item(string id) : base(id) { }
-    public Stats stats { get; internal set; } = default!;
+    public global::Game.Config.Stats stats { get; internal set; } = default!;
     public int price { get; internal set; } = default!;
-    public global::Coflow.Loader.Option<Item> next { get; internal set; } = default!;
+    public global::Coflow.Loader.Option<global::Game.Config.Item> next { get; internal set; } = default!;
     public string label { get; internal set; } = default!;
-    public Flags permissions { get; internal set; } = default!;
+    public global::Game.Config.Flags permissions { get; internal set; } = default!;
     public string enum_label { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyList<int> nums { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyDictionary<string, int> indexed { get; internal set; } = default!;

@@ -1,0 +1,2885 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-30",
+  "baselineCommit": "7854472451e57ff8c4b805fef0cd525ba9c2e393",
+  "baselineDescription": "本轮开始冻结的前一轮已优化 C# Loader",
+  "optimizedVersion": "0.15.0",
+  "metadata": "csharp-loader-0.15.0-metadata.json",
+  "rawData": {
+    "before": {
+      "path": "csharp-loader-0.15.0-before.ndjson",
+      "sha256": "831992d1f2274631b9663115c688df0dd4552336be221bdcb6f61e594c3edf3f"
+    },
+    "after": {
+      "path": "csharp-loader-0.15.0-after.ndjson",
+      "sha256": "cb9358b16d9676a10b8e22386e2d1a668a016f36b691c13be5d09812f397d750"
+    }
+  },
+  "protocol": {
+    "command": "--suite all --records 500 --samples 7 --warmups 2",
+    "configuration": "Release",
+    "targetFramework": "net8.0",
+    "runtime": "Microsoft.NETCore.App 8.0.32",
+    "sdk": "8.0.426",
+    "DOTNET_TieredCompilation": "0",
+    "execution": "baseline then optimized; no concurrent agent builds or tests",
+    "recordCount": 500,
+    "warmups": 2,
+    "samplesPerCase": 7,
+    "readerAccess": "string",
+    "ordinalApiBenefitMeasured": false,
+    "gcBeforeSample": true,
+    "megabyteBytes": 1000000,
+    "allocationMetric": "GC.GetAllocatedBytesForCurrentThread; cumulative allocated bytes in timed operation, not peak or retained memory",
+    "preparationAndAssertionsTimed": false
+  },
+  "pairing": {
+    "matchedScenarioCount": 48,
+    "comparedFields": [
+      "suite",
+      "fixture",
+      "phase",
+      "phaseDescription",
+      "recordCount",
+      "fieldCount",
+      "variantCount",
+      "typeCount",
+      "overrideDensity",
+      "overrideRecordCount",
+      "overrideFieldCount",
+      "sourceCharacters",
+      "sourceSha256",
+      "readerAccess",
+      "countDescriptors",
+      "schemaDescriptorReads",
+      "warmups",
+      "sampleCount",
+      "meetsSevenSampleMinimum",
+      "gcBeforeSample",
+      "allocationMetric",
+      "operationsPerSample",
+      "sourceDescriptorReads"
+    ],
+    "allComparedFieldsMatched": true,
+    "onlyIntentionalFlagDifference": "boundLoader false -> true selects internal CfdData constructor",
+    "distinctInputPhaseCount": 46,
+    "duplicateWorkloads": "wide and variants each measure 128 fields / 3 sparse variants in construction and full-load"
+  },
+  "overview": {
+    "timeMedianImprovedCount": 48,
+    "allocationMedianImprovedCount": 48,
+    "timeMedianRegressions": [],
+    "allocationMedianRegressions": [],
+    "afterMaximumBelowBeforeMinimumCount": 45,
+    "overlappingTimeRangeScenarios": [
+      "parser/realistic/f9/v3/sparse/t2/parser-only",
+      "parser/realistic/f9/v3/dense/t2/parser-only",
+      "tables/many-tables/f1/v0/none/t1/table-registration"
+    ],
+    "timeReductionPercentRange": {
+      "minimum": 11.100653,
+      "maximum": 96.079924
+    },
+    "allocationReductionPercentRange": {
+      "minimum": 38.578009,
+      "maximum": 100.0
+    },
+    "overallAverageSpeedup": null
+  },
+  "limitations": [
+    "Seven samples per case report median and observed range; no stable P95, confidence interval or significance claim.",
+    "Baseline full matrix precedes optimized full matrix; no randomized interleaving or repeated process-level runs.",
+    "All cases use the common string Get API. Generated ordinal calls are not measured.",
+    "Current-thread allocation is neither process peak nor retained memory. Forced GC does not reproduce application GC scheduling.",
+    "For cached cases, 50000 calls are measured after priming; zero measured allocation does not apply to first views or arbitrary dimension combinations.",
+    "Table-registration excludes context and type-index preparation. Construction and full-load include this work.",
+    "No Unity, Mono, IL2CPP, mobile-device or actual game-project measurements.",
+    "Do not combine these samples with earlier reports that use a different baseline, sample protocol or fixture suite."
+  ],
+  "scenarios": [
+    {
+      "index": 1,
+      "id": "wide/wide/f32/v0/sparse/t1/construction",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 113390,
+      "sourceSha256": "B0B675ADBB693F7761B26CB4C37BFC4D48C463FA5D67C0391146562910D5A326",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 3.3061,
+          "median": 3.4608,
+          "maximum": 3.4943,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 4486064,
+          "median": 4486064,
+          "maximum": 4486064,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3460800.0,
+        "allocatedBytesPerOperation": 4486064
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 1.2439,
+          "median": 1.2918,
+          "maximum": 1.3531,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1148072,
+          "median": 1148072,
+          "maximum": 1148072,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 1291800.0,
+        "allocatedBytesPerOperation": 1148072
+      },
+      "change": {
+        "timeReductionPercent": 62.67337,
+        "allocationReductionPercent": 74.408033,
+        "speedupRatio": 2.679052,
+        "timeMedianDeltaMs": -2.169,
+        "allocationMedianDeltaBytes": -3337992
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 2,
+      "id": "wide/wide/f32/v0/sparse/t1/full-load",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 113390,
+      "sourceSha256": "B0B675ADBB693F7761B26CB4C37BFC4D48C463FA5D67C0391146562910D5A326",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 10.0915,
+          "median": 10.5834,
+          "maximum": 12.0531,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 17870808,
+          "median": 17870808,
+          "maximum": 17870808,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 10583400.0,
+        "allocatedBytesPerOperation": 17870808
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 3.0758,
+          "median": 3.3029,
+          "maximum": 3.5607,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 4828816,
+          "median": 4828816,
+          "maximum": 4828816,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3302900.0,
+        "allocatedBytesPerOperation": 4828816
+      },
+      "change": {
+        "timeReductionPercent": 68.791693,
+        "allocationReductionPercent": 72.979308,
+        "speedupRatio": 3.204275,
+        "timeMedianDeltaMs": -7.2805,
+        "allocationMedianDeltaBytes": -13041992
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 3,
+      "id": "wide/wide/f32/v3/sparse/t1/construction",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 113495,
+      "sourceSha256": "8FAD1ABB93EFB66D190ACB0ED700356F9D85A2F1FE268F441528E25AD27B0022",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 10.482,
+          "median": 10.6996,
+          "maximum": 11.0852,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 11209224,
+          "median": 11209224,
+          "maximum": 11209224,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 10699600.0,
+        "allocatedBytesPerOperation": 11209224
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 2.9095,
+          "median": 2.9377,
+          "maximum": 3.3366,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 3054552,
+          "median": 3054552,
+          "maximum": 3054552,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2937700.0,
+        "allocatedBytesPerOperation": 3054552
+      },
+      "change": {
+        "timeReductionPercent": 72.543833,
+        "allocationReductionPercent": 72.749657,
+        "speedupRatio": 3.642169,
+        "timeMedianDeltaMs": -7.7619,
+        "allocationMedianDeltaBytes": -8154672
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 4,
+      "id": "wide/wide/f32/v3/sparse/t1/full-load",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 113495,
+      "sourceSha256": "8FAD1ABB93EFB66D190ACB0ED700356F9D85A2F1FE268F441528E25AD27B0022",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 17.5036,
+          "median": 17.8533,
+          "maximum": 19.5807,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 24599640,
+          "median": 24599640,
+          "maximum": 24599640,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 17853300.0,
+        "allocatedBytesPerOperation": 24599640
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 4.8408,
+          "median": 4.9499,
+          "maximum": 5.2431,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 6737920,
+          "median": 6737920,
+          "maximum": 6737920,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 4949900.0,
+        "allocatedBytesPerOperation": 6737920
+      },
+      "change": {
+        "timeReductionPercent": 72.274593,
+        "allocationReductionPercent": 72.60968,
+        "speedupRatio": 3.6068,
+        "timeMedianDeltaMs": -12.9034,
+        "allocationMedianDeltaBytes": -17861720
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 5,
+      "id": "wide/wide/f128/v0/sparse/t1/construction",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 463390,
+      "sourceSha256": "481F29E637AFCB12CB55DD67A78D999939E206BC602C7878B2C61BAB967AC47F",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 19.0299,
+          "median": 19.8142,
+          "maximum": 20.1369,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 18224120,
+          "median": 18224120,
+          "maximum": 18224120,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 19814200.0,
+        "allocatedBytesPerOperation": 18224120
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 4.7722,
+          "median": 4.9329,
+          "maximum": 5.135,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 3308072,
+          "median": 3308072,
+          "maximum": 3308072,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 4932900.0,
+        "allocatedBytesPerOperation": 3308072
+      },
+      "change": {
+        "timeReductionPercent": 75.104218,
+        "allocationReductionPercent": 81.847837,
+        "speedupRatio": 4.016745,
+        "timeMedianDeltaMs": -14.8813,
+        "allocationMedianDeltaBytes": -14916048
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 6,
+      "id": "wide/wide/f128/v0/sparse/t1/full-load",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 463390,
+      "sourceSha256": "481F29E637AFCB12CB55DD67A78D999939E206BC602C7878B2C61BAB967AC47F",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 54.4892,
+          "median": 55.358,
+          "maximum": 57.1076,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 71408864,
+          "median": 71408864,
+          "maximum": 71408864,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 55358000.0,
+        "allocatedBytesPerOperation": 71408864
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 17.6123,
+          "median": 18.0582,
+          "maximum": 18.5829,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 17988816,
+          "median": 17988816,
+          "maximum": 17988816,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 18058200.0,
+        "allocatedBytesPerOperation": 17988816
+      },
+      "change": {
+        "timeReductionPercent": 67.379241,
+        "allocationReductionPercent": 74.808707,
+        "speedupRatio": 3.065533,
+        "timeMedianDeltaMs": -37.2998,
+        "allocationMedianDeltaBytes": -53420048
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 7,
+      "id": "wide/wide/f128/v3/sparse/t1/construction",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 463495,
+      "sourceSha256": "31544F8715A2A28D88BE558F50090CB180B42B0133EA67BBB91E9D85F4EE099C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 60.74,
+          "median": 61.9221,
+          "maximum": 63.2292,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 44603280,
+          "median": 44603280,
+          "maximum": 44603280,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 61922100.0,
+        "allocatedBytesPerOperation": 44603280
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 11.9803,
+          "median": 12.239,
+          "maximum": 12.5311,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 9966552,
+          "median": 9966552,
+          "maximum": 9966552,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 12239000.0,
+        "allocatedBytesPerOperation": 9966552
+      },
+      "change": {
+        "timeReductionPercent": 80.234843,
+        "allocationReductionPercent": 77.655114,
+        "speedupRatio": 5.059408,
+        "timeMedianDeltaMs": -49.6831,
+        "allocationMedianDeltaBytes": -34636728
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 8,
+      "id": "wide/wide/f128/v3/sparse/t1/full-load",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 463495,
+      "sourceSha256": "31544F8715A2A28D88BE558F50090CB180B42B0133EA67BBB91E9D85F4EE099C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 93.4822,
+          "median": 107.8508,
+          "maximum": 112.5397,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 97793696,
+          "median": 97793992,
+          "maximum": 97795336,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 107850800.0,
+        "allocatedBytesPerOperation": 97793992
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 24.865,
+          "median": 25.6788,
+          "maximum": 27.6352,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 24649920,
+          "median": 24649920,
+          "maximum": 24649920,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 25678800.0,
+        "allocatedBytesPerOperation": 24649920
+      },
+      "change": {
+        "timeReductionPercent": 76.190441,
+        "allocationReductionPercent": 74.794034,
+        "speedupRatio": 4.199994,
+        "timeMedianDeltaMs": -82.172,
+        "allocationMedianDeltaBytes": -73144072
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 9,
+      "id": "wide/wide/f512/v0/sparse/t1/construction",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 1999390,
+      "sourceSha256": "BB56437DFAF4B3D1F14F030E4FD699F11D50D43AFA302DAA96124C2F7BD01CFD",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 83.0528,
+          "median": 86.2354,
+          "maximum": 87.311,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 79577032,
+          "median": 79577032,
+          "maximum": 79577032,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 86235400.0,
+        "allocatedBytesPerOperation": 79577032
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 20.8265,
+          "median": 23.5795,
+          "maximum": 24.0864,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 11948072,
+          "median": 11948072,
+          "maximum": 11948072,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 23579500.0,
+        "allocatedBytesPerOperation": 11948072
+      },
+      "change": {
+        "timeReductionPercent": 72.656821,
+        "allocationReductionPercent": 84.985527,
+        "speedupRatio": 3.657219,
+        "timeMedianDeltaMs": -62.6559,
+        "allocationMedianDeltaBytes": -67628960
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 10,
+      "id": "wide/wide/f512/v0/sparse/t1/full-load",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 1999390,
+      "sourceSha256": "BB56437DFAF4B3D1F14F030E4FD699F11D50D43AFA302DAA96124C2F7BD01CFD",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 230.5419,
+          "median": 261.4739,
+          "maximum": 272.1012,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 293793776,
+          "median": 293793792,
+          "maximum": 293800856,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 261473900.0,
+        "allocatedBytesPerOperation": 293793792
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 116.6453,
+          "median": 120.3661,
+          "maximum": 128.8292,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 72461184,
+          "median": 72463392,
+          "maximum": 72467104,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 120366100.0,
+        "allocatedBytesPerOperation": 72463392
+      },
+      "change": {
+        "timeReductionPercent": 53.966304,
+        "allocationReductionPercent": 75.335288,
+        "speedupRatio": 2.172322,
+        "timeMedianDeltaMs": -141.1078,
+        "allocationMedianDeltaBytes": -221330400
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 11,
+      "id": "wide/wide/f512/v3/sparse/t1/construction",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 1999495,
+      "sourceSha256": "6501281F62DE5E593C29869F90EAA161A6495E98C9CE332A9E428875FA651342",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 309.5016,
+          "median": 314.2725,
+          "maximum": 321.0781,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 192764200,
+          "median": 192764200,
+          "maximum": 192765016,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 314272500.0,
+        "allocatedBytesPerOperation": 192764200
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 63.4581,
+          "median": 67.0712,
+          "maximum": 71.0855,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 37614552,
+          "median": 37614552,
+          "maximum": 37614552,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 67071200.0,
+        "allocatedBytesPerOperation": 37614552
+      },
+      "change": {
+        "timeReductionPercent": 78.658266,
+        "allocationReductionPercent": 80.486754,
+        "speedupRatio": 4.685655,
+        "timeMedianDeltaMs": -247.2013,
+        "allocationMedianDeltaBytes": -155149648
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 12,
+      "id": "wide/wide/f512/v3/sparse/t1/full-load",
+      "suite": "wide",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 1999495,
+      "sourceSha256": "6501281F62DE5E593C29869F90EAA161A6495E98C9CE332A9E428875FA651342",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 470.1557,
+          "median": 477.0077,
+          "maximum": 497.5328,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 406986624,
+          "median": 406990696,
+          "maximum": 406998816,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 477007700.0,
+        "allocatedBytesPerOperation": 406990696
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 143.7741,
+          "median": 171.6087,
+          "maximum": 183.0747,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 98129920,
+          "median": 98130128,
+          "maximum": 98132480,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 171608700.0,
+        "allocatedBytesPerOperation": 98130128
+      },
+      "change": {
+        "timeReductionPercent": 64.023914,
+        "allocationReductionPercent": 75.888852,
+        "speedupRatio": 2.779624,
+        "timeMedianDeltaMs": -305.399,
+        "allocationMedianDeltaBytes": -308860568
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 13,
+      "id": "parser/wide/f32/v0/sparse/t1/parser-only",
+      "suite": "parser",
+      "fixture": "wide",
+      "phase": "parser-only",
+      "phaseDescription": "Parse all source text into syntax documents; excludes schema binding and object construction.",
+      "recordCount": 500,
+      "fieldCount": 32,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 113390,
+      "sourceSha256": "B0B675ADBB693F7761B26CB4C37BFC4D48C463FA5D67C0391146562910D5A326",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 6.4817,
+          "median": 7.5774,
+          "maximum": 8.7385,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 13384712,
+          "median": 13384712,
+          "maximum": 13384712,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 7577400.0,
+        "allocatedBytesPerOperation": 13384712
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 1.8457,
+          "median": 1.8845,
+          "maximum": 3.248,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 3680712,
+          "median": 3680712,
+          "maximum": 3680712,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 1884500.0,
+        "allocatedBytesPerOperation": 3680712
+      },
+      "change": {
+        "timeReductionPercent": 75.129992,
+        "allocationReductionPercent": 72.500626,
+        "speedupRatio": 4.020907,
+        "timeMedianDeltaMs": -5.6929,
+        "allocationMedianDeltaBytes": -9704000
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 14,
+      "id": "parser/wide/f128/v0/sparse/t1/parser-only",
+      "suite": "parser",
+      "fixture": "wide",
+      "phase": "parser-only",
+      "phaseDescription": "Parse all source text into syntax documents; excludes schema binding and object construction.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 463390,
+      "sourceSha256": "481F29E637AFCB12CB55DD67A78D999939E206BC602C7878B2C61BAB967AC47F",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 27.7263,
+          "median": 30.203,
+          "maximum": 33.2939,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 53184712,
+          "median": 53184712,
+          "maximum": 53184712,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 30203000.0,
+        "allocatedBytesPerOperation": 53184712
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 11.5933,
+          "median": 12.1998,
+          "maximum": 13.1954,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 14680712,
+          "median": 14680712,
+          "maximum": 14680712,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 12199800.0,
+        "allocatedBytesPerOperation": 14680712
+      },
+      "change": {
+        "timeReductionPercent": 59.607324,
+        "allocationReductionPercent": 72.396744,
+        "speedupRatio": 2.475696,
+        "timeMedianDeltaMs": -18.0032,
+        "allocationMedianDeltaBytes": -38504000
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 15,
+      "id": "parser/wide/f512/v0/sparse/t1/parser-only",
+      "suite": "parser",
+      "fixture": "wide",
+      "phase": "parser-only",
+      "phaseDescription": "Parse all source text into syntax documents; excludes schema binding and object construction.",
+      "recordCount": 500,
+      "fieldCount": 512,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 1999390,
+      "sourceSha256": "BB56437DFAF4B3D1F14F030E4FD699F11D50D43AFA302DAA96124C2F7BD01CFD",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 142.2753,
+          "median": 153.8274,
+          "maximum": 174.4109,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 214216728,
+          "median": 214216736,
+          "maximum": 214223792,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 153827400.0,
+        "allocatedBytesPerOperation": 214216736
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 72.4374,
+          "median": 74.3699,
+          "maximum": 81.6383,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 60512720,
+          "median": 60512720,
+          "maximum": 60514552,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 74369900.0,
+        "allocatedBytesPerOperation": 60512720
+      },
+      "change": {
+        "timeReductionPercent": 51.653672,
+        "allocationReductionPercent": 71.751638,
+        "speedupRatio": 2.068409,
+        "timeMedianDeltaMs": -79.4575,
+        "allocationMedianDeltaBytes": -153704016
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 16,
+      "id": "parser/realistic/f9/v3/sparse/t2/parser-only",
+      "suite": "parser",
+      "fixture": "realistic",
+      "phase": "parser-only",
+      "phaseDescription": "Parse all source text into syntax documents; excludes schema binding and object construction.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 158559,
+      "sourceSha256": "8280EB9E0BDB5FC9A6EA8B00F0A28E90DA009705AE5B442E8BE42ED41F8E004C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 2.4925,
+          "median": 2.6051,
+          "maximum": 3.8466,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 6160008,
+          "median": 6160008,
+          "maximum": 6160008,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2605100.0,
+        "allocatedBytesPerOperation": 6160008
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 2.1797,
+          "median": 2.2106,
+          "maximum": 3.228,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 3782360,
+          "median": 3782360,
+          "maximum": 3782360,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2210600.0,
+        "allocatedBytesPerOperation": 3782360
+      },
+      "change": {
+        "timeReductionPercent": 15.143373,
+        "allocationReductionPercent": 38.598132,
+        "speedupRatio": 1.178458,
+        "timeMedianDeltaMs": -0.3945,
+        "allocationMedianDeltaBytes": -2377648
+      },
+      "sampleTimeRangesOverlap": true
+    },
+    {
+      "index": 17,
+      "id": "parser/realistic/f9/v3/dense/t2/parser-only",
+      "suite": "parser",
+      "fixture": "realistic",
+      "phase": "parser-only",
+      "phaseDescription": "Parse all source text into syntax documents; excludes schema binding and object construction.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 1500,
+      "sourceCharacters": 205815,
+      "sourceSha256": "884050FD2149E9A76B455737ED600B3CC22D0435FA5E3E74BBBCB5F42AD91344",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 3.1149,
+          "median": 3.1872,
+          "maximum": 3.7181,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 7777488,
+          "median": 7777488,
+          "maximum": 7777488,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3187200.0,
+        "allocatedBytesPerOperation": 7777488
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 2.7109,
+          "median": 2.8334,
+          "maximum": 3.3276,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 4777088,
+          "median": 4777088,
+          "maximum": 4777088,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2833400.0,
+        "allocatedBytesPerOperation": 4777088
+      },
+      "change": {
+        "timeReductionPercent": 11.100653,
+        "allocationReductionPercent": 38.578009,
+        "speedupRatio": 1.124868,
+        "timeMedianDeltaMs": -0.3538,
+        "allocationMedianDeltaBytes": -3000400
+      },
+      "sampleTimeRangesOverlap": true
+    },
+    {
+      "index": 18,
+      "id": "variants/wide/f128/v3/sparse/t1/construction",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 463495,
+      "sourceSha256": "31544F8715A2A28D88BE558F50090CB180B42B0133EA67BBB91E9D85F4EE099C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 61.2903,
+          "median": 62.849,
+          "maximum": 64.2659,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 44603280,
+          "median": 44603280,
+          "maximum": 44603280,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 62849000.0,
+        "allocatedBytesPerOperation": 44603280
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 11.3965,
+          "median": 11.6579,
+          "maximum": 12.2597,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 9966552,
+          "median": 9966552,
+          "maximum": 9966552,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 11657900.0,
+        "allocatedBytesPerOperation": 9966552
+      },
+      "change": {
+        "timeReductionPercent": 81.450938,
+        "allocationReductionPercent": 77.655114,
+        "speedupRatio": 5.391108,
+        "timeMedianDeltaMs": -51.1911,
+        "allocationMedianDeltaBytes": -34636728
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 19,
+      "id": "variants/wide/f128/v3/sparse/t1/full-load",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 463495,
+      "sourceSha256": "31544F8715A2A28D88BE558F50090CB180B42B0133EA67BBB91E9D85F4EE099C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 94.3914,
+          "median": 104.7896,
+          "maximum": 113.5578,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 97793696,
+          "median": 97793992,
+          "maximum": 97795336,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 104789600.0,
+        "allocatedBytesPerOperation": 97793992
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 23.7181,
+          "median": 25.1503,
+          "maximum": 26.6566,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 24649920,
+          "median": 24649920,
+          "maximum": 24649920,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 25150300.0,
+        "allocatedBytesPerOperation": 24649920
+      },
+      "change": {
+        "timeReductionPercent": 75.99924,
+        "allocationReductionPercent": 74.794034,
+        "speedupRatio": 4.166535,
+        "timeMedianDeltaMs": -79.6393,
+        "allocationMedianDeltaBytes": -73144072
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 20,
+      "id": "variants/wide/f128/v3/dense/t1/construction",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 192000,
+      "sourceCharacters": 1853611,
+      "sourceSha256": "169B4F901451F08207B459A865469CB5A6CF61861BEA2D5501AFB126BEA69C1B",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 105.8658,
+          "median": 110.3441,
+          "maximum": 114.9661,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 77055600,
+          "median": 77055600,
+          "maximum": 77055600,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 110344100.0,
+        "allocatedBytesPerOperation": 77055600
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 37.011,
+          "median": 41.3518,
+          "maximum": 42.554,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 30529856,
+          "median": 30529856,
+          "maximum": 30529856,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 41351800.0,
+        "allocatedBytesPerOperation": 30529856
+      },
+      "change": {
+        "timeReductionPercent": 62.524684,
+        "allocationReductionPercent": 60.379445,
+        "speedupRatio": 2.668423,
+        "timeMedianDeltaMs": -68.9923,
+        "allocationMedianDeltaBytes": -46525744
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 21,
+      "id": "variants/wide/f128/v3/dense/t1/full-load",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 3,
+      "typeCount": 1,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 192000,
+      "sourceCharacters": 1853611,
+      "sourceSha256": "169B4F901451F08207B459A865469CB5A6CF61861BEA2D5501AFB126BEA69C1B",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 282.554,
+          "median": 285.3813,
+          "maximum": 300.9474,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 289650560,
+          "median": 289650600,
+          "maximum": 289652008,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 285381300.0,
+        "allocatedBytesPerOperation": 289650600
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 109.2284,
+          "median": 137.9466,
+          "maximum": 147.0562,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 89108192,
+          "median": 89108200,
+          "maximum": 89108296,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 137946600.0,
+        "allocatedBytesPerOperation": 89108200
+      },
+      "change": {
+        "timeReductionPercent": 51.662355,
+        "allocationReductionPercent": 69.235969,
+        "speedupRatio": 2.068781,
+        "timeMedianDeltaMs": -147.4347,
+        "allocationMedianDeltaBytes": -200542400
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 22,
+      "id": "variants/wide/f128/v12/sparse/t1/construction",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 12,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 12,
+      "overrideFieldCount": 12,
+      "sourceCharacters": 463812,
+      "sourceSha256": "C74038C5E7732FA0DADF20332335CE944C344A0B0AC7EE85419879DC122E0168",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 171.8792,
+          "median": 173.5428,
+          "maximum": 180.5199,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 123738784,
+          "median": 123738784,
+          "maximum": 123738784,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 173542800.0,
+        "allocatedBytesPerOperation": 123738784
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 37.7953,
+          "median": 41.6054,
+          "maximum": 44.3189,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 29941280,
+          "median": 29941280,
+          "maximum": 29941280,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 41605400.0,
+        "allocatedBytesPerOperation": 29941280
+      },
+      "change": {
+        "timeReductionPercent": 76.025856,
+        "allocationReductionPercent": 75.802833,
+        "speedupRatio": 4.17116,
+        "timeMedianDeltaMs": -131.9374,
+        "allocationMedianDeltaBytes": -93797504
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 23,
+      "id": "variants/wide/f128/v12/sparse/t1/full-load",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 12,
+      "typeCount": 1,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 12,
+      "overrideFieldCount": 12,
+      "sourceCharacters": 463812,
+      "sourceSha256": "C74038C5E7732FA0DADF20332335CE944C344A0B0AC7EE85419879DC122E0168",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 218.3961,
+          "median": 225.8388,
+          "maximum": 229.9533,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 176946288,
+          "median": 176946288,
+          "maximum": 176946648,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 225838800.0,
+        "allocatedBytesPerOperation": 176946288
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 53.4274,
+          "median": 56.8808,
+          "maximum": 60.7135,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 44632592,
+          "median": 44632592,
+          "maximum": 44632592,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 56880800.0,
+        "allocatedBytesPerOperation": 44632592
+      },
+      "change": {
+        "timeReductionPercent": 74.81354,
+        "allocationReductionPercent": 74.776192,
+        "speedupRatio": 3.970387,
+        "timeMedianDeltaMs": -168.958,
+        "allocationMedianDeltaBytes": -132313696
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 24,
+      "id": "variants/wide/f128/v12/dense/t1/construction",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 12,
+      "typeCount": 1,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 6000,
+      "overrideFieldCount": 768000,
+      "sourceCharacters": 6024276,
+      "sourceSha256": "12213F86D5C4142B4F89E1ACCE36E5CDDC6264FFD2CE2113BE8569E32354770D",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 419.7764,
+          "median": 440.5561,
+          "maximum": 454.4587,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 263940592,
+          "median": 263940592,
+          "maximum": 263940592,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 440556100.0,
+        "allocatedBytesPerOperation": 263940592
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 211.6492,
+          "median": 221.4015,
+          "maximum": 233.608,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 112635256,
+          "median": 112635256,
+          "maximum": 112635328,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 221401500.0,
+        "allocatedBytesPerOperation": 112635256
+      },
+      "change": {
+        "timeReductionPercent": 49.744993,
+        "allocationReductionPercent": 57.325527,
+        "speedupRatio": 1.989851,
+        "timeMedianDeltaMs": -219.1546,
+        "allocationMedianDeltaBytes": -151305336
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 25,
+      "id": "variants/wide/f128/v12/dense/t1/full-load",
+      "suite": "variants",
+      "fixture": "wide",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 128,
+      "variantCount": 12,
+      "typeCount": 1,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 6000,
+      "overrideFieldCount": 768000,
+      "sourceCharacters": 6024276,
+      "sourceSha256": "12213F86D5C4142B4F89E1ACCE36E5CDDC6264FFD2CE2113BE8569E32354770D",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 1011.064,
+          "median": 1031.9654,
+          "maximum": 1068.2696,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 954766280,
+          "median": 954766312,
+          "maximum": 954767496,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 1031965400.0,
+        "allocatedBytesPerOperation": 954766312
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 491.469,
+          "median": 533.6827,
+          "maximum": 545.6201,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 302906464,
+          "median": 302906464,
+          "maximum": 302907488,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 533682700.0,
+        "allocatedBytesPerOperation": 302906464
+      },
+      "change": {
+        "timeReductionPercent": 48.284826,
+        "allocationReductionPercent": 68.274282,
+        "speedupRatio": 1.933668,
+        "timeMedianDeltaMs": -498.2827,
+        "allocationMedianDeltaBytes": -651859848
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 26,
+      "id": "realistic/realistic/f9/v0/sparse/t2/construction",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 0,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 158424,
+      "sourceSha256": "6E4C6831C8206D8C2D1C5F700657D3B5BC93D3409F296A8079768425BD555E09",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 2.1069,
+          "median": 2.2276,
+          "maximum": 3.3418,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 4072856,
+          "median": 4072856,
+          "maximum": 4072856,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2227600.0,
+        "allocatedBytesPerOperation": 4072856
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 1.0062,
+          "median": 1.0185,
+          "maximum": 1.3557,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1343200,
+          "median": 1343200,
+          "maximum": 1343200,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 1018500.0,
+        "allocatedBytesPerOperation": 1343200
+      },
+      "change": {
+        "timeReductionPercent": 54.278147,
+        "allocationReductionPercent": 67.020685,
+        "speedupRatio": 2.187138,
+        "timeMedianDeltaMs": -1.2091,
+        "allocationMedianDeltaBytes": -2729656
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 27,
+      "id": "realistic/realistic/f9/v0/sparse/t2/full-load",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 0,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 158424,
+      "sourceSha256": "6E4C6831C8206D8C2D1C5F700657D3B5BC93D3409F296A8079768425BD555E09",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 4.7847,
+          "median": 4.943,
+          "maximum": 5.557,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 10228400,
+          "median": 10228400,
+          "maximum": 10228400,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 4943000.0,
+        "allocatedBytesPerOperation": 10228400
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 3.1693,
+          "median": 3.2484,
+          "maximum": 3.759,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 5122968,
+          "median": 5122968,
+          "maximum": 5122968,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3248400.0,
+        "allocatedBytesPerOperation": 5122968
+      },
+      "change": {
+        "timeReductionPercent": 34.282824,
+        "allocationReductionPercent": 49.914278,
+        "speedupRatio": 1.521672,
+        "timeMedianDeltaMs": -1.6946,
+        "allocationMedianDeltaBytes": -5105432
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 28,
+      "id": "realistic/realistic/f9/v3/sparse/t2/construction",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 158559,
+      "sourceSha256": "8280EB9E0BDB5FC9A6EA8B00F0A28E90DA009705AE5B442E8BE42ED41F8E004C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 6.4858,
+          "median": 6.8721,
+          "maximum": 6.9649,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 11008224,
+          "median": 11008224,
+          "maximum": 11008224,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 6872100.0,
+        "allocatedBytesPerOperation": 11008224
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 3.0429,
+          "median": 3.1265,
+          "maximum": 3.4705,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 4097888,
+          "median": 4097888,
+          "maximum": 4097888,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3126500.0,
+        "allocatedBytesPerOperation": 4097888
+      },
+      "change": {
+        "timeReductionPercent": 54.504446,
+        "allocationReductionPercent": 62.774304,
+        "speedupRatio": 2.198017,
+        "timeMedianDeltaMs": -3.7456,
+        "allocationMedianDeltaBytes": -6910336
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 29,
+      "id": "realistic/realistic/f9/v3/sparse/t2/full-load",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 158559,
+      "sourceSha256": "8280EB9E0BDB5FC9A6EA8B00F0A28E90DA009705AE5B442E8BE42ED41F8E004C",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 15.9835,
+          "median": 16.4738,
+          "maximum": 17.2563,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 17168264,
+          "median": 17168264,
+          "maximum": 17168264,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 16473800.0,
+        "allocatedBytesPerOperation": 17168264
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 5.4055,
+          "median": 5.5356,
+          "maximum": 6.2941,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 7880280,
+          "median": 7880280,
+          "maximum": 7880280,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 5535600.0,
+        "allocatedBytesPerOperation": 7880280
+      },
+      "change": {
+        "timeReductionPercent": 66.397552,
+        "allocationReductionPercent": 54.099727,
+        "speedupRatio": 2.975974,
+        "timeMedianDeltaMs": -10.9382,
+        "allocationMedianDeltaBytes": -9287984
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 30,
+      "id": "realistic/realistic/f9/v3/dense/t2/construction",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 1500,
+      "sourceCharacters": 205815,
+      "sourceSha256": "884050FD2149E9A76B455737ED600B3CC22D0435FA5E3E74BBBCB5F42AD91344",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 6.9645,
+          "median": 7.2537,
+          "maximum": 8.755,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 11346544,
+          "median": 11346544,
+          "maximum": 11346544,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 7253700.0,
+        "allocatedBytesPerOperation": 11346544
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 3.3795,
+          "median": 3.4229,
+          "maximum": 3.869,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 4488104,
+          "median": 4488104,
+          "maximum": 4488104,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3422900.0,
+        "allocatedBytesPerOperation": 4488104
+      },
+      "change": {
+        "timeReductionPercent": 52.811669,
+        "allocationReductionPercent": 60.445189,
+        "speedupRatio": 2.119168,
+        "timeMedianDeltaMs": -3.8308,
+        "allocationMedianDeltaBytes": -6858440
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 31,
+      "id": "realistic/realistic/f9/v3/dense/t2/full-load",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 1500,
+      "sourceCharacters": 205815,
+      "sourceSha256": "884050FD2149E9A76B455737ED600B3CC22D0435FA5E3E74BBBCB5F42AD91344",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 17.3366,
+          "median": 18.4168,
+          "maximum": 20.0382,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 19124064,
+          "median": 19124064,
+          "maximum": 19124064,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 18416800.0,
+        "allocatedBytesPerOperation": 19124064
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 6.264,
+          "median": 6.5913,
+          "maximum": 7.2686,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 9265224,
+          "median": 9265224,
+          "maximum": 9265224,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 6591300.0,
+        "allocatedBytesPerOperation": 9265224
+      },
+      "change": {
+        "timeReductionPercent": 64.210395,
+        "allocationReductionPercent": 51.552013,
+        "speedupRatio": 2.794107,
+        "timeMedianDeltaMs": -11.8255,
+        "allocationMedianDeltaBytes": -9858840
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 32,
+      "id": "realistic/realistic/f9/v12/sparse/t2/construction",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 12,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 12,
+      "overrideFieldCount": 12,
+      "sourceCharacters": 158968,
+      "sourceSha256": "12B9CA1871E781B970B117E0F5C6ABEEE29A0695F2F491431412E1C76AF955CE",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 25.7313,
+          "median": 26.4612,
+          "maximum": 27.8253,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 31812368,
+          "median": 31812368,
+          "maximum": 31812368,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 26461200.0,
+        "allocatedBytesPerOperation": 31812368
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 9.5463,
+          "median": 9.6977,
+          "maximum": 10.1238,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 12361256,
+          "median": 12361256,
+          "maximum": 12361256,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 9697700.0,
+        "allocatedBytesPerOperation": 12361256
+      },
+      "change": {
+        "timeReductionPercent": 63.351246,
+        "allocationReductionPercent": 61.143238,
+        "speedupRatio": 2.728606,
+        "timeMedianDeltaMs": -16.7635,
+        "allocationMedianDeltaBytes": -19451112
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 33,
+      "id": "realistic/realistic/f9/v12/sparse/t2/full-load",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 12,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 12,
+      "overrideFieldCount": 12,
+      "sourceCharacters": 158968,
+      "sourceSha256": "12B9CA1871E781B970B117E0F5C6ABEEE29A0695F2F491431412E1C76AF955CE",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 32.8461,
+          "median": 36.0134,
+          "maximum": 38.8899,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 37985984,
+          "median": 37985984,
+          "maximum": 37985984,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 36013400.0,
+        "allocatedBytesPerOperation": 37985984
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 16.2705,
+          "median": 17.2768,
+          "maximum": 17.613,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 16151608,
+          "median": 16151608,
+          "maximum": 16151608,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 17276800.0,
+        "allocatedBytesPerOperation": 16151608
+      },
+      "change": {
+        "timeReductionPercent": 52.026746,
+        "allocationReductionPercent": 57.480085,
+        "speedupRatio": 2.084495,
+        "timeMedianDeltaMs": -18.7366,
+        "allocationMedianDeltaBytes": -21834376
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 34,
+      "id": "realistic/realistic/f9/v12/dense/t2/construction",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 12,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 6000,
+      "overrideFieldCount": 6000,
+      "sourceCharacters": 348990,
+      "sourceSha256": "FF36C09C17D946EB36105826D2198CDE7F07F76E4BEEC3449D25BE83B5B38E8A",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 28.0861,
+          "median": 29.8367,
+          "maximum": 30.5806,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 32882752,
+          "median": 32882752,
+          "maximum": 32882752,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 29836700.0,
+        "allocatedBytesPerOperation": 32882752
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 12.6322,
+          "median": 12.7499,
+          "maximum": 13.9027,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 13579344,
+          "median": 13579344,
+          "maximum": 13579344,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 12749900.0,
+        "allocatedBytesPerOperation": 13579344
+      },
+      "change": {
+        "timeReductionPercent": 57.267727,
+        "allocationReductionPercent": 58.703748,
+        "speedupRatio": 2.340152,
+        "timeMedianDeltaMs": -17.0868,
+        "allocationMedianDeltaBytes": -19303408
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 35,
+      "id": "realistic/realistic/f9/v12/dense/t2/full-load",
+      "suite": "realistic",
+      "fixture": "realistic",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 12,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 6000,
+      "overrideFieldCount": 6000,
+      "sourceCharacters": 348990,
+      "sourceSha256": "FF36C09C17D946EB36105826D2198CDE7F07F76E4BEEC3449D25BE83B5B38E8A",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 42.5511,
+          "median": 43.5363,
+          "maximum": 48.7528,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 45526432,
+          "median": 45526432,
+          "maximum": 45526432,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 43536300.0,
+        "allocatedBytesPerOperation": 45526432
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 21.7706,
+          "median": 22.2814,
+          "maximum": 24.7622,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 21348752,
+          "median": 21348752,
+          "maximum": 21348752,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 22281400.0,
+        "allocatedBytesPerOperation": 21348752
+      },
+      "change": {
+        "timeReductionPercent": 48.821099,
+        "allocationReductionPercent": 53.106907,
+        "speedupRatio": 1.95393,
+        "timeMedianDeltaMs": -21.2549,
+        "allocationMedianDeltaBytes": -24177680
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 36,
+      "id": "for/realistic/f9/v3/sparse/t2/first-for",
+      "suite": "for",
+      "fixture": "realistic",
+      "phase": "first-for",
+      "phaseDescription": "Fresh loaded data per sample; select language[v0] once for every record. Preparation, arrays and assertions are excluded.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 158559,
+      "sourceSha256": "8280EB9E0BDB5FC9A6EA8B00F0A28E90DA009705AE5B442E8BE42ED41F8E004C",
+      "operationsPerSample": 500,
+      "before": {
+        "timeMs": {
+          "minimum": 1.6715,
+          "median": 1.7766,
+          "maximum": 2.1055,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 2566832,
+          "median": 2566832,
+          "maximum": 2566832,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3553.2,
+        "allocatedBytesPerOperation": 5133.664
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.9786,
+          "median": 1.0304,
+          "maximum": 1.1469,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1194968,
+          "median": 1194968,
+          "maximum": 1194968,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2060.8,
+        "allocatedBytesPerOperation": 2389.936
+      },
+      "change": {
+        "timeReductionPercent": 42.001576,
+        "allocationReductionPercent": 53.445804,
+        "speedupRatio": 1.724185,
+        "timeMedianDeltaMs": -0.7462,
+        "allocationMedianDeltaBytes": -1371864
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 37,
+      "id": "for/realistic/f9/v3/sparse/t2/cached-for",
+      "suite": "for",
+      "fixture": "realistic",
+      "phase": "cached-for",
+      "phaseDescription": "Prepare and cache language[v0] for every record, then repeat For calls. Includes selection and lookup; excludes load, priming, arrays and assertions.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "sparse",
+      "overrideRecordCount": 3,
+      "overrideFieldCount": 3,
+      "sourceCharacters": 158559,
+      "sourceSha256": "8280EB9E0BDB5FC9A6EA8B00F0A28E90DA009705AE5B442E8BE42ED41F8E004C",
+      "operationsPerSample": 50000,
+      "before": {
+        "timeMs": {
+          "minimum": 14.9241,
+          "median": 15.3227,
+          "maximum": 15.6548,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 25600000,
+          "median": 25600000,
+          "maximum": 25600000,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 306.454,
+        "allocatedBytesPerOperation": 512
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 5.0225,
+          "median": 5.0692,
+          "maximum": 5.1086,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 0,
+          "median": 0,
+          "maximum": 0,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 101.384,
+        "allocatedBytesPerOperation": 0
+      },
+      "change": {
+        "timeReductionPercent": 66.917058,
+        "allocationReductionPercent": 100.0,
+        "speedupRatio": 3.022706,
+        "timeMedianDeltaMs": -10.2535,
+        "allocationMedianDeltaBytes": -25600000
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 38,
+      "id": "for/realistic/f9/v3/dense/t2/first-for",
+      "suite": "for",
+      "fixture": "realistic",
+      "phase": "first-for",
+      "phaseDescription": "Fresh loaded data per sample; select language[v0] once for every record. Preparation, arrays and assertions are excluded.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 1500,
+      "sourceCharacters": 205815,
+      "sourceSha256": "884050FD2149E9A76B455737ED600B3CC22D0435FA5E3E74BBBCB5F42AD91344",
+      "operationsPerSample": 500,
+      "before": {
+        "timeMs": {
+          "minimum": 1.7191,
+          "median": 1.8082,
+          "maximum": 2.0414,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 2585136,
+          "median": 2585136,
+          "maximum": 2585136,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 3616.4,
+        "allocatedBytesPerOperation": 5170.272
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.9806,
+          "median": 1.1091,
+          "maximum": 1.1701,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1213272,
+          "median": 1213272,
+          "maximum": 1213272,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 2218.2,
+        "allocatedBytesPerOperation": 2426.544
+      },
+      "change": {
+        "timeReductionPercent": 38.662759,
+        "allocationReductionPercent": 53.067382,
+        "speedupRatio": 1.630331,
+        "timeMedianDeltaMs": -0.6991,
+        "allocationMedianDeltaBytes": -1371864
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 39,
+      "id": "for/realistic/f9/v3/dense/t2/cached-for",
+      "suite": "for",
+      "fixture": "realistic",
+      "phase": "cached-for",
+      "phaseDescription": "Prepare and cache language[v0] for every record, then repeat For calls. Includes selection and lookup; excludes load, priming, arrays and assertions.",
+      "recordCount": 500,
+      "fieldCount": 9,
+      "variantCount": 3,
+      "typeCount": 2,
+      "overrideDensity": "dense",
+      "overrideRecordCount": 1500,
+      "overrideFieldCount": 1500,
+      "sourceCharacters": 205815,
+      "sourceSha256": "884050FD2149E9A76B455737ED600B3CC22D0435FA5E3E74BBBCB5F42AD91344",
+      "operationsPerSample": 50000,
+      "before": {
+        "timeMs": {
+          "minimum": 14.8231,
+          "median": 15.4344,
+          "maximum": 15.9029,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 25600000,
+          "median": 25600000,
+          "maximum": 25600000,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 308.688,
+        "allocatedBytesPerOperation": 512
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 5.0652,
+          "median": 5.1338,
+          "maximum": 5.4591,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 0,
+          "median": 0,
+          "maximum": 0,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 102.676,
+        "allocatedBytesPerOperation": 0
+      },
+      "change": {
+        "timeReductionPercent": 66.737936,
+        "allocationReductionPercent": 100.0,
+        "speedupRatio": 3.006428,
+        "timeMedianDeltaMs": -10.3006,
+        "allocationMedianDeltaBytes": -25600000
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 40,
+      "id": "tables/many-tables/f1/v0/none/t1/construction",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 12780,
+      "sourceSha256": "D420B734C826CA32162ADAFBB26CFB4D2F2378BD0E0DA216782D581DDA77E020",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.2524,
+          "median": 0.2735,
+          "maximum": 0.3471,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 835776,
+          "median": 835776,
+          "maximum": 835776,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 273500.0,
+        "allocatedBytesPerOperation": 835776
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.1393,
+          "median": 0.1495,
+          "maximum": 0.16,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 379696,
+          "median": 379696,
+          "maximum": 379696,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 149500.0,
+        "allocatedBytesPerOperation": 379696
+      },
+      "change": {
+        "timeReductionPercent": 45.338208,
+        "allocationReductionPercent": 54.569645,
+        "speedupRatio": 1.829431,
+        "timeMedianDeltaMs": -0.124,
+        "allocationMedianDeltaBytes": -456080
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 41,
+      "id": "tables/many-tables/f1/v0/none/t1/full-load",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 12780,
+      "sourceSha256": "D420B734C826CA32162ADAFBB26CFB4D2F2378BD0E0DA216782D581DDA77E020",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.5165,
+          "median": 0.5262,
+          "maximum": 0.5367,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1624360,
+          "median": 1624360,
+          "maximum": 1624360,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 526200.0,
+        "allocatedBytesPerOperation": 1624360
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.3463,
+          "median": 0.3559,
+          "maximum": 0.3636,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 760360,
+          "median": 760360,
+          "maximum": 760360,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 355900.0,
+        "allocatedBytesPerOperation": 760360
+      },
+      "change": {
+        "timeReductionPercent": 32.36412,
+        "allocationReductionPercent": 53.19018,
+        "speedupRatio": 1.478505,
+        "timeMedianDeltaMs": -0.1703,
+        "allocationMedianDeltaBytes": -864000
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 42,
+      "id": "tables/many-tables/f1/v0/none/t1/table-registration",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "table-registration",
+      "phaseDescription": "Register typed tables from a prepared, built load context; excludes parsing, context construction and Build.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 1,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 12780,
+      "sourceSha256": "D420B734C826CA32162ADAFBB26CFB4D2F2378BD0E0DA216782D581DDA77E020",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.0173,
+          "median": 0.0177,
+          "maximum": 0.0238,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 48560,
+          "median": 48560,
+          "maximum": 48560,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 17700.0,
+        "allocatedBytesPerOperation": 48560
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.0133,
+          "median": 0.0145,
+          "maximum": 0.0181,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 15184,
+          "median": 15184,
+          "maximum": 15184,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 14500.0,
+        "allocatedBytesPerOperation": 15184
+      },
+      "change": {
+        "timeReductionPercent": 18.079096,
+        "allocationReductionPercent": 68.731466,
+        "speedupRatio": 1.22069,
+        "timeMedianDeltaMs": -0.0032,
+        "allocationMedianDeltaBytes": -33376
+      },
+      "sampleTimeRangesOverlap": true
+    },
+    {
+      "index": 43,
+      "id": "tables/many-tables/f1/v0/none/t16/construction",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 16,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 12966,
+      "sourceSha256": "8A275796AC19F04E51A601DE18CC69D2B9D8418D797A6A789F9BA632A0B0510B",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.353,
+          "median": 0.3571,
+          "maximum": 0.3747,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 824168,
+          "median": 824168,
+          "maximum": 824168,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 357100.0,
+        "allocatedBytesPerOperation": 824168
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.1587,
+          "median": 0.1642,
+          "maximum": 0.1936,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 394808,
+          "median": 394808,
+          "maximum": 394808,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 164200.0,
+        "allocatedBytesPerOperation": 394808
+      },
+      "change": {
+        "timeReductionPercent": 54.018482,
+        "allocationReductionPercent": 52.096175,
+        "speedupRatio": 2.174787,
+        "timeMedianDeltaMs": -0.1929,
+        "allocationMedianDeltaBytes": -429360
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 44,
+      "id": "tables/many-tables/f1/v0/none/t16/full-load",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 16,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 12966,
+      "sourceSha256": "8A275796AC19F04E51A601DE18CC69D2B9D8418D797A6A789F9BA632A0B0510B",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.622,
+          "median": 0.6308,
+          "maximum": 0.6399,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1612752,
+          "median": 1612752,
+          "maximum": 1612752,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 630800.0,
+        "allocatedBytesPerOperation": 1612752
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.3711,
+          "median": 0.3869,
+          "maximum": 0.4063,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 775472,
+          "median": 775472,
+          "maximum": 775472,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 386900.0,
+        "allocatedBytesPerOperation": 775472
+      },
+      "change": {
+        "timeReductionPercent": 38.665187,
+        "allocationReductionPercent": 51.916228,
+        "speedupRatio": 1.630395,
+        "timeMedianDeltaMs": -0.2439,
+        "allocationMedianDeltaBytes": -837280
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 45,
+      "id": "tables/many-tables/f1/v0/none/t16/table-registration",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "table-registration",
+      "phaseDescription": "Register typed tables from a prepared, built load context; excludes parsing, context construction and Build.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 16,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 12966,
+      "sourceSha256": "8A275796AC19F04E51A601DE18CC69D2B9D8418D797A6A789F9BA632A0B0510B",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.1059,
+          "median": 0.1081,
+          "maximum": 0.2165,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 36080,
+          "median": 36080,
+          "maximum": 36080,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 108100.0,
+        "allocatedBytesPerOperation": 36080
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.017,
+          "median": 0.0219,
+          "maximum": 0.0275,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 21488,
+          "median": 21488,
+          "maximum": 21488,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 21900.0,
+        "allocatedBytesPerOperation": 21488
+      },
+      "change": {
+        "timeReductionPercent": 79.740981,
+        "allocationReductionPercent": 40.443459,
+        "speedupRatio": 4.936073,
+        "timeMedianDeltaMs": -0.0862,
+        "allocationMedianDeltaBytes": -14592
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 46,
+      "id": "tables/many-tables/f1/v0/none/t64/construction",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "construction",
+      "phaseDescription": "Use parsed documents; includes input discovery, binding, base construction, declared variant validation and table registration.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 64,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 13200,
+      "sourceSha256": "9CABF83E99CE8D211398A5D417E6D21328B1023AF7486AE51621669C9D168619",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.7795,
+          "median": 0.7925,
+          "maximum": 0.8288,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 859712,
+          "median": 859712,
+          "maximum": 859712,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 792500.0,
+        "allocatedBytesPerOperation": 859712
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.191,
+          "median": 0.2209,
+          "maximum": 0.4827,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 439536,
+          "median": 439536,
+          "maximum": 439536,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 220900.0,
+        "allocatedBytesPerOperation": 439536
+      },
+      "change": {
+        "timeReductionPercent": 72.126183,
+        "allocationReductionPercent": 48.874042,
+        "speedupRatio": 3.587596,
+        "timeMedianDeltaMs": -0.5716,
+        "allocationMedianDeltaBytes": -420176
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 47,
+      "id": "tables/many-tables/f1/v0/none/t64/full-load",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "full-load",
+      "phaseDescription": "Parse source text, bind, construct base objects, validate declared variants and register tables.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 64,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 13200,
+      "sourceSha256": "9CABF83E99CE8D211398A5D417E6D21328B1023AF7486AE51621669C9D168619",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 1.0503,
+          "median": 1.0851,
+          "maximum": 1.2112,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 1648296,
+          "median": 1648296,
+          "maximum": 1648296,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 1085100.0,
+        "allocatedBytesPerOperation": 1648296
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.4097,
+          "median": 0.412,
+          "maximum": 0.4337,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 820200,
+          "median": 820200,
+          "maximum": 820200,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 412000.0,
+        "allocatedBytesPerOperation": 820200
+      },
+      "change": {
+        "timeReductionPercent": 62.031149,
+        "allocationReductionPercent": 50.23952,
+        "speedupRatio": 2.633738,
+        "timeMedianDeltaMs": -0.6731,
+        "allocationMedianDeltaBytes": -828096
+      },
+      "sampleTimeRangesOverlap": false
+    },
+    {
+      "index": 48,
+      "id": "tables/many-tables/f1/v0/none/t64/table-registration",
+      "suite": "tables",
+      "fixture": "many-tables",
+      "phase": "table-registration",
+      "phaseDescription": "Register typed tables from a prepared, built load context; excludes parsing, context construction and Build.",
+      "recordCount": 500,
+      "fieldCount": 1,
+      "variantCount": 0,
+      "typeCount": 64,
+      "overrideDensity": "none",
+      "overrideRecordCount": 0,
+      "overrideFieldCount": 0,
+      "sourceCharacters": 13200,
+      "sourceSha256": "9CABF83E99CE8D211398A5D417E6D21328B1023AF7486AE51621669C9D168619",
+      "operationsPerSample": 1,
+      "before": {
+        "timeMs": {
+          "minimum": 0.5191,
+          "median": 0.5255,
+          "maximum": 0.5284,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 68576,
+          "median": 68576,
+          "maximum": 68576,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 525500.0,
+        "allocatedBytesPerOperation": 68576
+      },
+      "after": {
+        "timeMs": {
+          "minimum": 0.0199,
+          "median": 0.0206,
+          "maximum": 0.0668,
+          "sampleCount": 7
+        },
+        "allocatedBytes": {
+          "minimum": 38240,
+          "median": 38240,
+          "maximum": 38240,
+          "sampleCount": 7
+        },
+        "timeNanosecondsPerOperation": 20600.0,
+        "allocatedBytesPerOperation": 38240
+      },
+      "change": {
+        "timeReductionPercent": 96.079924,
+        "allocationReductionPercent": 44.237051,
+        "speedupRatio": 25.509709,
+        "timeMedianDeltaMs": -0.5049,
+        "allocationMedianDeltaBytes": -30336
+      },
+      "sampleTimeRangesOverlap": false
+    }
+  ]
+}

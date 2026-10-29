@@ -14,15 +14,15 @@ pub(super) fn prepare_values(
     values.retain(|enum_name, _| current.contains_key(enum_name));
 
     for (enum_name, enum_ids) in current {
-        let entries = values.entry(enum_name).or_default();
+        let entries = values.entry(enum_name.clone()).or_default();
         let max_value = if enum_ids.is_int64 {
             i64::MAX
         } else {
             i64::from(i32::MAX)
         };
-        let current_ids = enum_ids.ids.iter().cloned().collect::<BTreeSet<_>>();
-        entries.retain(|key, _| current_ids.contains(key));
-        validate_values(project, entries, enum_ids.is_flags, max_value)?;
+        entries.retain(|key, _| enum_ids.seen.contains(key));
+        let used = validate_values(project, &enum_name, entries, enum_ids.is_flags, max_value)?;
+        let mut allocator = ValueAllocator::new(used, enum_ids.is_flags, max_value);
         for key in enum_ids.ids {
             if enum_ids.is_flags && matches!(key.as_str(), "None" | "Everything") {
                 return Err(artifact_error(
@@ -33,8 +33,9 @@ pub(super) fn prepare_values(
             if entries.contains_key(&key) {
                 continue;
             }
-            let used = entries.values().copied().collect::<BTreeSet<_>>();
-            let value = allocate_value(project, &used, enum_ids.is_flags, max_value)?;
+            let value = allocator
+                .allocate()
+                .map_err(|message| artifact_error(project.config_path(), message))?;
             entries.insert(key, value);
         }
     }
@@ -92,6 +93,7 @@ pub(super) fn prepare_rename_update(
 #[derive(Debug)]
 struct EnumIds {
     ids: Vec<String>,
+    seen: BTreeSet<String>,
     is_flags: bool,
     is_int64: bool,
 }
@@ -101,87 +103,142 @@ fn collect_ids(info: Vec<IdAsEnumInfo>) -> BTreeMap<String, EnumIds> {
     for item in info {
         let entry = result.entry(item.enum_name).or_insert_with(|| EnumIds {
             ids: Vec::new(),
+            seen: BTreeSet::new(),
             is_flags: item.is_flags,
             is_int64: item.is_int64,
         });
-        let mut seen = entry.ids.iter().cloned().collect::<BTreeSet<_>>();
-        entry
-            .ids
-            .extend(item.ids.into_iter().filter(|key| seen.insert(key.clone())));
+        for id in item.ids {
+            if entry.seen.insert(id.clone()) {
+                entry.ids.push(id);
+            }
+        }
     }
     result
 }
 
-fn allocate_value(
-    project: &Project,
-    used: &BTreeSet<i64>,
+/// 已占用编号只建立一次；游标单调前进，每个旧编号最多检查一次。
+#[derive(Debug)]
+struct ValueAllocator {
+    used: std::iter::Peekable<std::vec::IntoIter<i64>>,
+    next: Option<i64>,
     is_flags: bool,
     max_value: i64,
-) -> Result<i64, DiagnosticSet> {
-    if is_flags {
-        let mut candidate = 1_i64;
-        loop {
-            if candidate > max_value {
-                return Err(artifact_error(
-                    project.config_path(),
-                    "@idAsEnum exceeds enum width; add @int64 for 64-bit values",
-                ));
-            }
-            if !used.contains(&candidate) {
-                return Ok(candidate);
-            }
-            candidate = candidate.checked_mul(2).ok_or_else(|| {
-                artifact_error(
-                    project.config_path(),
-                    "@idAsEnum exhausted all positive i64 flag values",
-                )
-            })?;
+    #[cfg(test)]
+    probes: usize,
+}
+
+impl ValueAllocator {
+    fn new(used: Vec<i64>, is_flags: bool, max_value: i64) -> Self {
+        Self {
+            used: used.into_iter().peekable(),
+            next: Some(i64::from(is_flags)),
+            is_flags,
+            max_value,
+            #[cfg(test)]
+            probes: 0,
         }
     }
-    let mut candidate = 0_i64;
-    while used.contains(&candidate) {
-        candidate = candidate.checked_add(1).ok_or_else(|| {
-            artifact_error(
-                project.config_path(),
-                "@idAsEnum exhausted all non-negative i64 values",
-            )
-        })?;
+
+    fn allocate(&mut self) -> Result<i64, &'static str> {
+        while let Some(candidate) = self.next {
+            if candidate > self.max_value {
+                return Err("@idAsEnum exceeds enum width; add @int64 for 64-bit values");
+            }
+            self.next = if self.is_flags {
+                candidate.checked_mul(2)
+            } else {
+                candidate.checked_add(1)
+            };
+            #[cfg(test)]
+            {
+                self.probes += 1;
+            }
+            if self.used.peek() == Some(&candidate) {
+                self.used.next();
+            } else {
+                // 两个游标同向前进，新值无需插入，也无需重复树查找。
+                return Ok(candidate);
+            }
+        }
+        Err(if self.is_flags {
+            "@idAsEnum exhausted all positive i64 flag values"
+        } else {
+            "@idAsEnum exhausted all non-negative i64 values"
+        })
     }
-    if candidate > max_value {
-        return Err(artifact_error(
-            project.config_path(),
-            "@idAsEnum exceeds enum width; add @int64 for 64-bit values",
-        ));
-    }
-    Ok(candidate)
 }
 
 fn validate_values(
     project: &Project,
+    enum_name: &str,
     values: &BTreeMap<String, i64>,
     is_flags: bool,
     max_value: i64,
-) -> Result<(), DiagnosticSet> {
-    if values
-        .values()
-        .any(|value| *value < 0 || *value > max_value)
-    {
-        return Err(artifact_error(
-            project.config_path(),
-            "stable enum value is outside the declared width",
-        ));
+) -> Result<Vec<i64>, DiagnosticSet> {
+    let mut owners = BTreeMap::new();
+    let lock_path = enum_lockfile_path(project);
+    for (key, value) in values {
+        if *value < 0 || *value > max_value {
+            return Err(artifact_error(
+                &lock_path,
+                format!("stable enum value for `{enum_name}::{key}` is outside the declared width"),
+            ));
+        }
+        if is_flags && (*value <= 0 || (*value & (*value - 1)) != 0) {
+            return Err(artifact_error(
+                &lock_path,
+                format!(
+                    "@idAsEnum flag key `{enum_name}::{key}` has invalid stable value `{value}`"
+                ),
+            ));
+        }
+        // 每个记录必须拥有唯一编号；重复值会让目标语言的枚举查到另一个记录。
+        if let Some(previous) = owners.insert(*value, key) {
+            return Err(artifact_error(&lock_path, format!(
+                "@idAsEnum `{enum_name}` assigns duplicate stable value `{value}` to `{previous}` and `{key}`"
+            )));
+        }
     }
-    if !is_flags {
-        return Ok(());
+    Ok(owners.into_keys().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ValueAllocator;
+
+    #[test]
+    fn allocating_dense_ids_has_linear_scan_work() {
+        let mut allocator = ValueAllocator::new(Vec::new(), false, i64::MAX);
+        for expected in 0..100_000 {
+            assert_eq!(allocator.allocate(), Ok(expected));
+        }
+        assert_eq!(allocator.probes, 100_000);
+
+        let mut existing = ValueAllocator::new((0..50_000).collect(), false, i64::MAX);
+        for expected in 50_000..100_000 {
+            assert_eq!(existing.allocate(), Ok(expected));
+        }
+        assert_eq!(existing.probes, 100_000);
     }
-    if let Some((key, value)) = values
-        .iter()
-        .find(|(_, value)| **value <= 0 || (**value & (**value - 1)) != 0)
-    {
-        return Err(artifact_error(
-            project.config_path(),
-            format!("@idAsEnum flag key `{key}` has invalid stable value `{value}`"),
-        ));
+
+    #[test]
+    fn allocator_reuses_gaps_without_renumbering_existing_values() {
+        let mut allocator = ValueAllocator::new(vec![0, 2, 4, i64::MAX], false, i64::MAX);
+        assert_eq!(allocator.allocate(), Ok(1));
+        assert_eq!(allocator.allocate(), Ok(3));
+        assert_eq!(allocator.allocate(), Ok(5));
+        assert_eq!(allocator.probes, 6);
     }
-    Ok(())
+
+    #[test]
+    fn flag_allocator_preserves_single_bits_and_width_limits() {
+        let mut allocator = ValueAllocator::new(vec![1, 4], true, 8);
+        assert_eq!(allocator.allocate(), Ok(2));
+        assert_eq!(allocator.allocate(), Ok(8));
+        assert!(allocator.allocate().is_err());
+        let mut wide =
+            ValueAllocator::new((0..62).map(|bit| 1_i64 << bit).collect(), true, i64::MAX);
+        assert_eq!(wide.allocate(), Ok(1_i64 << 62));
+        assert!(wide.allocate().is_err());
+    }
 }

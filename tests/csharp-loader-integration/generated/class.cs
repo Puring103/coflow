@@ -9,6 +9,6 @@ public partial class @class : global::Coflow.Loader.ICfdRecord
     public string id { get; }
     internal @class(string id) { this.id = id; }
     public string @namespace { get; internal set; } = default!;
-    public @event state { get; internal set; } = default!;
+    public global::Game.Config.@event state { get; internal set; } = default!;
 }
 }

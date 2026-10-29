@@ -6,7 +6,7 @@ namespace Game.Config
 public partial struct ContractShape
 {
     public long count { get; internal set; }
-    public global::Coflow.Loader.Option<ContractShape> inner { get; internal set; }
+    public global::Coflow.Loader.Option<global::Game.Config.ContractShape> inner { get; internal set; }
     public string label { get; internal set; }
 }
 }

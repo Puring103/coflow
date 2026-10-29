@@ -24,3 +24,19 @@ singleton Settings { start: &Item; }
 # 目标语言关键字由生成器转义，源语言业务名保持不变。
 enum event { public }
 table class { namespace: string; state: event = event::public; }
+
+# 业务类型可与生成加载器成员同名，所有类型引用保持明确的命名空间。
+enum Types { Normal }
+enum Constants { Normal }
+enum Table { Normal }
+enum Load { Normal }
+enum Singleton { Normal }
+enum Ids {}
+@idAsEnum(Ids)
+table NamedCollision {
+  types: Types = Types::Normal;
+  constants: Constants = Constants::Normal;
+  table_value: Table = Table::Normal;
+  load: Load = Load::Normal;
+  singleton_value: Singleton = Singleton::Normal;
+}

@@ -9,6 +9,6 @@ public partial class ContractNode : global::Coflow.Loader.ICfdRecord
     public string id { get; }
     internal ContractNode(string id) { this.id = id; }
     public string label { get; internal set; } = default!;
-    public global::Coflow.Loader.Option<ContractNode> next { get; internal set; } = default!;
+    public global::Coflow.Loader.Option<global::Game.Config.ContractNode> next { get; internal set; } = default!;
 }
 }

@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-30",
+  "baselineCommit": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "optimizedRevision": "same commit plus working-tree Loader changes; exact source hashes below",
+  "host": {
+    "os": "Windows 11 10.0.26300 x64",
+    "cpu": "Intel Core i5-13600KF",
+    "cores": 14,
+    "logicalProcessors": 20,
+    "visibleMemoryKiB": 33389444
+  },
+  "toolchain": {
+    "dotnetSdk": "8.0.426",
+    "runtime": "Microsoft.NETCore.App 8.0.32",
+    "targetFramework": "net8.0",
+    "configuration": "Release",
+    "DOTNET_TieredCompilation": "0"
+  },
+  "fixture": {
+    "records": 500,
+    "fields": [
+      32,
+      128,
+      512
+    ],
+    "variants": [
+      0,
+      3
+    ],
+    "fieldType": "int bound to language",
+    "baseValue": 1,
+    "override": "r0.f0 = 2 in each variant"
+  },
+  "sampling": {
+    "warmupPerCase": 1,
+    "samplesPerCase": 5,
+    "sequence": [
+      "baseline full matrix",
+      "optimized full matrix"
+    ],
+    "collection": "CfdField[]",
+    "parallelHeavyWork": false,
+    "gcBeforeEachSample": true,
+    "allocationMetric": "GC.GetAllocatedBytesForCurrentThread; not peak memory",
+    "construction": "preparsed input; LoadContext discovery, construction, all single-variant validation, table registration",
+    "full-load": "CfdLoader.Load includes parsing; descriptor creation and source text generation excluded from both phases"
+  },
+  "harnessSha256": {
+    "Program.cs": "a1dead727b33fc61b1eec79f16001be006b2983f7668e01f94acca57931ad5e2",
+    "Coflow.Loader.Benchmarks.csproj": "57c2b4e7da11121e97aa85c911d60206e29a9354525839236a4359cb863fed0f"
+  },
+  "binariesSha256": {
+    "baseline": "616ecf9e603528becfbb57075657799bc1743e541ecbbf262975ae4a59989bc2",
+    "optimized": "40a00e47d5925535dee1e9e108e0b2d3aea73da4b65561df952564b4628a68a3"
+  },
+  "loaderSourcesSha256": {
+    "baseline": {
+      "Cfd/CfdDiagnostics.cs": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014",
+      "Cfd/CfdIdentifiers.cs": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34",
+      "Cfd/CfdNodes.cs": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81",
+      "Cfd/CfdParser.cs": "0f6bd9636365684e24bb772e2e5074d034685b0991e4cd056bc6a01f28db3c6c",
+      "Cfd/CfdSource.cs": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92",
+      "Cfd/CfdSpan.cs": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00",
+      "Cfd/CfdXid.Generated.cs": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546",
+      "Descriptors.cs": "2c16bda6bab1d7568448ba00b391f2839971bf263c85ac0bec7c05243e57b25e",
+      "Dimensions.cs": "ba5de2e7ee4d07de55fb13d0632958d38a3f41245789474ab071a5cf02d7577b",
+      "Loading.cs": "430c8ca387ac363c26e44b8517c8b11ccbe895a7987479f6d28220da5346287d",
+      "Option.cs": "323589599862d7fd47751414d2b5b73d31d22f9c9fd805960d101a8a97031fa6",
+      "Table.cs": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884"
+    },
+    "optimized": {
+      "Cfd/CfdDiagnostics.cs": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014",
+      "Cfd/CfdIdentifiers.cs": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34",
+      "Cfd/CfdNodes.cs": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81",
+      "Cfd/CfdParser.cs": "0f6bd9636365684e24bb772e2e5074d034685b0991e4cd056bc6a01f28db3c6c",
+      "Cfd/CfdSource.cs": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92",
+      "Cfd/CfdSpan.cs": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00",
+      "Cfd/CfdXid.Generated.cs": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546",
+      "Descriptors.cs": "0c402af2579f4607b64d3efd03205e6082aeaaa83480a8b17639b7bde3317f90",
+      "Dimensions.cs": "5ff09532ad32bfaa360ddec5477a55fb6a47b1b3d2f2ca16d730682a6c1c6c18",
+      "Loading.cs": "55ccc52aec23d54f794cfb9c8c2047b90032842310bd16217016641e6c33a75e",
+      "Option.cs": "323589599862d7fd47751414d2b5b73d31d22f9c9fd805960d101a8a97031fa6",
+      "Table.cs": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884"
+    }
+  },
+  "workCounter": {
+    "harnessSha256": "1fe9f667f7b7423cffc3d8779409a46c1c13d47fceab8a28b544f1099e648c3b",
+    "collection": "CountedFields; separate instrumentation only",
+    "metric": "reads from the caller-provided descriptor collection, not internal dictionary lookups",
+    "archivedFields": "schema and per-sample source collection read counts only"
+  }
+}

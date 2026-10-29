@@ -141,15 +141,12 @@ public sealed class LoadingTests
     }
 
     [Fact]
-    public void ValidationOnlyViewsAreCollectibleAndRequestedViewsKeepReferenceIdentity()
+    public void ValidationDoesNotConstructBusinessViewsAndRequestedViewsKeepReferenceIdentity()
     {
         var (result, instances) = LoadTrackedVariants();
         Assert.True(result.Success, string.Join("; ", result.Diagnostics));
-        Assert.Equal(6, instances.Count);
-        // 使用弱引用验证释放行为，不读取私有缓存，也不依赖具体分配字节数。
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
+        // 加载期完整校验变体，但只构造基础业务对象；首次 For 再物化独立视图。
+        Assert.Equal(2, instances.Count);
         Assert.Equal(2, instances.FindAll(reference => reference.TryGetTarget(out _)).Count);
 
         var a = result.Data.Items["a"];
@@ -158,7 +155,7 @@ public sealed class LoadingTests
         Assert.Equal("乙", ja.Next.Value.Name);
         Assert.Same(ja, ja.Next.Value.Next.Value);
         Assert.Same(ja, a.For("language", "ja"));
-        Assert.Equal(8, instances.Count);
+        Assert.Equal(4, instances.Count);
         GC.KeepAlive(result);
     }
 

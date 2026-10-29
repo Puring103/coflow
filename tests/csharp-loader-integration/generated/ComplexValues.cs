@@ -10,6 +10,6 @@ public partial class ComplexValues : global::Coflow.Loader.ICfdRecord
     internal ComplexValues(string id) { this.id = id; }
     public global::System.Collections.Generic.IReadOnlyList<int> samples { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyDictionary<string, int> lookup { get; internal set; } = default!;
-    public global::Coflow.Loader.Option<Payload> optional { get; internal set; } = default!;
+    public global::Coflow.Loader.Option<global::Game.Config.Payload> optional { get; internal set; } = default!;
 }
 }

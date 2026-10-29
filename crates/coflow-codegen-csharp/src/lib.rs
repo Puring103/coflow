@@ -59,8 +59,8 @@ impl CodeGenerator for CsharpCfdCodeGenerator {
             CsharpOptions::deserialize(input.target.options.clone()).map_err(|error| {
                 CodegenError::Message(format!("invalid C# output options: {error}"))
             })?;
-        // 锁文件保留已删除 id 的编号；输出仅包含本次数据中的有效记录 id。
-        let mut active_values = input.id_as_enum_values.clone();
+        // 仅收集当前记录使用的映射；多输出与历史条目无需整份复制后再删除。
+        let mut active_values = IdAsEnumValues::new();
         for en in input.schema.all_enums() {
             let Some(record_type) = input.schema.type_for_id_as_enum(&en.name) else {
                 continue;
@@ -68,21 +68,24 @@ impl CodeGenerator for CsharpCfdCodeGenerator {
             let model = input.model.ok_or_else(|| {
                 CodegenError::Message("@idAsEnum code generation requires CFD data".to_string())
             })?;
-            let ids = model
-                .records_assignable_to(input.schema, &record_type.name)
-                .map(|(_, record)| record.id().to_string())
-                .collect::<std::collections::BTreeSet<_>>();
-            if let Some(entries) = active_values.get_mut(en.name.as_str()) {
-                entries.retain(|id, _| ids.contains(id));
-                for id in &ids {
-                    if !entries.contains_key(id) {
-                        return Err(CodegenError::Message(format!(
-                            "missing stable value for `{en_name}::{id}`",
-                            en_name = en.name
-                        )));
-                    }
-                }
+            let entries = input
+                .id_as_enum_values
+                .get(en.name.as_str())
+                .ok_or_else(|| {
+                    CodegenError::Message(format!(
+                        "missing stable values for @idAsEnum enum `{}`",
+                        en.name
+                    ))
+                })?;
+            let mut active = std::collections::BTreeMap::new();
+            for (_, record) in model.records_assignable_to(input.schema, &record_type.name) {
+                let id = record.id();
+                let value = entries.get(id).ok_or_else(|| {
+                    CodegenError::Message(format!("missing stable value for `{}::{id}`", en.name))
+                })?;
+                active.insert(id.to_owned(), *value);
             }
+            active_values.insert(en.name.to_string(), active);
         }
         let files = emit::generate(input.schema, &options.namespace, &active_values)
             .map_err(|error| CodegenError::Message(error.to_string()))?;

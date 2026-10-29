@@ -1,92 +1,99 @@
-using System.Collections;
-using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
 using Coflow.Loader;
 
-// 构造阶段排除解析，全加载阶段包含解析、构造、变体验证及表注册；两者分别报告。
-var recordCount = args.Length > 0 ? int.Parse(args[0]) : 500;
-var repeats = args.Length > 1 ? int.Parse(args[1]) : 5;
-// 时间采样使用生成代码实际传入的数组；计数容器只用于单独的工作量观测。
-var countDescriptors = args.Length > 2 && args[2] == "count-descriptors";
-foreach (var fieldCount in new[] { 32, 128, 512 })
-foreach (var variantCount in new[] { 0, 3 })
+if (args.Contains("--help"))
 {
-    var names = Enumerable.Range(0, fieldCount).Select(index => "f" + index).ToArray();
-    var descriptors = names.Select(name => (CfdField)new CfdField<int>(name,
-        CfdValues.Dimension("language", CfdValues.Int))).ToArray();
-    var countedFields = new CountedFields(descriptors);
-    IReadOnlyList<CfdField> fields = countDescriptors ? countedFields : descriptors;
-    var type = new CfdType<Row>("Row", CfdTypeKind.Table, fields, _ => new Row(),
-        (row, reader) => row.Values = names.Select(reader.Get<int>).ToArray(), null);
-    long? schemaReads = countDescriptors ? countedFields.Reads : null;
-    var types = new CfdType[] { type };
-    var text = new StringBuilder();
-    for (var record = 0; record < recordCount; record++)
+    Console.WriteLine("Coflow.Loader.Benchmarks [records=500] [samples=7] [count-descriptors] " +
+        "[--suite wide,parser,variants,realistic,for,tables|all] [--records N] [--samples N] " +
+        "[--warmups N] [--variant-counts 3,12] [--for-iterations 100] [--smoke]");
+    return;
+}
+
+var options = BenchmarkOptions.Parse(args);
+var runner = new BenchmarkRunner(options);
+foreach (var suite in options.Suites)
+{
+    switch (suite)
     {
-        text.Append('r').Append(record).Append(": Row {");
-        foreach (var name in names) text.Append(name).Append(": 1,");
-        text.Append("}\n");
-    }
-    for (var variant = 0; variant < variantCount; variant++)
-        text.Append("language[v").Append(variant).Append("] { r0: Row { f0: 2 } }\n");
-    var sources = new[] { new CfdSource("rows.cfd", text.ToString()) };
-    var documents = CfdParser.ParseAll(sources);
-    foreach (var phase in new[] { "construction", "full-load" })
-    {
-        CfdData Run()
-        {
-            if (phase == "full-load")
+        case "wide":
+            // 保留原始宽表输入、变体稀疏度和字符串 Get 回调，便于复用历史对照。
+            foreach (var fields in new[] { 32, 128, 512 })
+            foreach (var variants in new[] { 0, 3 })
+                runner.LoadPhases(Fixtures.Wide(options.Records, fields, variants, false, options.CountDescriptors), suite);
+            break;
+        case "parser":
+            foreach (var fields in new[] { 32, 128, 512 })
+                runner.Parser(Fixtures.Wide(options.Records, fields, 0, false, options.CountDescriptors), suite);
+            foreach (var dense in new[] { false, true })
+                runner.Parser(Fixtures.Realistic(options.Records, 3, dense), suite);
+            break;
+        case "variants":
+            foreach (var variants in options.VariantCounts)
+            foreach (var dense in new[] { false, true })
+                runner.LoadPhases(Fixtures.Wide(options.Records, 128, variants, dense, options.CountDescriptors), suite);
+            break;
+        case "realistic":
+            runner.LoadPhases(Fixtures.Realistic(options.Records, 0, false), suite);
+            foreach (var variants in options.VariantCounts)
+            foreach (var dense in new[] { false, true })
+                runner.LoadPhases(Fixtures.Realistic(options.Records, variants, dense), suite);
+            break;
+        case "for":
+            foreach (var dense in new[] { false, true })
+                runner.Views(Fixtures.Realistic(options.Records, 3, dense), suite);
+            break;
+        case "tables":
+            foreach (var typeCount in new[] { 1, 16, 64 })
             {
-                var loaded = CfdLoader.Load(sources, types, data => data);
-                if (!loaded.Success) throw new InvalidOperationException(string.Join("; ", loaded.Diagnostics));
-                return loaded.Data;
+                var fixture = Fixtures.ManyTables(options.Records, typeCount);
+                runner.LoadPhases(fixture, suite);
+                runner.TableRegistration(fixture, suite);
             }
-            var context = new LoadContext(documents, types, null);
-            context.Build();
-            return new CfdData(types, context.Records);
-        }
-        Run();
-        var times = new List<double>();
-        var allocated = new List<long>();
-        var descriptorReads = new List<long>();
-        for (var repeat = 0; repeat < repeats; repeat++)
-        {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            countedFields.Reads = 0;
-            var before = GC.GetAllocatedBytesForCurrentThread();
-            var watch = Stopwatch.StartNew();
-            var data = Run();
-            watch.Stop();
-            allocated.Add(GC.GetAllocatedBytesForCurrentThread() - before);
-            times.Add(watch.Elapsed.TotalMilliseconds);
-            descriptorReads.Add(countedFields.Reads);
-            if (data.Table<Row>().Count != recordCount || data.Table<Row>()["r0"].Values[0] != 1)
-                throw new InvalidOperationException("Unexpected loaded values.");
-        }
-        Console.WriteLine(JsonSerializer.Serialize(new {
-            recordCount, fieldCount, variantCount, phase, countDescriptors,
-            schemaDescriptorReads = schemaReads, samplesMs = times, allocatedBytes = allocated,
-            sourceDescriptorReads = countDescriptors ? descriptorReads : null,
-        }));
+            break;
     }
 }
 
-sealed class Row : ICfdRecord
+sealed record BenchmarkOptions(int Records, int Samples, int Warmups, int ForIterations,
+    int[] VariantCounts, string[] Suites, bool CountDescriptors)
 {
-    public CfdReader Reader { get; set; } = null!;
-    internal int[] Values = Array.Empty<int>();
-}
-
-sealed class CountedFields(CfdField[] items) : IReadOnlyList<CfdField>
-{
-    internal long Reads;
-    public int Count => items.Length;
-    public CfdField this[int index] { get { Reads++; return items[index]; } }
-    public IEnumerator<CfdField> GetEnumerator()
+    internal static BenchmarkOptions Parse(string[] args)
     {
-        for (var index = 0; index < Count; index++) yield return this[index];
+        var records = 500;
+        var samples = 7;
+        var warmups = 1;
+        var forIterations = 100;
+        var variants = new[] { 3, 12 };
+        var suites = new[] { "wide" };
+        var countDescriptors = false;
+        var smoke = false;
+        var positional = 0;
+        for (var index = 0; index < args.Length; index++)
+        {
+            string Value() => ++index < args.Length ? args[index] : throw new ArgumentException("Missing option value.");
+            switch (args[index])
+            {
+                case "--records": records = int.Parse(Value()); break;
+                case "--samples": samples = int.Parse(Value()); break;
+                case "--warmups": warmups = int.Parse(Value()); break;
+                case "--for-iterations": forIterations = int.Parse(Value()); break;
+                case "--variant-counts": variants = Value().Split(',').Select(int.Parse).ToArray(); break;
+                case "--suite": suites = Value().Split(','); break;
+                case "count-descriptors":
+                case "--count-descriptors": countDescriptors = true; break;
+                case "--smoke": smoke = true; break;
+                default:
+                    if (args[index].StartsWith('-') || positional > 1) throw new ArgumentException($"Unknown argument: {args[index]}");
+                    if (positional++ == 0) records = int.Parse(args[index]);
+                    else samples = int.Parse(args[index]);
+                    break;
+            }
+        }
+        var available = new[] { "wide", "parser", "variants", "realistic", "for", "tables" };
+        if (suites.Contains("all")) suites = available;
+        if (suites.Any(suite => !available.Contains(suite))) throw new ArgumentException("Unknown benchmark suite.");
+        if (records < 1 || samples < 1 || warmups < 1 || forIterations < 1 || variants.Length == 0 || variants.Any(value => value < 1))
+            throw new ArgumentException("Record, sample, warmup, iteration and variant counts must be positive.");
+        // 冒烟只验证输入与断言，输出显式标记不足七次，不能混入正式性能报告。
+        if (smoke) { records = Math.Min(records, 8); samples = 1; warmups = 1; forIterations = 3; }
+        return new BenchmarkOptions(records, samples, warmups, forIterations, variants.Distinct().ToArray(), suites.Distinct().ToArray(), countDescriptors);
     }
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

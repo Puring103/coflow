@@ -8,11 +8,11 @@ public partial class ContractEntry : global::Coflow.Loader.ICfdRecord
     global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal ContractEntry(string id) { this.id = id; }
-    public ContractPayload payload { get; internal set; } = default!;
-    public ContractShape shape { get; internal set; } = default!;
-    public ContractBase polymorphic { get; internal set; } = default!;
-    public ContractChild child { get; internal set; } = default!;
-    public ContractNode target { get; internal set; } = default!;
+    public global::Game.Config.ContractPayload payload { get; internal set; } = default!;
+    public global::Game.Config.ContractShape shape { get; internal set; } = default!;
+    public global::Game.Config.ContractBase polymorphic { get; internal set; } = default!;
+    public global::Game.Config.ContractChild child { get; internal set; } = default!;
+    public global::Game.Config.ContractNode target { get; internal set; } = default!;
     public long wide { get; internal set; } = default!;
     public double precise { get; internal set; } = default!;
     public double large { get; internal set; } = default!;
@@ -23,8 +23,8 @@ public partial class ContractEntry : global::Coflow.Loader.ICfdRecord
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> nested { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> constant_nested { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyList<long> samples { get; internal set; } = default!;
-    public ContractFlags flags { get; internal set; } = default!;
-    public global::System.Collections.Generic.IReadOnlyDictionary<ContractFlags, int> indexed { get; internal set; } = default!;
+    public global::Game.Config.ContractFlags flags { get; internal set; } = default!;
+    public global::System.Collections.Generic.IReadOnlyDictionary<global::Game.Config.ContractFlags, int> indexed { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>> some_nested { get; internal set; } = default!;
     public global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>> localized { get; internal set; } = default!;
 }

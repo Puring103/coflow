@@ -11,6 +11,6 @@ public partial class ContractPayload
     public global::System.Collections.Generic.IReadOnlyList<string> labels { get; internal set; } = default!;
     public global::System.Collections.Generic.IReadOnlyDictionary<string, string> indexed_labels { get; internal set; } = default!;
     public global::Coflow.Loader.Option<string> template { get; internal set; } = default!;
-    public ContractDetails nested { get; internal set; } = default!;
+    public global::Game.Config.ContractDetails nested { get; internal set; } = default!;
 }
 }

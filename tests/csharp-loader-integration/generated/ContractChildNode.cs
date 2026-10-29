@@ -3,7 +3,7 @@
 
 namespace Game.Config
 {
-public partial class ContractChildNode : ContractNode
+public partial class ContractChildNode : global::Game.Config.ContractNode
 {
     internal ContractChildNode(string id) : base(id) { }
 }
