@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../../../api'
-import { builtInPlugins } from '../built-in'
 import type { ProjectBootstrap } from '../../../bindings/ProjectBootstrap'
-import { replaceFrontendPlugins, setFrontendPluginEnabled, setPluginProjectDefaults, unloadFrontendPlugin, usePluginSettings, type PluginMetadata } from '../runtime'
+import { setFrontendPluginEnabled, unloadFrontendPlugin, usePluginSettings, type PluginMetadata } from '../runtime'
 import { errorMessage } from '../../../wire'
+import { emptyProjectPlugins, replaceProjectPlugins } from './projectPluginLoading'
 
 export function useFrontendPlugins(project: ProjectBootstrap | null) {
   const settings = usePluginSettings()
@@ -39,19 +39,12 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
     setReady(false)
     const sessionId = project?.session_id
     const projectState = !api.isTauri || sessionId === undefined
-      ? Promise.resolve<api.FrontendPluginProjectState>({
-          plugins: [],
-          errors: [],
-          defaults: { views: {}, presentations: {} },
-        })
+      ? Promise.resolve(emptyProjectPlugins())
       : api.listProjectFrontendPlugins(sessionId)
-    projectState.then(async state => {
-      if (loadSequence.current !== sequence) return
-      setPluginProjectDefaults(state.defaults)
-      const activationErrors = await replaceFrontendPlugins(builtInPlugins, [...globalBundles.current, ...state.plugins])
-      if (loadSequence.current !== sequence) return
-      const errors = [...globalErrors.current, ...state.errors, ...activationErrors]
-      setError(errors.length > 0 ? `部分插件未加载：${errors.join('; ')}` : null)
+    void replaceProjectPlugins(projectState, globalBundles.current, globalErrors.current,
+      () => loadSequence.current === sequence).then(result => {
+      if (!result) return
+      setError(result.error)
       setReady(true)
     }).catch(cause => {
       if (loadSequence.current === sequence) {
@@ -68,20 +61,13 @@ export function useFrontendPlugins(project: ProjectBootstrap | null) {
       && projectSessionRef.current === sessionId
     setReady(false)
     try {
-      const state = api.isTauri && project
-        ? await api.listProjectFrontendPlugins(project.session_id)
-        : {
-            plugins: [],
-            errors: [],
-            defaults: { views: {}, presentations: {} },
-          }
-      if (!isCurrent()) return false
-      setPluginProjectDefaults(state.defaults)
-      const activationErrors = await replaceFrontendPlugins(builtInPlugins, [...globalBundles.current, ...state.plugins])
-      if (!isCurrent()) return false
-      const errors = [...globalErrors.current, ...state.errors, ...activationErrors]
-      setError(errors.length > 0 ? `部分插件未加载：${errors.join('; ')}` : null)
-      return true
+      const pending = api.isTauri && project
+        ? api.listProjectFrontendPlugins(project.session_id)
+        : Promise.resolve(emptyProjectPlugins())
+      const result = await replaceProjectPlugins(pending, globalBundles.current, globalErrors.current, isCurrent)
+      if (!result) return false
+      setError(result.error)
+      return result.projectLoaded
     } finally {
       if (isCurrent()) setReady(true)
     }

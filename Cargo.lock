@@ -432,6 +432,7 @@ dependencies = [
  "cfd-editor-core",
  "coflow-observability",
  "coflow-runtime",
+ "fs2",
  "mimalloc",
  "serde",
  "serde_json",
@@ -441,6 +442,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "tempfile",
  "ts-rs",
 ]
 

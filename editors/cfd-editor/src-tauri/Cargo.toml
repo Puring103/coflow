@@ -27,6 +27,8 @@ ts-export = [
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+tempfile = "3"
+fs2 = "0.4"
 coflow-observability = { path = "../../../crates/coflow-observability" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
