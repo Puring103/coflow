@@ -19,7 +19,7 @@ region[cn] { sword: Item { price: 90 } }
 
 Override blocks target existing records and replace only explicitly supplied dimension fields. The field must be bound to the enclosing dimension and the value must match its declared type. Duplicate overrides for the same dimension, variant, record and field are errors.
 
-Variants are collected from override blocks in all selected CFD files. File order does not establish priority. Missing overrides and unknown variants use the base value. Explicit `None` on an Option field is a valid override and preserves that layer's empty state.
+Variants are collected from override blocks in all selected CFD files. File order does not establish priority. Missing overrides use the base value. C# `For` rejects variants absent from the loaded data with an argument error; Rust projection falls back for unknown variants. Explicit `None` on an Option field is a valid override and preserves that layer's empty state.
 
 In checks, direct field access returns the base value; `.for("ja")` returns the effective variant value; `.hasVariant("ja")` checks for an explicit override. `.variants()` returns effective values for every discovered variant in the field's dimension, including variants without an override on that field.
 
@@ -34,7 +34,7 @@ check TranslationComplete {
 
 Place this rule inside a type with a `name` field. To require a variant that has not appeared anywhere in the project, explicitly check `name.hasVariant("ja")`.
 
-In C#, `item.name` returns the base string. Use `item.For("language", "ja").name` as needed; different consumers can hold different views simultaneously. `item.HasVariant("name", "ja")` checks explicit coverage and `item.Variants("language")` lists known variants. Chain `For` to combine dimensions, for example `item.For("language", "ja").For("region", "cn")`.
+C# tables contain `Dimension<T>` values: `item.Base.name` reads base data and `item.For("language", "ja").name` selects a completed variant. `item.HasVariant("name", "ja")` checks explicit coverage and `item.Variants("language")` lists known variants. Request multi-dimension combinations through `LoadOptions.Combinations`, then query with `item.For(("language", "ja"), ("region", "cn"))`. Fields, references, collections and template results are all complete when loading succeeds.
 
 Templates read dependencies in the current dimension context. If a language field `title` has the base expression `f"Buy {self.name}"` and Japanese overrides only `name` with `"剣"`, `title.for("ja")` returns `"Buy 剣"` while `title.hasVariant("ja")` remains `false`. Fallback evaluates the base expression in the selected context. A same-named variant in another dimension is not selected automatically.
 

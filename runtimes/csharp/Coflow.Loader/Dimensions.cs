@@ -1,81 +1,130 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
+using System.Linq;
 using System.Text;
 
 namespace Coflow.Loader
 {
-/// <summary>Generated records retain the reader that supplies independent dimension views.</summary>
-public interface ICfdRecord
+/// <summary>An immutable, order-independent selection to build or query.</summary>
+public sealed class DimensionSelection
 {
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    CfdReader Reader { get; set; }
-}
-
-public static class CfdRecordDimensions
-{
-    /// <summary>Returns an independent view with the selected dimension variant.</summary>
-    public static T For<T>(this T record, string dimension, string variant) where T : class, ICfdRecord
-        => (T)record.Reader.For(dimension, variant);
-
-    /// <summary>Whether this field explicitly defines the variant, including None or the base value.</summary>
-    public static bool HasVariant(this ICfdRecord record, string field, string variant)
-        => record.Reader.HasVariant(field, variant);
-
-    /// <summary>All variants declared for the dimension in the loaded project.</summary>
-    public static IReadOnlyList<string> Variants(this ICfdRecord record, string dimension)
-        => record.Reader.Variants(dimension);
-}
-
-// 上下文不可变；缓存标识同时包含维度和变体，避免同名变体跨维度串值。
-internal sealed class DimensionSelection
-{
-    internal static DimensionSelection Empty { get; } = new DimensionSelection(Array.Empty<KeyValuePair<string, string>>());
-    private readonly KeyValuePair<string, string>[] _values;
-    private DimensionSelection(KeyValuePair<string, string>[] values)
-    {
-        _values = values;
-        var key = new StringBuilder();
-        foreach (var pair in values) key.Append(pair.Key.Length).Append(':').Append(pair.Key).Append(pair.Value.Length).Append(':').Append(pair.Value);
-        Key = key.ToString();
-    }
+    public static DimensionSelection Empty { get; } = new DimensionSelection();
+    internal readonly (string Dimension, string Variant)[] Values;
     internal string Key { get; }
-    private int Find(string dimension)
+    public DimensionSelection(params (string Dimension, string Variant)[] values)
     {
-        var low = 0;
-        var high = _values.Length - 1;
-        while (low <= high)
+        if (values == null) throw new ArgumentNullException(nameof(values));
+        Values = values.OrderBy(value => value.Dimension, StringComparer.Ordinal).ToArray();
+        var key = new StringBuilder();
+        for (var i = 0; i < Values.Length; i++)
         {
-            var middle = low + ((high - low) / 2);
-            var comparison = StringComparer.Ordinal.Compare(_values[middle].Key, dimension);
-            if (comparison == 0) return middle;
-            if (comparison < 0) low = middle + 1;
-            else high = middle - 1;
+            var pair = Values[i];
+            if (pair.Dimension == null || pair.Variant == null) throw new ArgumentException("Dimension and variant must not be null.", nameof(values));
+            if (i > 0 && Values[i - 1].Dimension == pair.Dimension) throw new ArgumentException($"Duplicate dimension `{pair.Dimension}`.", nameof(values));
+            key.Append(pair.Dimension.Length).Append(':').Append(pair.Dimension).Append(pair.Variant.Length).Append(':').Append(pair.Variant);
         }
-        return ~low;
+        Key = key.ToString();
     }
     internal bool TryGet(string dimension, out string variant)
     {
-        var index = Find(dimension);
-        variant = index < 0 ? null! : _values[index].Value;
-        return index >= 0;
+        foreach (var pair in Values) if (pair.Dimension == dimension) { variant = pair.Variant; return true; }
+        variant = null!; return false;
     }
-    internal DimensionSelection With(string dimension, string variant)
+}
+
+public sealed class LoadOptions
+{
+    /// <summary>Additional multi-dimension combinations to fully construct during loading.</summary>
+    public IReadOnlyList<DimensionSelection> Combinations { get; set; } = Array.Empty<DimensionSelection>();
+}
+
+// 目录只保存已完成结果的位置和变体名称，不持有构建器、读取器或求值委托。
+internal sealed class DimensionCatalog
+{
+    private readonly Dictionary<string, IReadOnlyList<string>> _variants = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+    private readonly Dictionary<(string, string), int> _single = new Dictionary<(string, string), int>();
+    private readonly Dictionary<string, int> _indices = new Dictionary<string, int>(StringComparer.Ordinal);
+    internal IReadOnlyList<DimensionSelection> Selections { get; }
+    internal DimensionCatalog(Dictionary<string, SortedSet<string>> variants, LoadOptions? options)
+    {
+        var selections = new List<DimensionSelection> { DimensionSelection.Empty };
+        _indices.Add("", 0);
+        foreach (var dimension in variants.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            _variants.Add(dimension.Key, Array.AsReadOnly(dimension.Value.ToArray()));
+            foreach (var variant in dimension.Value)
+            {
+                var selection = new DimensionSelection((dimension.Key, variant));
+                _single.Add((dimension.Key, variant), selections.Count);
+                _indices.Add(selection.Key, selections.Count);
+                selections.Add(selection);
+            }
+        }
+        if (options != null)
+            foreach (var selection in options.Combinations ?? throw new ArgumentException("Combinations must not be null.", nameof(options)))
+            {
+                if (selection == null) throw new ArgumentException("A combination must not be null.", nameof(options));
+                Validate(selection);
+                if (_indices.ContainsKey(selection.Key)) continue;
+                _indices.Add(selection.Key, selections.Count);
+                selections.Add(selection);
+            }
+        Selections = selections.AsReadOnly();
+    }
+    internal IReadOnlyList<string> Variants(string dimension) => _variants.TryGetValue(dimension, out var values)
+        ? values : throw new ArgumentException($"Unknown dimension `{dimension}`.", nameof(dimension));
+    private void Validate(DimensionSelection selection)
+    {
+        foreach (var pair in selection.Values) Index(pair.Dimension, pair.Variant);
+    }
+    internal int Index(string dimension, string variant)
+    {
+        var names = Variants(dimension);
+        if (variant == null) throw new ArgumentNullException(nameof(variant));
+        return _single.TryGetValue((dimension, variant), out var index) ? index
+            : throw new ArgumentException($"Unknown variant `{variant}` for dimension `{dimension}`. Loaded variants: [{string.Join(", ", names)}].", nameof(variant));
+    }
+    internal int Index(DimensionSelection selection)
+    {
+        if (selection == null) throw new ArgumentNullException(nameof(selection));
+        Validate(selection);
+        return _indices.TryGetValue(selection.Key, out var index) ? index
+            : throw new ArgumentException("This dimension combination was not built; include it in LoadOptions.Combinations.", nameof(selection));
+    }
+    internal bool TryIndex(string dimension, string variant, out int index) => _single.TryGetValue((dimension, variant), out index);
+    internal bool TryIndex(DimensionSelection selection, out int index)
+    {
+        if (selection == null) throw new ArgumentNullException(nameof(selection));
+        return _indices.TryGetValue(selection.Key, out index);
+    }
+}
+
+/// <summary>Fully constructed values. Selection never loads, evaluates or creates business data.</summary>
+public sealed class Dimension<T>
+{
+    private readonly DimensionCatalog _catalog;
+    private readonly T[] _values;
+    private readonly Dictionary<string, HashSet<string>>? _overrides;
+    internal Dimension(DimensionCatalog catalog, T[] values, Dictionary<string, HashSet<string>>? overrides = null)
+    { _catalog = catalog; _values = values; _overrides = overrides; }
+    public T Base => _values[0];
+    public T For(string dimension, string variant) => _values[_catalog.Index(dimension, variant)];
+    public T For(DimensionSelection selection) => _values[_catalog.Index(selection)];
+    public T For(params (string Dimension, string Variant)[] selection) => For(new DimensionSelection(selection));
+    public bool TryFor(DimensionSelection selection, out T value)
+    {
+        if (_catalog.TryIndex(selection, out var index)) { value = _values[index]; return true; }
+        value = default!; return false;
+    }
+    public bool TryFor(string dimension, string variant, out T value)
     {
         if (dimension == null || variant == null) throw new ArgumentNullException();
-        var index = Find(dimension);
-        if (index >= 0 && _values[index].Value == variant) return this;
-        // 维度组合通常很小，紧凑有序数组避免每次选择分配树节点，并保留顺序无关的键。
-        var values = new KeyValuePair<string, string>[_values.Length + (index < 0 ? 1 : 0)];
-        if (index >= 0) Array.Copy(_values, values, _values.Length);
-        else
-        {
-            index = ~index;
-            Array.Copy(_values, 0, values, 0, index);
-            Array.Copy(_values, index, values, index + 1, _values.Length - index);
-        }
-        values[index] = new KeyValuePair<string, string>(dimension, variant);
-        return new DimensionSelection(values);
+        if (_catalog.TryIndex(dimension, variant, out var index)) { value = _values[index]; return true; }
+        value = default!; return false;
     }
+    public IReadOnlyList<string> Variants(string dimension) => _catalog.Variants(dimension);
+    public bool HasVariant(string field, string variant)
+        => _overrides != null && _overrides.TryGetValue(field, out var values) ? values.Contains(variant)
+            : throw new ArgumentException($"Field `{field}` is not bound to a dimension.", nameof(field));
 }
 }

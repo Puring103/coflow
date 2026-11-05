@@ -17,16 +17,21 @@ internal static class Program
         };
         var loaded = CoflowData.Load(sources);
         Require(loaded.Success, string.Join("; ", loaded.Diagnostics));
-        var data = loaded.Data;
+        var catalog = loaded.Data;
+        var data = catalog.Base;
         var collision = data.Table<NamedCollision>().Get(Ids.collision);
         Require(collision.types == Types.Normal && collision.constants == Constants.Normal
             && collision.table_value == Game.Config.Table.Normal && collision.load == Game.Config.Load.Normal
             && collision.singleton_value == Singleton.Normal, "generated helper names never shadow business enum types");
+        Require(collision._coflowReader == 11 && collision._coflowReader_ == 12, "reader storage names never shadow business fields");
+        Require(typeof(Item).GetProperty("name")!.GetSetMethod() == null
+            && typeof(Stats).GetProperty("hp")!.GetSetMethod() == null,
+            "generated class and struct properties have no public setters");
         var alpha = data.Table<Item>()["alpha"];
         var beta = data.Table<Item>()["beta"];
         Require(data.Table<@class>()["keyword"].@namespace == "public" && data.Table<@class>()["keyword"].state == @event.@public, "C# keywords are escaped in all generated declarations and accesses");
         Require(typeof(Stats).IsValueType, "Stats must be a struct");
-        Require(data.ItemCount == 2 && !alpha.IsFree && alpha.stats.IsAlive, "partial class, struct and data access extensions");
+        Require(catalog.ItemCount == 2 && !alpha.IsFree && alpha.stats.IsAlive, "partial class, struct and data access extensions");
         Require(data.Singleton<Settings>().StartId == "alpha", "partial singleton");
         Require(ReferenceEquals(data.Table<Item>(), data.Table<Item>()), "table access reuses registered table");
         Require(ReferenceEquals(data.Table<Item>().Get(EntityId.alpha), alpha), "enum id resolves to original identity");
@@ -42,10 +47,13 @@ internal static class Program
         catch (InvalidOperationException) { }
         Require(ReferenceEquals(alpha.next.Value, beta) && ReferenceEquals(beta.next.Value, alpha), "circular references must preserve identity");
         Require(ReferenceEquals(data.Table<Entity>()["alpha"], alpha) && ReferenceEquals(data.Singleton<Settings>().start, alpha), "views and singleton references must share objects");
-        Require(alpha.name == "Alpha" && alpha.For("language", "ja").name == "アルファ" && alpha.For("language", "unknown").name == "Alpha", "dimension selection and fallback");
-        Require(alpha.HasVariant(nameof(alpha.name), "ja") && !beta.HasVariant(nameof(beta.name), "ja"), "explicit variant presence survives loading");
-        Require(alpha.For("language", "ja").label == "{item} アルファ: 12" && alpha.name == "Alpha", "template fallback is evaluated in an independent selected view");
-        Require(ReferenceEquals(alpha.For("language", "ja").next.Value.next.Value, alpha.For("language", "ja")), "view references preserve cyclic identity");
+        Require(alpha.name == "Alpha" && catalog.Table<Item>()["alpha"].For("language", "ja").name == "アルファ", "dimension selection");
+        try { catalog.Table<Item>()["alpha"].For("language", "unknown"); throw new Exception("unknown variant must fail"); }
+        catch (ArgumentException error) when (error.ParamName == "variant") { }
+        Require(catalog.Table<Item>()["alpha"].HasVariant(nameof(alpha.name), "ja") && !catalog.Table<Item>()["beta"].HasVariant(nameof(beta.name), "ja"), "explicit variant presence survives loading");
+        Require(catalog.Table<Item>()["alpha"].For("language", "ja").label == "{item} アルファ: 12" && alpha.name == "Alpha", "template fallback is evaluated in an independent selected view");
+        Require(ReferenceEquals(catalog.Table<Item>()["alpha"].For("language", "ja").next.Value.next.Value, catalog.Table<Item>()["alpha"].For("language", "ja")), "view references preserve cyclic identity");
+        Require(ReferenceEquals(alpha.nums, catalog.Table<Item>()["alpha"].For("language", "ja").nums) && ReferenceEquals(alpha.indexed, catalog.Table<Item>()["alpha"].For("language", "ja").indexed), "fixed collections are shared across views");
         Require(alpha.enum_label == "Everything", "generated enum interpolation");
         Require(alpha.label == "{item} Alpha: 12", "basic nested interpolation");
         Require(alpha.stats.extra.settings.hp == 9, "nested typed defaults and loader-name collisions");
@@ -66,24 +74,24 @@ internal static class Program
             {
                 // CFD 身份采用完整 XID；默认字符串跨生成、编译和加载后保持原值。
                 foreach (var id in new[] { "℘", "𐐀key", "a·b" })
-                    Require(result.Data.Table<UnicodeDefaults>()[id].text == "a\u2028b\u2029c\u0085d", "Unicode identifiers and literal roundtrip");
+                    Require(result.Data.Base.Table<UnicodeDefaults>()[id].text == "a\u2028b\u2029c\u0085d", "Unicode identifiers and literal roundtrip");
             }
             if (Path.GetFileName(fixture) == "numeric-widths.valid.cfd")
             {
-                var numbers = result.Data.Table<NumericValues>()["numeric"];
+                var numbers = result.Data.Base.Table<NumericValues>()["numeric"];
                 Require(numbers.small == int.MaxValue && numbers.wide == long.MaxValue, "declared integer widths");
                 Require(numbers.rounded == 0.1f && numbers.precise == 0.1d && (double)numbers.rounded != numbers.precise, "declared floating point precision");
                 Require(numbers.bits == NumericBits.Everything && (int)NumericBits.Everything == 9 && (int)NumericBits.None == 0, "built-in flag members");
                 Require((long)numbers.code == 4294967296L, "int64 enum");
             }
             if (Path.GetFileName(fixture) == "complex-values.valid.cfd")
-                Require(result.Data.Table<ComplexValues>()["sample"].optional.Value.score == 13, "inline class within Some");
+                Require(result.Data.Base.Table<ComplexValues>()["sample"].optional.Value.score == 13, "inline class within Some");
             if (Path.GetFileName(fixture) == "record-references.valid.cfd")
-                Require(ReferenceEquals(result.Data.Table<Node>()["a"].next.Value, result.Data.Table<Node>()["b"]), "shared typed reference");
+                Require(ReferenceEquals(result.Data.Base.Table<Node>()["a"].next.Value, result.Data.Base.Table<Node>()["b"]), "shared typed reference");
             if (Path.GetFileName(fixture) == "migration-contract.valid.cfd")
             {
-                var entry = result.Data.Table<ContractEntry>()["entry"];
-                var shape = result.Data.Table<ContractNode>()["a"];
+                var entry = result.Data.Base.Table<ContractEntry>()["entry"];
+                var shape = result.Data.Base.Table<ContractNode>()["a"];
                 Require(entry.payload.score == 2147483648L && entry.shape.count == 2147483648L, "class and struct inline values");
                 Require(entry.payload.label == "score 2147483648" && entry.payload.labels[0] == "array 2147483648"
                     && entry.payload.indexed_labels["label"] == "dict 2147483648" && entry.payload.template.Value == "optional 2147483648", "inline data owns templates in scalar and collection fields");
@@ -96,12 +104,16 @@ internal static class Program
                 Require(entry.samples[0] == 2147483648L && entry.samples[1] == long.MinValue
                     && entry.flags == (ContractFlags.A | ContractFlags.B) && entry.indexed[entry.flags] == 7, "compound constants and flag keys");
                 Require(entry.shape.inner.Value.count == 4 && entry.shape.inner.Value.inner.IsNone, "finite recursive struct values");
-                Require(entry.localized.Value.Value == "base" && entry.For("contract_language", "ja").localized.Value.IsNone && entry.For("contract_language", "en").localized.IsNone, "distinct option layers in overlays");
+                Require(entry.localized.Value.Value == "base" && result.Data.Table<ContractEntry>()["entry"].For("contract_language", "ja").localized.Value.IsNone && result.Data.Table<ContractEntry>()["entry"].For("contract_language", "en").localized.IsNone, "distinct option layers in overlays");
                 Require(ReferenceEquals(shape.next.Value.next.Value, shape) && ReferenceEquals(entry.target, shape), "table references preserve cycles");
                 Require(entry.polymorphic is ContractChild child && child.score == 7, "data subtype in class field");
                 Require(entry.child.score == 8 && entry.child.name == "value", "inherited data fields");
             }
         }
+        Require(default(Stats).hp == 0, "default struct has ordinary value fields");
+        Require(typeof(Item).GetInterfaces().Length == 0, "business data has no loader interface");
+        Require(ReferenceEquals(catalog.Table<Item>().Get(EntityId.alpha).Base, alpha), "dimension enum lookup shares base identity");
+        Require(ReferenceEquals(catalog.For("language", "ja").Table<Item>()["alpha"], catalog.Table<Item>()["alpha"].For("language", "ja")), "catalog and record selection share objects");
         Console.WriteLine("Generated C# loading and shared runtime corpus passed.");
     }
 }

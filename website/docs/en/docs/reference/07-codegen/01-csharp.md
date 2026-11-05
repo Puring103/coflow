@@ -44,8 +44,8 @@ if (!result.Success) {
 var data = result.Data;
 var items = data.Table<Item>();
 var sword = items["sword"];
-var settings = data.Singleton<Settings>();
-var baseName = sword.name;
+var settings = data.Singleton<Settings>().Base;
+var baseName = sword.Base.name;
 var japaneseName = sword.For("language", "ja").name;
 ```
 
@@ -69,7 +69,7 @@ Supply all mutually referencing CFD contents together. Paths locate diagnostics.
 
 Flags generate `[Flags]`, `None = 0` and `Everything` computed from actual flag bits. `@int64` also works with `@flag` and record ID enums.
 
-Records and singletons have `string id`. Dimension fields retain their business types; direct access reads the base value. C# keyword names are escaped with `@` in generated source.
+Generated properties are publicly read-only and directly store completed values. Records and singletons have `string id`. Dimension fields retain their business types; select a base or variant object through its dimension container. C# keyword names are escaped with `@` in generated source.
 
 Generated types preserve abstract, sealed and inheritance constraints. Put business methods and computed properties in separate partial files within the same namespace and assembly:
 
@@ -91,7 +91,7 @@ table Item { name: string; }
 This generates stable numeric enum values and table query extensions:
 
 ```csharp
-Item sword = data.Table<Item>().Get(ItemId.sword);
+Dimension<Item> sword = data.Table<Item>().Get(ItemId.sword);
 bool found = data.Table<Item>().TryGet(ItemId.shield, out var shield);
 ```
 
@@ -103,25 +103,30 @@ Keep `coflow.enum.lock.json` in version control. Record IDs in the same enum mus
 
 ```csharp
 var japanese = sword.For("language", "ja");
-var mobileJapanese = japanese.For("platform", "mobile");
+var ordinaryName = sword.Base.name;
+bool translated = sword.HasVariant(nameof(Item.name), "ja");
+var japaneseData = data.For("language", "ja");
+Item sameSword = japaneseData.Table<Item>()["sword"];
+```
 
-var ordinaryName = sword.name;
-var translatedName = japanese.name;
-bool translated = sword.HasVariant(nameof(sword.name), "ja");
+`Table<T>()` contains `Dimension<T>` values; `Singleton<T>()` returns a `Dimension<T>`. Use `.Base` for base data and `.For` for an already built variant. The root's `Base` and `For` return a complete data set with ordinary records and singletons. Both entry points share object identity. Reads and selection never build business data.
 
-foreach (var variant in sword.Variants("language")) {
-    var text = sword.For("language", variant).name;
-    var explicitlyProvided = sword.HasVariant(nameof(sword.name), variant);
+Loading builds base data and every declared single-dimension variant. Declare additional combinations when loading:
+
+```csharp
+var selection = new DimensionSelection(
+    ("language", "ja"), ("platform", "mobile"));
+var result = CoflowData.Load(sources, new LoadOptions {
+    Combinations = new[] { selection }
+});
+if (result.Success) {
+    Item item = result.Data.Table<Item>()["sword"].For(selection);
 }
 ```
 
-`For` returns an independent record view so interfaces may use different variants simultaneously. Chain calls to combine dimensions; selecting the same dimension again replaces its selection. Unknown dimensions are errors. Missing overrides or unknown variants within known dimensions use the base expression.
+Combination order does not matter. Unknown dimensions, unknown variants and combinations not built during loading throw `ArgumentException`; `TryFor(selection, out value)` returns false. Unknown-variant errors list loaded variants. Missing overrides in a known variant use the base expression, evaluated during loading in the selected context.
 
-References, inline data, collections and templates in a view share its selection context. If only name has a Japanese override, a base template `f"Buy {self.name}"` still reads the Japanese name in that view.
-
-`HasVariant(field, variant)` checks explicit assignment. Explicit `None`, empty strings and overrides equal to the base value count as present. The field must be bound to a dimension. Fallback alone returns false.
-
-`Variants(dimension)` returns all known variants in that dimension, including ones not supplied for the current record. Use `HasVariant` for field-specific coverage.
+`Variants(dimension)` lists loaded variants, including empty override blocks. `HasVariant(field, variant)` checks explicit assignments, including None, empty strings and values equal to the base. Use `nameof(Item.name)` for the field name. A fallback value does not count as an explicit override.
 
 ## Options, strings and diagnostics
 
@@ -129,7 +134,7 @@ References, inline data, collections and templates in a view share its selection
 
 Strings support ordinary literals and explicit `f"..."` interpolation. Ordinary braces remain literal; interpolation reads values in the current view.
 
-Initial loading validates base data and each declared dimension variant. A first-time combination of dimensions that exposes a dependency cycle or similar error makes `For` throw `CfdLoadException`; inspect its `Diagnostics`. CFT business rules execute through CLI validation, builds or the editor.
+Loading completes and validates all requested data, including references, collections and template results. Dependency errors in any requested combination are reported in `LoadResult.Diagnostics`; no partial data is returned. CFT business rules execute through CLI validation, builds or the editor.
 
 ## Application resources and reloads
 

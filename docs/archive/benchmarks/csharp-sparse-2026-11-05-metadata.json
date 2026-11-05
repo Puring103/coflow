@@ -1,0 +1,83 @@
+{
+  "baselineCommit": "70323a4cad6f29a105e95705cdecd74380c54c73",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dotnet": ".NET SDK:\n Version:           8.0.427\n Commit:            38c6707c62\n Workload version:  8.0.400-manifests.29236f5f\n MSBuild version:   17.11.69+4d6a29faa\n\n运行时环境:\n OS Name:     Windows\n OS Version:  10.0.26300\n OS Platform: Windows\n RID:         win-x64\n Base Path:   C:\\Program Files\\dotnet\\sdk\\8.0.427\\\n\n已安装 .NET 工作负载:\n配置为在安装新清单时使用 loose manifests。\n没有要显示的已安装工作负载。\n\nHost:\n  Version:      10.0.14\n  Architecture: x64\n  Commit:       0427b9abbe\n\n.NET SDKs installed:\n  8.0.427 [C:\\Program Files\\dotnet\\sdk]\n\n.NET runtimes installed:\n  Microsoft.AspNetCore.App 8.0.33 [C:\\Program Files\\dotnet\\shared\\Microsoft.AspNetCore.App]\n  Microsoft.NETCore.App 8.0.33 [C:\\Program Files\\dotnet\\shared\\Microsoft.NETCore.App]\n  Microsoft.NETCore.App 10.0.14 [C:\\Program Files\\dotnet\\shared\\Microsoft.NETCore.App]\n  Microsoft.WindowsDesktop.App 8.0.33 [C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App]\n  Microsoft.WindowsDesktop.App 10.0.14 [C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App]\n\nOther architectures found:\n  None\n\nEnvironment variables:\n  Not set\n\nglobal.json file:\n  Not found\n\nLearn more:\n  https://aka.ms/dotnet/info\n\nDownload .NET:\n  https://aka.ms/dotnet/download\n",
+  "tieredCompilation": false,
+  "records": 500,
+  "fields": 128,
+  "variants": 12,
+  "warmups": 2,
+  "samples": 7,
+  "sourceHashes": {
+    "runtimes\\csharp\\Coflow.Loader\\BoundValues.cs": "00fa7ed58e31fac48076dd307d982e3126f26685cb3ae96709300914fd446025",
+    "runtimes\\csharp\\Coflow.Loader\\Descriptors.cs": "60a838e711285798955009da7ed10e81bd879955a8364c48bea98074276debf7",
+    "runtimes\\csharp\\Coflow.Loader\\Dimensions.cs": "012ab1c541545cc37cccb77b5e45b15962a1f51d2e3136bca06a896a4cd77e31",
+    "runtimes\\csharp\\Coflow.Loader\\Loading.cs": "b059c103b39174c8ded9896e62ea36eb67131346eae7b954ac50b0ac56b8e039",
+    "runtimes\\csharp\\Coflow.Loader\\Option.cs": "0945d6783a67ec0f52984ebb593bddc9c174c940b69c67e12c5a9b5eeb1e6c12",
+    "runtimes\\csharp\\Coflow.Loader\\Table.cs": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdDiagnostics.cs": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdIdentifiers.cs": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdNodes.cs": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdParser.cs": "5e1b38140b8b0c521ec1e3a85c20d9ec8397cda12f393dfbfee672f45fb29e77",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdSource.cs": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdSpan.cs": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00",
+    "runtimes\\csharp\\Coflow.Loader\\Cfd\\CfdXid.Generated.cs": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546",
+    "runtimes\\csharp\\Coflow.Loader\\Compatibility\\IsExternalInit.cs": "0a12270825b5301dc0a9490c73810de94413517649b2438030a5ae6d8b3990c2"
+  },
+  "summary": {
+    "baseline": {
+      "loadMs": {
+        "median": 64.377,
+        "min": 56.8544,
+        "max": 68.1676
+      },
+      "loadAllocated": {
+        "median": 44685400,
+        "min": 44685400,
+        "max": 44685400
+      },
+      "viewMs": {
+        "median": 58.3632,
+        "min": 56.6014,
+        "max": 75.0447
+      },
+      "retained": {
+        "median": 44040552,
+        "min": 44040024,
+        "max": 44040552
+      },
+      "readMs": {
+        "median": 0.8391,
+        "min": 0.8326,
+        "max": 0.9046
+      }
+    },
+    "sparse": {
+      "loadMs": {
+        "median": 24.9245,
+        "min": 20.4734,
+        "max": 30.8322
+      },
+      "loadAllocated": {
+        "median": 24858008,
+        "min": 24858008,
+        "max": 24858008
+      },
+      "viewMs": {
+        "median": 15.3679,
+        "min": 9.8373,
+        "max": 23.5289
+      },
+      "retained": {
+        "median": 8155224,
+        "min": 8155200,
+        "max": 8155248
+      },
+      "readMs": {
+        "median": 14.1931,
+        "min": 11.3077,
+        "max": 20.2597
+      }
+    }
+  }
+}

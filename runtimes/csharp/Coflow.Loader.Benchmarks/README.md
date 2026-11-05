@@ -1,6 +1,6 @@
 # C# Loader 性能观测
 
-该工具以同一套输入和业务构造回调链接指定版本的 Loader 源码，输出每个场景的 NDJSON 样本。默认使用双方共有的 `reader.Get<T>(string)` API；字段序号 API 不参与此组对照。工具不属于发布门禁。
+该工具使用共享 CFD 夹具和只读业务视图，输出各场景的 NDJSON 样本。字段访问采用 `reader.Get<T>(string)`。工具使用当前 Loader 构造协议，不属于发布门禁；历史对照应使用对应版本的工具。
 
 ## 运行
 
@@ -34,11 +34,11 @@ dotnet run --project runtimes/csharp/Coflow.Loader.Benchmarks --configuration Re
 ## 计时与校验
 
 - `parser-only`：从已有文本解析所有文件，结果为语法文档；不包括绑定、业务对象或表注册。
-- `construction`：从已解析文档开始，包括输入发现、绑定、基础构造、已声明单维度变体验证和表注册。
+- `construction`：从已解析文档开始，包括输入发现、绑定、基础构造、已声明单维度变体完整构建和表注册。
 - `full-load`：包含完整公共加载入口的解析、构造、校验和注册。
 - `table-registration`：提前完成 `LoadContext.Build()`，只计量 `CfdData` 的类型表注册。
-- `first-for`：每个样本先加载新数据，计时内对每条记录调用一次 `For("language", "v0")`。循环引用会在首次访问时共同构造，因此部分后续记录调用可命中同一对象图的缓存。
-- `cached-for`：提前加载数据并对全部记录建立目标视图，计时内重复访问。`operationsPerSample = recordCount × forIterations`，耗时和分配均为这些操作的总量。
+- `first-for`：每个样本先加载新数据，计时内对每条记录调用一次 `For("language", "v0")`。For 只查询加载时已完成的对象；计时不包含业务构建或求值。
+- `cached-for`：提前加载完整数据并对全部记录查询目标上下文，计时内重复访问。`operationsPerSample = recordCount × forIterations`，耗时和分配均为这些操作的总量。
 
 文本生成、schema 描述符创建、准备阶段、输出数组、值断言和 JSON 序列化均在计时外。解析阶段校验文档、记录、字段及覆盖数量；业务加载校验全部基础值，现实夹具额外校验引用身份、插值与嵌套值；视图阶段校验覆盖、基础对象隔离及重复读取身份。
 
@@ -46,16 +46,14 @@ dotnet run --project runtimes/csharp/Coflow.Loader.Benchmarks --configuration Re
 
 正式比较至少使用 7 个样本，以原始样本报告中位数和范围；不要把少量样本解释为稳定 P95。固定硬件、运行时和编译选项，记录后台负载，串行运行对照；输入 `sourceSha256`、参数、操作数和工具源码应匹配。
 
-## 链接两个 Loader 版本
+## 版本对照
 
-工作区默认启用 `UseBoundLoader=true`，使用新的内部 `CfdData(types, context)` 签名。显式指定 `LoaderSourceRoot` 时默认关闭该条件；旧版使用 `CfdData(types, context.Records)`。若指定的是新版源码副本，显式传 `-p:UseBoundLoader=true`。
+`LoaderSourceRoot` 可指定采用同一描述符协议的 Loader 源码副本。跨构造协议比较使用各自版本的业务适配，保持 CFD 输入、记录数、覆盖数量和操作数相同，并注明字段读取与视图物化时机差异。
 
-```powershell
-dotnet build runtimes/csharp/Coflow.Loader.Benchmarks --configuration Release --no-incremental -p:LoaderSourceRoot=C:/temp/loader-baseline/Coflow.Loader -p:UseBoundLoader=false -o C:/temp/loader-bench-baseline
-dotnet build runtimes/csharp/Coflow.Loader.Benchmarks --configuration Release --no-incremental -p:UseBoundLoader=true -o C:/temp/loader-bench-current
-$env:DOTNET_TieredCompilation = '0'
-dotnet C:/temp/loader-bench-baseline/Coflow.Loader.Benchmarks.dll --suite all --records 500 --samples 7 --warmups 2
-dotnet C:/temp/loader-bench-current/Coflow.Loader.Benchmarks.dll --suite all --records 500 --samples 7 --warmups 2
-```
+稀疏视图与完整物化视图的对照程序、原始样本及限制见 [稀疏视图测量](../../../docs/archive/benchmarks/csharp-sparse-2026-11-05.md)。
 
-每版输出到独立目录，并在两次构建完成后再串行采样。`boundLoader` 记录所用内部构造签名；它不改变输入或业务读取回调。
+覆盖预绑定与固定值读取优化的配对样本、读取矩阵和源码快照见 [稀疏读取优化测量](../../../docs/archive/benchmarks/csharp-sparse-read-2026-11-05.md)。
+
+当前运行时为完整预构建模型，历史稀疏视图报告只描述其标注的历史代码快照。当前 first-for 与 cached-for 均为已完成结果的查询。
+
+0.16.0 的当前测量见 [完整预构建数据测量](../../../docs/archive/benchmarks/csharp-prebuilt-2026-11-06.md)。

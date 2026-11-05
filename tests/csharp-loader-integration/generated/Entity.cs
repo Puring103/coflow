@@ -3,9 +3,8 @@
 
 namespace Game.Config
 {
-public abstract partial class Entity : global::Coflow.Loader.ICfdRecord
+public abstract partial class Entity
 {
-    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal Entity(string id) { this.id = id; }
     public string name { get; internal set; } = default!;

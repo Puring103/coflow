@@ -1,0 +1,7 @@
+{"loadMs":56.8544,"loadAllocated":44685400,"viewMs":75.0447,"retained":44040024,"readMs":0.8488,"reads":1000000}
+{"loadMs":66.9339,"loadAllocated":44685400,"viewMs":61.7252,"retained":44040528,"readMs":0.9046,"reads":1000000}
+{"loadMs":64.6892,"loadAllocated":44685400,"viewMs":65.2424,"retained":44040552,"readMs":0.8326,"reads":1000000}
+{"loadMs":68.1676,"loadAllocated":44685400,"viewMs":58.3632,"retained":44040552,"readMs":0.8391,"reads":1000000}
+{"loadMs":57.8297,"loadAllocated":44685400,"viewMs":57.7329,"retained":44040552,"readMs":0.8326,"reads":1000000}
+{"loadMs":59.142,"loadAllocated":44685400,"viewMs":56.6014,"retained":44040552,"readMs":0.834,"reads":1000000}
+{"loadMs":64.377,"loadAllocated":44685400,"viewMs":57.8713,"retained":44040552,"readMs":0.844,"reads":1000000}

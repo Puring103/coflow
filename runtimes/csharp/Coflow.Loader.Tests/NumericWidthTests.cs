@@ -7,14 +7,7 @@ namespace Coflow.Loader.Tests;
 
 public sealed class NumericWidthTests
 {
-    private sealed class Numbers : ICfdRecord
-    {
-        public CfdReader Reader { get; set; } = null!;
-        internal int I;
-        internal long L;
-        internal float F;
-        internal double D;
-    }
+    private sealed class Numbers { internal int I; internal long L; internal float F; internal double D; }
 
     private static readonly CfdType[] Types = {
         new CfdType<Numbers>("Numbers", CfdTypeKind.Table, new CfdField[] {
@@ -22,16 +15,13 @@ public sealed class NumericWidthTests
             new CfdField<long>("l", CfdValues.Long, CfdDefaults.Long(0)),
             new CfdField<float>("f", CfdValues.Float, CfdDefaults.Float(0)),
             new CfdField<double>("d", CfdValues.Double, CfdDefaults.Double(0)),
-        }, _ => new Numbers(), (value, reader) => {
-            value.I = reader.Get<int>("i"); value.L = reader.Get<long>("l");
-            value.F = reader.Get<float>("f"); value.D = reader.Get<double>("d");
-        }, construct: null)
+        }, _ => new Numbers(), (value, reader) => { value.I=reader.Get<int>(0); value.L=reader.Get<long>(1); value.F=reader.Get<float>(2); value.D=reader.Get<double>(3); return value; })
     };
 
     [Fact]
     public void ScalarsRespectDeclaredWidthAndPrecision()
     {
-        var result = CfdLoader.Load(new[] { new CfdSource("values.cfd", "a: Numbers { i: 2147483647, l: 9223372036854775807, f: 0.1, d: 0.1 }") }, Types, data => data.Table<Numbers>()["a"]);
+        var result = CfdLoader.Load(new[] { new CfdSource("values.cfd", "a: Numbers { i: 2147483647, l: 9223372036854775807, f: 0.1, d: 0.1 }") }, Types, data => data.Base.Table<Numbers>()["a"]);
         Assert.True(result.Success);
         Assert.Equal(int.MaxValue, result.Data.I);
         Assert.Equal(long.MaxValue, result.Data.L);
@@ -51,7 +41,7 @@ public sealed class NumericWidthTests
         var constants = new Dictionary<string, CfdValueNode> {
             ["WIDE"] = CfdDefaults.Long(1), ["PRECISE"] = CfdDefaults.Double(0.1)
         };
-        var result = CfdLoader.Load(new[] { new CfdSource("values.cfd", "a: Numbers { " + fields + " }") }, Types, data => data.Table<Numbers>()["a"], constants);
+        var result = CfdLoader.Load(new[] { new CfdSource("values.cfd", "a: Numbers { " + fields + " }") }, Types, data => data.Base.Table<Numbers>()["a"], constants);
         Assert.False(result.Success);
     }
 }

@@ -42,13 +42,13 @@ if (!loaded.Success) {
 // 只有加载成功后才能使用数据根。
 var data = loaded.Data;
 var sword = data.Table<Item>()["sword"];
-var baseName = sword.name;
+var baseName = sword.Base.name;
 var japaneseName = sword.For("language", "ja").name;
 ```
 
 itemsText/japaneseText 由应用读取，不是文件路径字符串。桌面应用可读文件，Unity 可使用已有 TextAsset.text；若将 CFD 作为 TextAsset 导入，可由资源流程复制成 Unity 支持的文本资产扩展名，CfdSource 的逻辑路径仍用于诊断。将全部相互引用的基础与所需覆盖文件一起提供，传入顺序不决定覆盖优先级。
 
-`Table<T>()` 提供索引、TryGetValue、Count 和遍历，父类型表包含派生记录。singleton 用 `data.Singleton<Settings>()`。data 是内联对象，不存在对应记录表。
+`Table<T>()` 返回 `Table<Dimension<T>>`，提供索引、TryGetValue、Count 和遍历，父类型表包含派生记录。singleton 用 `data.Singleton<Settings>().Base`。data 是内联对象，不存在对应记录表。
 
 ## 类型和维度
 
@@ -56,10 +56,10 @@ itemsText/japaneseText 由应用读取，不是文件路径字符串。桌面应
 - 数值、bool、string 映射为同名 C# 类型；数组、字典为只读集合，引用为业务对象。
 - Option 使用 `Coflow.Loader.Option<T>` 的 IsSome、IsNone、Value；读取 None.Value 会抛出异常，嵌套层需逐层判断。
 - `@idAsEnum(ItemId)` 生成表的 `Get(ItemId.sword)` 与 `TryGet(ItemId.sword, out var item)` 扩展；前提是 CFT 已声明对应空 enum 和标注 table。
-- `For("language", "ja")` 返回独立视图，链式 For 组合维度。引用、内联值和模板随视图上下文读取；基础对象不会被切换。
-- `HasVariant(nameof(sword.name), "ja")` 判断显式覆盖；`Variants("language")` 列出维度已知变体，不代表每个字段已填写。
+- `Dimension<T>.Base` 返回基础普通对象，`For("language", "ja")` 只返回已构建变体。多维组合通过 `LoadOptions.Combinations` 在加载时声明，再以 `For(new DimensionSelection(("language", "ja"), ("platform", "mobile")))` 查询。
+- `HasVariant(nameof(Item.name), "ja")` 判断显式覆盖；`Variants("language")` 列出维度已知变体，不代表每个字段已填写。
 
-已知维度中的未知变体回退基础表达式，未知维度报错。首次构造多维组合可能抛出带 Diagnostics 的 CfdLoadException，应按应用错误处理方式呈现。
+未知维度或本次加载中不存在的变体抛出 ArgumentException；未知变体错误列出已加载变体。已存在变体的未覆盖字段回退基础表达式。应用可通过 Variants 查询可用变体并自行选择回退策略。未构建组合报参数错误。所有模板、引用和集合在加载时完成，错误通过 LoadResult.Diagnostics 报告；成功返回的配置根和业务对象均为最终数据。生成业务字段只读。
 
 ## 重新加载和验收
 

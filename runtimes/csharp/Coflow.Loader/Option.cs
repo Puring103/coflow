@@ -6,17 +6,12 @@ namespace Coflow.Loader
 /// <summary>One optional layer; None and Some(None) retain distinct states.</summary>
 public readonly struct Option<T> : IEquatable<Option<T>>
 {
-    // 强类型节点打断 Option<结构体自身> 的内存布局递归，并保留每层存在状态。
-    private sealed class SomeValue
-    {
-        internal SomeValue(T value) { Value = value; }
-        internal T Value { get; }
-    }
-    private readonly SomeValue? _some;
-    private Option(T value) { _some = new SomeValue(value); }
-    public bool IsSome => _some != null;
-    public bool IsNone => _some == null;
-    public T Value => _some != null ? _some.Value : throw new InvalidOperationException("Option is None.");
+    // 装箱隔断递归值结构体的 CLR 布局；存在标记保留每层 Some/None。
+    private readonly object? _value;
+    private Option(T value) { _value = value; IsSome = true; }
+    public bool IsSome { get; }
+    public bool IsNone => !IsSome;
+    public T Value => IsSome ? (T)_value! : throw new InvalidOperationException("Option is None.");
     public static Option<T> None => default;
     public static Option<T> Some(T value) => new Option<T>(value);
     // 每层单独保存存在状态，嵌套 Option 不使用可空值压平。

@@ -3,9 +3,8 @@
 
 namespace Game.Config
 {
-public partial class UnicodeDefaults : global::Coflow.Loader.ICfdRecord
+public partial class UnicodeDefaults
 {
-    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal UnicodeDefaults(string id) { this.id = id; }
     public string text { get; internal set; } = default!;

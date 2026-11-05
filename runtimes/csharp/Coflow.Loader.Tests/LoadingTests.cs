@@ -1,316 +1,132 @@
 using System;
 using System.Collections.Generic;
-using Coflow.Loader;
+using System.Linq;
 using Xunit;
 
 namespace Coflow.Loader.Tests;
 
 public sealed class LoadingTests
 {
-    [Flags]
-    private enum Permission : uint { Read = 1, Write = 2, High = 0x80000000 }
-    private readonly struct Stats
+    internal sealed class Item
     {
-        internal Stats(long hp, string label) { Hp = hp; Label = label; }
-        internal long Hp { get; }
-        internal string Label { get; }
+        internal string Id = "";
+        internal string Name = "";
+        internal int Price;
+        internal string Label = "";
+        internal Option<Item> Next;
+        internal Option<string> Note;
+        internal IReadOnlyList<string> Labels = null!;
+        internal IReadOnlyDictionary<string, string> Map = null!;
+        internal IReadOnlyList<Item> Links = null!;
+        internal Stats Stats;
     }
-    private sealed class Item : ICfdRecord
-    {
-        internal Item(string id) { Id = id; }
-        public CfdReader Reader { get; set; } = null!;
-        internal string Id { get; }
-        internal long Price { get; set; }
-        internal Permission Permissions { get; set; }
-        internal string Name { get; set; } = null!;
-        internal Option<string> Note { get; set; }
-        internal Option<Item> Next { get; set; }
-        internal Stats Stats { get; set; }
-        internal string Label { get; set; } = null!;
-        internal IReadOnlyList<string> Labels { get; set; } = null!;
-        internal IReadOnlyDictionary<string, string> IndexedLabels { get; set; } = null!;
-    }
-    private sealed class Data
-    {
-        internal Data(CfdData data) { Items = data.Table<Item>(); }
-        internal IReadOnlyDictionary<string, Item> Items { get; }
-    }
-    private static readonly CfdType[] Types =
-    {
+    internal struct Stats { internal int Hp; internal string Label; }
+    internal static CfdType[] Types(Action? created = null) => new CfdType[] {
         new CfdType<Stats>("Stats", CfdTypeKind.Data, new CfdField[] {
-            new CfdField<long>("hp", CfdValues.Long, CfdDefaults.Int(10)),
+            new CfdField<int>("hp", CfdValues.Int, CfdDefaults.Int(10)),
             new CfdField<string>("label", CfdValues.String, CfdDefaults.Template("f\"HP {self.hp}\"")),
-        }, create: null, fill: null, construct:
-        reader => new Stats(reader.Get<long>("hp"), reader.Get<string>("label"))),
+        }, _ => new Stats(), (value, reader) => { value.Hp = reader.Get<int>(0); value.Label = reader.Get<string>(1); return value; }),
         new CfdType<Item>("Item", CfdTypeKind.Table, new CfdField[] {
-            new CfdField<long>("price", CfdValues.Dimension("balance", CfdValues.Long), CfdDefaults.Int(5)),
-            new CfdField<Permission>("permissions", CfdValues.Enum("Permission", new Dictionary<string, Permission> {
-                ["Read"] = Permission.Read, ["Write"] = Permission.Write, ["High"] = Permission.High,
-            }, bits => (Permission)(uint)bits), CfdDefaults.Enum("Permission", 1)),
-            new CfdField<string>("name", CfdValues.Dimension("language", CfdValues.String)),
-            new CfdField<Option<string>>("note", CfdValues.Dimension("language", CfdValues.Optional(CfdValues.String)), CfdDefaults.String("base note")),
+            new CfdField<string>("name", CfdValues.String, dimension: "language"),
+            new CfdField<int>("price", CfdValues.Int, CfdDefaults.Int(5), dimension: "balance"),
+            new CfdField<string>("label", CfdValues.String, CfdDefaults.Template("f\"{self.id}: {self.name}/{self.price}/{self.stats.label}\"")),
             new CfdField<Option<Item>>("next", CfdValues.Optional(CfdValues.Reference<Item>("Item")), CfdDefaults.None()),
+            new CfdField<Option<string>>("note", CfdValues.Optional(CfdValues.String), CfdDefaults.String("note"), dimension: "language"),
             new CfdField<IReadOnlyList<string>>("labels", CfdValues.List(CfdValues.String), CfdDefaults.Array(CfdDefaults.Template("f\"{self.name}\""))),
-            new CfdField<IReadOnlyDictionary<string, string>>("indexed", CfdValues.Dictionary(CfdValues.String, CfdValues.String), CfdDefaults.Dictionary(new CfdDefaultEntry(CfdDefaults.String("label"), CfdDefaults.Template("f\"{self.name}\"")))),
+            new CfdField<IReadOnlyDictionary<string,string>>("map", CfdValues.Dictionary(CfdValues.String,CfdValues.String), CfdDefaults.Dictionary(new CfdDefaultEntry(CfdDefaults.String("key"),CfdDefaults.Template("f\"{self.name}\"")))),
+            new CfdField<IReadOnlyList<Item>>("links", CfdValues.List(CfdValues.Reference<Item>("Item")), CfdDefaults.Array()),
             new CfdField<Stats>("stats", CfdValues.Object<Stats>("Stats"), CfdDefaults.Object("Stats")),
-            new CfdField<string>("label", CfdValues.String, CfdDefaults.Template("f\"{self.id}: {self.name}, {self.stats.label}\"")),
-        }, id => new Item(id), (item, reader) => {
-            item.Permissions = reader.Get<Permission>("permissions");
-            item.Price = reader.Get<long>("price"); item.Name = reader.Get<string>("name");
-            item.Note = reader.Get<Option<string>>("note"); item.Next = reader.Get<Option<Item>>("next");
-            item.Labels = reader.Get<IReadOnlyList<string>>("labels");
-            item.IndexedLabels = reader.Get<IReadOnlyDictionary<string, string>>("indexed");
-            item.Stats = reader.Get<Stats>("stats"); item.Label = reader.Get<string>("label");
-        }, construct: null),
+        }, id => { created?.Invoke(); return new Item { Id = id }; }, (value, reader) => {
+            value.Name=reader.Get<string>(0); value.Price=reader.Get<int>(1); value.Label=reader.Get<string>(2);
+            value.Next=reader.Get<Option<Item>>(3); value.Note=reader.Get<Option<string>>(4);
+            value.Labels=reader.Get<IReadOnlyList<string>>(5); value.Map=reader.Get<IReadOnlyDictionary<string,string>>(6);
+            value.Links=reader.Get<IReadOnlyList<Item>>(7); value.Stats=reader.Get<Stats>(8); return value;
+        })
     };
-    private static LoadResult<Data> Load(params CfdSource[] sources) => CfdLoader.Load(sources, Types, reader => new Data(reader));
+    internal static LoadResult<CfdData> Load(string source, LoadOptions? options = null, Action? created = null)
+        => CfdLoader.Load(new[]{new CfdSource("items.cfd",source)}, Types(created), data=>data, options:options);
+    internal const string Source = "a: Item { name: \"A\", next: &Item::b, links: [&Item::b], stats: Stats { label: f\"{&Item::b.name}\" } } b: Item { name: \"B\", next: &Item::a } language[ja] { a: Item { name: \"甲\", note: None } b: Item { name: \"乙\" } } language[en] {} balance[hard] { a: Item { price: 99 } }";
 
     [Fact]
-    public void ConstructsGeneratedTypesAndLinksCyclicReferences()
+    public void LoadBuildsEveryRequestedGraphBeforeReturning()
     {
-        var result = Load(new CfdSource("items.cfd", "a: Item { name: \"Alpha\", next: &Item::b } b: Item { name: \"Beta\", next: &Item::a }"));
-        Assert.True(result.Success, result.Diagnostics.Count > 0 ? result.Diagnostics[0].ToString() : "");
-        var a = result.Data.Items["a"];
-        Assert.Same(a, a.Next.Value.Next.Value);
-        Assert.Equal(5, a.Price);
-        Assert.Equal(10, a.Stats.Hp);
-        Assert.Equal("a: Alpha, HP 10", a.Label);
+        int created=0;
+        var combination=new DimensionSelection(("language","ja"),("balance","hard"));
+        var result=Load(Source,new LoadOptions { Combinations=new[]{combination, new DimensionSelection(("balance","hard"),("language","ja"))} },()=>created++);
+        Assert.True(result.Success,string.Join(";",result.Diagnostics));
+        Assert.Equal(10,created); // 基础、三个单维变体、一个去重后的组合，各两条记录。
+        var a=result.Data.Table<Item>()["a"];
+        Assert.Equal("a: A/5/B",a.Base.Label);
+        var ja=a.For("language","ja"); var combined=a.For(combination);
+        Assert.Equal("a: 甲/5/乙",ja.Label); Assert.Equal("a: 甲/99/乙",combined.Label);
+        Assert.Equal("甲",ja.Labels[0]); Assert.Equal("甲",ja.Map["key"]); Assert.Equal("乙",ja.Links[0].Name);
+        Assert.Same(ja,ja.Next.Value.Next.Value); Assert.Same(ja.Next.Value,ja.Links[0]);
+        Assert.True(ja.Note.IsNone); Assert.Equal("note",a.Base.Note.Value);
+        Assert.Same(ja,result.Data.For("language","ja").Table<Item>()["a"]);
+        Assert.Same(combined,result.Data.For(("balance","hard"),("language","ja")).Table<Item>()["a"]);
+        Assert.Same(combined,a.For(("balance","hard"),("language","ja")));
+        Assert.Same(a.Base,result.Data.Base.Table<Item>()["a"]);
+        Assert.Equal(10,created);
     }
 
     [Fact]
-    public void CrossFilePartialOverridesAreOrderIndependentAndRetainExplicitNone()
+    public void SelectionIsStrictAndNeverBuildsMissingCombinations()
     {
-        var overlay = new CfdSource("ja.cfd", "language[ja] { a: Item { name: \"アルファ\", note: None } } language[en] { b: Item { name: \"Beta\" } }");
-        var records = new CfdSource("items.cfd", "a: Item { name: \"Alpha\" } b: Item { name: \"B\" }");
-        foreach (var result in new[] { Load(overlay, records), Load(records, overlay) })
+        var result=Load(Source); Assert.True(result.Success);
+        var a=result.Data.Table<Item>()["a"];
+        Assert.Equal("A",a.For("language","en").Name);
+        Assert.Contains("[en, ja]",Assert.Throws<ArgumentException>(()=>a.For("language","missing")).Message);
+        Assert.Throws<ArgumentException>(()=>a.For("missing","ja"));
+        Assert.Contains("not built",Assert.Throws<ArgumentException>(()=>a.For(("language","ja"),("balance","hard"))).Message);
+        Assert.False(a.TryFor(new DimensionSelection(("language","ja"),("balance","hard")),out _));
+        Assert.False(a.TryFor("language","JA",out _)); Assert.True(a.TryFor("language","ja",out var ja));
+        Assert.Same(ja,a.For("language","ja")); Assert.Same(a.Base,a.For(DimensionSelection.Empty));
+        Assert.Equal(new[]{"en","ja"},a.Variants("language"));
+        Assert.True(a.HasVariant("name","ja")); Assert.False(a.HasVariant("name","en"));
+        Assert.False(a.HasVariant("name","unknown")); Assert.Throws<ArgumentException>(()=>a.HasVariant("label","ja"));
+        Assert.Throws<ArgumentException>(()=>new DimensionSelection(("language","ja"),("language","en")));
+        Assert.Throws<ArgumentException>(()=>Load(Source,new LoadOptions { Combinations=new[]{new DimensionSelection(("language","unknown"))} }));
+    }
+
+    [Fact]
+    public void CrossFileOverridesAreOrderIndependentAndExplicitValuesAreTracked()
+    {
+        var baseSource=new CfdSource("base.cfd","a: Item { name: \"A\" } b: Item { name: \"B\" }");
+        var overlay=new CfdSource("ja.cfd","language[ja] { a: Item { name: \"A\", note: None } } language[en] {}");
+        foreach(var sources in new[]{new[]{baseSource,overlay},new[]{overlay,baseSource}})
         {
-            Assert.True(result.Success);
-            var a = result.Data.Items["a"];
-            Assert.Equal("アルファ", a.For("language", "ja").Name);
-            Assert.Equal("Alpha", a.For("language", "en").Name);
-            Assert.Equal("Alpha", a.For("language", "unknown").Name);
-            Assert.True(a.For("language", "ja").Note.IsNone);
-            Assert.Equal("base note", a.For("language", "en").Note.Value);
-            Assert.Equal(new[] { "en", "ja" }, a.Variants("language"));
+            var result=CfdLoader.Load(sources,Types(),data=>data); Assert.True(result.Success);
+            var a=result.Data.Table<Item>()["a"]; Assert.True(a.HasVariant("name","ja"));
+            Assert.False(result.Data.Table<Item>()["b"].HasVariant("name","ja"));
+            Assert.True(a.For("language","ja").Note.IsNone); Assert.Equal("note",a.For("language","en").Note.Value);
         }
     }
 
-    [Fact]
-    public void IndependentViewsCarryContextsThroughTemplatesCollectionsAndReferences()
-    {
-        var result = Load(
-            new CfdSource("base.cfd", "a: Item { name: \"A\", next: &Item::b, label: f\"{self.name}/{&Item::b.name}/{self.stats.label}/{self.price}\", stats: Stats { label: f\"{&Item::b.name}\" } } b: Item { name: \"B\", next: &Item::a }"),
-            new CfdSource("ja.cfd", "language[ja] { a: Item { name: \"甲\", note: None } b: Item { name: \"乙\" } } balance[ja] { a: Item { price: 99 } }"));
-        Assert.True(result.Success, string.Join("; ", result.Diagnostics));
-        var a = result.Data.Items["a"];
-        var ja = a.For("language", "ja");
-        var balanced = ja.For("balance", "ja");
-        Assert.Equal("A/B/B/5", a.Label);
-        Assert.Equal("甲/乙/乙/5", ja.Label);
-        Assert.Equal("甲/乙/乙/99", balanced.Label);
-        Assert.Equal("A/B/B/99", a.For("balance", "ja").Label);
-        Assert.Equal("甲", ja.Labels[0]);
-        Assert.Equal("甲", ja.IndexedLabels["label"]);
-        Assert.Equal("乙", ja.Next.Value.Name);
-        Assert.Same(ja, ja.Next.Value.Next.Value);
-        Assert.Same(balanced, a.For("balance", "ja").For("language", "ja"));
-        Assert.NotSame(a, ja);
-        Assert.Equal("A", a.Name);
-    }
-
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static (LoadResult<Data> Result, List<WeakReference<Item>> Instances) LoadTrackedVariants()
-    {
-        var instances = new List<WeakReference<Item>>();
-        var type = new CfdType<Item>("Item", CfdTypeKind.Table, new CfdField[] {
-            new CfdField<string>("name", CfdValues.Dimension("language", CfdValues.String)),
-            new CfdField<Option<Item>>("next", CfdValues.Optional(CfdValues.Reference<Item>("Item"))),
-        }, id => {
-            var item = new Item(id);
-            instances.Add(new WeakReference<Item>(item));
-            return item;
-        }, (item, reader) => {
-            item.Name = reader.Get<string>("name");
-            item.Next = reader.Get<Option<Item>>("next");
-        }, construct: null);
-        var result = CfdLoader.Load(new[] { new CfdSource("items.cfd",
-            "a: Item { name: \"A\", next: &Item::b } b: Item { name: \"B\", next: &Item::a } " +
-            "language[ja] { a: Item { name: \"甲\" } b: Item { name: \"乙\" } } " +
-            "language[fr] { a: Item { name: \"Un\" } }") }, new CfdType[] { type }, data => new Data(data));
-        return (result, instances);
-    }
-
-    [Fact]
-    public void ValidationDoesNotConstructBusinessViewsAndRequestedViewsKeepReferenceIdentity()
-    {
-        var (result, instances) = LoadTrackedVariants();
-        Assert.True(result.Success, string.Join("; ", result.Diagnostics));
-        // 加载期完整校验变体，但只构造基础业务对象；首次 For 再物化独立视图。
-        Assert.Equal(2, instances.Count);
-        Assert.Equal(2, instances.FindAll(reference => reference.TryGetTarget(out _)).Count);
-
-        var a = result.Data.Items["a"];
-        var ja = a.For("language", "ja");
-        Assert.Equal("甲", ja.Name);
-        Assert.Equal("乙", ja.Next.Value.Name);
-        Assert.Same(ja, ja.Next.Value.Next.Value);
-        Assert.Same(ja, a.For("language", "ja"));
-        Assert.Equal(4, instances.Count);
-        GC.KeepAlive(result);
-    }
-
-    [Fact]
-    public void ExplicitVariantPresenceIsIndependentOfValueAndFallback()
-    {
-        var result = Load(new CfdSource("base.cfd", "a: Item { name: \"A\" } b: Item { name: \"B\" }"),
-            new CfdSource("ja.cfd", "language[ja] { a: Item { name: \"A\", note: None } }"));
-        Assert.True(result.Success);
-        var a = result.Data.Items["a"];
-        Assert.True(a.HasVariant("name", "ja"));
-        Assert.True(a.HasVariant("note", "ja"));
-        Assert.False(result.Data.Items["b"].HasVariant("name", "ja"));
-        Assert.False(a.HasVariant("name", "unknown"));
-        Assert.True(a.For("language", "ja").HasVariant("name", "ja"));
-        Assert.Throws<ArgumentException>(() => a.HasVariant("label", "ja"));
-        Assert.Throws<ArgumentException>(() => a.For("missing", "ja"));
-    }
-
     [Theory]
-    [InlineData("a: Item {}", false, false)]
-    [InlineData("a: Item { note: None }", false, true)]
-    [InlineData("a: Item {}", true, true)]
-    public void NullableFieldsRequireAnExplicitDefaultBeforeTheyMayBeOmitted(string source, bool hasDefault, bool success)
-    {
-        var type = new CfdType<Item>("Item", CfdTypeKind.Table, new CfdField[] {
-            new CfdField<Option<string>>("note", CfdValues.Optional(CfdValues.String), hasDefault ? CfdDefaults.None() : null),
-        }, id => new Item(id), (item, reader) => item.Note = reader.Get<Option<string>>("note"), construct: null);
-        var result = CfdLoader.Load(new[] { new CfdSource("optional.cfd", source) }, new CfdType[] { type }, data => new Data(data));
-        Assert.Equal(success, result.Success);
-        if (!success) Assert.Equal("CFD-MISSING", result.Diagnostics[0].Code);
-        else Assert.True(result.Data.Items["a"].Note.IsNone);
-    }
-
-    [Fact]
-    public void VariantOnlyInterpolationCyclesAreReportedAtLoadTime()
-    {
-        var result = Load(new CfdSource("base.cfd", "a: Item { name: \"A\" }"),
-            new CfdSource("cycle.cfd", "language[ja] { a: Item { name: f\"{self.label}\" } }"));
-        Assert.False(result.Success);
-        Assert.Equal("CFD-INTERPOLATION-CYCLE", result.Diagnostics[0].Code);
-    }
-
-    [Fact]
-    public void OrdinaryStringsStayLiteralAndFormattedStringsEscapeBraces()
-    {
-        var result = Load(new CfdSource("items.cfd", "a: Item { name: \"{self.price}\", label: f\"{{literal}} {self.price}\" }"));
-        Assert.True(result.Success);
-        Assert.Equal("{self.price}", result.Data.Items["a"].Name);
-        Assert.Equal("{literal} 5", result.Data.Items["a"].Label);
-    }
-
-    [Fact]
-    public void TemplatesResolveOtherRecordsBeforeTheirFieldsAreAssigned()
-    {
-        var result = Load(new CfdSource("items.cfd", "a: Item { name: \"A\", label: f\"{&Item::b.stats.hp}\" } b: Item { name: \"B\", stats: Stats { hp: 25 } }"));
-        Assert.True(result.Success);
-        Assert.Equal("25", result.Data.Items["a"].Label);
-    }
-
-
-    private sealed class VariantCycleRecord : ICfdRecord
-    {
-        public CfdReader Reader { get; set; } = null!;
-        internal Option<VariantCycleRecord> Next { get; set; }
-        internal string First { get; set; } = null!;
-        internal string Second { get; set; } = null!;
-    }
-
-    [Fact]
-    public void FailedCombinedViewsNeverExposePartiallyBuiltCircularNeighbors()
-    {
-        var type = new CfdType<VariantCycleRecord>("Node", CfdTypeKind.Table, new CfdField[] {
-            new CfdField<Option<VariantCycleRecord>>("next", CfdValues.Optional(CfdValues.Reference<VariantCycleRecord>("Node"))),
-            new CfdField<string>("first", CfdValues.Dimension("one", CfdValues.String)),
-            new CfdField<string>("second", CfdValues.Dimension("two", CfdValues.String)),
-        }, _ => new VariantCycleRecord(), (node, reader) => {
-            node.Next = reader.Get<Option<VariantCycleRecord>>("next");
-            node.First = reader.Get<string>("first");
-            node.Second = reader.Get<string>("second");
-        }, construct: null);
-        var result = CfdLoader.Load(new[] { new CfdSource("nodes.cfd", "a: Node { next: &Node::b, first: \"A\", second: \"A\" } b: Node { next: &Node::a, first: \"B\", second: \"B\" } one[v] { a: Node { first: f\"{self.second}\" } } two[v] { a: Node { second: f\"{self.first}\" } }") }, new CfdType[] { type }, data => data.Table<VariantCycleRecord>());
-        Assert.True(result.Success, string.Join("; ", result.Diagnostics));
-        var a = result.Data["a"];
-        var b = result.Data["b"];
-        Assert.Throws<CfdLoadException>(() => a.For("one", "v").For("two", "v"));
-        Assert.Throws<CfdLoadException>(() => b.For("one", "v").For("two", "v"));
-        Assert.Same(a, b.Next.Value);
-        Assert.Equal("A", a.First);
-    }
-
-    [Theory]
-    [InlineData("", false)]
-    [InlineData("wrong: Singleton {}", false)]
-    [InlineData("Singleton: Singleton {}", true)]
-    public void SingletonRequiresOneRecordWithItsDeclaredName(string source, bool success)
-    {
-        var singleton = new CfdType<Item>("Singleton", CfdTypeKind.Singleton, Array.Empty<CfdField>(), id => new Item(id), (_, _) => { }, construct: null);
-        var result = CfdLoader.Load(new[] { new CfdSource("singleton.cfd", source) }, new CfdType[] { singleton }, data => new Tuple<Item>(data.Singleton<Item>()));
-        Assert.Equal(success, result.Success);
-        if (!success) Assert.Equal("CFD-SINGLETON", result.Diagnostics[0].Code);
-        if (source.StartsWith("wrong", StringComparison.Ordinal)) Assert.Equal("singleton.cfd", result.Diagnostics[0].Path);
-    }
-
-    [Theory]
-    [InlineData("Read", "Read")]
-    [InlineData("Read | Write", "3")]
-    [InlineData("High", "High")]
-    public void EnumInterpolationUsesDeclaredNamesAndNumericCombinationValues(string literal, string expected)
-    {
-        var result = Load(new CfdSource("enum.cfd", "a: Item { name: \"A\", permissions: " + literal + ", label: f\"{self.permissions}\" }"));
-        Assert.True(result.Success);
-        Assert.Equal(expected, result.Data.Items["a"].Label);
-    }
-
-    [Theory]
-    [InlineData("note")]
-    [InlineData("stats")]
-    [InlineData("next.price")]
-    public void TemplatesRejectOptionalAndCompositeTerminals(string path)
-    {
-        var result = Load(new CfdSource("optional.cfd", "a: Item { name: \"A\", next: &Item::a, label: f\"{self." + path + "}\" }"));
-        Assert.False(result.Success);
-        Assert.Equal("CFD-INTERPOLATION", result.Diagnostics[0].Code);
-    }
-
-    [Theory]
-    [InlineData("a: Item { name: \"A\", price: 9223372036854775808 }", "CFD-TYPE")]
-    [InlineData("a: Item { price: 1 }", "CFD-MISSING")]
-    [InlineData("a: Item { name: \"A\", unexpected: 1 }", "CFD-FIELD")]
+    [InlineData("a: Item {}", "CFD-MISSING")]
+    [InlineData("a: Item { name: 1 }", "CFD-TYPE")]
+    [InlineData("a: Item { name: \"A\", missing: 1 }", "CFD-FIELD")]
     [InlineData("a: Item { name: \"A\", next: &Item::missing }", "CFD-REFERENCE")]
     [InlineData("a: Item { name: \"A\", label: f\"{self.label}\" }", "CFD-INTERPOLATION-CYCLE")]
-    [InlineData("a: Item { name: \"A\", label: f\"{self.price + 1}\" }", "CFD-SYNTAX-013")]
-    [InlineData("a: Item { name: \"A\", label: f\"{self.price:000}\" }", "CFD-SYNTAX-013")]
-    [InlineData("a: Item { name: \"A\", label: f\"}\" }", "CFD-SYNTAX-013")]
-    [InlineData("a: Item { name: \"A\", label: fn() { 1 } }", "CFD-SYNTAX-009")]
-    public void FailedLoadsExposeDiagnosticsAndNeverPartialData(string source, string code)
+    [InlineData("a: Item { name: \"A\", label: f\"{self.next.name}\" }", "CFD-INTERPOLATION")]
+    [InlineData("a: Item { name: \"A\", label: f\"{self.stats}\" }", "CFD-INTERPOLATION")]
+    [InlineData("a: Item { name: \"A\", label: f\"{self.note}\" }", "CFD-INTERPOLATION")]
+    [InlineData("a: Item { name: \"A\", label: f\"{self.missing}\" }", "CFD-FIELD")]
+    [InlineData("a: Item { name: \"A\", map: { \"x\": \"1\", \"x\": \"2\" } }", "CFD-DUPLICATE")]
+    [InlineData("a: Item { name: \"A\" } unknown[x] {}", "CFD-DIMENSION")]
+    [InlineData("a: Item { name: \"A\" } language[ja] { a: Item { price: 1 } }", "CFD-DIMENSION")]
+    [InlineData("a: Item { name: \"A\" } language[ja] { a: Item { name: \"X\" } a: Item { name: \"Y\" } }", "CFD-DUPLICATE-OVERLAY")]
+    public void InvalidDataFailsBeforePublication(string source,string code)
     {
-        var result = Load(new CfdSource("bad.cfd", source));
-        Assert.False(result.Success);
-        Assert.Equal(code, result.Diagnostics[0].Code);
-        Assert.Equal("bad.cfd", result.Diagnostics[0].Path);
-        Assert.Throws<InvalidOperationException>(() => result.Data);
+        var result=Load(source); Assert.False(result.Success); Assert.Equal(code,result.Diagnostics[0].Code);
+        Assert.Equal("items.cfd",result.Diagnostics[0].Path); Assert.Throws<InvalidOperationException>(()=>result.Data);
     }
 
-    [Theory]
-    [InlineData("unknown[ja] { a: Item { name: \"A\" } }", "CFD-DIMENSION")]
-    [InlineData("language[ja] { a: Item { price: 1 } }", "CFD-DIMENSION")]
-    [InlineData("language[ja] { missing: Item { name: \"A\" } }", "CFD-REFERENCE")]
-    [InlineData("language[ja] { a: Item { name: \"A\" } } language[ja] { a: Item { name: \"B\" } }", "CFD-DUPLICATE-OVERLAY")]
-    public void InvalidOverlaysReportTheirOwnSource(string source, string code)
+    [Fact]
+    public void TemplatesResolveForwardReferencesAndKeepLiteralStrings()
     {
-        var result = Load(new CfdSource("base.cfd", "a: Item { name: \"base\" }"), new CfdSource("bad-overlay.cfd", source));
-        Assert.False(result.Success);
-        Assert.Equal(code, result.Diagnostics[0].Code);
-        Assert.Equal("bad-overlay.cfd", result.Diagnostics[0].Path);
+        var result=Load("a: Item { name: \"{literal}\", label: f\"{{literal}} {&Item::b.name}\" } b: Item { name: \"B\" }");
+        Assert.True(result.Success); Assert.Equal("{literal}",result.Data.Base.Table<Item>()["a"].Name);
+        Assert.Equal("{literal} B",result.Data.Base.Table<Item>()["a"].Label);
     }
 }

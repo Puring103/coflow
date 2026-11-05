@@ -9,11 +9,10 @@ static class Fixtures
     internal static Fixture Wide(int recordCount, int fieldCount, int variantCount, bool dense, bool countDescriptors)
     {
         var names = Enumerable.Range(0, fieldCount).Select(index => "f" + index).ToArray();
-        var descriptors = names.Select(name => (CfdField)new CfdField<int>(name, CfdValues.Dimension("language", CfdValues.Int))).ToArray();
+        var descriptors = names.Select(name => (CfdField)new CfdField<int>(name, CfdValues.Int, dimension: "language")).ToArray();
         var counted = new CountedFields(descriptors);
         IReadOnlyList<CfdField> fields = countDescriptors ? counted : descriptors;
-        var type = new CfdType<Row>("Row", CfdTypeKind.Table, fields, _ => new Row(),
-            (row, reader) => row.Values = names.Select(reader.Get<int>).ToArray(), null);
+        var type = new CfdType<Row>("Row", CfdTypeKind.Table, fields, _=>new Row(), (value,reader)=>{value.Values=Enumerable.Range(0,fieldCount).Select(reader.Get<int>).ToArray();return value;});
         var text = new StringBuilder();
         for (var record = 0; record < recordCount; record++)
         {
@@ -41,7 +40,7 @@ static class Fixtures
             variantCount * (dense ? recordCount : 1), variantCount * (dense ? recordCount * fieldCount : 1),
             new CfdType[] { type }, new[] { new CfdSource("rows.cfd", text.ToString()) }, data =>
             {
-                var rows = data.Table<Row>();
+                var rows = data.Base.Table<Row>();
                 Check(rows.Count == recordCount, "wide record count");
                 for (var index = 0; index < recordCount; index++)
                 {
@@ -59,10 +58,10 @@ static class Fixtures
             {
                 new CfdField<int>("hp", CfdValues.Int),
                 new CfdField<string>("label", CfdValues.String),
-            }, null, null, reader => new Stats(reader.Get<int>("hp"), reader.Get<string>("label"))),
+            }, _=>new Stats(), (value,reader)=>{value.Hp=reader.Get<int>(0);value.Label=reader.Get<string>(1);return value;}),
             new CfdType<Entry>("Entry", CfdTypeKind.Table, new CfdField[]
             {
-                new CfdField<string>("name", CfdValues.Dimension("language", CfdValues.String)),
+                new CfdField<string>("name", CfdValues.String, dimension: "language"),
                 new CfdField<int>("count", CfdValues.Int),
                 new CfdField<Entry>("peer", CfdValues.Reference<Entry>("Entry")),
                 new CfdField<string>("description", CfdValues.String),
@@ -71,18 +70,7 @@ static class Fixtures
                 new CfdField<Option<string>>("note", CfdValues.Optional(CfdValues.String)),
                 new CfdField<IReadOnlyDictionary<string, int>>("prices", CfdValues.Dictionary(CfdValues.String, CfdValues.Int)),
                 new CfdField<string>("caption", CfdValues.String),
-            }, _ => new Entry(), (entry, reader) =>
-            {
-                entry.Name = reader.Get<string>("name");
-                entry.Count = reader.Get<int>("count");
-                entry.Peer = reader.Get<Entry>("peer");
-                entry.Description = reader.Get<string>("description");
-                entry.Stats = reader.Get<Stats>("stats");
-                entry.Tags = reader.Get<IReadOnlyList<string>>("tags");
-                entry.Note = reader.Get<Option<string>>("note");
-                entry.Prices = reader.Get<IReadOnlyDictionary<string, int>>("prices");
-                entry.Caption = reader.Get<string>("caption");
-            }, null),
+            }, _=>new Entry(), FillEntry),
         };
         var texts = new[] { new StringBuilder(), new StringBuilder() };
         for (var index = 0; index < recordCount; index++)
@@ -143,12 +131,10 @@ static class Fixtures
 
     private static TableRegistration CreateTable<TMarker>(int typeIndex, int typeCount, int recordCount)
     {
-        var type = new CfdType<TypedRow<TMarker>>("Row" + typeIndex, CfdTypeKind.Table,
-            new CfdField[] { new CfdField<int>("value", CfdValues.Int) }, _ => new TypedRow<TMarker>(),
-            (row, reader) => row.Value = reader.Get<int>("value"), null);
+        var type = new CfdType<TypedRow<TMarker>>("Row" + typeIndex, CfdTypeKind.Table, new CfdField[] { new CfdField<int>("value", CfdValues.Int) }, _=>new TypedRow<TMarker>(), (value,reader)=>{value.Value=reader.Get<int>(0);return value;});
         return new TableRegistration(type, data =>
         {
-            var rows = data.Table<TypedRow<TMarker>>();
+            var rows = data.Base.Table<TypedRow<TMarker>>();
             var expectedCount = recordCount / typeCount + (typeIndex < recordCount % typeCount ? 1 : 0);
             Check(rows.Count == expectedCount, "typed table record count");
             for (var index = typeIndex; index < recordCount; index += typeCount)
@@ -158,7 +144,7 @@ static class Fixtures
 
     private static Entry[] Entries(CfdData data, int count)
     {
-        var table = data.Table<Entry>();
+        var table = data.Base.Table<Entry>();
         Check(table.Count == count, "realistic record count");
         return Enumerable.Range(0, count).Select(index => table["r" + index]).ToArray();
     }
@@ -186,37 +172,38 @@ static class Fixtures
 
     private sealed record TableRegistration(CfdType Type, Action<CfdData> Verify);
     private sealed class TypedRow<TMarker> { internal int Value; }
-    private sealed class Row : ICfdRecord
+    private sealed class Row { internal int[] Values = null!; }
+    private struct Stats { internal int Hp; internal string Label; }
+    private sealed class Entry
     {
-        public CfdReader Reader { get; set; } = null!;
-        internal int[] Values = Array.Empty<int>();
-    }
-    private readonly record struct Stats(int Hp, string Label);
-    private sealed class Entry : ICfdRecord
-    {
-        public CfdReader Reader { get; set; } = null!;
-        internal string Name = null!;
+        internal string Name = "";
         internal int Count;
         internal Entry Peer = null!;
-        internal string Description = null!;
+        internal string Description = "";
         internal Stats Stats;
         internal IReadOnlyList<string> Tags = null!;
         internal Option<string> Note;
-        internal IReadOnlyDictionary<string, int> Prices = null!;
-        internal string Caption = null!;
+        internal IReadOnlyDictionary<string,int> Prices = null!;
+        internal string Caption = "";
+    }
+    private static Entry FillEntry(Entry value,CfdReader reader)
+    {
+        value.Name=reader.Get<string>(0);value.Count=reader.Get<int>(1);value.Peer=reader.Get<Entry>(2);
+        value.Description=reader.Get<string>(3);value.Stats=reader.Get<Stats>(4);value.Tags=reader.Get<IReadOnlyList<string>>(5);
+        value.Note=reader.Get<Option<string>>(6);value.Prices=reader.Get<IReadOnlyDictionary<string,int>>(7);value.Caption=reader.Get<string>(8);return value;
     }
 
     private sealed class EntryViews : ViewWorkload
     {
         private readonly CfdData _data;
-        private readonly Entry[] _roots;
+        private readonly Dimension<Entry>[] _roots;
         private readonly Entry[] _results;
         private readonly Entry[]? _expected;
         private readonly bool _dense;
         private readonly int _iterations;
         internal EntryViews(CfdData data, int recordCount, bool dense, bool cached, int iterations)
         {
-            _data = data; _roots = Entries(data, recordCount); _results = new Entry[recordCount]; _dense = dense; _iterations = iterations;
+            _data = data; _roots = Enumerable.Range(0,recordCount).Select(index=>data.Table<Entry>()["r"+index]).ToArray(); _results = new Entry[recordCount]; _dense = dense; _iterations = iterations;
             if (cached) _expected = _roots.Select(row => row.For("language", "v0")).ToArray();
         }
         internal override void Run()
@@ -227,11 +214,12 @@ static class Fixtures
         }
         internal override void Verify()
         {
+            var bases = _roots.Select(row => row.Base).ToArray();
             for (var index = 0; index < _roots.Length; index++)
             {
-                VerifyEntry(_roots, index, false, _dense);
+                VerifyEntry(bases, index, false, _dense);
                 VerifyEntry(_results, index, true, _dense);
-                Check(!ReferenceEquals(_roots[index], _results[index]), "independent view identity");
+                Check(!ReferenceEquals(_roots[index].Base, _results[index]), "independent view identity");
                 Check(ReferenceEquals(_results[index], _expected?[index] ?? _roots[index].For("language", "v0")), "cached view identity");
             }
             GC.KeepAlive(_data);

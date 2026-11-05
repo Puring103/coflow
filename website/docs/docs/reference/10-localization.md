@@ -19,7 +19,7 @@ region[cn] { sword: Item { price: 90 } }
 
 覆盖块定位已有记录，只替换明确写出的维度字段。字段必须绑定外层维度，覆盖值符合字段声明类型；同一维度、变体、记录和字段重复覆盖时报错。
 
-变体从全部所选 CFD 的覆盖块汇总，文件顺序不提供优先级。未覆盖或未知变体使用基础值；Option 字段的显式 None 是有效覆盖，保留当前层空态。
+变体从全部所选 CFD 的覆盖块汇总，文件顺序不提供优先级。未覆盖字段使用基础值；C# `For` 对本次加载中不存在的变体报参数错误，Rust 投影对未知变体回退；Option 字段的显式 None 是有效覆盖，保留当前层空态。
 
 Check 中直接读取字段得到基础值，`.for("ja")` 读取有效变体，`.hasVariant("ja")` 判断该字段是否有显式覆盖。`.variants()` 返回所属维度全部已发现变体的有效值，包含没有填写覆盖的变体。
 
@@ -34,7 +34,7 @@ check TranslationComplete {
 
 此规则放在包含 `name` 字段的类型中。要强制要求某个变体，即使整个项目尚未出现它，也要明确检查 `name.hasVariant("ja")`。
 
-C# 直接访问 `item.name` 得到基础字符串。按需使用 `item.For("language", "ja").name`，不同用途可同时持有不同视图；`item.HasVariant("name", "ja")` 判断显式覆盖，`item.Variants("language")` 列出维度已知变体。多维组合可以链式调用 `For`，例如 `item.For("language", "ja").For("region", "cn")`。
+C# 记录表提供 `Dimension<T>`：`item.Base.name` 获取基础字符串，`item.For("language", "ja").name` 获取已构建变体。`item.HasVariant("name", "ja")` 判断显式覆盖，`item.Variants("language")` 列出已知变体。多维组合在 `LoadOptions.Combinations` 中声明，再通过 `item.For(("language", "ja"), ("region", "cn"))` 查询。加载成功后，所有字段、引用、集合和模板结果均已完成。
 
 模板读取依赖时使用当前维度上下文。假设 `title` 是 language 字段，基础表达式为 `f"购买 {self.name}"`，日语只覆盖 `name = "剣"`，那么 `title.for("ja")` 得到 `"购买 剣"`，而 `title.hasVariant("ja")` 仍为 `false`。缺少覆盖时回退基础表达式，再在当前上下文中求值；其他维度的同名变体不会自动被选中。
 

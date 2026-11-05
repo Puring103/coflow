@@ -3,11 +3,12 @@
 
 namespace Game.Config
 {
-public partial class NamedCollision : global::Coflow.Loader.ICfdRecord
+public partial class NamedCollision
 {
-    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal NamedCollision(string id) { this.id = id; }
+    public int _coflowReader { get; internal set; } = default!;
+    public int _coflowReader_ { get; internal set; } = default!;
     public global::Game.Config.Types types { get; internal set; } = default!;
     public global::Game.Config.Constants constants { get; internal set; } = default!;
     public global::Game.Config.Table table_value { get; internal set; } = default!;

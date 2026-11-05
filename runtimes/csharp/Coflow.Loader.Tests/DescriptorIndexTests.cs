@@ -9,11 +9,8 @@ namespace Coflow.Loader.Tests;
 
 public sealed class DescriptorIndexTests
 {
-    private sealed class Row : ICfdRecord
-    {
-        public CfdReader Reader { get; set; } = null!;
-        internal int[] Values { get; set; } = Array.Empty<int>();
-    }
+    private sealed class Row { internal int[] Values = Array.Empty<int>(); }
+    private static Row Fill(Row value,CfdReader reader) { value.Values=Enumerable.Range(0,reader.Data.Fields.Length).Select(reader.Get<int>).ToArray();return value; }
 
     private sealed class CountedFields : IReadOnlyList<CfdField>
     {
@@ -35,9 +32,8 @@ public sealed class DescriptorIndexTests
     public void WideRecordsAndDimensionViewsShareStableDescriptorLayout(int fieldCount)
     {
         var names = Enumerable.Range(0, fieldCount).Select(index => "f" + index).ToArray();
-        var fields = new CountedFields(names.Select(name => (CfdField)new CfdField<int>(name, CfdValues.Dimension("language", CfdValues.Int))).ToArray());
-        var type = new CfdType<Row>("Row", CfdTypeKind.Table, fields, _ => new Row(),
-            (row, reader) => row.Values = names.Select(reader.Get<int>).ToArray(), null);
+        var fields = new CountedFields(names.Select(name => (CfdField)new CfdField<int>(name, CfdValues.Int, dimension: "language")).ToArray());
+        var type = new CfdType<Row>("Row", CfdTypeKind.Table, fields, _=>new Row(), Fill);
         Assert.Equal(fieldCount, fields.Reads);
         // 调用方后续修改原容器，不能令字段索引和遍历布局出现不同视图。
         fields.Items[0] = new CfdField<int>("changed", CfdValues.Int);
@@ -53,13 +49,13 @@ public sealed class DescriptorIndexTests
         Assert.True(result.Success, string.Join("; ", result.Diagnostics));
         var first = result.Data.Table<Row>()["r0"];
         var last = result.Data.Table<Row>()["r63"];
-        Assert.Equal(1, first.Values[0]);
+        Assert.Equal(1, first.Base.Values[0]);
         Assert.Equal(9, first.For("language", "ja").Values[0]);
         Assert.Equal(1, last.For("language", "ja").Values[0]);
         Assert.True(first.HasVariant("f0", "ja"));
         Assert.False(last.HasVariant("f0", "ja"));
         Assert.Same(first.Variants("language"), last.Variants("language"));
-        Assert.Same(first.For("language", "ja"), first.For("language", "ja").For("language", "ja"));
+        Assert.Same(first.For("language", "ja"), first.For("language", "ja"));
         Assert.Equal(fieldCount, fields.Reads);
     }
 
@@ -69,8 +65,7 @@ public sealed class DescriptorIndexTests
     [InlineData("r: Row {}", "CFD-MISSING")]
     public void IndexedFieldsPreserveInvalidSourceDiagnostics(string source, string code)
     {
-        var type = new CfdType<Row>("Row", CfdTypeKind.Table, new CfdField[] { new CfdField<int>("value", CfdValues.Int) },
-            _ => new Row(), (row, reader) => row.Values = new[] { reader.Get<int>("value") }, null);
+        var type = new CfdType<Row>("Row", CfdTypeKind.Table, new CfdField[] { new CfdField<int>("value", CfdValues.Int) }, _=>new Row(), Fill);
         var result = CfdLoader.Load(new[] { new CfdSource("bad.cfd", source) }, new CfdType[] { type }, data => data);
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == code && diagnostic.Path == "bad.cfd");

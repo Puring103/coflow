@@ -1,0 +1,886 @@
+{
+  "version": "0.16.0",
+  "date": "2026-11-06",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "cpu": "Intel Core i5-13600KF",
+  "sdk": "8.0.427",
+  "runtime": "net8.0 / Microsoft.NETCore.App 8.0.33",
+  "DOTNET_TieredCompilation": "0",
+  "configuration": "Release",
+  "warmups": 2,
+  "samples": 7,
+  "records": 500,
+  "readsPerSample": 1000000,
+  "background": "No concurrent builds or tests; other system background load uncontrolled",
+  "readSummaryMs": {
+    "scalar": {
+      "median": 0.4087,
+      "min": 0.4073,
+      "max": 0.4308
+    },
+    "template": {
+      "median": 0.6859,
+      "min": 0.6818,
+      "max": 0.6915
+    },
+    "list-template": {
+      "median": 4.258,
+      "min": 4.1561,
+      "max": 4.2961
+    },
+    "dictionary-template": {
+      "median": 10.5746,
+      "min": 10.3966,
+      "max": 10.6805
+    },
+    "for": {
+      "median": 43.4335,
+      "min": 42.8633,
+      "max": 43.9589
+    }
+  },
+  "loadSummary": [
+    {
+      "suite": "wide",
+      "phase": "construction",
+      "fields": 32,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 1.6677,
+        "min": 1.6383,
+        "max": 2.153
+      },
+      "allocatedBytes": {
+        "median": 5048544,
+        "min": 5048544,
+        "max": 5048544
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "full-load",
+      "fields": 32,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 3.9536,
+        "min": 3.5602,
+        "max": 4.36
+      },
+      "allocatedBytes": {
+        "median": 8729288,
+        "min": 8729288,
+        "max": 8729288
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "construction",
+      "fields": 32,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 2.2989,
+        "min": 2.1191,
+        "max": 2.4594
+      },
+      "allocatedBytes": {
+        "median": 5855936,
+        "min": 5855936,
+        "max": 5855936
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "full-load",
+      "fields": 32,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 4.4739,
+        "min": 4.3419,
+        "max": 4.6878
+      },
+      "allocatedBytes": {
+        "median": 9539304,
+        "min": 9539304,
+        "max": 9539304
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "construction",
+      "fields": 128,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 14.425,
+        "min": 12.7485,
+        "max": 16.115
+      },
+      "allocatedBytes": {
+        "median": 19280544,
+        "min": 19280544,
+        "max": 19280544
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "full-load",
+      "fields": 128,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 31.3643,
+        "min": 27.2714,
+        "max": 35.996
+      },
+      "allocatedBytes": {
+        "median": 33961288,
+        "min": 33961288,
+        "max": 33961288
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "construction",
+      "fields": 128,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 14.8212,
+        "min": 14.1396,
+        "max": 18.2953
+      },
+      "allocatedBytes": {
+        "median": 20663936,
+        "min": 20663936,
+        "max": 20663936
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "full-load",
+      "fields": 128,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 31.3243,
+        "min": 29.0294,
+        "max": 34.9054
+      },
+      "allocatedBytes": {
+        "median": 35347304,
+        "min": 35347304,
+        "max": 35347304
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "construction",
+      "fields": 512,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 106.8132,
+        "min": 73.3127,
+        "max": 121.6456
+      },
+      "allocatedBytes": {
+        "median": 78936600,
+        "min": 78936544,
+        "max": 78936736
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "full-load",
+      "fields": 512,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 179.6038,
+        "min": 168.1971,
+        "max": 199.9337
+      },
+      "allocatedBytes": {
+        "median": 139449320,
+        "min": 139449304,
+        "max": 139449352
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "construction",
+      "fields": 512,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 107.418,
+        "min": 80.9726,
+        "max": 115.7237
+      },
+      "allocatedBytes": {
+        "median": 82624160,
+        "min": 82623936,
+        "max": 82631448
+      }
+    },
+    {
+      "suite": "wide",
+      "phase": "full-load",
+      "fields": 512,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 193.11,
+        "min": 185.3664,
+        "max": 242.2312
+      },
+      "allocatedBytes": {
+        "median": 143139336,
+        "min": 143139304,
+        "max": 143140960
+      }
+    },
+    {
+      "suite": "parser",
+      "phase": "parser-only",
+      "fields": 32,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 1.9717,
+        "min": 1.8595,
+        "max": 3.026
+      },
+      "allocatedBytes": {
+        "median": 3680712,
+        "min": 3680712,
+        "max": 3680712
+      }
+    },
+    {
+      "suite": "parser",
+      "phase": "parser-only",
+      "fields": 128,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 12.8497,
+        "min": 12.0066,
+        "max": 14.8985
+      },
+      "allocatedBytes": {
+        "median": 14680712,
+        "min": 14680712,
+        "max": 14680712
+      }
+    },
+    {
+      "suite": "parser",
+      "phase": "parser-only",
+      "fields": 512,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 82.0049,
+        "min": 74.8105,
+        "max": 106.7428
+      },
+      "allocatedBytes": {
+        "median": 60512720,
+        "min": 60512720,
+        "max": 60514552
+      }
+    },
+    {
+      "suite": "parser",
+      "phase": "parser-only",
+      "fields": 9,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 2.9148,
+        "min": 2.454,
+        "max": 3.4119
+      },
+      "allocatedBytes": {
+        "median": 3782360,
+        "min": 3782360,
+        "max": 3782360
+      }
+    },
+    {
+      "suite": "parser",
+      "phase": "parser-only",
+      "fields": 9,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 3.3416,
+        "min": 2.7537,
+        "max": 4.8677
+      },
+      "allocatedBytes": {
+        "median": 4777088,
+        "min": 4777088,
+        "max": 4777088
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "construction",
+      "fields": 128,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 15.3827,
+        "min": 14.4044,
+        "max": 21.967
+      },
+      "allocatedBytes": {
+        "median": 20663936,
+        "min": 20663936,
+        "max": 20663936
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "full-load",
+      "fields": 128,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 30.2587,
+        "min": 28.8632,
+        "max": 31.5543
+      },
+      "allocatedBytes": {
+        "median": 35347304,
+        "min": 35347304,
+        "max": 35347304
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "construction",
+      "fields": 128,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 188.5129,
+        "min": 167.7719,
+        "max": 193.0596
+      },
+      "allocatedBytes": {
+        "median": 115369560,
+        "min": 115369536,
+        "max": 115371040
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "full-load",
+      "fields": 128,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 259.0186,
+        "min": 234.7963,
+        "max": 312.9157
+      },
+      "allocatedBytes": {
+        "median": 173947920,
+        "min": 173947872,
+        "max": 173949768
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "construction",
+      "fields": 128,
+      "variants": 12,
+      "density": "sparse",
+      "ms": {
+        "median": 18.2761,
+        "min": 16.9273,
+        "max": 20.981
+      },
+      "allocatedBytes": {
+        "median": 24812216,
+        "min": 24812216,
+        "max": 24812216
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "full-load",
+      "fields": 128,
+      "variants": 12,
+      "density": "sparse",
+      "ms": {
+        "median": 37.1944,
+        "min": 34.3852,
+        "max": 39.9988
+      },
+      "allocatedBytes": {
+        "median": 39503528,
+        "min": 39503528,
+        "max": 39503528
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "construction",
+      "fields": 128,
+      "variants": 12,
+      "density": "dense",
+      "ms": {
+        "median": 716.3369,
+        "min": 587.7162,
+        "max": 805.008
+      },
+      "allocatedBytes": {
+        "median": 368820352,
+        "min": 368820336,
+        "max": 368820448
+      }
+    },
+    {
+      "suite": "variants",
+      "phase": "full-load",
+      "fields": 128,
+      "variants": 12,
+      "density": "dense",
+      "ms": {
+        "median": 1019.6545,
+        "min": 929.1459,
+        "max": 1049.0719
+      },
+      "allocatedBytes": {
+        "median": 559091640,
+        "min": 559091528,
+        "max": 559092064
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "construction",
+      "fields": 9,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 2.3318,
+        "min": 2.2144,
+        "max": 4.1327
+      },
+      "allocatedBytes": {
+        "median": 4809968,
+        "min": 4809968,
+        "max": 4809968
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "full-load",
+      "fields": 9,
+      "variants": 0,
+      "density": "sparse",
+      "ms": {
+        "median": 4.9132,
+        "min": 4.8191,
+        "max": 6.264
+      },
+      "allocatedBytes": {
+        "median": 8589736,
+        "min": 8589736,
+        "max": 8589736
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "construction",
+      "fields": 9,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 4.5765,
+        "min": 4.4023,
+        "max": 4.9837
+      },
+      "allocatedBytes": {
+        "median": 7876264,
+        "min": 7876264,
+        "max": 7876264
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "full-load",
+      "fields": 9,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 7.4697,
+        "min": 7.0332,
+        "max": 9.43
+      },
+      "allocatedBytes": {
+        "median": 11658656,
+        "min": 11658656,
+        "max": 11658656
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "construction",
+      "fields": 9,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 5.1214,
+        "min": 4.7461,
+        "max": 5.9339
+      },
+      "allocatedBytes": {
+        "median": 9080848,
+        "min": 9080848,
+        "max": 9080848
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "full-load",
+      "fields": 9,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 15.6119,
+        "min": 14.6148,
+        "max": 18.0762
+      },
+      "allocatedBytes": {
+        "median": 13857968,
+        "min": 13857968,
+        "max": 13857968
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "construction",
+      "fields": 9,
+      "variants": 12,
+      "density": "sparse",
+      "ms": {
+        "median": 20.4911,
+        "min": 19.1003,
+        "max": 20.9814
+      },
+      "allocatedBytes": {
+        "median": 17073272,
+        "min": 17073272,
+        "max": 17073272
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "full-load",
+      "fields": 9,
+      "variants": 12,
+      "density": "sparse",
+      "ms": {
+        "median": 20.784,
+        "min": 20.1171,
+        "max": 23.1404
+      },
+      "allocatedBytes": {
+        "median": 20863624,
+        "min": 20863624,
+        "max": 20863624
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "construction",
+      "fields": 9,
+      "variants": 12,
+      "density": "dense",
+      "ms": {
+        "median": 23.5576,
+        "min": 22.2512,
+        "max": 26.1858
+      },
+      "allocatedBytes": {
+        "median": 21069792,
+        "min": 21069792,
+        "max": 21069792
+      }
+    },
+    {
+      "suite": "realistic",
+      "phase": "full-load",
+      "fields": 9,
+      "variants": 12,
+      "density": "dense",
+      "ms": {
+        "median": 42.9404,
+        "min": 40.3717,
+        "max": 45.0189
+      },
+      "allocatedBytes": {
+        "median": 28839200,
+        "min": 28839200,
+        "max": 28839200
+      }
+    },
+    {
+      "suite": "for",
+      "phase": "first-for",
+      "fields": 9,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 0.0344,
+        "min": 0.0328,
+        "max": 0.3217
+      },
+      "allocatedBytes": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    {
+      "suite": "for",
+      "phase": "cached-for",
+      "fields": 9,
+      "variants": 3,
+      "density": "sparse",
+      "ms": {
+        "median": 2.8292,
+        "min": 2.6299,
+        "max": 3.2354
+      },
+      "allocatedBytes": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    {
+      "suite": "for",
+      "phase": "first-for",
+      "fields": 9,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 0.0346,
+        "min": 0.0329,
+        "max": 0.0758
+      },
+      "allocatedBytes": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    {
+      "suite": "for",
+      "phase": "cached-for",
+      "fields": 9,
+      "variants": 3,
+      "density": "dense",
+      "ms": {
+        "median": 2.6394,
+        "min": 2.6097,
+        "max": 2.732
+      },
+      "allocatedBytes": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "construction",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.2979,
+        "min": 0.2881,
+        "max": 0.4347
+      },
+      "allocatedBytes": {
+        "median": 639944,
+        "min": 639944,
+        "max": 639944
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "full-load",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.497,
+        "min": 0.4872,
+        "max": 0.609
+      },
+      "allocatedBytes": {
+        "median": 1020608,
+        "min": 1020608,
+        "max": 1020608
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "table-registration",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.0828,
+        "min": 0.0821,
+        "max": 0.0846
+      },
+      "allocatedBytes": {
+        "median": 186720,
+        "min": 186720,
+        "max": 186720
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "construction",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.3267,
+        "min": 0.321,
+        "max": 0.3718
+      },
+      "allocatedBytes": {
+        "median": 662920,
+        "min": 662920,
+        "max": 662920
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "full-load",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.5359,
+        "min": 0.5256,
+        "max": 0.5677
+      },
+      "allocatedBytes": {
+        "median": 1043584,
+        "min": 1043584,
+        "max": 1043584
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "table-registration",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.0924,
+        "min": 0.0914,
+        "max": 0.1245
+      },
+      "allocatedBytes": {
+        "median": 200888,
+        "min": 200888,
+        "max": 200888
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "construction",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.3793,
+        "min": 0.3632,
+        "max": 0.422
+      },
+      "allocatedBytes": {
+        "median": 729392,
+        "min": 729392,
+        "max": 729392
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "full-load",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.5757,
+        "min": 0.5618,
+        "max": 0.5861
+      },
+      "allocatedBytes": {
+        "median": 1110056,
+        "min": 1110056,
+        "max": 1110056
+      }
+    },
+    {
+      "suite": "tables",
+      "phase": "table-registration",
+      "fields": 1,
+      "variants": 0,
+      "density": "none",
+      "ms": {
+        "median": 0.1183,
+        "min": 0.1092,
+        "max": 0.1409
+      },
+      "allocatedBytes": {
+        "median": 239384,
+        "min": 239384,
+        "max": 239384
+      }
+    }
+  ],
+  "sourceHashes": {
+    "runtimes/csharp/Coflow.Loader/BoundValues.cs": "7f54f5bbe4113a63502aaaa8f4cc6bc024a4cca728ca074086a48aee17f72085",
+    "runtimes/csharp/Coflow.Loader/Coflow.Loader.csproj": "3f66404579f18c783dd3e1355ca56b113b1e5b4238a9612eb9c15d80e8a83ad6",
+    "runtimes/csharp/Coflow.Loader/Descriptors.cs": "cf80d2101061a6a0bdf4456f07e18978099393be63068713669327b8bb88a842",
+    "runtimes/csharp/Coflow.Loader/Dimensions.cs": "3a33ae6fedfb58282655332e9a3a9a600b152ab4f6e6b192017bdaab12232cb9",
+    "runtimes/csharp/Coflow.Loader/Loading.cs": "f20e80c0cbd04eb7442f922fc37768a68e6648afc0240e39be55d52b26493afd",
+    "runtimes/csharp/Coflow.Loader/Option.cs": "0cfec81cda2ae1f2b70d76b7550cf884aa5482492ebac9a29852a34d3ab765cf",
+    "runtimes/csharp/Coflow.Loader/Table.cs": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdDiagnostics.cs": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdIdentifiers.cs": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdNodes.cs": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdParser.cs": "5e1b38140b8b0c521ec1e3a85c20d9ec8397cda12f393dfbfee672f45fb29e77",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdSource.cs": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdSpan.cs": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00",
+    "runtimes/csharp/Coflow.Loader/Cfd/CfdXid.Generated.cs": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546",
+    "runtimes/csharp/Coflow.Loader/Compatibility/IsExternalInit.cs": "0a12270825b5301dc0a9490c73810de94413517649b2438030a5ae6d8b3990c2",
+    "runtimes/csharp/Coflow.Loader.Benchmarks/BenchmarkRunner.cs": "3fa191220681d3fac66ca98f853ef03fc0ec58fd01ad2474063f85eaef03768f",
+    "runtimes/csharp/Coflow.Loader.Benchmarks/Coflow.Loader.Benchmarks.csproj": "acb5d10248463d026acd27340380729c0400f228091f932c943b199367ee664e",
+    "runtimes/csharp/Coflow.Loader.Benchmarks/Fixtures.cs": "13eab02d72143333d19fb12588333896c2c0994a325caf5dd41b914655059ae9",
+    "runtimes/csharp/Coflow.Loader.Benchmarks/Program.cs": "e92efe1620e8f906450cd303a15cf83d1f74bd73d7230d24c4511d052ab83fe7",
+    "crates/coflow-codegen-csharp/src/emit.rs": "a63cf2450bf934f515cd52675d0290cf710841133c93216b5e98a59c0d703f03",
+    "crates/coflow-codegen-csharp/src/lib.rs": "7bade3eb881a5d2c21d86227f32d714c3ebaabf25fb25263f9dba0f6cb08bbe6",
+    "crates/coflow-codegen-csharp/src/names.rs": "f0771a110b7c38e00b800a32bfc796269861b8a9e4f84a258f8432ac2f57d0b3",
+    "crates/coflow-codegen-csharp/src/tests.rs": "059df192b10e6232bd5aec328cd9e510c114d3ac6e6db65fd38e037dffd4cb91",
+    "docs/archive/benchmarks/csharp-prebuilt-2026-11-06-probe.cs": "109ea7f1c942a47515cb2de6fd500bba24f4e8e7285a05eac885f6c51c1a12c2"
+  }
+}

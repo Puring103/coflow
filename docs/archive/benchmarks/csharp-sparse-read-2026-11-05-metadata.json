@@ -1,0 +1,526 @@
+{
+  "date": "2026-11-05",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "sdk": "8.0.427",
+  "runtime": "net8.0 / Microsoft.NETCore.App 8.0.33",
+  "configuration": "Release",
+  "DOTNET_TieredCompilation": "0",
+  "warmups": 2,
+  "samples": 7,
+  "baseline": "Uncommitted sparse runtime before read optimization; source snapshots attached",
+  "summary": {
+    "before": {
+      "wide/all": {
+        "loadMs": {
+          "median": 18.1155,
+          "min": 16.448,
+          "max": 19.0754
+        },
+        "loadAllocated": {
+          "median": 24858008,
+          "min": 24858008,
+          "max": 24858008
+        },
+        "viewMs": {
+          "median": 8.1761,
+          "min": 7.4376,
+          "max": 10.7918
+        },
+        "retained": {
+          "median": 8155224,
+          "min": 8155200,
+          "max": 8155248
+        },
+        "readMs": {
+          "median": 11.9605,
+          "min": 11.5252,
+          "max": 12.4591
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      }
+    },
+    "before-matrix": {
+      "none/int": {
+        "readMs": {
+          "median": 11.1904,
+          "min": 11.0291,
+          "max": 11.8322
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "none/string": {
+        "readMs": {
+          "median": 14.4566,
+          "min": 13.5527,
+          "max": 15.1541
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "none/template": {
+        "readMs": {
+          "median": 16.5274,
+          "min": 16.3044,
+          "max": 16.6233
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "none/list": {
+        "readMs": {
+          "median": 12.3547,
+          "min": 11.6085,
+          "max": 13.238
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/int": {
+        "readMs": {
+          "median": 11.3528,
+          "min": 11.0639,
+          "max": 11.8794
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/string": {
+        "readMs": {
+          "median": 14.7101,
+          "min": 14.4903,
+          "max": 14.9962
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/template": {
+        "readMs": {
+          "median": 16.6419,
+          "min": 16.4646,
+          "max": 16.8093
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/list": {
+        "readMs": {
+          "median": 12.2832,
+          "min": 11.7077,
+          "max": 13.14
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/int": {
+        "readMs": {
+          "median": 21.95,
+          "min": 21.0013,
+          "max": 22.6567
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/string": {
+        "readMs": {
+          "median": 23.9576,
+          "min": 22.996,
+          "max": 25.7711
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/template": {
+        "readMs": {
+          "median": 16.4889,
+          "min": 16.3701,
+          "max": 17.2171
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/list": {
+        "readMs": {
+          "median": 12.1225,
+          "min": 11.5615,
+          "max": 12.9142
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      }
+    },
+    "after": {
+      "wide/all": {
+        "loadMs": {
+          "median": 17.6684,
+          "min": 17.2395,
+          "max": 19.269
+        },
+        "loadAllocated": {
+          "median": 24866008,
+          "min": 24866008,
+          "max": 24866008
+        },
+        "viewMs": {
+          "median": 8.3378,
+          "min": 7.9355,
+          "max": 9.8457
+        },
+        "retained": {
+          "median": 8262392,
+          "min": 8254168,
+          "max": 8262392
+        },
+        "readMs": {
+          "median": 2.2362,
+          "min": 2.2153,
+          "max": 3.0336
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      }
+    },
+    "after-matrix": {
+      "none/int": {
+        "readMs": {
+          "median": 2.1528,
+          "min": 2.1449,
+          "max": 2.2722
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "none/string": {
+        "readMs": {
+          "median": 2.3396,
+          "min": 2.3171,
+          "max": 2.4093
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "none/template": {
+        "readMs": {
+          "median": 14.3008,
+          "min": 14.0833,
+          "max": 14.9269
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "none/list": {
+        "readMs": {
+          "median": 3.9995,
+          "min": 3.9815,
+          "max": 5.2741
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/int": {
+        "readMs": {
+          "median": 2.3196,
+          "min": 2.1116,
+          "max": 2.3569
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/string": {
+        "readMs": {
+          "median": 2.3356,
+          "min": 2.3229,
+          "max": 2.3622
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/template": {
+        "readMs": {
+          "median": 14.4189,
+          "min": 14.2712,
+          "max": 15.0329
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "sparse/list": {
+        "readMs": {
+          "median": 4.5847,
+          "min": 4.0044,
+          "max": 5.1392
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/int": {
+        "readMs": {
+          "median": 5.4185,
+          "min": 4.9924,
+          "max": 5.9524
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/string": {
+        "readMs": {
+          "median": 5.2051,
+          "min": 5.0318,
+          "max": 5.4364
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/template": {
+        "readMs": {
+          "median": 15.9825,
+          "min": 15.5861,
+          "max": 16.7
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      },
+      "dense/list": {
+        "readMs": {
+          "median": 6.5399,
+          "min": 6.4784,
+          "max": 7.0639
+        },
+        "allocated": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "reads": {
+          "median": 1000000,
+          "min": 1000000,
+          "max": 1000000
+        }
+      }
+    }
+  },
+  "hashes": {
+    "before/Coflow.Loader/BoundValues.cs": "00fa7ed58e31fac48076dd307d982e3126f26685cb3ae96709300914fd446025",
+    "before/Coflow.Loader/Coflow.Loader.csproj": "e64bde518d2b13359fa9a520290b769e994e82714634e733a5b66a6fd5928786",
+    "before/Coflow.Loader/Descriptors.cs": "60a838e711285798955009da7ed10e81bd879955a8364c48bea98074276debf7",
+    "before/Coflow.Loader/Dimensions.cs": "012ab1c541545cc37cccb77b5e45b15962a1f51d2e3136bca06a896a4cd77e31",
+    "before/Coflow.Loader/Loading.cs": "b059c103b39174c8ded9896e62ea36eb67131346eae7b954ac50b0ac56b8e039",
+    "before/Coflow.Loader/Option.cs": "0945d6783a67ec0f52984ebb593bddc9c174c940b69c67e12c5a9b5eeb1e6c12",
+    "before/Coflow.Loader/Table.cs": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884",
+    "before/Coflow.Loader/Cfd/CfdDiagnostics.cs": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014",
+    "before/Coflow.Loader/Cfd/CfdIdentifiers.cs": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34",
+    "before/Coflow.Loader/Cfd/CfdNodes.cs": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81",
+    "before/Coflow.Loader/Cfd/CfdParser.cs": "5e1b38140b8b0c521ec1e3a85c20d9ec8397cda12f393dfbfee672f45fb29e77",
+    "before/Coflow.Loader/Cfd/CfdSource.cs": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92",
+    "before/Coflow.Loader/Cfd/CfdSpan.cs": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00",
+    "before/Coflow.Loader/Cfd/CfdXid.Generated.cs": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546",
+    "before/Coflow.Loader/Compatibility/IsExternalInit.cs": "0a12270825b5301dc0a9490c73810de94413517649b2438030a5ae6d8b3990c2",
+    "after/Coflow.Loader/BoundValues.cs": "00fa7ed58e31fac48076dd307d982e3126f26685cb3ae96709300914fd446025",
+    "after/Coflow.Loader/Coflow.Loader.csproj": "e64bde518d2b13359fa9a520290b769e994e82714634e733a5b66a6fd5928786",
+    "after/Coflow.Loader/Descriptors.cs": "60a838e711285798955009da7ed10e81bd879955a8364c48bea98074276debf7",
+    "after/Coflow.Loader/Dimensions.cs": "012ab1c541545cc37cccb77b5e45b15962a1f51d2e3136bca06a896a4cd77e31",
+    "after/Coflow.Loader/Loading.cs": "6afdd8b02271a0eac85e1804ea46b485a405762365cd4392ef69c3502b6050d3",
+    "after/Coflow.Loader/Option.cs": "0945d6783a67ec0f52984ebb593bddc9c174c940b69c67e12c5a9b5eeb1e6c12",
+    "after/Coflow.Loader/Table.cs": "752cab21eb5a4120ce1a071155ba14bf7d6bc63e73eb1095453b50e09404e884",
+    "after/Coflow.Loader/Cfd/CfdDiagnostics.cs": "62b0cff0eea1df0a7cf0a6fef19d7d93f3058ac97c1d66b56c01024e19ade014",
+    "after/Coflow.Loader/Cfd/CfdIdentifiers.cs": "27ea2a6d9c5b31709807fd03b50975071c72121385cc87b55730815865492d34",
+    "after/Coflow.Loader/Cfd/CfdNodes.cs": "92008d56e793549ace1518d73cbc62315a0310a7c64a9fdf9f70b35c69307c81",
+    "after/Coflow.Loader/Cfd/CfdParser.cs": "5e1b38140b8b0c521ec1e3a85c20d9ec8397cda12f393dfbfee672f45fb29e77",
+    "after/Coflow.Loader/Cfd/CfdSource.cs": "8ca7190b784b69e9355443029eca4b5a78ce73a97183c0fc77b4eb3687563b92",
+    "after/Coflow.Loader/Cfd/CfdSpan.cs": "37824060271bdfd40ba9b83a87b9eecf9312ecfdb225e368f2cacd1066130f00",
+    "after/Coflow.Loader/Cfd/CfdXid.Generated.cs": "3723b94c22c210d1e0dc50edb6eb9a0b669f9eb90a2b73c743712080080fd546",
+    "after/Coflow.Loader/Compatibility/IsExternalInit.cs": "0a12270825b5301dc0a9490c73810de94413517649b2438030a5ae6d8b3990c2"
+  }
+}

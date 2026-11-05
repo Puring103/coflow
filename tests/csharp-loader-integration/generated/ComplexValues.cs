@@ -3,9 +3,8 @@
 
 namespace Game.Config
 {
-public partial class ComplexValues : global::Coflow.Loader.ICfdRecord
+public partial class ComplexValues
 {
-    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal ComplexValues(string id) { this.id = id; }
     public global::System.Collections.Generic.IReadOnlyList<int> samples { get; internal set; } = default!;

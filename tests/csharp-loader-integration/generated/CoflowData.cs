@@ -8,11 +8,15 @@ public sealed partial class CoflowData
     private readonly global::Coflow.Loader.CfdData _data;
     private CoflowData(global::Coflow.Loader.CfdData data) { _data = data; }
 
-    public global::Coflow.Loader.Table<T> Table<T>() where T : class => _data.Table<T>();
-    public T Singleton<T>() where T : class => _data.Singleton<T>();
+    public global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<T>> Table<T>() where T : class => _data.Table<T>();
+    public global::Coflow.Loader.Dimension<T> Singleton<T>() where T : class => _data.Singleton<T>();
+    public global::Coflow.Loader.CfdSnapshot Base => _data.Base;
+    public global::Coflow.Loader.CfdSnapshot For(string dimension, string variant) => _data.For(dimension, variant);
+    public global::Coflow.Loader.CfdSnapshot For(params (string Dimension, string Variant)[] selection) => _data.For(selection);
+    public global::Coflow.Loader.CfdSnapshot For(global::Coflow.Loader.DimensionSelection selection) => _data.For(selection);
 
-    public static global::Coflow.Loader.LoadResult<CoflowData> Load(global::System.Collections.Generic.IEnumerable<global::Coflow.Loader.CfdSource> sources)
-        => global::Coflow.Loader.CfdLoader.Load(sources, Types, data => new CoflowData(data), Constants);
+    public static global::Coflow.Loader.LoadResult<CoflowData> Load(global::System.Collections.Generic.IEnumerable<global::Coflow.Loader.CfdSource> sources, global::Coflow.Loader.LoadOptions? options = null)
+        => global::Coflow.Loader.CfdLoader.Load(sources, Types, data => new CoflowData(data), Constants, options);
 
     private static readonly global::Coflow.Loader.CfdValueType<global::Game.Config.Constants> Enum_Cft_436F6E7374616E7473 = global::Coflow.Loader.CfdValues.Enum<global::Game.Config.Constants>("Constants", new global::System.Collections.Generic.Dictionary<string, global::Game.Config.Constants>
     {
@@ -77,9 +81,10 @@ public sealed partial class CoflowData
         new global::Coflow.Loader.CfdType<global::Game.Config.CfdField>("CfdField", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<global::Game.Config.Empty>("settings", global::Coflow.Loader.CfdValues.Object<global::Game.Config.Empty>("Empty"), global::Coflow.Loader.CfdDefaults.Object("Empty")),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.CfdField
+        }, create: id => new global::Game.Config.CfdField(), fill: (value, reader) =>
         {
-            settings = reader.Get<global::Game.Config.Empty>(0),
+            value.settings = reader.Get<global::Game.Config.Empty>(0);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.ComplexValues>("ComplexValues", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
@@ -91,19 +96,21 @@ public sealed partial class CoflowData
             value.samples = reader.Get<global::System.Collections.Generic.IReadOnlyList<int>>(0);
             value.lookup = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<string, int>>(1);
             value.optional = reader.Get<global::Coflow.Loader.Option<global::Game.Config.Payload>>(2);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractBase>("ContractBase", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.String),
-        }, create: null, fill: null, construct: null, abstractType: true),
+        }, create: null, fill: null, abstractType: true),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractChild>("ContractChild", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.String),
             new global::Coflow.Loader.CfdField<int>("score", global::Coflow.Loader.CfdValues.Int),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.ContractChild()
+        }, create: id => new global::Game.Config.ContractChild(), fill: (value, reader) =>
         {
-            name = reader.Get<string>(0),
-            score = reader.Get<int>(1),
+            value.name = reader.Get<string>(0);
+            value.score = reader.Get<int>(1);
+            return value;
         }, parent: "ContractBase"),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractChildNode>("ContractChildNode", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
@@ -113,15 +120,17 @@ public sealed partial class CoflowData
         {
             value.label = reader.Get<string>(0);
             value.next = reader.Get<global::Coflow.Loader.Option<global::Game.Config.ContractNode>>(1);
-        }, construct: null, parent: "ContractNode"),
+            return value;
+        }, parent: "ContractNode"),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractDetails>("ContractDetails", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<int>("score", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(42L)),
             new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"details {self.score}\"")),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.ContractDetails()
+        }, create: id => new global::Game.Config.ContractDetails(), fill: (value, reader) =>
         {
-            score = reader.Get<int>(0),
-            label = reader.Get<string>(1),
+            value.score = reader.Get<int>(0);
+            value.label = reader.Get<string>(1);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractEntry>("ContractEntry", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
@@ -129,7 +138,7 @@ public sealed partial class CoflowData
             new global::Coflow.Loader.CfdField<global::Game.Config.ContractShape>("shape", global::Coflow.Loader.CfdValues.Object<global::Game.Config.ContractShape>("ContractShape")),
             new global::Coflow.Loader.CfdField<global::Game.Config.ContractBase>("polymorphic", global::Coflow.Loader.CfdValues.Object<global::Game.Config.ContractBase>("ContractBase")),
             new global::Coflow.Loader.CfdField<global::Game.Config.ContractChild>("child", global::Coflow.Loader.CfdValues.Object<global::Game.Config.ContractChild>("ContractChild")),
-            new global::Coflow.Loader.CfdField<global::Game.Config.ContractNode>("target", global::Coflow.Loader.CfdValues.Dimension("contract_ref", global::Coflow.Loader.CfdValues.Reference<global::Game.Config.ContractNode>("ContractNode"))),
+            new global::Coflow.Loader.CfdField<global::Game.Config.ContractNode>("target", global::Coflow.Loader.CfdValues.Reference<global::Game.Config.ContractNode>("ContractNode"), dimension: "contract_ref"),
             new global::Coflow.Loader.CfdField<long>("wide", global::Coflow.Loader.CfdValues.Long, global::Coflow.Loader.CfdDefaults.Int(-9223372036854775808L)),
             new global::Coflow.Loader.CfdField<double>("precise", global::Coflow.Loader.CfdValues.Double, global::Coflow.Loader.CfdDefaults.Float(1.0000000000000002d)),
             new global::Coflow.Loader.CfdField<double>("large", global::Coflow.Loader.CfdValues.Double, global::Coflow.Loader.CfdDefaults.Float(1e100d)),
@@ -143,7 +152,7 @@ public sealed partial class CoflowData
             new global::Coflow.Loader.CfdField<global::Game.Config.ContractFlags>("flags", Enum_Cft_436F6E7472616374466C616773, global::Coflow.Loader.CfdDefaults.Enum("ContractFlags", 3L)),
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<global::Game.Config.ContractFlags, int>>("indexed", global::Coflow.Loader.CfdValues.Dictionary(Enum_Cft_436F6E7472616374466C616773, global::Coflow.Loader.CfdValues.Int), global::Coflow.Loader.CfdDefaults.Dictionary(new global::Coflow.Loader.CfdDefaultEntry(global::Coflow.Loader.CfdDefaults.Enum("ContractFlags", 3L), global::Coflow.Loader.CfdDefaults.Int(7L)))),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>>>("some_nested", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Long)), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Int(9223372036854775807L)))),
-            new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>("localized", global::Coflow.Loader.CfdValues.Dimension("contract_language", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.String))), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.String("base")))),
+            new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>("localized", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.String)), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.String("base"))), dimension: "contract_language"),
         }, create: id => new global::Game.Config.ContractEntry(id), fill: (value, reader) =>
         {
             value.payload = reader.Get<global::Game.Config.ContractPayload>(0);
@@ -165,7 +174,8 @@ public sealed partial class CoflowData
             value.indexed = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<global::Game.Config.ContractFlags, int>>(16);
             value.some_nested = reader.Get<global::Coflow.Loader.Option<global::Coflow.Loader.Option<long>>>(17);
             value.localized = reader.Get<global::Coflow.Loader.Option<global::Coflow.Loader.Option<string>>>(18);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractNode>("ContractNode", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"node {self.id}\"")),
@@ -174,7 +184,8 @@ public sealed partial class CoflowData
         {
             value.label = reader.Get<string>(0);
             value.next = reader.Get<global::Coflow.Loader.Option<global::Game.Config.ContractNode>>(1);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractPayload>("ContractPayload", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<long>("score", global::Coflow.Loader.CfdValues.Long),
@@ -183,40 +194,43 @@ public sealed partial class CoflowData
             new global::Coflow.Loader.CfdField<global::System.Collections.Generic.IReadOnlyDictionary<string, string>>("indexed_labels", global::Coflow.Loader.CfdValues.Dictionary(global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdValues.String), global::Coflow.Loader.CfdDefaults.Dictionary(new global::Coflow.Loader.CfdDefaultEntry(global::Coflow.Loader.CfdDefaults.String("label"), global::Coflow.Loader.CfdDefaults.Template("f\"dict {self.score}\"")))),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<string>>("template", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.String), global::Coflow.Loader.CfdDefaults.Some(global::Coflow.Loader.CfdDefaults.Template("f\"optional {self.score}\""))),
             new global::Coflow.Loader.CfdField<global::Game.Config.ContractDetails>("nested", global::Coflow.Loader.CfdValues.Object<global::Game.Config.ContractDetails>("ContractDetails"), global::Coflow.Loader.CfdDefaults.Object("ContractDetails")),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.ContractPayload()
+        }, create: id => new global::Game.Config.ContractPayload(), fill: (value, reader) =>
         {
-            score = reader.Get<long>(0),
-            label = reader.Get<string>(1),
-            labels = reader.Get<global::System.Collections.Generic.IReadOnlyList<string>>(2),
-            indexed_labels = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<string, string>>(3),
-            template = reader.Get<global::Coflow.Loader.Option<string>>(4),
-            nested = reader.Get<global::Game.Config.ContractDetails>(5),
+            value.score = reader.Get<long>(0);
+            value.label = reader.Get<string>(1);
+            value.labels = reader.Get<global::System.Collections.Generic.IReadOnlyList<string>>(2);
+            value.indexed_labels = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<string, string>>(3);
+            value.template = reader.Get<global::Coflow.Loader.Option<string>>(4);
+            value.nested = reader.Get<global::Game.Config.ContractDetails>(5);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.ContractShape>("ContractShape", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<long>("count", global::Coflow.Loader.CfdValues.Long, global::Coflow.Loader.CfdDefaults.Int(2147483648L)),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Game.Config.ContractShape>>("inner", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Object<global::Game.Config.ContractShape>("ContractShape")), global::Coflow.Loader.CfdDefaults.None()),
             new global::Coflow.Loader.CfdField<string>("label", global::Coflow.Loader.CfdValues.String, global::Coflow.Loader.CfdDefaults.Template("f\"shape {self.count}\"")),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.ContractShape
+        }, create: id => new global::Game.Config.ContractShape(), fill: (value, reader) =>
         {
-            count = reader.Get<long>(0),
-            inner = reader.Get<global::Coflow.Loader.Option<global::Game.Config.ContractShape>>(1),
-            label = reader.Get<string>(2),
+            value.count = reader.Get<long>(0);
+            value.inner = reader.Get<global::Coflow.Loader.Option<global::Game.Config.ContractShape>>(1);
+            value.label = reader.Get<string>(2);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.Empty>("Empty", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<int>("hp", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(9L)),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.Empty
+        }, create: id => new global::Game.Config.Empty(), fill: (value, reader) =>
         {
-            hp = reader.Get<int>(0),
+            value.hp = reader.Get<int>(0);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.Entity>("Entity", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
-            new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.Dimension("language", global::Coflow.Loader.CfdValues.String)),
-        }, create: null, fill: null, construct: null, abstractType: true),
+            new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.String, dimension: "language"),
+        }, create: null, fill: null, abstractType: true),
         new global::Coflow.Loader.CfdType<global::Game.Config.Item>("Item", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
-            new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.Dimension("language", global::Coflow.Loader.CfdValues.String)),
+            new global::Coflow.Loader.CfdField<string>("name", global::Coflow.Loader.CfdValues.String, dimension: "language"),
             new global::Coflow.Loader.CfdField<global::Game.Config.Stats>("stats", global::Coflow.Loader.CfdValues.Object<global::Game.Config.Stats>("Stats")),
             new global::Coflow.Loader.CfdField<int>("price", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(3L)),
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Game.Config.Item>>("next", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Reference<global::Game.Config.Item>("Item")), global::Coflow.Loader.CfdDefaults.None()),
@@ -236,9 +250,12 @@ public sealed partial class CoflowData
             value.enum_label = reader.Get<string>(6);
             value.nums = reader.Get<global::System.Collections.Generic.IReadOnlyList<int>>(7);
             value.indexed = reader.Get<global::System.Collections.Generic.IReadOnlyDictionary<string, int>>(8);
-        }, construct: null, parent: "Entity"),
+            return value;
+        }, parent: "Entity"),
         new global::Coflow.Loader.CfdType<global::Game.Config.NamedCollision>("NamedCollision", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
+            new global::Coflow.Loader.CfdField<int>("_coflowReader", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(11L)),
+            new global::Coflow.Loader.CfdField<int>("_coflowReader_", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(12L)),
             new global::Coflow.Loader.CfdField<global::Game.Config.Types>("types", Enum_Cft_5479706573, global::Coflow.Loader.CfdDefaults.Enum("Types", 0L)),
             new global::Coflow.Loader.CfdField<global::Game.Config.Constants>("constants", Enum_Cft_436F6E7374616E7473, global::Coflow.Loader.CfdDefaults.Enum("Constants", 0L)),
             new global::Coflow.Loader.CfdField<global::Game.Config.Table>("table_value", Enum_Cft_5461626C65, global::Coflow.Loader.CfdDefaults.Enum("Table", 0L)),
@@ -246,19 +263,23 @@ public sealed partial class CoflowData
             new global::Coflow.Loader.CfdField<global::Game.Config.Singleton>("singleton_value", Enum_Cft_53696E676C65746F6E, global::Coflow.Loader.CfdDefaults.Enum("Singleton", 0L)),
         }, create: id => new global::Game.Config.NamedCollision(id), fill: (value, reader) =>
         {
-            value.types = reader.Get<global::Game.Config.Types>(0);
-            value.constants = reader.Get<global::Game.Config.Constants>(1);
-            value.table_value = reader.Get<global::Game.Config.Table>(2);
-            value.load = reader.Get<global::Game.Config.Load>(3);
-            value.singleton_value = reader.Get<global::Game.Config.Singleton>(4);
-        }, construct: null),
+            value._coflowReader = reader.Get<int>(0);
+            value._coflowReader_ = reader.Get<int>(1);
+            value.types = reader.Get<global::Game.Config.Types>(2);
+            value.constants = reader.Get<global::Game.Config.Constants>(3);
+            value.table_value = reader.Get<global::Game.Config.Table>(4);
+            value.load = reader.Get<global::Game.Config.Load>(5);
+            value.singleton_value = reader.Get<global::Game.Config.Singleton>(6);
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.Node>("Node", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<global::Coflow.Loader.Option<global::Game.Config.Node>>("next", global::Coflow.Loader.CfdValues.Optional(global::Coflow.Loader.CfdValues.Reference<global::Game.Config.Node>("Node")), global::Coflow.Loader.CfdDefaults.None()),
         }, create: id => new global::Game.Config.Node(id), fill: (value, reader) =>
         {
             value.next = reader.Get<global::Coflow.Loader.Option<global::Game.Config.Node>>(0);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.NumericValues>("NumericValues", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<int>("small", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(0L)),
@@ -275,15 +296,17 @@ public sealed partial class CoflowData
             value.precise = reader.Get<double>(3);
             value.bits = reader.Get<global::Game.Config.NumericBits>(4);
             value.code = reader.Get<global::Game.Config.NumericCode>(5);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.Payload>("Payload", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<bool>("enabled", global::Coflow.Loader.CfdValues.Bool),
             new global::Coflow.Loader.CfdField<int>("score", global::Coflow.Loader.CfdValues.Int),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.Payload()
+        }, create: id => new global::Game.Config.Payload(), fill: (value, reader) =>
         {
-            enabled = reader.Get<bool>(0),
-            score = reader.Get<int>(1),
+            value.enabled = reader.Get<bool>(0);
+            value.score = reader.Get<int>(1);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.Settings>("Settings", global::Coflow.Loader.CfdTypeKind.Singleton, new global::Coflow.Loader.CfdField[]
         {
@@ -291,15 +314,17 @@ public sealed partial class CoflowData
         }, create: id => new global::Game.Config.Settings(id), fill: (value, reader) =>
         {
             value.start = reader.Get<global::Game.Config.Item>(0);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.Stats>("Stats", global::Coflow.Loader.CfdTypeKind.Data, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<int>("hp", global::Coflow.Loader.CfdValues.Int, global::Coflow.Loader.CfdDefaults.Int(10L)),
             new global::Coflow.Loader.CfdField<global::Game.Config.CfdField>("extra", global::Coflow.Loader.CfdValues.Object<global::Game.Config.CfdField>("CfdField"), global::Coflow.Loader.CfdDefaults.Object("CfdField", new global::Coflow.Loader.CfdDefaultField("settings", global::Coflow.Loader.CfdDefaults.Object("Empty")))),
-        }, create: null, fill: null, construct: reader => new global::Game.Config.Stats
+        }, create: id => new global::Game.Config.Stats(), fill: (value, reader) =>
         {
-            hp = reader.Get<int>(0),
-            extra = reader.Get<global::Game.Config.CfdField>(1),
+            value.hp = reader.Get<int>(0);
+            value.extra = reader.Get<global::Game.Config.CfdField>(1);
+            return value;
         }),
         new global::Coflow.Loader.CfdType<global::Game.Config.UnicodeDefaults>("UnicodeDefaults", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
@@ -307,7 +332,8 @@ public sealed partial class CoflowData
         }, create: id => new global::Game.Config.UnicodeDefaults(id), fill: (value, reader) =>
         {
             value.text = reader.Get<string>(0);
-        }, construct: null),
+            return value;
+        }),
         new global::Coflow.Loader.CfdType<global::Game.Config.@class>("class", global::Coflow.Loader.CfdTypeKind.Table, new global::Coflow.Loader.CfdField[]
         {
             new global::Coflow.Loader.CfdField<string>("namespace", global::Coflow.Loader.CfdValues.String),
@@ -316,7 +342,8 @@ public sealed partial class CoflowData
         {
             value.@namespace = reader.Get<string>(0);
             value.state = reader.Get<global::Game.Config.@event>(1);
-        }, construct: null),
+            return value;
+        }),
     };
 
     private static readonly global::System.Collections.Generic.IReadOnlyDictionary<string, global::Coflow.Loader.CfdValueNode> Constants = new global::System.Collections.Generic.Dictionary<string, global::Coflow.Loader.CfdValueNode>
@@ -358,6 +385,13 @@ public static partial class CoflowIds_Cft_456E74697479
         value = null!;
         return false;
     }
+    public static global::Coflow.Loader.Dimension<global::Game.Config.Entity> Get(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<global::Game.Config.Entity>> table, global::Game.Config.EntityId id) => table[global::Game.Config.CoflowData.Ids_Cft_456E746974794964.Value.GetId(id)];
+    public static bool TryGet(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<global::Game.Config.Entity>> table, global::Game.Config.EntityId id, out global::Coflow.Loader.Dimension<global::Game.Config.Entity> value)
+    {
+        if (global::Game.Config.CoflowData.Ids_Cft_456E746974794964.Value.TryGetId(id, out var text)) return table.TryGetValue(text, out value);
+        value = null!;
+        return false;
+    }
 }
 
 public static partial class CoflowIds_Cft_4974656D
@@ -369,12 +403,26 @@ public static partial class CoflowIds_Cft_4974656D
         value = null!;
         return false;
     }
+    public static global::Coflow.Loader.Dimension<global::Game.Config.Item> Get(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<global::Game.Config.Item>> table, global::Game.Config.EntityId id) => table[global::Game.Config.CoflowData.Ids_Cft_456E746974794964.Value.GetId(id)];
+    public static bool TryGet(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<global::Game.Config.Item>> table, global::Game.Config.EntityId id, out global::Coflow.Loader.Dimension<global::Game.Config.Item> value)
+    {
+        if (global::Game.Config.CoflowData.Ids_Cft_456E746974794964.Value.TryGetId(id, out var text)) return table.TryGetValue(text, out value);
+        value = null!;
+        return false;
+    }
 }
 
 public static partial class CoflowIds_Cft_4E616D6564436F6C6C6973696F6E
 {
     public static global::Game.Config.NamedCollision Get(this global::Coflow.Loader.Table<global::Game.Config.NamedCollision> table, global::Game.Config.Ids id) => table[global::Game.Config.CoflowData.Ids_Cft_496473.Value.GetId(id)];
     public static bool TryGet(this global::Coflow.Loader.Table<global::Game.Config.NamedCollision> table, global::Game.Config.Ids id, out global::Game.Config.NamedCollision value)
+    {
+        if (global::Game.Config.CoflowData.Ids_Cft_496473.Value.TryGetId(id, out var text)) return table.TryGetValue(text, out value);
+        value = null!;
+        return false;
+    }
+    public static global::Coflow.Loader.Dimension<global::Game.Config.NamedCollision> Get(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<global::Game.Config.NamedCollision>> table, global::Game.Config.Ids id) => table[global::Game.Config.CoflowData.Ids_Cft_496473.Value.GetId(id)];
+    public static bool TryGet(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<global::Game.Config.NamedCollision>> table, global::Game.Config.Ids id, out global::Coflow.Loader.Dimension<global::Game.Config.NamedCollision> value)
     {
         if (global::Game.Config.CoflowData.Ids_Cft_496473.Value.TryGetId(id, out var text)) return table.TryGetValue(text, out value);
         value = null!;

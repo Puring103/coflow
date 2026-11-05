@@ -3,9 +3,8 @@
 
 namespace Game.Config
 {
-public partial class ContractEntry : global::Coflow.Loader.ICfdRecord
+public partial class ContractEntry
 {
-    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal ContractEntry(string id) { this.id = id; }
     public global::Game.Config.ContractPayload payload { get; internal set; } = default!;

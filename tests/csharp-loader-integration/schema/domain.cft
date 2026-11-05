@@ -34,6 +34,8 @@ enum Singleton { Normal }
 enum Ids {}
 @idAsEnum(Ids)
 table NamedCollision {
+  _coflowReader: int = 11;
+  _coflowReader_: int = 12;
   types: Types = Types::Normal;
   constants: Constants = Constants::Normal;
   table_value: Table = Table::Normal;

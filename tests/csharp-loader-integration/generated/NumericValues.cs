@@ -3,9 +3,8 @@
 
 namespace Game.Config
 {
-public partial class NumericValues : global::Coflow.Loader.ICfdRecord
+public partial class NumericValues
 {
-    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;
     public string id { get; }
     internal NumericValues(string id) { this.id = id; }
     public int small { get; internal set; } = default!;

@@ -461,7 +461,7 @@ fn csharp_codegen_emits_shared_loader_descriptors_for_dimensions() {
     coflow_runtime::commands::generate_project_code(&project).expect("generate");
     let root = fs::read_to_string(dir.path().join("generated/csharp/CoflowData.cs")).expect("root");
     let ty = fs::read_to_string(dir.path().join("generated/csharp/UiText.cs")).expect("type");
-    assert!(root.contains("CfdValues.Dimension(\"language\""));
+    assert!(root.contains("dimension: \"language\""));
     assert!(ty.contains("public string welcome"));
     assert!(!root.contains("data/ja.cfd"));
     assert!(!root.contains("__coflow_"));
@@ -477,7 +477,7 @@ fn csharp_codegen_uses_one_singleton_business_type_for_dimensions() {
     coflow_runtime::commands::generate_project_code(&project).expect("generate");
     let root = fs::read_to_string(dir.path().join("generated/csharp/CoflowData.cs")).expect("root");
     assert!(root.contains("CfdTypeKind.Singleton"));
-    assert_eq!(root.matches("CfdValues.Dimension(\"language\"").count(), 2);
+    assert_eq!(root.matches("dimension: \"language\"").count(), 2);
     assert!(!root.contains("__coflow_"));
 }
 

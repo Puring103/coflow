@@ -25,7 +25,7 @@ if (!loaded.Success) {
 }
 var data = loaded.Data;
 var sword = data.Table<Item>()["sword"];
-var baseName = sword.name;
+var baseName = sword.Base.name;
 var japanese = sword.For("language", "ja");
 var japaneseName = japanese.name;
 ```
@@ -34,13 +34,13 @@ var japaneseName = japanese.name;
 
 ## 业务访问与维度选择
 
-`Table<T>()` 返回只读表，父表包含派生记录，基础表和引用共享对象。`Singleton<T>()` 获取单例。`@idAsEnum` 生成对应表的 `Get(enum)`、`TryGet(enum, out record)` 扩展，以稳定枚举值映射 CFD 业务 id。
+`Table<T>()` 返回只读维度表，元素为 `Dimension<T>`，父表包含派生记录，基础表和引用共享对象。`Singleton<T>()` 获取单例的维度容器。`@idAsEnum` 生成对应表的 `Get(enum)`、`TryGet(enum, out record)` 扩展，以稳定枚举值映射 CFD 业务 id。
 
-每个界面、场景或服务按需要调用 `record.For("language", "ja")`。视图保持独立，基础对象不发生切换。多个维度可链式组合；视图内引用、内联数据和模板继续使用该上下文。循环引用在同一视图内仍保持身份。
+加载默认完成基础数据与全部已声明单维变体；多维组合通过 `LoadOptions.Combinations` 明确指定。`Dimension<T>.For("language", "ja")` 只返回现成普通业务对象，`.Base` 返回基础对象。组合使用 `For(new DimensionSelection(("language", "ja"), ("platform", "mobile")))` 一次选择，需在加载时请求该组合。
 
-`record.HasVariant(nameof(record.name), "ja")` 判断某字段是否有显式覆盖，包含显式 None 和同值覆盖。`record.Variants("language")` 列出该维度所有已知变体，可用于语言菜单和覆盖检查。遍历变体不意味着每个字段都提供了覆盖。
+配置根的 `Base` 和 `For` 返回完整 `CfdSnapshot`，其表和单例直接包含普通业务对象，与逐记录选择共享身份。`HasVariant(nameof(Item.name), "ja")` 查询显式覆盖，`Variants("language")` 获取可选变体。未知维度、未知变体和未构建组合报参数错误。
 
-视图缓存与读取材料随加载结果存活。应用释放旧数据时也应释放其视图引用。首次构造新的多维度组合可能报告组合依赖错误，调用方可捕获 `CfdLoadException` 并展示其 `Diagnostics`。
+所有模板、集合和引用在加载成功前完成。加载错误通过 Diagnostics 报告，读取最终数据不会触发求值。完成的数据对象图不持有加载状态；应用只需管理最终数据根和引用的生命周期。
 
 ## 类型与扩展
 

@@ -6,105 +6,101 @@ using System.Linq;
 
 namespace Coflow.Loader
 {
-// 描述仅包含类型与构造协议，解析算法由加载器统一提供。
+// 描述负责绑定、创建和填充；最终业务对象只保存完整字段值。
 public abstract class CfdValueType
 {
-    internal abstract object? Read(LoadContext context, CfdValueNode node, CfdReader owner);
+    internal abstract BoundValue Bind(LoadContext context, CfdValueNode node, BindingScope owner);
     internal virtual string? FormatScalar(object? value) => null;
     internal virtual bool IsOptional => false;
-    internal virtual string? Dimension => null;
     internal virtual string? NamedType => null;
 }
 
 public sealed class CfdValueType<T> : CfdValueType
 {
-    private readonly Func<LoadContext, CfdValueNode, CfdReader, T> _read;
+    private readonly Func<LoadContext, CfdValueNode, BindingScope, BoundValue<T>> _bind;
+    private readonly Func<T, string?>? _format;
     private readonly bool _optional;
-    private readonly Func<T, string?>? _formatScalar;
     private readonly string? _namedType;
-    private readonly string? _dimension;
-    internal CfdValueType(Func<LoadContext, CfdValueNode, CfdReader, T> read, bool optional = false, string? namedType = null, string? dimension = null, Func<T, string?>? formatScalar = null)
-    { _read = read; _optional = optional; _namedType = namedType; _dimension = dimension; _formatScalar = formatScalar; }
-    internal string? FormatValue(T value) => _formatScalar == null ? null : _formatScalar(value);
-    internal override string? FormatScalar(object? value) => FormatValue((T)value!);
-    internal override string? Dimension => _dimension;
-    // 泛型组合保持 T，只有字段缓存的 object 边界需要装箱。
-    internal T ReadValue(LoadContext context, CfdValueNode node, CfdReader owner) => _read(context, context.ResolveConstant(node), owner);
-    internal override object? Read(LoadContext context, CfdValueNode node, CfdReader owner) => ReadValue(context, node, owner);
-    internal override string? NamedType => _namedType;
+    internal CfdValueType(Func<LoadContext, CfdValueNode, BindingScope, T> read, Func<T, string?>? formatScalar = null)
+        : this((context, node, owner) => new BoundValue<T>(read(context, node, owner)), false, null, formatScalar) { }
+    internal CfdValueType(Func<LoadContext, CfdValueNode, BindingScope, BoundValue<T>> bind, bool optional, string? namedType, Func<T, string?>? formatScalar = null)
+    { _bind = bind; _optional = optional; _namedType = namedType; _format = formatScalar; }
+    internal BoundValue<T> BindValue(LoadContext context, CfdValueNode node, BindingScope owner)
+    {
+        var value = _bind(context, context.ResolveConstant(node), owner);
+        value.Path = owner.Path;
+        value.Span = node.Span;
+        return value;
+    }
+    internal override BoundValue Bind(LoadContext context, CfdValueNode node, BindingScope owner) => BindValue(context, node, owner);
+    internal override string? FormatScalar(object? value) => _format == null ? null : _format((T)value!);
     internal override bool IsOptional => _optional;
+    internal override string? NamedType => _namedType;
 }
 
 public abstract class CfdField
 {
-    protected CfdField(string name, CfdValueType type, CfdValueNode? defaultValue)
-    { Name = name; Type = type; DefaultValue = defaultValue; }
+    protected CfdField(string name, CfdValueType type, CfdValueNode? defaultValue, string? dimension)
+    { Name = name; Type = type; DefaultValue = defaultValue; Dimension = dimension; }
     public string Name { get; }
     internal CfdValueType Type { get; }
     internal CfdValueNode? DefaultValue { get; }
+    internal string? Dimension { get; }
 }
-
 public sealed class CfdField<T> : CfdField
 {
-    public CfdField(string name, CfdValueType<T> type, CfdValueNode? defaultValue = null) : base(name, type, defaultValue) { }
+    public CfdField(string name, CfdValueType<T> type, CfdValueNode? defaultValue = null, string? dimension = null)
+        : base(name, type, defaultValue, dimension) { }
 }
-
 public enum CfdTypeKind { Table, Data, Singleton }
 
 public abstract class CfdType
 {
-    private readonly Dictionary<string, int> _ordinals;
+    private readonly Dictionary<string, int> _ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
     protected CfdType(string name, CfdTypeKind kind, Type valueType, IReadOnlyList<CfdField> fields, string? parent, bool abstractType)
     {
         Name = name; Kind = kind; ValueType = valueType; Parent = parent; IsAbstract = abstractType;
-        // 描述符在类型创建时复制并建立索引，所有记录与维度视图共享稳定的字段布局。
-        var snapshot = new CfdField[fields.Count];
-        _ordinals = new Dictionary<string, int>(fields.Count, StringComparer.Ordinal);
-        for (var index = 0; index < snapshot.Length; index++)
-        {
-            var field = fields[index];
-            snapshot[index] = field;
-            _ordinals.Add(field.Name, index);
-        }
-        Fields = snapshot;
+        Fields = new CfdField[fields.Count];
+        for (var i = 0; i < Fields.Length; i++) { Fields[i] = fields[i]; _ordinals.Add(Fields[i].Name, i); }
     }
     public string Name { get; }
     internal CfdField[] Fields { get; }
     internal int FindOrdinal(string name) => _ordinals.TryGetValue(name, out var ordinal) ? ordinal : -1;
     internal CfdTypeKind Kind { get; }
     internal Type ValueType { get; }
-    internal abstract object BuildTable(IReadOnlyList<RecordState> records);
-    internal abstract object BuildSingleton(IReadOnlyList<RecordState> records);
     internal bool IsAbstract { get; }
     internal string? Parent { get; }
-    internal abstract object CreateRecord(string id);
-    internal abstract void FillRecord(object value, CfdReader reader);
-    internal abstract object Construct(CfdReader reader);
+    internal abstract object Create(string id);
+    internal abstract object Fill(object value, CfdReader reader);
+    internal abstract object BuildTable(IReadOnlyList<RecordState> records, BuildSession session);
+    internal abstract object BuildDimensions(IReadOnlyList<RecordState> records, LoadContext context);
+    internal abstract object BuildDimension(RecordState record, LoadContext context);
 }
-
 public sealed class CfdType<T> : CfdType
 {
     private readonly Func<string, T>? _create;
-    private readonly Action<T, CfdReader>? _fill;
-    private readonly Func<CfdReader, T>? _construct;
-    // 声明类别明确选择记录身份或内联构造，注册时生成强类型表与单例。
-    public CfdType(string name, CfdTypeKind kind, IReadOnlyList<CfdField> fields, Func<string, T>? create, Action<T, CfdReader>? fill, Func<CfdReader, T>? construct, string? parent = null, bool abstractType = false)
-        : base(name, kind, typeof(T), fields, parent, abstractType) { _create = create; _fill = fill; _construct = construct; }
-    internal override object CreateRecord(string id) => _create!(id)!;
-    internal override void FillRecord(object value, CfdReader reader)
+    private readonly Func<T, CfdReader, T>? _fill;
+    public CfdType(string name, CfdTypeKind kind, IReadOnlyList<CfdField> fields, Func<string, T>? create, Func<T, CfdReader, T>? fill, string? parent = null, bool abstractType = false)
+        : base(name, kind, typeof(T), fields, parent, abstractType) { _create = create; _fill = fill; }
+    internal override object Create(string id) => _create!(id)!;
+    internal override object Fill(object value, CfdReader reader) => _fill!((T)value, reader)!;
+    internal override object BuildTable(IReadOnlyList<RecordState> records, BuildSession session)
+        => new Table<T>(records.ToDictionary(record => record.Id, record => (T)session.Reader(record.Data).Value, StringComparer.Ordinal));
+    internal override object BuildDimensions(IReadOnlyList<RecordState> records, LoadContext context)
+        => new Table<Dimension<T>>(records.ToDictionary(record => record.Id, record => (Dimension<T>)BuildDimension(record, context), StringComparer.Ordinal));
+    internal override object BuildDimension(RecordState record, LoadContext context)
     {
-        if (value is ICfdRecord record) record.Reader = reader;
-        _fill!((T)value, reader);
+        var overrides = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        for (var i = 0; i < record.Data.Type.Fields.Length; i++)
+        {
+            var field = record.Data.Type.Fields[i];
+            if (field.Dimension == null) continue;
+            var variants = record.Data.Overrides != null && record.Data.Overrides.TryGetValue(i, out var values)
+                ? new HashSet<string>(values.Keys, StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
+            overrides.Add(field.Name, variants);
+        }
+        return new Dimension<T>(context.Catalog, context.Sessions.Select(session => (T)session.Reader(record.Data).Value).ToArray(), overrides);
     }
-    internal override object Construct(CfdReader reader) => _construct!(reader)!;
-    internal override object BuildTable(IReadOnlyList<RecordState> records)
-    {
-        var values = new Dictionary<string, T>(records.Count, StringComparer.Ordinal);
-        foreach (var record in records) values.Add(record.Node.Id, (T)record.Value);
-        return new Table<T>(values);
-    }
-    internal override object BuildSingleton(IReadOnlyList<RecordState> records)
-        => records[0].Value;
 }
 
 public static class CfdDefaults
@@ -186,43 +182,53 @@ public static class CfdValues
     }
 
     public static CfdValueType<bool> Bool { get; } = new CfdValueType<bool>((context, node, owner) => node is CfdScalarValue scalar && scalar.Value == "true" ? true : node is CfdScalarValue other && other.Value == "false" ? false : throw owner.Error(node, "CFD-TYPE", "expected bool"), formatScalar: value => value ? "true" : "false");
-    public static CfdValueType<string> String { get; } = new CfdValueType<string>((context, node, owner) => node is CfdStringValue value ? value.Value : node is CfdFormattedStringValue template ? owner.Format(template) : throw owner.Error(node, "CFD-TYPE", "expected string"), formatScalar: value => value);
+    public static CfdValueType<string> String { get; } = new CfdValueType<string>((context, node, owner) =>
+    {
+        if (node is CfdStringValue value) return new BoundValue<string>(value.Value);
+        if (node is CfdFormattedStringValue template) return context.BindTemplate(template, owner);
+        throw owner.Error(node, "CFD-TYPE", "expected string");
+    }, false, null, value => value);
     public static CfdValueType<Option<T>> Optional<T>(CfdValueType<T> type) => new CfdValueType<Option<T>>((context, node, owner) =>
     {
-        if (node is CfdNoneValue) return Option<T>.None;
-        // 裸值与 Some(value) 均只物化一层，内部 None 留给下一层描述读取。
-        var inner = node is CfdSomeValue some ? some.Value : node;
-        var value = type.ReadValue(context, inner, owner);
-        return owner.ValidationOnly ? default : Option<T>.Some(value);
+        if (node is CfdNoneValue) return new BoundValue<Option<T>>(Option<T>.None);
+        var inner = type.BindValue(context, node is CfdSomeValue some ? some.Value : node, owner);
+        return inner.IsFixed ? new BoundValue<Option<T>>(Option<T>.Some(inner.Fixed))
+            : new BoundValue<Option<T>>(reader => Option<T>.Some(inner.Get(reader)));
     }, true, type.NamedType);
     public static CfdValueType<IReadOnlyList<T>> List<T>(CfdValueType<T> type) => new CfdValueType<IReadOnlyList<T>>((context, node, owner) =>
     {
         if (!(node is CfdArrayValue array)) throw owner.Error(node, "CFD-TYPE", "expected array");
-        var values = owner.ValidationOnly ? null : new T[array.Items.Count];
-        for (var index = 0; index < array.Items.Count; index++)
-        {
-            var value = type.ReadValue(context, array.Items[index], owner);
-            if (values != null) values[index] = value;
-        }
-        return values == null ? null! : System.Array.AsReadOnly(values);
-    });
-    public static CfdValueType<IReadOnlyDictionary<K, V>> Dictionary<K, V>(CfdValueType<K> keyType, CfdValueType<V> valueType) where K : notnull => new CfdValueType<IReadOnlyDictionary<K, V>>((context, node, owner) =>
+        var items = array.Items.Select(item => type.BindValue(context, item, owner)).ToArray();
+        if (items.All(item => item.IsFixed)) return new BoundValue<IReadOnlyList<T>>(System.Array.AsReadOnly(items.Select(item => item.Fixed).ToArray()));
+        return new BoundValue<IReadOnlyList<T>>(reader => System.Array.AsReadOnly(items.Select(item => item.Get(reader)).ToArray()));
+    }, false, null);
+    public static CfdValueType<IReadOnlyDictionary<K, V>> Dictionary<K, V>(CfdValueType<K> keyType, CfdValueType<V> valueType) where K : notnull
+        => new CfdValueType<IReadOnlyDictionary<K, V>>((context, node, owner) =>
     {
         if (!(node is CfdDictionaryValue dictionary)) throw owner.Error(node, "CFD-TYPE", "expected dictionary");
-        var values = owner.ValidationOnly ? null : new Dictionary<K, V>(dictionary.Entries.Count);
-        // 校验和物化共用类型、顺序与重复键检查；仅校验时保留键集合即可。
-        var keys = owner.ValidationOnly ? new HashSet<K>() : null;
-        foreach (var entry in dictionary.Entries)
+        var keys = dictionary.Entries.Select(entry => keyType.BindValue(context, entry.Key, owner)).ToArray();
+        var values = dictionary.Entries.Select(entry => valueType.BindValue(context, entry.Value, owner)).ToArray();
+        var spans = dictionary.Entries.Select(entry => entry.Span).ToArray();
+        Dictionary<K, int> Index(CfdReader reader)
         {
-            var key = keyType.ReadValue(context, entry.Key, owner);
-            if (values != null ? values.ContainsKey(key) : !keys!.Add(key)) throw owner.Error(entry.Key, "CFD-DUPLICATE", "duplicate dictionary key");
-            var value = valueType.ReadValue(context, entry.Value, owner);
-            values?.Add(key, value);
+            var index = new Dictionary<K, int>(keys.Length);
+            for (var i = 0; i < keys.Length; i++)
+            {
+                if (!index.TryAdd(keys[i].Get(reader), i)) throw LoadContext.Error("CFD-DUPLICATE", "duplicate dictionary key", owner.Path, spans[i]);
+            }
+            return index;
         }
-        return values == null ? null! : new ReadOnlyDictionary<K, V>(values);
-    });
-    public static CfdValueType<T> Object<T>(string type) => new CfdValueType<T>((context, node, owner) => context.ReadObject<T>(type, node, owner), namedType: type);
-    public static CfdValueType<T> Reference<T>(string type) where T : class => new CfdValueType<T>((context, node, owner) => context.ReadReference<T>(type, node, owner), namedType: type);
+        if (keys.All(key => key.IsFixed))
+        {
+            var index = Index(null!);
+            if (values.All(value => value.IsFixed))
+                return new BoundValue<IReadOnlyDictionary<K, V>>(new ReadOnlyDictionary<K, V>(index.ToDictionary(pair => pair.Key, pair => values[pair.Value].Fixed)));
+            return new BoundValue<IReadOnlyDictionary<K, V>>(reader => new ReadOnlyDictionary<K, V>(index.ToDictionary(pair => pair.Key, pair => values[pair.Value].Get(reader))));
+        }
+        return new BoundValue<IReadOnlyDictionary<K, V>>(reader => new ReadOnlyDictionary<K, V>(Index(reader).ToDictionary(pair => pair.Key, pair => values[pair.Value].Get(reader))));
+    }, false, null);
+    public static CfdValueType<T> Object<T>(string type) => new CfdValueType<T>((context, node, owner) => context.BindObject<T>(type, node, owner), false, type);
+    public static CfdValueType<T> Reference<T>(string type) where T : class => new CfdValueType<T>((context, node, owner) => context.BindReference<T>(type, node, owner), false, type);
     public static CfdValueType<T> Enum<T>(string name, IReadOnlyDictionary<string, T> variants, Func<long, T>? fromBits = null) where T : struct => new CfdValueType<T>((context, node, owner) =>
     {
         if (node is CfdEnumDefaultValue numeric)
@@ -277,7 +283,5 @@ public static class CfdValues
             if (EqualityComparer<T>.Default.Equals(variant.Value, value)) return variant.Key;
         return Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
     });
-    public static CfdValueType<T> Dimension<T>(string dimension, CfdValueType<T> type)
-        => new CfdValueType<T>((context, node, owner) => type.ReadValue(context, node, owner), type.IsOptional, type.NamedType, dimension, type.FormatValue);
 }
 }

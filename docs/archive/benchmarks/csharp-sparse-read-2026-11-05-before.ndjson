@@ -1,0 +1,7 @@
+{"loadMs":19.0754,"loadAllocated":24858008,"viewMs":8.919,"retained":8155248,"readMs":11.9832,"reads":1000000}
+{"loadMs":18.1155,"loadAllocated":24858008,"viewMs":8.5165,"retained":8155200,"readMs":12.4181,"reads":1000000}
+{"loadMs":17.7415,"loadAllocated":24858008,"viewMs":8.1144,"retained":8155224,"readMs":12.4591,"reads":1000000}
+{"loadMs":18.2703,"loadAllocated":24858008,"viewMs":8.1761,"retained":8155224,"readMs":11.8527,"reads":1000000}
+{"loadMs":16.9466,"loadAllocated":24858008,"viewMs":7.7796,"retained":8155224,"readMs":11.9605,"reads":1000000}
+{"loadMs":16.448,"loadAllocated":24858008,"viewMs":7.4376,"retained":8155224,"readMs":11.5252,"reads":1000000}
+{"loadMs":18.4249,"loadAllocated":24858008,"viewMs":10.7918,"retained":8155224,"readMs":11.5923,"reads":1000000}

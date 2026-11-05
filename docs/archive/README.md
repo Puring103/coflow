@@ -4,6 +4,9 @@
 
 | 资料 | 类型 | 当前对应文档 |
 | --- | --- | --- |
+| [C# 完整预构建数据](benchmarks/csharp-prebuilt-2026-11-06.md) | 加载、选择与普通数据读取的 0.16.0 测量 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
+| [C# 稀疏视图](benchmarks/csharp-sparse-2026-11-05.md) | 共享存储与完整物化的内存和读取对照 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
+| [C# 稀疏读取优化](benchmarks/csharp-sparse-read-2026-11-05.md) | 覆盖预绑定与泛型读取的配对测量 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
 | [0.15.0 C# Loader 优化](benchmarks/csharp-loader-0.15.0.md) | 解析、加载、稀疏与密集变体、维度访问和多表注册的 48 项对照 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
 | [C# Loader 与编号分配优化](benchmarks/csharp-loader-2026-10-30.md) | 相同宽表与维度夹具的正式数组对照、分配量、独立工作量计数 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
 | [图与表格优化测量](benchmarks/view-optimization-2026-10-30.md) | 端口窗口、几何缓存、代际测量与完整生产样本 | [编辑器性能约束](../editor-design/performance.md) |

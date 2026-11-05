@@ -37,7 +37,7 @@ set_dimension_value 可带 path，相对 field 指定的顶层字段定位内部
 
 ## 回退与模板
 
-已知维度中未知变体或未填写字段读取基础表达式。模板在当前上下文重新求值：基础 label 为 `f"购买 {self.name}"`，日语只覆盖 name 时，日语 label 可以显示日语 name，但 label 仍没有显式覆盖。覆盖状态看 explicit，普通值看 effective，模板文本看 rendered。
+未填写字段读取基础表达式。Rust 投影对未知变体回退；C# For 对本次加载中不存在的变体报参数错误并列出已加载变体。模板在当前上下文重新求值：基础 label 为 `f"购买 {self.name}"`，日语只覆盖 name 时，日语 label 可以显示日语 name，但 label 仍没有显式覆盖。覆盖状态看 explicit，普通值看 effective，模板文本看 rendered。
 
 ```sh
 coflow dimension diff --project <项目> --dimension language --from-base --to ja --json
@@ -45,3 +45,5 @@ coflow stats dimension --project <项目> --dimension language --variant ja --js
 ```
 
 `base` 可以是普通变体名，基础视角用 from-base/to-base 选择。完成时区分“翻译写入成功”“还有缺失覆盖”和“回退显示正常”，不能互相替代。
+
+C# 返回完整预构建数据。记录表中的 Dimension<T> 以 Base 访问基础对象，以 For 查询已构建上下文；多维组合在加载时显式指定，不使用链式 For。

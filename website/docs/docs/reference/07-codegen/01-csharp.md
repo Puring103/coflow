@@ -44,8 +44,8 @@ if (!result.Success) {
 var data = result.Data;
 var items = data.Table<Item>();
 var sword = items["sword"];
-var settings = data.Singleton<Settings>();
-var baseName = sword.name;
+var settings = data.Singleton<Settings>().Base;
+var baseName = sword.Base.name;
 var japaneseName = sword.For("language", "ja").name;
 ```
 
@@ -69,7 +69,7 @@ var japaneseName = sword.For("language", "ja").name;
 
 位枚举生成 `[Flags]`，并包含 `None = 0` 和随实际标志位计算的 `Everything`。`@int64` 可与 `@flag`、记录 ID 枚举配合使用。
 
-记录和单例具有 `string id`。维度字段保持原本的业务类型，直接访问就是基础值。C# 关键字名称在生成源码中自动使用 `@` 转义。
+生成字段对外只读，直接保存最终值。记录和单例具有 `string id`。维度字段保持原本的业务类型，通过维度容器选择基础或变体对象。C# 关键字名称在生成源码中自动使用 `@` 转义。
 
 生成类型保留 abstract、sealed 和继承约束。业务方法与计算属性放在独立 partial 文件中，使用相同 namespace 和程序集：
 
@@ -91,7 +91,7 @@ table Item { name: string; }
 生成稳定编号枚举和对应表的查询扩展：
 
 ```csharp
-Item sword = data.Table<Item>().Get(ItemId.sword);
+Dimension<Item> sword = data.Table<Item>().Get(ItemId.sword);
 bool found = data.Table<Item>().TryGet(ItemId.shield, out var shield);
 ```
 
@@ -103,25 +103,30 @@ bool found = data.Table<Item>().TryGet(ItemId.shield, out var shield);
 
 ```csharp
 var japanese = sword.For("language", "ja");
-var mobileJapanese = japanese.For("platform", "mobile");
+var ordinaryName = sword.Base.name;
+bool translated = sword.HasVariant(nameof(Item.name), "ja");
+var japaneseData = data.For("language", "ja");
+Item sameSword = japaneseData.Table<Item>()["sword"];
+```
 
-var ordinaryName = sword.name;
-var translatedName = japanese.name;
-bool translated = sword.HasVariant(nameof(sword.name), "ja");
+`Table<T>()` 中的记录是 `Dimension<T>`，`Singleton<T>()` 返回 `Dimension<T>`。`.Base` 获取基础数据，`.For` 获取已构建的变体。数据根的 `Base` 和 `For` 返回完整数据集，其中的记录与单例是普通业务对象。两个入口共享对象身份，读取与选择都不会构建业务数据。
 
-foreach (var variant in sword.Variants("language")) {
-    var text = sword.For("language", variant).name;
-    var explicitlyProvided = sword.HasVariant(nameof(sword.name), variant);
+加载默认构建基础数据和全部已声明单维变体。附加多维组合在加载时明确指定：
+
+```csharp
+var selection = new DimensionSelection(
+    ("language", "ja"), ("platform", "mobile"));
+var result = CoflowData.Load(sources, new LoadOptions {
+    Combinations = new[] { selection }
+});
+if (result.Success) {
+    Item item = result.Data.Table<Item>()["sword"].For(selection);
 }
 ```
 
-`For` 返回独立记录视图，多个界面可同时使用不同变体。链式调用组合维度，重复选择同一维度会替换该维度的选择。未知维度报错；已知维度中缺少字段覆盖或变体未知时，使用基础表达式。
+组合顺序不影响结果。未知维度、未知变体和未构建组合抛出 `ArgumentException`；`TryFor(selection, out value)` 返回 false。未知变体错误列出已加载变体。已知变体缺少覆盖时，加载阶段使用基础表达式并在所选上下文完成计算。
 
-视图中的引用、内联数据、集合和模板使用同一选择上下文。只有 name 提供日文覆盖时，基础模板 `f"购买 {self.name}"` 在日文视图中仍会使用日文 name。
-
-`HasVariant(field, variant)` 检查该字段是否明确赋值。显式 `None`、空字符串和与基础值相同的覆盖均算存在。字段必须绑定维度；仅由回退产生值时返回 false。
-
-`Variants(dimension)` 返回项目中该维度所有已知变体，包含当前记录尚未填写的变体。使用 `HasVariant` 判断具体字段是否填写。
+`Variants(dimension)` 列出已加载变体，包含空覆盖块。`HasVariant(field, variant)` 判断显式赋值，包含 None、空字符串和同值覆盖；字段名使用 `nameof(Item.name)`。仅由回退产生值时返回 false。
 
 ## 可选值、字符串与诊断
 
@@ -129,7 +134,7 @@ foreach (var variant in sword.Variants("language")) {
 
 `string` 同时支持普通字面量和显式 `f"..."` 插值。普通字符串的花括号保持原样，插值读取当前视图的字段值。
 
-初次加载会验证基础数据和已声明的各维度变体。首次组合多个维度若出现循环依赖等错误，`For` 会抛出 `CfdLoadException`，可通过其 `Diagnostics` 定位问题。CFT 业务规则通过 CLI 校验、构建或编辑器执行。
+加载完成所有请求的数据，包括引用、集合和模板结果。任一请求组合出现依赖错误时，通过 `LoadResult.Diagnostics` 报告，不交付部分数据。CFT 业务规则通过 CLI 校验、构建或编辑器执行。
 
 ## 应用资源与重新加载
 

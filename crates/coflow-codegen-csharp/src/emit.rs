@@ -235,7 +235,7 @@ fn enum_source(
     Ok(finish(source, namespace))
 }
 
-// 业务类型保留 partial 扩展入口；data 构造与记录身份由声明类别分别生成。
+// 业务类型直接存储完整数据，构建期读取器不进入最终对象图。
 fn type_source(ty: &CftType, namespace: &str) -> Result<String> {
     let is_struct = ty.is_struct;
     let type_name = csharp_identifier(ty.name.as_str());
@@ -261,14 +261,9 @@ fn type_source(ty: &CftType, namespace: &str) -> Result<String> {
             {
                 let _ = write!(source, " : {}", type_ref(namespace, parent.as_str()));
             };
-        } else if !ty.is_data() {
-            source.push_str(" : global::Coflow.Loader.ICfdRecord");
         }
     }
     source.push_str("\n{\n");
-    if !ty.is_data() && ty.parent.is_none() {
-        source.push_str("    global::Coflow.Loader.CfdReader global::Coflow.Loader.ICfdRecord.Reader { get; set; } = null!;\n");
-    }
     if !is_struct {
         if ty.is_data() {
             {
@@ -382,8 +377,8 @@ fn loader_source(schema: &CftSchema, namespace: &str, values: &IdAsEnumValues) -
     let mut source = header(namespace);
     source.push_str("public sealed partial class CoflowData\n{\n");
     source.push_str("    private readonly global::Coflow.Loader.CfdData _data;\n    private CoflowData(global::Coflow.Loader.CfdData data) { _data = data; }\n\n");
-    source.push_str("    public global::Coflow.Loader.Table<T> Table<T>() where T : class => _data.Table<T>();\n    public T Singleton<T>() where T : class => _data.Singleton<T>();\n\n");
-    source.push_str("    public static global::Coflow.Loader.LoadResult<CoflowData> Load(global::System.Collections.Generic.IEnumerable<global::Coflow.Loader.CfdSource> sources)\n        => global::Coflow.Loader.CfdLoader.Load(sources, Types, data => new CoflowData(data), Constants);\n\n");
+    source.push_str("    public global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<T>> Table<T>() where T : class => _data.Table<T>();\n    public global::Coflow.Loader.Dimension<T> Singleton<T>() where T : class => _data.Singleton<T>();\n    public global::Coflow.Loader.CfdSnapshot Base => _data.Base;\n    public global::Coflow.Loader.CfdSnapshot For(string dimension, string variant) => _data.For(dimension, variant);\n    public global::Coflow.Loader.CfdSnapshot For(params (string Dimension, string Variant)[] selection) => _data.For(selection);\n    public global::Coflow.Loader.CfdSnapshot For(global::Coflow.Loader.DimensionSelection selection) => _data.For(selection);\n\n");
+    source.push_str("    public static global::Coflow.Loader.LoadResult<CoflowData> Load(global::System.Collections.Generic.IEnumerable<global::Coflow.Loader.CfdSource> sources, global::Coflow.Loader.LoadOptions? options = null)\n        => global::Coflow.Loader.CfdLoader.Load(sources, Types, data => new CoflowData(data), Constants, options);\n\n");
     for en in schema.all_enums() {
         {
             let _ = write!(source, "    private static readonly global::Coflow.Loader.CfdValueType<{}> Enum_{} = global::Coflow.Loader.CfdValues.Enum<{}>({}, new global::System.Collections.Generic.Dictionary<string, {}>\n    {{\n", type_ref(namespace, en.name.as_str()), metadata_identifier(en.name.as_str()), type_ref(namespace, en.name.as_str()), quote(en.name.as_str()), type_ref(namespace, en.name.as_str()));
@@ -475,7 +470,7 @@ fn table_id_extensions(schema: &CftSchema, namespace: &str) -> String {
         let enum_name = type_ref(namespace, enum_name.as_str());
         let type_name = type_ref(namespace, ty.name.as_str());
         let extension_name = format!("CoflowIds_{}", metadata_identifier(ty.name.as_str()));
-        let _ = write!(source, "\npublic static partial class {extension_name}\n{{\n    public static {type_name} Get(this global::Coflow.Loader.Table<{type_name}> table, {enum_name} id) => table[{map}.GetId(id)];\n    public static bool TryGet(this global::Coflow.Loader.Table<{type_name}> table, {enum_name} id, out {type_name} value)\n    {{\n        if ({map}.TryGetId(id, out var text)) return table.TryGetValue(text, out value);\n        value = null!;\n        return false;\n    }}\n}}\n");
+        let _ = write!(source, "\npublic static partial class {extension_name}\n{{\n    public static {type_name} Get(this global::Coflow.Loader.Table<{type_name}> table, {enum_name} id) => table[{map}.GetId(id)];\n    public static bool TryGet(this global::Coflow.Loader.Table<{type_name}> table, {enum_name} id, out {type_name} value)\n    {{\n        if ({map}.TryGetId(id, out var text)) return table.TryGetValue(text, out value);\n        value = null!;\n        return false;\n    }}\n    public static global::Coflow.Loader.Dimension<{type_name}> Get(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<{type_name}>> table, {enum_name} id) => table[{map}.GetId(id)];\n    public static bool TryGet(this global::Coflow.Loader.Table<global::Coflow.Loader.Dimension<{type_name}>> table, {enum_name} id, out global::Coflow.Loader.Dimension<{type_name}> value)\n    {{\n        if ({map}.TryGetId(id, out var text)) return table.TryGetValue(text, out value);\n        value = null!;\n        return false;\n    }}\n}}\n");
     }
     source
 }
@@ -483,72 +478,49 @@ fn table_id_extensions(schema: &CftSchema, namespace: &str) -> String {
 fn type_descriptor(ty: &CftType, schema: &CftSchema, namespace: &str) -> Result<String> {
     let mut source = format!("        new global::Coflow.Loader.CfdType<{}>({}, global::Coflow.Loader.CfdTypeKind.{}, new global::Coflow.Loader.CfdField[]\n        {{\n", type_ref(namespace, ty.name.as_str()), quote(ty.name.as_str()), if ty.is_data() { "Data" } else if ty.is_singleton() { "Singleton" } else { "Table" });
     for field in ty.all_fields() {
-        let mut descriptor = value_descriptor(&field.value_type, namespace)?;
-        if let Some(dimension) = &field.dimension {
-            descriptor = format!(
-                "global::Coflow.Loader.CfdValues.Dimension({}, {descriptor})",
-                quote(dimension.dimension.as_str())
-            );
-        }
+        let descriptor = value_descriptor(&field.value_type, namespace)?;
         {
             let _ = writeln!(
                 source,
-                "            new global::Coflow.Loader.CfdField<{}>({}, {}{}),",
+                "            new global::Coflow.Loader.CfdField<{}>({}, {}{}{}),",
                 field_type(field, namespace)?,
                 quote(field.name.as_str()),
                 descriptor,
                 match &field.default {
                     Some(value) => format!(", {}", default_node(value, &field.value_type, schema)?),
                     None => String::new(),
-                }
+                },
+                field
+                    .dimension
+                    .as_ref()
+                    .map(|dimension| format!(
+                        ", dimension: {}",
+                        quote(dimension.dimension.as_str())
+                    ))
+                    .unwrap_or_default()
             );
         };
     }
     source.push_str("        }, ");
     if ty.is_abstract {
-        source.push_str("create: null, fill: null, construct: null, abstractType: true");
-    } else if ty.is_data() {
-        {
-            let _ = write!(
-                source,
-                "create: null, fill: null, construct: reader => new {}{}\n        {{\n",
-                type_ref(namespace, ty.name.as_str()),
-                if ty.is_struct { "" } else { "()" }
-            );
-        };
-        // 构造回调与字段描述使用相同顺序，加载时直接按槽位读取已绑定的值。
-        for (ordinal, field) in ty.all_fields().enumerate() {
-            {
-                let _ = writeln!(
-                    source,
-                    "            {} = reader.Get<{}>({}),",
-                    csharp_identifier(field.name.as_str()),
-                    field_type(field, namespace)?,
-                    ordinal
-                );
-            };
-        }
-        source.push_str("        }");
+        source.push_str("create: null, fill: null, abstractType: true");
     } else {
-        {
-            let _ = write!(
-                source,
-                "create: id => new {}(id), fill: (value, reader) =>\n        {{\n",
-                type_ref(namespace, ty.name.as_str())
-            );
-        };
+        let _ = write!(
+            source,
+            "create: id => new {}({}), fill: (value, reader) =>\n        {{\n",
+            type_ref(namespace, ty.name.as_str()),
+            if ty.is_data() { "" } else { "id" }
+        );
+        // 同一字段序号用于描述和一次性赋值；结构体通过返回值完成赋值。
         for (ordinal, field) in ty.all_fields().enumerate() {
-            {
-                let _ = writeln!(
-                    source,
-                    "            value.{} = reader.Get<{}>({});",
-                    csharp_identifier(field.name.as_str()),
-                    field_type(field, namespace)?,
-                    ordinal
-                );
-            };
+            let _ = writeln!(
+                source,
+                "            value.{} = reader.Get<{}>({ordinal});",
+                csharp_identifier(field.name.as_str()),
+                field_type(field, namespace)?
+            );
         }
-        source.push_str("        }, construct: null");
+        source.push_str("            return value;\n        }");
     }
     if let Some(parent) = &ty.parent {
         {

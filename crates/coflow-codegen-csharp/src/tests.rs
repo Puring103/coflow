@@ -51,12 +51,14 @@ fn emits_typed_business_objects_and_shared_loader_descriptors() {
     assert!(text.contains("public int hp { get; internal set; }"));
     assert!(text.contains("public Option<Item> next { get; internal set; }"));
     assert!(text.contains("new CfdType<Stats>"));
-    assert!(text.contains("reader => new Stats"));
-    assert!(text.contains("id => new Item(id)"));
+    assert!(text.contains("create: id => new Stats()"));
+    assert!(text.contains("create: id => new Item(id)"));
     assert!(text.contains("CfdValues.Reference<Item>(\"Item\")"));
     assert!(text.contains("CfdLoader.Load(sources, Types"));
     for forbidden in [
         "Coflow.Runtime",
+        "ICfdRecord",
+        "_coflowReader",
         "Arena",
         "CoflowFunction",
         "typeof(",
@@ -77,8 +79,8 @@ fn inheritance_preserves_shared_record_identity() {
     assert!(text.contains("public abstract partial class Base"));
     assert!(text.contains("public partial class Child : Base"));
     assert!(text.contains("internal Child(string id) : base(id)"));
-    assert!(text.contains("value.name = reader.Get<string>(0)"));
-    assert!(text.contains("value.count = reader.Get<int>(1)"));
+    assert!(text.contains("public string name { get; internal set; }"));
+    assert!(text.contains("public int count { get; internal set; }"));
     assert!(text.contains("parent: \"Base\""));
     assert!(text.contains("abstractType: true"));
 }
@@ -120,7 +122,7 @@ fn dimension_fields_load_all_variants() {
     let schema = build_schema(&modules).expect("schema");
     let text = all(&generate_csharp(&schema).expect("generate"));
     assert!(text.contains("string name"));
-    assert!(text.contains("CfdValues.Dimension(\"language\", CfdValues.String)"));
+    assert!(text.contains("CfdValues.String, dimension: \"language\""));
     assert!(
         !text.contains("\"ja\""),
         "variant selection must not be baked into generated code"
@@ -213,11 +215,11 @@ fn language_names_are_escaped_only_in_generated_csharp_identifiers() {
         r"enum event { public } table class { namespace: string; state: event = event::public; }",
     ), "namespace.class", &IdAsEnumValues::new()).expect("generate"));
     assert!(text.contains("namespace @namespace.@class"));
-    assert!(text.contains("public partial class @class : ICfdRecord"));
+    assert!(text.contains("public partial class @class"));
     assert!(text.contains("public string @namespace"));
     assert!(text.contains("public enum @event"));
     assert!(text.contains("@public = 0"));
-    assert!(text.contains("value.@namespace = reader.Get<string>(0)"));
+    assert!(text.contains("public string @namespace { get; internal set; }"));
     assert!(text.contains("CfdType<@namespace.@class.@class>(\"class\""));
     assert!(text.contains("[\"public\"] = @namespace.@class.@event.@public"));
 }
@@ -253,7 +255,7 @@ fn inherited_id_enum_mapping_is_shared_and_rejects_duplicate_values() {
     assert_eq!(text.matches("new TableIdMap<").count(), 1);
     assert!(text.contains("internal static class Ids_Cft_"));
     assert_eq!(text.matches("Game.Config.Ids.a] = \"a\"").count(), 1);
-    assert_eq!(text.matches(".GetId(id)").count(), 3);
+    assert_eq!(text.matches(".GetId(id)").count(), 6);
     values
         .get_mut("Ids")
         .expect("mapping")

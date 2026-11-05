@@ -15,7 +15,7 @@ foreach (var suite in options.Suites)
     switch (suite)
     {
         case "wide":
-            // 保留原始宽表输入、变体稀疏度和字符串 Get 回调，便于复用历史对照。
+            // 宽表覆盖字段数与源覆盖密度，加载时填充最终字段数组。
             foreach (var fields in new[] { 32, 128, 512 })
             foreach (var variants in new[] { 0, 3 })
                 runner.LoadPhases(Fixtures.Wide(options.Records, fields, variants, false, options.CountDescriptors), suite);

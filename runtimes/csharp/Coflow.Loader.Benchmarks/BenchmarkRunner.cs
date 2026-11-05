@@ -26,7 +26,7 @@ sealed class BenchmarkRunner(BenchmarkOptions options)
     {
         Measure(fixture, suite, "first-for", "Fresh loaded data per sample; select language[v0] once for every record. Preparation, arrays and assertions are excluded.",
             () => fixture.CreateViews(LoadChecked(fixture), false, 1), state => { state.Run(); return state; }, (_, state) => state.Verify(), fixture.RecordCount);
-        Measure(fixture, suite, "cached-for", "Prepare and cache language[v0] for every record, then repeat For calls. Includes selection and lookup; excludes load, priming, arrays and assertions.",
+        Measure(fixture, suite, "cached-for", "Prepare completed language[v0] results, then repeat lookup. Excludes all data construction.",
             () => fixture.CreateViews(LoadChecked(fixture), true, options.ForIterations), state => { state.Run(); return state; }, (_, state) => state.Verify(),
             checked((long)fixture.RecordCount * options.ForIterations));
     }
@@ -52,12 +52,7 @@ sealed class BenchmarkRunner(BenchmarkOptions options)
 
     private static CfdData Register(CfdType[] types, LoadContext context)
     {
-        // 同一工具链接两版源码，只在内部表注册边界切换构造签名。
-#if CFD_BOUND_LOADER
         return new CfdData(types, context);
-#else
-        return new CfdData(types, context.Records);
-#endif
     }
 
     private void Measure<TState, TResult>(Fixture fixture, string suite, string phase, string phaseDescription,
@@ -77,7 +72,7 @@ sealed class BenchmarkRunner(BenchmarkOptions options)
             typeCount = fixture.Types.Length, overrideDensity = fixture.OverrideDensity,
             overrideRecordCount = fixture.OverrideRecordCount, overrideFieldCount = fixture.OverrideFieldCount,
             sourceCharacters = fixture.Sources.Sum(source => source.Text.Length), sourceSha256 = fixture.SourceSha256,
-            readerAccess = "string", boundLoader = BoundLoader,
+            readerAccess = "ordinal-at-load", runtimeModel = "prebuilt",
             countDescriptors = fixture.CountedFields != null, schemaDescriptorReads = fixture.SchemaDescriptorReads,
             warmups = options.Warmups, sampleCount = options.Samples, meetsSevenSampleMinimum = options.Samples >= 7,
             gcBeforeSample = true, allocationMetric = "current-thread cumulative allocated bytes during timed operation; excludes preparation and validation",
@@ -108,10 +103,6 @@ sealed class BenchmarkRunner(BenchmarkOptions options)
         return new Sample((ended - started) * 1000.0 / Stopwatch.Frequency, allocated, reads);
     }
 
-#if CFD_BOUND_LOADER
-    private const bool BoundLoader = true;
-#else
-    private const bool BoundLoader = false;
-#endif
+
     private readonly record struct Sample(double Milliseconds, long AllocatedBytes, long DescriptorReads);
 }
