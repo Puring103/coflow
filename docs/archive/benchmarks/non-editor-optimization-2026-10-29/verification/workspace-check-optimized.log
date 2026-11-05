@@ -1,0 +1,12 @@
+    Checking coflow-language v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-language)
+    Checking coflow-model v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-model)
+    Checking coflow-format v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-format)
+    Checking coflow-codegen v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-codegen)
+    Checking coflow-checker v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-checker)
+    Checking coflow-codegen-csharp v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-codegen-csharp)
+    Checking coflow-runtime v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-runtime)
+    Checking coflow-lsp v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-lsp)
+    Checking cfd-editor-core v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\editors\cfd-editor\core)
+    Checking coflow v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow)
+    Checking cfd-editor v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\editors\cfd-editor\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.66s

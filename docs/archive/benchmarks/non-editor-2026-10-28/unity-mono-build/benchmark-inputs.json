@@ -1,0 +1,9 @@
+{
+  "project": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-unity-34403bd3a855441fa426fb603ea6ecf0",
+  "unity_version": "2022.3.62f3",
+  "loader": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\runtimes\\csharp\\Coflow.Loader\\bin\\Release\\netstandard2.1\\Coflow.Loader.dll",
+  "loader_sha256": "A46D67D20596E79A4C0BD590C68938849C0F60DE62ABADD0BC7291F49D00BA54",
+  "fixture_sha256": "3430445C21BD4BBBD2A78AFD506C14D80AC2255CD80094CAAE23C2A2A28022B6",
+  "adapters_sha256": "CD2923B3048D8DF7431EEF39AF031D02DD3ADF1CF11CD85E9CBD3B665B32CB27",
+  "utc": "2026-10-28T13:37:58.3350556Z"
+}

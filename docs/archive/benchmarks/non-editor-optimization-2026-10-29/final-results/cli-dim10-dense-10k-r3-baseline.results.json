@@ -1,0 +1,163 @@
+{
+  "protocol_version": 1,
+  "suite": "cli_matrix",
+  "started_at_utc": "2026-10-28T22:37:32.644Z",
+  "config": {
+    "records": 10000,
+    "files": 10,
+    "fields": 20,
+    "samples": 1,
+    "warmups": 0,
+    "batch": 1000,
+    "variants": 10,
+    "coverage": "dense",
+    "topology": "sparse",
+    "timeout_ms": 120000
+  },
+  "cli": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\coflow.exe",
+  "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+  "tool_sha256": "1897c9d6e2d01306cf0280f20820fbfe3a153922f8100ce808c31630bef54dfe",
+  "environment": {
+    "platform": "win32",
+    "architecture": "x64",
+    "node": "v22.23.4",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "logical_cpus": 20,
+    "total_memory_bytes": 34190790656
+  },
+  "timing": "Independent CLI process spawn through close and stdout collection; fixture generation/reset, input construction, JSON parsing and correctness checks excluded. Filesystem cache is warm; no OS cache eviction.",
+  "validation": "Every sample validates exit/status, operation results and fresh CLI semantic queries. Nonpublishing cases compare the entire selected input path/content fingerprint, including added/deleted matching files. Each case ends with full check --rules. Original fixture is restored before each mutating sample.",
+  "memory": {
+    "collected": false,
+    "reason": "Node parent memory does not represent the CLI child. No child working-set sampler is included."
+  },
+  "metrics": [
+    {
+      "metric": "dimension_query",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "3018b2ae28a2c80dc64cfa912c4c8f234779812aaa4b776600e245d15260ea3b",
+      "source_bytes": 7254549,
+      "samples_ms": [
+        1218.3076
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1218.3076,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1537,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "371c84dc19622de257a2a2bff4f89d923ae82fc7ebdb7df6578b903b85cea297",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "get",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--dimension",
+            "language=ja",
+            "--dimension",
+            "platform=mobile",
+            "--fields",
+            "name,description,note"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1218.3076,
+      "p95_ms": null,
+      "min_ms": 1218.3076,
+      "max_ms": 1218.3076
+    },
+    {
+      "metric": "dimension_set",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "3018b2ae28a2c80dc64cfa912c4c8f234779812aaa4b776600e245d15260ea3b",
+      "source_bytes": 7254549,
+      "samples_ms": [
+        76131.7996
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 76131.7996,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1230,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "f604319102949e2c15a3b90058281be3e4cf54baebae44b05198d99ba5575170",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "42d906c509826b610ff7610550ed6b99d75b4c4eecbdb9a725db224e7f43ccac",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 76131.7996,
+      "p95_ms": null,
+      "min_ms": 76131.7996,
+      "max_ms": 76131.7996
+    },
+    {
+      "metric": "dimension_clear",
+      "records": 10000,
+      "files": 10,
+      "fields": 20,
+      "fixture_sha256": "3018b2ae28a2c80dc64cfa912c4c8f234779812aaa4b776600e245d15260ea3b",
+      "source_bytes": 7254549,
+      "samples_ms": [
+        76062.0932
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 76062.0932,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1209,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "bdaf164ec53943e28794b41d6651e271cf541d3f05b24c5e0ba949e39eca5c28",
+          "diagnostic_count": 0,
+          "args": [
+            "apply",
+            "--input",
+            "-",
+            "--rules"
+          ],
+          "stdin_sha256": "66ec552cd68231ec83b5465b397d747f47df966d2c6d1c0ac6f790921a8d2b75",
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 76062.0932,
+      "p95_ms": null,
+      "min_ms": 76062.0932,
+      "max_ms": 76062.0932
+    }
+  ],
+  "completed_at_utc": "2026-10-28T22:40:16.341Z",
+  "success": true
+}

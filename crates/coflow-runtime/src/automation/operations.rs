@@ -6,7 +6,10 @@ use coflow_language::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -121,6 +124,51 @@ pub enum Operation {
     },
 }
 
+struct PreparedField<'a> {
+    record: &'a RecordTarget,
+    origin: RecordOrigin,
+    path: Vec<CfdPathSegment>,
+    value: CfdValue,
+    top: Option<CfdValue>,
+}
+
+impl PreparedField<'_> {
+    fn request<'a>(&'a self, schema: &'a CftSchema) -> crate::WriteCellRequest<'a> {
+        crate::WriteCellRequest {
+            origin: &self.origin,
+            record_id: &self.record.id,
+            actual_type: &self.record.actual_type,
+            field_path: &self.path,
+            new_value: &self.value,
+            materialized_top_level: self
+                .top
+                .as_ref()
+                .map(crate::api::FieldMaterialization::Value),
+            schema,
+        }
+    }
+}
+
+fn unchanged_after_publication_failure(
+    sources: &BTreeMap<PathBuf, std::sync::Arc<super::transaction::CandidateSource>>,
+    failure: &Failure,
+) -> bool {
+    // 完整恢复回执和逐文件字节校验缺一不可；冲突或读取失败都不能放行重放。
+    failure
+        .diagnostics
+        .publication
+        .as_ref()
+        .is_some_and(|report| {
+            matches!(
+                report.state,
+                crate::PersistenceState::NotAttempted | crate::PersistenceState::Restored
+            )
+        })
+        && sources.iter().all(|(path, source)| {
+            std::fs::read(path).is_ok_and(|contents| contents == source.text.as_bytes())
+        })
+}
+
 impl Candidate {
     pub fn apply_operations(&mut self, operations: &[Operation]) -> Result<()> {
         self.capture_typed_references()?;
@@ -128,15 +176,195 @@ impl Candidate {
             .iter()
             .map(super::json)
             .collect::<Result<Vec<_>>>()?;
-        for (index, operation) in operations.iter().enumerate() {
-            self.operation_details = json!({});
-            if let Err(failure) = self.apply_operation(operation) {
-                return Err(self.record_failed(index, &encoded, failure));
+        let mut index = 0;
+        while index < operations.len() {
+            let end = index + Self::independent_field_group(&operations[index..]);
+            if end > index + 1 {
+                match self.apply_field_group(&operations[index..end]) {
+                    Ok(true) => {
+                        for (offset, operation) in operations[index..end].iter().enumerate() {
+                            self.operations.push(json!({"index":index + offset,"status":"success","operation":operation,"details":{}}));
+                        }
+                        index = end;
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(failure) => return Err(self.record_failed(index, &encoded, failure)),
+                }
             }
-            self.operations.push(json!({"index":index,"status":"success","operation":operation,"details":self.operation_details}));
+            // 不可聚合或准备失败的整个分组仅顺序执行一次，保留首错和候选前缀报告。
+            for (offset, operation) in operations[index..end].iter().enumerate() {
+                self.operation_details = json!({});
+                if let Err(failure) = self.apply_operation(operation) {
+                    return Err(self.record_failed(index + offset, &encoded, failure));
+                }
+                self.operations.push(json!({"index":index + offset,"status":"success","operation":operation,"details":self.operation_details}));
+            }
+            index = end;
         }
         Ok(())
     }
+
+    fn independent_field_group(operations: &[Operation]) -> usize {
+        let mut records = BTreeSet::new();
+        for (index, operation) in operations.iter().enumerate() {
+            let Operation::SetField { record, .. } = operation else {
+                return index.max(1);
+            };
+            if !records.insert((&record.actual_type, &record.id)) {
+                return index.max(1);
+            }
+        }
+        operations.len().max(1)
+    }
+
+    fn apply_field_group(&mut self, operations: &[Operation]) -> Result<bool> {
+        self.apply_field_group_using(operations, |writer, requests| {
+            writer.write_field_batch(requests).is_ok()
+        })
+    }
+
+    fn apply_field_group_using(
+        &mut self,
+        operations: &[Operation],
+        mut validate: impl FnMut(&crate::cfd_loader::CfdWriter, &[crate::WriteCellRequest<'_>]) -> bool,
+    ) -> Result<bool> {
+        let session = self.schema_session()?;
+        let Some(schema) = session.schema() else {
+            return Ok(false);
+        };
+        let original_references = self.typed_references.clone();
+        let materialized_len = self.materialized.len();
+        let writer = crate::cfd_loader::CfdWriter::new();
+        let mut original_sources = BTreeMap::new();
+        let prepared = (|| -> Result<bool> {
+            let mut fields = Vec::with_capacity(operations.len());
+            for operation in operations {
+                let Operation::SetField {
+                    record,
+                    path,
+                    value,
+                    expected,
+                } = operation
+                else {
+                    return Ok(false);
+                };
+                // 每条记录仅出现一次，准备只读取本记录值形状；跨记录引用和模板仍由最终候选连接。
+                // 空操作沿用顺序路径，不改变无变化请求的文件发布边界。
+                let (source, _) = self.cached_record_source(record)?;
+                original_sources
+                    .entry(source.absolute.clone())
+                    .or_insert(source);
+                let Some(field) =
+                    self.prepare_field(schema, record, path, value, expected.as_ref())?
+                else {
+                    return Ok(false);
+                };
+                fields.push(field);
+            }
+            let mut files = BTreeMap::<_, Vec<_>>::new();
+            for field in &fields {
+                let RecordOrigin::File { path, .. } = &field.origin else {
+                    return Ok(false);
+                };
+                files.entry(path).or_default().push(field.request(schema));
+            }
+            // 每个文件保留原请求顺序并检查所有中间前缀节点预算。
+            // 任一文件失败时尚未发布候选，整组原序重放以恢复真正首错及成功前缀。
+            Ok(files.values().all(|requests| validate(&writer, requests)))
+        })();
+        if !matches!(prepared, Ok(true)) {
+            self.typed_references = original_references;
+            self.materialized.truncate(materialized_len);
+            return Ok(false);
+        }
+        if let Err(failure) = self.publish_writer(&writer) {
+            self.typed_references = original_references;
+            self.materialized.truncate(materialized_len);
+            if unchanged_after_publication_failure(&original_sources, &failure) {
+                return Ok(false);
+            }
+            // 恢复不完整或字节无法证明原样时保留发布错误及回执，不能再次改写候选。
+            return Err(failure);
+        }
+        Ok(true)
+    }
+    fn prepare_field<'a>(
+        &mut self,
+        schema: &CftSchema,
+        record: &'a RecordTarget,
+        path: &[FieldPath],
+        value: &InputValue,
+        expected: Option<&InputValue>,
+    ) -> Result<Option<PreparedField<'a>>> {
+        let (source, index) = self.cached_record_source(record)?;
+        let ast = &source.ast.records[index];
+        let text = &source.text;
+        let current_record = path_record(schema, record, ast, text)?;
+        let path = internal_path_for_record(schema, &current_record, path, Vec::new())?;
+        let ty = crate::write_rules::expected_type_for_record_path(
+            schema,
+            &current_record,
+            &path,
+            "CLI-PATH",
+            "CLI",
+        )?;
+        self.replace_typed_references(schema, record, None, &path, Some(value), &ty)?;
+        let value = value.resolve(schema, &ty)?;
+        let current = read_value(schema, record, ast, text, &path)?;
+        if let Some(expected) = expected {
+            let expected_value = expected.resolve(schema, &ty)?;
+            if current.as_ref() != Some(&expected_value) {
+                return Err(Failure::conflict("old value precondition failed").with_result(json!({"precondition":{
+                "view":"effective","expected":super::model_value::encode(schema,&ty,Some(&expected_value))?,
+                "actual":super::model_value::encode(schema,&ty,current.as_ref())?}})));
+            }
+        }
+        // 只有实际存在的赋值才能作为无变化；与默认值相同也必须建立显式数据。
+        let explicitly_assigned = path.first().is_some_and(
+            |p| matches!(p,CfdPathSegment::Field(name) if ast.fields.iter().any(|f|f.name==*name)),
+        );
+        if explicitly_assigned && current.as_ref() == Some(&value) {
+            return Ok(None);
+        }
+        let top = materialized_top(schema, record, ast, text, &path, &value)?;
+        if !explicitly_assigned {
+            if let (Some(CfdPathSegment::Field(field)), Some(top)) = (path.first(), top.as_ref()) {
+                let meta = schema
+                    .field(&record.actual_type, field)
+                    .ok_or_else(|| Failure::missing("unknown top-level field"))?;
+                let location = schema
+                    .resolve_type(&meta.declaring_type)
+                    .and_then(|ty| schema.source(&ty.module))
+                    .map(|source| -> Result<_> {
+                        Ok(super::schema_queries::location(
+                            self.original.root_dir(),
+                            &self.unshadow(&source.path)?,
+                            &source.source,
+                            meta.span,
+                        ))
+                    })
+                    .transpose()?;
+                // 未赋值的父字段只有显式声明默认值后才可物化。
+                self.materialized.push(
+                    json!({"record":record,"field":field,"origin":"schema_default",
+                    "location":location,
+                    "value":super::ModelValue::from_model(schema,&meta.value_type,top)?}),
+                );
+            }
+        }
+        Ok(Some(PreparedField {
+            record,
+            origin: RecordOrigin::File {
+                path: source.absolute.clone(),
+                span: None,
+            },
+            path,
+            value,
+            top,
+        }))
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "按语言或命令分支集中处理，保持分派与各分支语义可直接核对。"
@@ -214,75 +442,12 @@ impl Candidate {
                 value,
                 expected,
             } => {
-                let (file, ast, text) = find_record(self, record)?;
-                let current_record = path_record(schema, record, &ast, &text)?;
-                let path = internal_path_for_record(schema, &current_record, path, Vec::new())?;
-                let ty = crate::write_rules::expected_type_for_record_path(
-                    schema,
-                    &current_record,
-                    &path,
-                    "CLI-PATH",
-                    "CLI",
-                )?;
-                self.replace_typed_references(schema, record, None, &path, Some(value), &ty)?;
-                let value = value.resolve(schema, &ty)?;
-                let current = read_value(schema, record, &ast, &text, &path)?;
-                if let Some(expected) = expected {
-                    let expected_value = expected.resolve(schema, &ty)?;
-                    if current.as_ref() != Some(&expected_value) {
-                        return Err(Failure::conflict("old value precondition failed").with_result(json!({"precondition":{
-                        "view":"effective","expected":super::model_value::encode(schema,&ty,Some(&expected_value))?,
-                        "actual":super::model_value::encode(schema,&ty,current.as_ref())?}})));
-                    }
+                if let Some(field) =
+                    self.prepare_field(schema, record, path, value, expected.as_ref())?
+                {
+                    writer.write_field(&field.request(schema))?;
+                    self.publish_writer(&writer)?;
                 }
-                // 只有实际存在的赋值才能作为无变化；与默认值相同也必须建立显式数据。
-                let explicitly_assigned=path.first().is_some_and(|p|matches!(p,CfdPathSegment::Field(name) if ast.fields.iter().any(|f|f.name==*name)));
-                if explicitly_assigned && current.as_ref() == Some(&value) {
-                    return Ok(());
-                }
-                let top = materialized_top(schema, record, &ast, &text, &path, &value)?;
-                if !explicitly_assigned {
-                    if let (Some(CfdPathSegment::Field(field)), Some(top)) =
-                        (path.first(), top.as_ref())
-                    {
-                        let meta = schema
-                            .field(&record.actual_type, field)
-                            .ok_or_else(|| Failure::missing("unknown top-level field"))?;
-                        let location = schema
-                            .resolve_type(&meta.declaring_type)
-                            .and_then(|ty| schema.source(&ty.module))
-                            .map(|source| -> Result<_> {
-                                Ok(super::schema_queries::location(
-                                    self.original.root_dir(),
-                                    &self.unshadow(&source.path)?,
-                                    &source.source,
-                                    meta.span,
-                                ))
-                            })
-                            .transpose()?;
-                        // 未赋值的父字段只有显式声明默认值后才可物化。
-                        self.materialized.push(
-                            json!({"record":record,"field":field,"origin":"schema_default",
-                            "location":location,
-                            "value":super::ModelValue::from_model(schema,&meta.value_type,top)?}),
-                        );
-                    }
-                }
-                writer.write_field(&crate::WriteCellRequest {
-                    origin: &RecordOrigin::File {
-                        path: file,
-                        span: None,
-                    },
-                    record_id: &record.id,
-                    actual_type: &record.actual_type,
-                    field_path: &path,
-                    new_value: &value,
-                    materialized_top_level: top
-                        .as_ref()
-                        .map(crate::api::FieldMaterialization::Value),
-                    schema,
-                })?;
-                self.publish_writer(&writer)?;
             }
             Operation::UnsetField { record, path } => {
                 let (file, ast, text) = find_record(self, record)?;
@@ -971,4 +1136,434 @@ fn rewrite_dimensions(
         })?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod batch_tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "回归夹具与逐条执行对照必须完整构造。"
+    )]
+    use super::*;
+    use crate::automation::{Arguments, InputSnapshot};
+
+    fn set(id: &str, field: &[&str], value: &str, expected: Option<&str>) -> Operation {
+        Operation::SetField {
+            record: RecordTarget {
+                actual_type: "Item".into(),
+                id: id.into(),
+            },
+            path: field
+                .iter()
+                .map(|name| FieldPath::Field {
+                    name: (*name).into(),
+                })
+                .collect(),
+            value: InputValue::Expression {
+                source: value.into(),
+            },
+            expected: expected.map(|source| InputValue::Expression {
+                source: source.into(),
+            }),
+        }
+    }
+
+    fn sequential(candidate: &mut Candidate, operations: &[Operation]) -> Result<()> {
+        candidate.capture_typed_references()?;
+        let encoded = operations
+            .iter()
+            .map(super::super::json)
+            .collect::<Result<Vec<_>>>()?;
+        for (index, operation) in operations.iter().enumerate() {
+            candidate.operation_details = json!({});
+            if let Err(failure) = candidate.apply_operation(operation) {
+                return Err(candidate.record_failed(index, &encoded, failure));
+            }
+            candidate.operations.push(json!({"index":index,"status":"success","operation":operation,"details":candidate.operation_details}));
+        }
+        Ok(())
+    }
+
+    fn assert_sequential_equivalence(operations: &[Operation], failed_index: Option<usize>) {
+        assert_sequential_equivalence_in_files(operations, failed_index, false);
+    }
+
+    fn assert_sequential_equivalence_in_files(
+        operations: &[Operation],
+        failed_index: Option<usize>,
+        split: bool,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("coflow.yaml"),
+            "schema: schema.cft\ndata: data.cfd\ncodegen: [{language: csharp, dir: generated}]\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("schema.cft"), "data Detail { count: int = 3; }\ntable Item { value: int = 1; details: Detail = Detail {}; parent: &Item; label: string = \"default\"; }\n").unwrap();
+        let source = "# 保留 Unicode 与注释\na: Item { value: 1, parent: &b, label: \"甲😀\" }\nb: Item { value: 2, parent: &a, details: Detail { count: 5 } }\nc: Item { value: 3, parent: &a }\n";
+        let files = if split {
+            std::fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: [data.cfd, other.cfd]\ncodegen: [{language: csharp, dir: generated}]\n").unwrap();
+            BTreeMap::from([
+                (
+                    "data.cfd",
+                    source.lines().filter(|line| !line.starts_with("b:")).fold(
+                        String::new(),
+                        |mut text, line| {
+                            text.push_str(line);
+                            text.push('\n');
+                            text
+                        },
+                    ),
+                ),
+                (
+                    "other.cfd",
+                    source.lines().filter(|line| line.starts_with("b:")).fold(
+                        String::new(),
+                        |mut text, line| {
+                            text.push_str(line);
+                            text.push('\n');
+                            text
+                        },
+                    ),
+                ),
+            ])
+        } else {
+            BTreeMap::from([("data.cfd", source.into())])
+        };
+        for (name, text) in &files {
+            std::fs::write(root.path().join(name), text).unwrap();
+        }
+        let project = crate::Project::open_schema_only(Some(root.path())).unwrap();
+        let snapshot = InputSnapshot::capture(&project).unwrap();
+        let mut batch = Candidate::new(&project, &snapshot).unwrap();
+        let mut individual = Candidate::new(&project, &snapshot).unwrap();
+        let actual = batch.apply_operations(operations);
+        let expected = sequential(&mut individual, operations);
+        assert_eq!(
+            actual
+                .as_ref()
+                .err()
+                .and_then(|failure| failure.result.as_ref())
+                .map(|result| result["operation_index"].clone()),
+            failed_index.map(|index| json!(index))
+        );
+        match (actual, expected) {
+            (Ok(()), Ok(())) => {
+                let (actual, actual_validation) =
+                    batch.finish(&Arguments::default(), true).unwrap();
+                let (expected, expected_validation) =
+                    individual.finish(&Arguments::default(), true).unwrap();
+                assert_eq!(actual, expected);
+                assert_eq!(
+                    actual_validation.diagnostics,
+                    expected_validation.diagnostics
+                );
+            }
+            (Err(actual), Err(expected)) => {
+                let actual = batch.failure_result(actual, &Arguments::default());
+                let expected = individual.failure_result(expected, &Arguments::default());
+                assert_eq!(actual.status, expected.status);
+                assert_eq!(actual.result, expected.result);
+                assert_eq!(actual.diagnostics, expected.diagnostics);
+            }
+            (actual, expected) => panic!("batch/sequential mismatch: {actual:?} / {expected:?}"),
+        }
+        assert_eq!(batch.materialized, individual.materialized);
+        assert_eq!(
+            format!("{:?}", batch.typed_references),
+            format!("{:?}", individual.typed_references)
+        );
+        for (name, text) in files {
+            assert_eq!(
+                std::fs::read_to_string(root.path().join(name)).unwrap(),
+                text
+            );
+        }
+    }
+
+    #[test]
+    fn interleaved_files_preserve_results_and_earliest_failure_in_original_order() {
+        assert_sequential_equivalence_in_files(
+            &[
+                set("a", &["details", "count"], "7", Some("3")),
+                set("b", &["label"], "f\"{self.parent.value}\"", None),
+                set("c", &["parent"], "&Item::b", None),
+                // 同记录二次修改必须形成屏障，并读取前一个分组的最新值。
+                set("a", &["details", "count"], "8", Some("7")),
+            ],
+            None,
+            true,
+        );
+        assert_sequential_equivalence_in_files(
+            &[
+                set("a", &["details", "count"], "7", Some("3")),
+                set("b", &["value"], "8", Some("99")),
+                set("c", &["value"], "\"invalid\"", None),
+            ],
+            Some(1),
+            true,
+        );
+        assert_sequential_equivalence_in_files(
+            &[
+                set("b", &["details", "count"], "7", Some("5")),
+                set("a", &["value"], "8", Some("99")),
+                set("c", &["value"], "\"invalid\"", None),
+            ],
+            Some(1),
+            true,
+        );
+    }
+
+    #[test]
+    fn replay_after_publication_failure_requires_recovery_receipt_and_unchanged_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("data.cfd");
+        let text = "a: Item { value: 1 }\n";
+        std::fs::write(&path, text).unwrap();
+        let sources = BTreeMap::from([(
+            path.clone(),
+            std::sync::Arc::new(super::super::transaction::CandidateSource {
+                absolute: path.clone(),
+                path: "data.cfd".into(),
+                text: text.into(),
+                ast: coflow_language::cfd::parse_cfd(text).0,
+                malformed: false,
+            }),
+        )]);
+        let mut failure = Failure::request("candidate publication failed");
+        assert!(!unchanged_after_publication_failure(&sources, &failure));
+        for state in [
+            crate::PersistenceState::NotAttempted,
+            crate::PersistenceState::Restored,
+        ] {
+            failure.diagnostics.publication = Some(Box::new(crate::PublicationReport {
+                state,
+                ..Default::default()
+            }));
+            assert!(unchanged_after_publication_failure(&sources, &failure));
+            std::fs::write(&path, "external change").unwrap();
+            assert!(!unchanged_after_publication_failure(&sources, &failure));
+            std::fs::write(&path, text).unwrap();
+        }
+        for state in [
+            crate::PersistenceState::Partial,
+            crate::PersistenceState::Unknown,
+            crate::PersistenceState::Committed,
+        ] {
+            failure.diagnostics.publication = Some(Box::new(crate::PublicationReport {
+                state,
+                ..Default::default()
+            }));
+            assert!(!unchanged_after_publication_failure(&sources, &failure));
+        }
+        failure.diagnostics.publication = Some(Box::new(crate::PublicationReport::default()));
+        std::fs::remove_file(&path).unwrap();
+        assert!(!unchanged_after_publication_failure(&sources, &failure));
+    }
+
+    #[test]
+    fn independent_writes_preserve_defaults_templates_references_and_order() {
+        assert_sequential_equivalence(
+            &[
+                set("a", &["value"], "7", Some("1")),
+                set("b", &["label"], "f\"{self.parent.value}\"", None),
+                set("c", &["details", "count"], "9", Some("3")),
+                // 重复记录切开批次，预期值必须读取刚写入的候选结果。
+                set("a", &["value"], "8", Some("7")),
+                set("b", &["parent"], "&Item::c", None),
+                set("c", &["parent"], "&Item::b", None),
+            ],
+            None,
+        );
+    }
+
+    #[test]
+    fn failed_batch_preserves_first_error_and_successful_candidate_prefix() {
+        assert_sequential_equivalence(
+            &[
+                set("a", &["details", "count"], "7", Some("3")),
+                set("b", &["value"], "8", Some("99")),
+                set("c", &["value"], "9", None),
+            ],
+            Some(1),
+        );
+        assert_sequential_equivalence(
+            &[
+                set("a", &["parent"], "&Item::c", None),
+                set("b", &["value"], "\"invalid\"", None),
+                set("c", &["value"], "9", None),
+            ],
+            Some(1),
+        );
+    }
+
+    #[test]
+    fn noop_and_forward_reference_batches_match_sequential_execution() {
+        assert_sequential_equivalence(
+            &[
+                set("a", &["value"], "1", Some("1")),
+                set("b", &["value"], "8", Some("2")),
+                set("c", &["details", "count"], "9", None),
+            ],
+            None,
+        );
+        assert_sequential_equivalence(
+            &[
+                set("a", &["parent"], "&Item::future", None),
+                set("b", &["value"], "8", None),
+                Operation::CreateRecord {
+                    record: RecordTarget {
+                        actual_type: "Item".into(),
+                        id: "future".into(),
+                    },
+                    file: "data.cfd".into(),
+                    fields: BTreeMap::from([(
+                        "parent".into(),
+                        InputValue::Expression {
+                            source: "&Item::a".into(),
+                        },
+                    )]),
+                },
+            ],
+            None,
+        );
+        // 类型限定保留至最终连接，批次本身成功不表示悬空引用可通过校验。
+        assert_sequential_equivalence(
+            &[
+                set("a", &["parent"], "&Item::missing", None),
+                set("b", &["parent"], "&Item::c", None),
+                set("c", &["parent"], "&Item::b", None),
+            ],
+            None,
+        );
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "同一夹具对照跨文件失败首序、已成功前缀及合法预算释放顺序。"
+    )]
+    fn interleaved_batches_preserve_intermediate_node_budget_and_global_failure_order() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("coflow.yaml"), "schema: schema.cft\ndata: [first.cfd, second.cfd, last.cfd]\ncodegen: [{language: csharp, dir: generated}]\n").unwrap();
+        std::fs::write(
+            root.path().join("schema.cft"),
+            "table Item { values: [int]; }\n",
+        )
+        .unwrap();
+        let first = "a: Item { values: [] }\nc: Item { values: [1, 2, 3] }\n";
+        let second = "b: Item { values: [] }\nd: Item { values: [1, 2, 3] }\n";
+        let last = "p: Item { values: [] }\n";
+        for (name, text) in [
+            ("first.cfd", first),
+            ("second.cfd", second),
+            ("last.cfd", last),
+        ] {
+            std::fs::write(root.path().join(name), text).unwrap();
+        }
+        let project = crate::Project::open_schema_only(Some(root.path())).unwrap();
+        let snapshot = InputSnapshot::capture(&project).unwrap();
+        let limit = coflow_language::cfd::parse_cfd(first)
+            .0
+            .structural_node_count()
+            + 1;
+        let options = coflow_language::cfd::CfdParseOptions {
+            structural_limits: coflow_language::limits::StructuralLimits::new(
+                256, limit, 10_000_000,
+            ),
+        };
+        let operations = [
+            set("p", &["values"], "[9]", None),
+            set("b", &["values"], "[1,2,3]", None),
+            set("a", &["values"], "[1,2,3]", None),
+            set("d", &["values"], "[]", None),
+            set("c", &["values"], "[]", None),
+        ];
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        candidate.capture_typed_references().unwrap();
+        let mut first_failure = None;
+        // 按文件校验先看到 first.cfd 的全局第 2 项；不得用该位置覆盖原序第 1 项错误。
+        let grouped = candidate
+            .apply_field_group_using(&operations, |writer, requests| {
+                match writer.write_field_batch_for_test(requests, options) {
+                    Ok(_) => true,
+                    Err(failure) => {
+                        first_failure = Some(requests[failure.index].record_id.to_string());
+                        false
+                    }
+                }
+            })
+            .unwrap();
+        assert!(!grouped);
+        assert_eq!(first_failure.as_deref(), Some("a"));
+        assert!(candidate.changes().unwrap().is_empty());
+        assert!(candidate.materialized.is_empty() && candidate.typed_references.is_empty());
+        let encoded = operations
+            .iter()
+            .map(super::super::json)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        let session = candidate.schema_session().unwrap();
+        let schema = session.schema().unwrap();
+        let mut failed = None;
+        for (index, operation) in operations.iter().enumerate() {
+            let Operation::SetField {
+                record,
+                path,
+                value,
+                expected,
+            } = operation
+            else {
+                panic!("field operation");
+            };
+            let field = candidate
+                .prepare_field(schema, record, path, value, expected.as_ref())
+                .unwrap()
+                .unwrap();
+            let writer = crate::cfd_loader::CfdWriter::new();
+            if let Err(error) = writer.write_field_batch_for_test(&[field.request(schema)], options)
+            {
+                let failure =
+                    candidate.record_failed(index, &encoded, Failure::from(error.diagnostics));
+                assert!(failure.diagnostics.contains("nodes limit"));
+                assert_eq!(failure.result.unwrap()["operation_index"], 1);
+                failed = Some(index);
+                break;
+            }
+            candidate.publish_writer(&writer).unwrap();
+            candidate
+                .operations
+                .push(json!({"index":index,"status":"success","operation":operation,"details":{}}));
+        }
+        assert_eq!(failed, Some(1));
+        assert_eq!(candidate.operations[0]["status"], "success");
+        assert_eq!(candidate.operations[1]["status"], "failed");
+        assert!(candidate.operations[2..]
+            .iter()
+            .all(|operation| operation["status"] == "not_executed"));
+        let changes = candidate.changes().unwrap();
+        assert_eq!(changes.len(), 1);
+        assert!(changes[0].path.ends_with("last.cfd"));
+
+        // 各文件先释放预算再扩容应成功，文件之间的交错不改变每文件中间预算。
+        let reordered = [
+            &operations[4],
+            &operations[3],
+            &operations[0],
+            &operations[2],
+            &operations[1],
+        ]
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        assert!(candidate
+            .apply_field_group_using(&reordered, |writer, requests| writer
+                .write_field_batch_for_test(requests, options)
+                .is_ok())
+            .unwrap());
+        assert_eq!(candidate.changes().unwrap().len(), 3);
+        snapshot.verify(&project).unwrap();
+    }
 }

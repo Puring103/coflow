@@ -1,0 +1,976 @@
+{
+  "schema_version": 1,
+  "backend": "Mono",
+  "player": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-unity-34403bd3a855441fa426fb603ea6ecf0-mono\\CoflowBenchmark.exe",
+  "player_sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036",
+  "runner_sha256": "AC298D591613598A02D805BB9670B1E2E0B09C9EE79D9BC99499CA5F2FD5D337",
+  "build_metadata": {
+    "unity_version": "2022.3.62f3",
+    "backend": "Mono",
+    "api_compatibility": "netstandard2.1",
+    "managed_stripping": "Disabled",
+    "il2cpp_compiler_configuration": "Release",
+    "target": "StandaloneWindows64",
+    "result": "Succeeded",
+    "total_size_bytes": "70303125",
+    "utc": "2026-10-28T13:38:41.3169804Z",
+    "development": false,
+    "incremental_gc": false,
+    "build_seconds": 11.853169099999999
+  },
+  "build_payload": [
+    {
+      "path": "build-metadata.json",
+      "bytes": 428,
+      "sha256": "245C3691FE264E5DB18624A25DC705C73891446502D80E11A87E26339F331940"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\app.info",
+      "bytes": 23,
+      "sha256": "8FD776A89BBBC567824FC4206F786F4C49B649608ED23BCF7A48D987619DE40D"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\boot.config",
+      "bytes": 144,
+      "sha256": "A690CDDD323144E2C5C8881E39B47D10F2FEE7D7EB5505B5FD55E081054CB352"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\globalgamemanagers",
+      "bytes": 22724,
+      "sha256": "00510A4B83D4A2B35BDEC503FDB80F44F1801C2F5CACF4EBA9949AA686A9F43C"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\globalgamemanagers.assets",
+      "bytes": 7824,
+      "sha256": "5148FE833C39AA09F6D8683AB584D599A76BBEC5E103036ACA34F6E84947AF00"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\globalgamemanagers.assets.resS",
+      "bytes": 2796240,
+      "sha256": "39DD38FCD8DD95D41D6D55FE16A448D29FE2C31D9A162C825C24C6D99A893D7A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\level0",
+      "bytes": 756,
+      "sha256": "90A6D7FED1E177A6CB0F259054126CB3F5638994EB361536866A9C2DFE10162B"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\Assembly-CSharp.dll",
+      "bytes": 137728,
+      "sha256": "4EF4F91983CEDBD04B3151032D676A3E77F0C9970C985CC86208F0CF21DE7A75"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\Coflow.Loader.dll",
+      "bytes": 84480,
+      "sha256": "A46D67D20596E79A4C0BD590C68938849C0F60DE62ABADD0BC7291F49D00BA54"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\Mono.Security.dll",
+      "bytes": 241152,
+      "sha256": "576F911BE2E0DB795EA78F78828F3FAF4B20900BAF1CE8E33CA8FE599370FC1D"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\mscorlib.dll",
+      "bytes": 4631552,
+      "sha256": "98C9B62133DB5DD33B22BC6AAB6F28E4F04F5B5BE6559B28BA5C2738241434D0"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\netstandard.dll",
+      "bytes": 90112,
+      "sha256": "6AE62E082DC494A2433984177F60CA4DB5FAE69B1F360A8B33754172B310B8C5"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.ComponentModel.Composition.dll",
+      "bytes": 257024,
+      "sha256": "2535FD6FAC676852936CB435D917B2D69CC6FCDD391F7B3009898153BA04919F"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Configuration.dll",
+      "bytes": 124928,
+      "sha256": "EC883B49C12AB0E5110337E817A72CF781878D7FAF904AA8ABB1AB1C4B99BD78"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Core.dll",
+      "bytes": 1113088,
+      "sha256": "F1B33EB1AE8522EDCF9BA4C2B85F532D4BAB68BFA2A51527264BB61619BED4EA"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Data.DataSetExtensions.dll",
+      "bytes": 29696,
+      "sha256": "1C88D17E686CAF77551A18D3672A1589143E6B8AE83BFCF7C306478CDB64AB90"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Data.dll",
+      "bytes": 2125312,
+      "sha256": "534AC87E6A7C1E3CE02FF2D88F4FFA45E7B5FC44E6236922C2F46F8174A29E56"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.dll",
+      "bytes": 2639872,
+      "sha256": "ACE2DD6A7D534B581BF4A9D316E743D64508CA2135DB73DBFF0DDB9365FC454E"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Drawing.dll",
+      "bytes": 489984,
+      "sha256": "435CC673A1ABA5AF488D8AF379D96F7E351A4B5ED2A1772892287A8268567DEB"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.EnterpriseServices.dll",
+      "bytes": 44544,
+      "sha256": "03F240D259B9CF27DBC5C9E8F42B8746A50CC5C52395D8E2DE5730321F9DE3B8"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.IO.Compression.dll",
+      "bytes": 114688,
+      "sha256": "15E84F38FB5E6BB926FE92A79374A083B8DFBABFA11F8CD1D409F21B98447CFD"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.IO.Compression.FileSystem.dll",
+      "bytes": 18432,
+      "sha256": "02F749FBE31E54CD8B86A35738E1DDDAE00CCC2E9FDB8990B93F1A494E6E753A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Net.Http.dll",
+      "bytes": 122880,
+      "sha256": "85F6D618B5DF944D2271E2D028B94A93CD371C6134507997441475B1700623CF"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Numerics.dll",
+      "bytes": 119296,
+      "sha256": "55EDA0FB467F9356D8F63933FB4B237732F1B215CB8EB0380398F05D3E8A3461"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Runtime.Serialization.dll",
+      "bytes": 934400,
+      "sha256": "C1058A78E3828052B92D535D8FB27F9F3C9EB9CBFCDEE1904898611B44D7CDB7"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Security.dll",
+      "bytes": 320000,
+      "sha256": "F7F53EB1401F2BD70EA1DCAB1C6C30AE7A4A142E26781C4A78BB885D2F6816A3"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.ServiceModel.Internals.dll",
+      "bytes": 215040,
+      "sha256": "5F926225818163439D823F9EF0F6E798E16604D8B75B66F22A133B40615F1B05"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Transactions.dll",
+      "bytes": 35328,
+      "sha256": "8983073E9627B1086102A9871A23E2BA53A0BB9FCC76826CAB9F5DEC9107E21A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Xml.dll",
+      "bytes": 3160064,
+      "sha256": "7A3587565CABF8294CFC372991545F3AE5790D54264E40069F5E0E460B66BC55"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\System.Xml.Linq.dll",
+      "bytes": 136704,
+      "sha256": "48B11F5D3A51034F9B9D330082F9099A0E68956EE2153D151CDF146BF9E76C78"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.AccessibilityModule.dll",
+      "bytes": 23976,
+      "sha256": "DD3076A438EB4F7933A1246AF8989B7560FF30607ACDA034344572CBE33D3B73"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.AIModule.dll",
+      "bytes": 58792,
+      "sha256": "37D26F798B1262E8E7F31895EC562A60CDF19BC05EDB644A5C8793D7D7ECD86E"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.AndroidJNIModule.dll",
+      "bytes": 95144,
+      "sha256": "C26BD0AD1BA25E04CD3603CB4651C9BFC94322FDEAA2982F77ABAA50E60ECA6D"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.AnimationModule.dll",
+      "bytes": 164272,
+      "sha256": "0098193D001584F7678EBFF0AA4A8CFD48D8293A86509C22A3C889B72CADE5E2"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ARModule.dll",
+      "bytes": 21424,
+      "sha256": "9A38CF5D45AE13C77F54C7F430A6D4EA04E90558E8BB43A3F7507BF308872699"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.AssetBundleModule.dll",
+      "bytes": 33192,
+      "sha256": "292F865769C8DDE1FF64E03FD545200A198F2E0826ECAB3EE9A0528614F9A968"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.AudioModule.dll",
+      "bytes": 71592,
+      "sha256": "024588A29A749C998392BF417AC867C001FF4C2A824CAE27E0746803413F0AF3"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ClothModule.dll",
+      "bytes": 26544,
+      "sha256": "FC47AA364AE043E67560FBA37262C0708883B0F8FF560F07652669C8AFC5CD3C"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ClusterInputModule.dll",
+      "bytes": 21936,
+      "sha256": "66278FA549B9FFFA3B6A168313679FE6C264417F987E351AC4DDE4DD97EDF38B"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ClusterRendererModule.dll",
+      "bytes": 22440,
+      "sha256": "43F8CCFAB20AC2DD98B77201F0009901A4F1E10D06A2063412942354FE1B0B6A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ContentLoadModule.dll",
+      "bytes": 27568,
+      "sha256": "51EA7B5BA53D84D8D86857435E8F48E487349FDF42F5928F610164DFF6F37A99"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.CoreModule.dll",
+      "bytes": 1393584,
+      "sha256": "88BC98E7AAFD120747DFDC90581CA8CEE0AA2734B7A101122BE66F543122A963"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.CrashReportingModule.dll",
+      "bytes": 21416,
+      "sha256": "0CC31EEED1568D3C0BC8A3FCD213021EE87C007C8688D0C2ACFE5F9EA944B414"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.DirectorModule.dll",
+      "bytes": 25000,
+      "sha256": "871E699B71AAABB21919F93C341FCC7C74306FF02E0F027D44CEC0BCA4B7379F"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.dll",
+      "bytes": 126896,
+      "sha256": "4B430C7BE335874F8F5F6E70C97F684F5C033DECEDA5701CD6C1505C844C6A41"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.DSPGraphModule.dll",
+      "bytes": 29608,
+      "sha256": "3BD76D2A52D03E5521C3DA9EF0A04D09DF9BB3A28EE3D7DE70E066256C6D675C"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.GameCenterModule.dll",
+      "bytes": 40360,
+      "sha256": "0DEEE1CB8ACB1C880AC0C477BC48BB3FB24EC3290B68B1627D145A60401E3E93"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.GIModule.dll",
+      "bytes": 20392,
+      "sha256": "483DC5EA662240E1CFA53732B00ADC269B71D7C91ABBB8A4E6A31923B201ECE1"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.GridModule.dll",
+      "bytes": 25512,
+      "sha256": "FB1DFE8BA8714E3EC2921B2B5AF446C6E89BA505335A182D7881163B26604A06"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.HotReloadModule.dll",
+      "bytes": 20392,
+      "sha256": "2A5F7331DF0EB8CCF4525D6A1A851191A50E729B421B427EACE198CB5F164C34"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ImageConversionModule.dll",
+      "bytes": 24496,
+      "sha256": "4DCAD3C1AF5AAB54EAF417E2304AE8ADB205916B77296C365AD1183A4D56508C"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.IMGUIModule.dll",
+      "bytes": 191400,
+      "sha256": "048DCF9EF4BF51B00FED7858D108E4500D7F5595CE274FDFE2279F1DA0792CA0"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.InputLegacyModule.dll",
+      "bytes": 39336,
+      "sha256": "DAC12C4E21E3A0653AE2C0A273880B65366B4E61626AE281BFF0AAF4478C2F47"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.InputModule.dll",
+      "bytes": 23976,
+      "sha256": "7894BAEEF6F74807F35BE9A6B457BFF5C02461490093246CECBA9524209690D8"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.JSONSerializeModule.dll",
+      "bytes": 22440,
+      "sha256": "8DE6D981502632B385CB608C758E3D444D7E146F685F8F0B71E93EBAFBC1F824"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.LocalizationModule.dll",
+      "bytes": 21416,
+      "sha256": "5B2639200D382F934ABCDB0A2EB8812748F305AB00BDF2B9158285DFA99BF88F"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.NVIDIAModule.dll",
+      "bytes": 34216,
+      "sha256": "FAAB5C955079B38B08098A6B08FB597D0C6A5B6488B78BED49F8AA7F1F4C419E"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ParticleSystemModule.dll",
+      "bytes": 161704,
+      "sha256": "3C0544C52E38556D48EDF74212D91E858BFA24C89F7276B549E8462A7ABE48D7"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.PerformanceReportingModule.dll",
+      "bytes": 20904,
+      "sha256": "92BAAA65C802986CC7BF0A987801123FF2939ECB40BAEE154EDCB4C00FF42FB8"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.Physics2DModule.dll",
+      "bytes": 141736,
+      "sha256": "9899BB003E274BCD6B4D3F6D4F7BB501305EC27A2BE7A9CAE2323A556FB2A0BD"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.PhysicsModule.dll",
+      "bytes": 138672,
+      "sha256": "114EBC1394F13A32D9B3E6D2978484F36D6C8C41ABF611CDA2281D2431890B8E"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ProfilerModule.dll",
+      "bytes": 20400,
+      "sha256": "82535D4C50EA36588F9F67BD8CDDD766377CC741F82DF63410434BBB18A824CB"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.PropertiesModule.dll",
+      "bytes": 155560,
+      "sha256": "32CB16F92E3F221D73D56835D4F90A0602D9E45A9B39EACB78014CDDCC005C27"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.RuntimeInitializeOnLoadManagerInitializerModule.dll",
+      "bytes": 20400,
+      "sha256": "1BAEBF59A0D3210E418604854B621EE4834A219C233E865426FC3571532A00AE"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.ScreenCaptureModule.dll",
+      "bytes": 21424,
+      "sha256": "477C637DF1C17B2DA760F7374EA21B5FC8ABEE5813ACD805139324488A484E53"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.SharedInternalsModule.dll",
+      "bytes": 33192,
+      "sha256": "9CCC73FB48D8D1D57D6EB2E89A2DFCB3462A35C9013F3AD1D23A94FF19A6F9E1"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.SpriteMaskModule.dll",
+      "bytes": 22440,
+      "sha256": "0273104CF540A559F5CE16BF82819AF6ECB1B0FDDC8EB787AEC91900ECE5F780"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.SpriteShapeModule.dll",
+      "bytes": 26544,
+      "sha256": "9E7EF99CD58A271381A4F57C8E690864BA5529C9B6746D374B734C2796081C2B"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.StreamingModule.dll",
+      "bytes": 20904,
+      "sha256": "CBF601F57E29FD9D159D56AA51E44569749A1FD6E63CE008D8065C6A399D4AEE"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.SubstanceModule.dll",
+      "bytes": 25008,
+      "sha256": "EE34542331C1B425BF015FB6586A65DD5E846749AC6B3AA6E28474AFB0975697"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.SubsystemsModule.dll",
+      "bytes": 35240,
+      "sha256": "FEA5B3CA7431D95723564347B0BE638A818DAC9CC57A5E731A17BF748F59D2B8"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TerrainModule.dll",
+      "bytes": 101296,
+      "sha256": "5F7ED70CBEBCD20AE9E3BC7C9FFE3D0728ADE0D314ED574FA87121CC0D54ACEC"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TerrainPhysicsModule.dll",
+      "bytes": 21424,
+      "sha256": "0FD12376D619047BFF9A91D79DCB968CD22DBB5F518773E23593CC23421DCEA1"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TextCoreFontEngineModule.dll",
+      "bytes": 72624,
+      "sha256": "23C48967255583A226D4D253BBDEE0865598CBFD2FF83CEE450D0C142AF183CB"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TextCoreTextEngineModule.dll",
+      "bytes": 249264,
+      "sha256": "BB0EA62B907FF494273CA428BFA0FD42F4F596A3ED70EEA5A5F2193BC93B2C80"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TextRenderingModule.dll",
+      "bytes": 39336,
+      "sha256": "E8AB28E29CD3DC25755E5D1C36E4A9F6CAA90AB817FC3BF35D9B9A98876923A0"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TilemapModule.dll",
+      "bytes": 47016,
+      "sha256": "AB57EDB0C52771B3C57226F04905192CBB441694A9FF214D480795429D55E883"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.TLSModule.dll",
+      "bytes": 27048,
+      "sha256": "72171BC1468908097449102E1289238410EA287CDDD99735BE75E2A0C69BC91A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UIElementsModule.dll",
+      "bytes": 1536424,
+      "sha256": "D593A3047C74108191CC669045DDB37E4525FA71A028BDBA7DA22B88C55A95FA"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UIModule.dll",
+      "bytes": 36784,
+      "sha256": "1CC1D7F5C8AD299ECB9213E989C6568CED8C9173C64EF60F67AC9C66787DC5D8"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UmbraModule.dll",
+      "bytes": 20400,
+      "sha256": "28345AED4143AD7910A8BC33660C8392909CD5F38CAB86B9F5A679EF84516692"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityAnalyticsCommonModule.dll",
+      "bytes": 21416,
+      "sha256": "A0349402A10E1B0EA74B963694115AE45568CF08B5DC3E209222E397202BC443"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityAnalyticsModule.dll",
+      "bytes": 44976,
+      "sha256": "6A20AD410E5BABA50DDA1BDE7077547CBBC38E155C00979F80684B912E17139D"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityConnectModule.dll",
+      "bytes": 22440,
+      "sha256": "F5BE41662E846ED52192B817336A8FB9C545EC5F9D65A26AC043256B2121500F"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityCurlModule.dll",
+      "bytes": 21936,
+      "sha256": "66943720627BD82B6858B68F90892E4AE9A8686D251E5B007A2D1C1DEA6712A4"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityTestProtocolModule.dll",
+      "bytes": 20392,
+      "sha256": "08FD944375E36775EAE61A8C44A39B97BD4B3F7C40C53EFB522B1228656503D1"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityWebRequestAssetBundleModule.dll",
+      "bytes": 23472,
+      "sha256": "DE2B93867EACFCA8CBC5F82E40E4A3F02C3CE7B75751FD6E226BBABE9FA576FA"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityWebRequestAudioModule.dll",
+      "bytes": 22960,
+      "sha256": "14046B9F4B55869DDE81E1F4389DEF69EDA96528C333F01DFE869BEAD52C7643"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityWebRequestModule.dll",
+      "bytes": 58800,
+      "sha256": "6725A5690AC91BAA2840C87DA0D99772A9CA77781E792572ECCD4E72D683E4B2"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityWebRequestTextureModule.dll",
+      "bytes": 21928,
+      "sha256": "E21F123A103F5F5708E59D8A9C76F7D51B4A22CE6751732A0DA1E0684A382E1E"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.UnityWebRequestWWWModule.dll",
+      "bytes": 31664,
+      "sha256": "3D2A1CEF8429F3A150E284AE7D2ECDE85731BAB5E8EE3745F922FEC92B8A2D9A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.VehiclesModule.dll",
+      "bytes": 24496,
+      "sha256": "9E72285CC2EFE6D580B29697B86A8BE08DE8F2AFE755A71BBED0DB35CD129D0F"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.VFXModule.dll",
+      "bytes": 58800,
+      "sha256": "4F015593739D923EA1DBB499DD67A1AEE5305BF49B16B55BA10A8C5BC9710007"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.VideoModule.dll",
+      "bytes": 41384,
+      "sha256": "C6FC1F87E22DA91DA6B1036542C9AB679A528F30DD8779D201E1E205FF5DD990"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.VirtualTexturingModule.dll",
+      "bytes": 36272,
+      "sha256": "4ABD1CA25DCE04CAC3B8AA53E92A4160B1461CA22E8DDE2266B780779304132C"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.VRModule.dll",
+      "bytes": 27056,
+      "sha256": "B853C5ECF2DA7FA060E4A62F750124AAA8C6F93F9DAE85DDE7D57ACBDACCB26A"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.WindModule.dll",
+      "bytes": 21416,
+      "sha256": "2BED9078FE2F3F8610B216C740F28D5DE1587B94652987E0E758AD43FE7BA7F3"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Managed\\UnityEngine.XRModule.dll",
+      "bytes": 71080,
+      "sha256": "9C0DC96213B194C67983245430EBB7E79DB07C9446832C9E47199040FC420B67"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Resources\\unity default resources",
+      "bytes": 1564240,
+      "sha256": "A11E3E24520676183B3750564B4D9F5A90E8F41FD3523CBFB0C49F3989453DA2"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\Resources\\unity_builtin_extra",
+      "bytes": 377572,
+      "sha256": "8BA8849A60BAE801D6E700DF5E44D991931BDA6618B8789B7758D67112F187BB"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\RuntimeInitializeOnLoads.json",
+      "bytes": 157,
+      "sha256": "AAA10A22F132D97DCD2D4A747A0A5AE4CE65222001B5327F5EAF876AC5652319"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\ScriptingAssemblies.json",
+      "bytes": 2615,
+      "sha256": "30BEB6E6607D87843A13AE02B80FD364A9649D00E8DC1E62E0AF7549ED59EAE3"
+    },
+    {
+      "path": "CoflowBenchmark_Data\\sharedassets0.assets",
+      "bytes": 7568,
+      "sha256": "84A59D750EEC9C740502BFB33D6D4ABD96BD13F0550C0DB1186C5C8C61B4EB25"
+    },
+    {
+      "path": "CoflowBenchmark.exe",
+      "bytes": 666624,
+      "sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036"
+    },
+    {
+      "path": "MonoBleedingEdge\\EmbedRuntime\\mono-2.0-bdwgc.dll",
+      "bytes": 7897512,
+      "sha256": "EA0FB1FD0AA074BB46C71E52831A843BFC2B73EA3CF7EE9F205C57CE6D262FB5"
+    },
+    {
+      "path": "MonoBleedingEdge\\EmbedRuntime\\MonoPosixHelper.dll",
+      "bytes": 611240,
+      "sha256": "8A394AD37345C4D9EEF616B68C7D668325647F2815FEF477AEBAB3F864B70775"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\2.0\\Browsers\\Compat.browser",
+      "bytes": 1605,
+      "sha256": "8A1082057AC5681DCD4E9C227ED7FB8EB42AC1618963B5DE3B65739DD77E2741"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\2.0\\DefaultWsdlHelpGenerator.aspx",
+      "bytes": 60575,
+      "sha256": "751861040B69EA63A3827507B7C8DA9C7F549DC181C1C8AF4B7CA78CC97D710A"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\2.0\\machine.config",
+      "bytes": 29066,
+      "sha256": "E91782A27FA39FC6C1D6EE8B08529F5D35052310D0006034B878EB04B8F2AF30"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\2.0\\settings.map",
+      "bytes": 2622,
+      "sha256": "49C6160F9D54AF4270A3B4E997FC4A8301F79B9E2070118FA46DDBCBBC44F9A2"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\2.0\\web.config",
+      "bytes": 11635,
+      "sha256": "CF2B54339E069B9E42F7D6795EECBF562C50C1011F4CA8F65F578FE52D97FF92"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.0\\Browsers\\Compat.browser",
+      "bytes": 1605,
+      "sha256": "8A1082057AC5681DCD4E9C227ED7FB8EB42AC1618963B5DE3B65739DD77E2741"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.0\\DefaultWsdlHelpGenerator.aspx",
+      "bytes": 60575,
+      "sha256": "751861040B69EA63A3827507B7C8DA9C7F549DC181C1C8AF4B7CA78CC97D710A"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.0\\machine.config",
+      "bytes": 33598,
+      "sha256": "E60AEC2C5115D65B3ACB3C55EA21576DBD770F579166C017125571E46AE560ED"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.0\\settings.map",
+      "bytes": 2622,
+      "sha256": "CE1DB1AD8A9512073164E3ECCDC193F7EDA036E1A9733CAEC4635DE21B2865C8"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.0\\web.config",
+      "bytes": 18802,
+      "sha256": "E38BB8CC68FE5B4EDECDFD288D094B9E8CED7629039B2A347682ABA0D8BD7492"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.5\\Browsers\\Compat.browser",
+      "bytes": 1605,
+      "sha256": "8A1082057AC5681DCD4E9C227ED7FB8EB42AC1618963B5DE3B65739DD77E2741"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.5\\DefaultWsdlHelpGenerator.aspx",
+      "bytes": 60575,
+      "sha256": "751861040B69EA63A3827507B7C8DA9C7F549DC181C1C8AF4B7CA78CC97D710A"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.5\\machine.config",
+      "bytes": 34056,
+      "sha256": "EE950004B576FB28DC85F4B0435ED04BF96612DE2E8B53BE84D07AFE85A0DE6C"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.5\\settings.map",
+      "bytes": 2622,
+      "sha256": "CE1DB1AD8A9512073164E3ECCDC193F7EDA036E1A9733CAEC4635DE21B2865C8"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\4.5\\web.config",
+      "bytes": 18811,
+      "sha256": "C4CBDDD4FD9347B58CC5A72B36DC4BA1AD2BB699E65869D05CD3FB9865F0D824"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\browscap.ini",
+      "bytes": 311984,
+      "sha256": "4DDD50F31FB968F30BEDEFC253A46DC3F2890192D05CDAA9E0A64A056EEE807E"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\config",
+      "bytes": 3815,
+      "sha256": "5776169973A26A387B8B3E5C0F2301A7AB9A6DD7C7D3EFA22A96ABC47FBF8662"
+    },
+    {
+      "path": "MonoBleedingEdge\\etc\\mono\\mconfig\\config.xml",
+      "bytes": 25817,
+      "sha256": "0C56E34C69124510FA8C19E7B4C2CA6C1C4FF460AE19F798DD0CA035809E396D"
+    },
+    {
+      "path": "UnityCrashHandler64.exe",
+      "bytes": 1185192,
+      "sha256": "CA93C9D370E6E595BC402DDE42591EB8827783C0A35C87DF7EBAA58D530CD725"
+    },
+    {
+      "path": "UnityPlayer.dll",
+      "bytes": 31100848,
+      "sha256": "DC005461655B67912029EEA6BCC303FE244C3A336E2046107F934B901AB9CE2B"
+    }
+  ],
+  "runs": [
+    {
+      "id": "unity-mono-scalar20-1k",
+      "dotnet_counterpart": "csharp-scalar20-1k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-scalar20-1k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "scalar20",
+        "records": 1000,
+        "files": 10,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": "startup,load,io,reload,queries,error"
+      }
+    },
+    {
+      "id": "unity-mono-scalar20-10k",
+      "dotnet_counterpart": "csharp-scalar20-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-scalar20-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "scalar20",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": "startup,load,io,reload,queries,error"
+      }
+    },
+    {
+      "id": "unity-mono-scalar20-100k",
+      "dotnet_counterpart": "csharp-scalar20-100k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-scalar20-100k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "scalar20",
+        "records": 100000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": "startup,load,io,reload,queries,error"
+      }
+    },
+    {
+      "id": "unity-mono-width8-10k",
+      "dotnet_counterpart": "csharp-width8-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-width8-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "scalar8",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": "load,queries"
+      }
+    },
+    {
+      "id": "unity-mono-width100-10k",
+      "dotnet_counterpart": "csharp-width100-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-width100-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "scalar100",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": "load,queries"
+      }
+    },
+    {
+      "id": "unity-mono-tables32-10k",
+      "dotnet_counterpart": "csharp-tables32-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-tables32-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "tables32",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "none",
+        "templates": false,
+        "operations": "load,queries"
+      }
+    },
+    {
+      "id": "unity-mono-complex-10k",
+      "dotnet_counterpart": "csharp-complex-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-complex-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "complex",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": false,
+        "operations": "startup,load,io,reload,queries,error"
+      }
+    },
+    {
+      "id": "unity-mono-complex-100k",
+      "dotnet_counterpart": "csharp-complex-100k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-complex-100k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "complex",
+        "records": 100000,
+        "files": 100,
+        "samples": 3,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": false,
+        "operations": "load,reload,queries"
+      }
+    },
+    {
+      "id": "unity-mono-templates-10k",
+      "dotnet_counterpart": "csharp-templates-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-templates-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "complex",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": true,
+        "operations": "load,queries"
+      }
+    },
+    {
+      "id": "unity-mono-fanin-10k",
+      "dotnet_counterpart": "csharp-fanin-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-fanin-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "complex",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "hub",
+        "templates": true,
+        "operations": "load,queries"
+      }
+    },
+    {
+      "id": "unity-mono-ring-10k",
+      "dotnet_counterpart": "csharp-ring-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-ring-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "complex",
+        "records": 10000,
+        "files": 100,
+        "samples": 5,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "ring",
+        "templates": true,
+        "operations": "load,queries,error"
+      }
+    },
+    {
+      "id": "unity-mono-dim1-sparse-10k",
+      "dotnet_counterpart": "csharp-dim1-sparse-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-dim1-sparse-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "dimensions",
+        "records": 10000,
+        "files": 100,
+        "samples": 3,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": true,
+        "operations": "load,dimensions,error"
+      }
+    },
+    {
+      "id": "unity-mono-dim1-dense-10k",
+      "dotnet_counterpart": "csharp-dim1-dense-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-dim1-dense-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "dimensions",
+        "records": 10000,
+        "files": 100,
+        "samples": 3,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "dense",
+        "topology": "pairs",
+        "templates": true,
+        "operations": "load,dimensions,error"
+      }
+    },
+    {
+      "id": "unity-mono-dim10-sparse-10k",
+      "dotnet_counterpart": "csharp-dim10-sparse-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-dim10-sparse-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "dimensions",
+        "records": 10000,
+        "files": 100,
+        "samples": 3,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 10,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": true,
+        "operations": "load,dimensions,error"
+      }
+    },
+    {
+      "id": "unity-mono-dim10-dense-10k",
+      "dotnet_counterpart": "csharp-dim10-dense-10k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-dim10-dense-10k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "dimensions",
+        "records": 10000,
+        "files": 100,
+        "samples": 3,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 10,
+        "density": "dense",
+        "topology": "pairs",
+        "templates": true,
+        "operations": "load,dimensions,error"
+      }
+    },
+    {
+      "id": "unity-mono-dim1-sparse-100k",
+      "dotnet_counterpart": "csharp-dim1-sparse-100k",
+      "backend": "Mono",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\unity-mono-dim1-sparse-100k.stdout.ndjson",
+      "timeout_seconds": 1800,
+      "parameters": {
+        "case": "dimensions",
+        "records": 100000,
+        "files": 100,
+        "samples": 3,
+        "query_samples": 100,
+        "query_batch": 10000,
+        "variants": 1,
+        "density": "sparse",
+        "topology": "pairs",
+        "templates": true,
+        "operations": "load,dimensions"
+      }
+    }
+  ],
+  "protocol": "Serial standalone players; resume requires matching plan, process arguments and successful semantic validation/completion. Failed evidence is never overwritten."
+}

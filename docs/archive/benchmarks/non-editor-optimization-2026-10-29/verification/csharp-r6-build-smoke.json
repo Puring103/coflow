@@ -1,0 +1,256 @@
+{
+  "purpose": "R6 frozen C# optimization artifacts and correctness-only verification; no formal performance samples were run by this build/smoke step",
+  "utc": "2026-10-28T21:55:33.6162453Z",
+  "dotnet_tests": {
+    "passed": 86,
+    "failed": 0,
+    "skipped": 0
+  },
+  "netstandard_smoke": "passed",
+  "generated_integration": "passed",
+  "loader_build": "Release net8.0 and netstandard2.1; 0 warnings, 0 errors",
+  "benchmark_build": "Release net8.0; 0 warnings, 0 errors",
+  "build": {
+    "unity_version": "2022.3.62f3",
+    "backend": "Mono",
+    "api_compatibility": "netstandard2.1",
+    "managed_stripping": "Disabled",
+    "il2cpp_compiler_configuration": "Release",
+    "target": "StandaloneWindows64",
+    "result": "Succeeded",
+    "total_size_bytes": "70325325",
+    "utc": "2026-10-28T21:54:15.9639604Z",
+    "development": false,
+    "incremental_gc": false,
+    "build_seconds": 2.3400963999999997
+  },
+  "inputs": {
+    "project": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6",
+    "unity_version": "2022.3.62f3",
+    "loader": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\runtimes\\csharp\\Coflow.Loader\\bin\\Release\\netstandard2.1\\Coflow.Loader.dll",
+    "loader_sha256": "1C841801E9448737E96A126DED2EBBBCD6D7E400A34AC64E1D4EF5C88810297A",
+    "fixture_sha256": "3430445C21BD4BBBD2A78AFD506C14D80AC2255CD80094CAAE23C2A2A28022B6",
+    "adapters_sha256": "CD2923B3048D8DF7431EEF39AF031D02DD3ADF1CF11CD85E9CBD3B665B32CB27",
+    "contracts_sha256": "85CE0DC908292457A8565E0261678A0205F551477855D1A9C5B575232DBE46CD",
+    "utc": "2026-10-28T21:54:08.8040743Z"
+  },
+  "changes": [
+    "Ordinary record-reference dependencies use explicit DFS frames, including exact Option/Dimension and constant resolution; complex fields retain 32-native-segment suspension and the shared 256-logical-depth limit",
+    "Table hot queries use the privately owned concrete Dictionary; Keys/Values retain read-only views",
+    "Name pooling hashes packed pairs of UTF-16 code units and the length through randomized HashCode; full ordinal comparison remains",
+    "Regression coverage includes mixed reference/template/collection restoration, pending ancestor cycles, 257th-depth precedence, nested reference aliases, table exceptions/read-only views and exact UTF-16 names"
+  ],
+  "artifacts": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r6\\dotnet\\Coflow.Loader.dll",
+      "sha256": "179C99640086C198161D791A61B19CDDF4AC976645BFFE015906C7302091101C",
+      "bytes": 94720
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r6\\dotnet\\Coflow.Loader.Benchmarks.dll",
+      "sha256": "082FB58503881F865B1FFC77AEA71FB5D3CC83326E3E9E70B0A58EACC0677F66",
+      "bytes": 152576
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark.exe",
+      "sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036",
+      "bytes": 666624
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark_Data\\Managed\\Coflow.Loader.dll",
+      "sha256": "1C841801E9448737E96A126DED2EBBBCD6D7E400A34AC64E1D4EF5C88810297A",
+      "bytes": 94208
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark_Data\\Managed\\Assembly-CSharp.dll",
+      "sha256": "E5C2EA2A42DA30E3AE36D483C76D75614EF993C9D8BE73744BBD5CAEC82A5D2E",
+      "bytes": 150016
+    }
+  ],
+  "sources": [
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Table.cs",
+      "sha256": "3B0BF2692C75533BFB6E4DC529DF0162C4EE0B5A396F4D1251F7F9A2C67EB00B"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Option.cs",
+      "sha256": "323589599862D7FD47751414D2B5B73D31D22F9C9FD805960D101A8A97031FA6"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Loading.cs",
+      "sha256": "A411D3A48DB0E911847A95F605A6238DEC3508B43001BDBC9EF809EF21AF5CE9"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Dimensions.cs",
+      "sha256": "E7294688BC5FFFDFBEF551EC638275CFF5CF9C307BB035F33D5DD7219D03237C"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Descriptors.cs",
+      "sha256": "C7D8610668A2E1F1B4F90689369B528B8666AB2F4A6D9162580E8E5EBB7C1EE5"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Construction.cs",
+      "sha256": "73D7214D3AFABD6E5E273980BA7880C653847678F1A4FCC851D21943D06290A6"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Compatibility\\IsExternalInit.cs",
+      "sha256": "0A12270825B5301DC0A9490C73810DE94413517649B2438030A5AE6D8B3990C2"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Coflow.Loader.csproj",
+      "sha256": "60120E34D9B93BC8B43E94018CA8453265698E23A53A4D674F81B33EC10F75AA"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdXid.Generated.cs",
+      "sha256": "3723B94C22C210D1E0DC50EDB6EB9A0B669F9EB90A2B73C743712080080FD546"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdSpan.cs",
+      "sha256": "37824060271BDFD40BA9B83A87B9EECF9312ECFDB225E368F2CACD1066130F00"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdSource.cs",
+      "sha256": "8CA7190B784B69E9355443029ECA4B5A78CE73A97183C0FC77B4EB3687563B92"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdParser.cs",
+      "sha256": "B92F791A902BA8095723A24EEBFAEDD62C047412A153539FE0E00E260594A2BD"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdNodes.cs",
+      "sha256": "F5C1BC190A54DCC7812E7F34ED4A9BE744FB558C522CCA5C8004C4A44B4AEE8E"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdNamePool.cs",
+      "sha256": "5C2D6BEF5591B7B8AD5453B46B0E42395A96A2942DA3DBF598AC67C97B4358C4"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdIdentifiers.cs",
+      "sha256": "27EA2A6D9C5B31709807FD03B50975071C72121385CC87B55730815865492D34"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader\\Cfd\\CfdDiagnostics.cs",
+      "sha256": "62B0CFF0EEA1DF0A7CF0A6FEF19D7D93F3058AC97C1D66B56C01024E19ADE014"
+    },
+    {
+      "path": "runtimes/csharp/Coflow.Loader.Tests/PerformanceContractTests.cs",
+      "sha256": "71CD1733995181B9CB688B364E1370AF1B8C84D645F24AFD94DC59A360BA85C4"
+    },
+    {
+      "path": "scripts/performance/unity/ConstructionContracts.cs",
+      "sha256": "85CE0DC908292457A8565E0261678A0205F551477855D1A9C5B575232DBE46CD"
+    },
+    {
+      "path": "scripts/performance/unity/BenchmarkPlayer.cs",
+      "sha256": "33AA71C5638AA18D662E49D54C77116FCA102235E39DF6ADBE0526E240065161"
+    }
+  ],
+  "smoke": [
+    {
+      "case": "scalar8",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\scalar8.ndjson",
+      "exit_code": 0,
+      "timed_out": false,
+      "complete": true,
+      "validation": [
+        {
+          "success": true,
+          "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+          "kind": "validation"
+        }
+      ],
+      "contracts": [],
+      "formal_measurements": 0
+    },
+    {
+      "case": "scalar20",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\scalar20.ndjson",
+      "exit_code": 0,
+      "timed_out": false,
+      "complete": true,
+      "validation": [
+        {
+          "success": true,
+          "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+          "kind": "validation"
+        }
+      ],
+      "contracts": [
+        {
+          "success": true,
+          "cases_per_thread": 15,
+          "threads": "Unity main thread and new Thread without a requested stack size",
+          "worker_managed_thread_id": 5,
+          "scope": "256/257-level references/templates; variant-only 300-level rejection; deep cycles; list/dictionary continuation identity; DFS order; mixed explicit references/templates/collections; pending ancestor cycles; depth limit before missing target",
+          "kind": "contract_validation"
+        }
+      ],
+      "formal_measurements": 0
+    },
+    {
+      "case": "scalar100",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\scalar100.ndjson",
+      "exit_code": 0,
+      "timed_out": false,
+      "complete": true,
+      "validation": [
+        {
+          "success": true,
+          "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+          "kind": "validation"
+        }
+      ],
+      "contracts": [],
+      "formal_measurements": 0
+    },
+    {
+      "case": "tables32",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\tables32.ndjson",
+      "exit_code": 0,
+      "timed_out": false,
+      "complete": true,
+      "validation": [
+        {
+          "success": true,
+          "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+          "kind": "validation"
+        }
+      ],
+      "contracts": [],
+      "formal_measurements": 0
+    },
+    {
+      "case": "complex",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\complex.ndjson",
+      "exit_code": 0,
+      "timed_out": false,
+      "complete": true,
+      "validation": [
+        {
+          "success": true,
+          "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+          "kind": "validation"
+        }
+      ],
+      "contracts": [],
+      "formal_measurements": 0
+    },
+    {
+      "case": "dimensions",
+      "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\dimensions.ndjson",
+      "exit_code": 0,
+      "timed_out": false,
+      "complete": true,
+      "validation": [
+        {
+          "success": true,
+          "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+          "kind": "validation"
+        }
+      ],
+      "contracts": [],
+      "formal_measurements": 0
+    }
+  ],
+  "smoke_wrapper_note": "All six Player invocations succeeded. The outer PowerShell command reported a trailing log-redirection syntax error after completion; unity-smoke.log was reconstructed from the untouched Player outputs and process receipts. No Player was rerun."
+}

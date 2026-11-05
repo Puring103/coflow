@@ -1,0 +1,5 @@
+schema: schema.cft
+codegen:
+  - language: csharp
+    dir: generated
+    namespace: Coflow.Benchmarks.Generated.complex

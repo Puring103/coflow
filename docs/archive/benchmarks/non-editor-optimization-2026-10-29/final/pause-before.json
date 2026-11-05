@@ -1,0 +1,4 @@
+{
+  "id": "rust-main-100k-r2-baseline",
+  "reason": "Pause only before a benchmark process starts, to validate the remaining membership-check hotspot"
+}

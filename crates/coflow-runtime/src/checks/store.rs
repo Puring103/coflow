@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::data_model::{CfdDataModel, CfdRecordHandle};
 use coflow_checker::{CheckDiagnostic, CheckOutput, CheckTarget, CheckTask};
@@ -56,15 +56,16 @@ impl CheckDiagnosticStore {
         self.variants = variant_catalog(schema, model);
         self.request_diagnostics = output.request_diagnostics;
         // 先按当前模型句柄合并同一规则的各根，再一次性稳定化坐标；避免每根重复分配类型与 ID。
-        let mut rule_reads =
-            BTreeMap::<(CheckTarget, &str), BTreeSet<coflow_checker::CheckFieldRead>>::new();
+        let mut rule_reads = BTreeMap::<(CheckTarget, &str), coflow_checker::CheckReadSet>::new();
         for result in output.results {
             self.reads.tracked &= result.reads.is_tracked();
             if let Some(statement) = schema.check_statement(result.task.statement) {
-                rule_reads
+                let reads = rule_reads
                     .entry((result.task.target.clone(), statement.info.rule_id.as_str()))
-                    .or_default()
-                    .extend(result.reads.fields);
+                    .or_default();
+                // 同一规则的所有根共同决定后续失效，集合读取不能因没有元素而丢失。
+                reads.fields.extend(result.reads.fields);
+                reads.record_sets.extend(result.reads.record_sets);
             } else {
                 self.reads.tracked = false;
             }
@@ -90,13 +91,17 @@ impl CheckDiagnosticStore {
                 self.by_task.insert(task, diagnostics);
             }
         }
-        for ((target, rule_id), fields) in rule_reads {
+        for ((target, rule_id), observed) in rule_reads {
             let Some(target) = stable_target(model, &target) else {
                 self.reads.tracked = false;
                 continue;
             };
-            let mut reads = StoredRuleReads::default();
-            for read in fields {
+            let mut reads = StoredRuleReads {
+                record_sets: (!observed.record_sets.is_empty())
+                    .then(|| Box::new(observed.record_sets)),
+                ..StoredRuleReads::default()
+            };
+            for read in observed.fields {
                 if let Some(record) = model.record(read.record) {
                     reads.fields.insert(StableFieldRead {
                         key: StableFieldKey {
@@ -207,15 +212,8 @@ impl CheckDiagnosticStore {
         model: &CfdDataModel,
         impact: &super::impact::CheckImpact,
     ) -> Option<Vec<CheckTask>> {
-        // 成员/未知字段集合改变保留静态扩大失效；普通字段更新只访问实际读取者反向索引。
-        if !self.reads.tracked
-            || self.model.is_none()
-            || !impact.record_sets.is_empty()
-            || impact
-                .records
-                .values()
-                .any(|change| matches!(change, super::impact::ChangedRecordFields::All))
-        {
+        // 完整读取图同时覆盖字段、记录和集合；未知/中断读取仍保留静态规划路径。
+        if !self.reads.tracked || self.model.is_none() {
             return None;
         }
         let mut tasks = Vec::new();

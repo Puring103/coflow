@@ -1,0 +1,126 @@
+{
+  "protocol_version": 1,
+  "suite": "cli_matrix",
+  "started_at_utc": "2026-10-28T22:12:26.032Z",
+  "config": {
+    "records": 10000,
+    "files": 10,
+    "fields": 100,
+    "samples": 1,
+    "warmups": 0,
+    "batch": 1000,
+    "variants": 1,
+    "coverage": "sparse",
+    "topology": "sparse",
+    "timeout_ms": 120000
+  },
+  "cli": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\coflow.exe",
+  "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+  "tool_sha256": "1897c9d6e2d01306cf0280f20820fbfe3a153922f8100ce808c31630bef54dfe",
+  "environment": {
+    "platform": "win32",
+    "architecture": "x64",
+    "node": "v22.23.4",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "logical_cpus": 20,
+    "total_memory_bytes": 34190790656
+  },
+  "timing": "Independent CLI process spawn through close and stdout collection; fixture generation/reset, input construction, JSON parsing and correctness checks excluded. Filesystem cache is warm; no OS cache eviction.",
+  "validation": "Every sample validates exit/status, operation results and fresh CLI semantic queries. Nonpublishing cases compare the entire selected input path/content fingerprint, including added/deleted matching files. Each case ends with full check --rules. Original fixture is restored before each mutating sample.",
+  "memory": {
+    "collected": false,
+    "reason": "Node parent memory does not represent the CLI child. No child working-set sampler is included."
+  },
+  "metrics": [
+    {
+      "metric": "data_get",
+      "records": 10000,
+      "files": 10,
+      "fields": 100,
+      "fixture_sha256": "4dce6782dc7e4371d3b38c9379581a1db9fcaf08160a4582206d9e1e970e91cb",
+      "source_bytes": 12327865,
+      "samples_ms": [
+        1333.9764
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 1333.9764,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1479,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "74602016a167bdea5e64a3c1c324b07e4ea0ee4ab81580fddb0ff734ca914053",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "get",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--fields",
+            "value,name,description"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 1333.9764,
+      "p95_ms": null,
+      "min_ms": 1333.9764,
+      "max_ms": 1333.9764
+    },
+    {
+      "metric": "set_field",
+      "records": 10000,
+      "files": 10,
+      "fields": 100,
+      "fixture_sha256": "4dce6782dc7e4371d3b38c9379581a1db9fcaf08160a4582206d9e1e970e91cb",
+      "source_bytes": 12327865,
+      "samples_ms": [
+        60552.8879
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 60552.8879,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 6165,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "cdd6898d770c870c62fb6a65481d1aeadc5bc832c9756f3d81685c7e78e15eac",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "set",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--path",
+            "value",
+            "--value-cfd",
+            "1000000"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 60552.8879,
+      "p95_ms": null,
+      "min_ms": 60552.8879,
+      "max_ms": 60552.8879
+    }
+  ],
+  "completed_at_utc": "2026-10-28T22:13:35.274Z",
+  "success": true
+}

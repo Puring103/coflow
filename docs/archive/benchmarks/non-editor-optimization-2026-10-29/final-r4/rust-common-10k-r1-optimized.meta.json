@@ -1,0 +1,46 @@
+{
+  "id": "rust-common-10k-r1-optimized",
+  "spec": {
+    "id": "rust-common-10k-r1-optimized",
+    "scenario": "rust-common-10k",
+    "round": 1,
+    "arm": "optimized",
+    "group": "rust",
+    "arguments": [],
+    "timeout_seconds": 1800,
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+    "environment": {
+      "MATRIX_RECORDS": "10000",
+      "MATRIX_FILES": "10",
+      "MATRIX_FIELDS": "20",
+      "MATRIX_SAMPLES": "1",
+      "MATRIX_WARMUPS": "0",
+      "MATRIX_BATCH": "1000",
+      "MATRIX_COLLECTION": "8",
+      "MATRIX_VARIANTS": "1",
+      "MATRIX_STRIDE": "100",
+      "MATRIX_TOPOLOGY": "ring",
+      "MATRIX_TEMPLATES": "1",
+      "MATRIX_QUERY_BATCH": "1000",
+      "MATRIX_CASES": "load_checks,load_no_checks,set_scalar,set_noop,batch_grouped,batch_interleaved,insert_record,delete_record,rename_record,transfer_record,refresh_same"
+    }
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "sha256": "6B12B7D87C805F08E7EF50071A87E0C458A275D2CD1D48AB4B85CFBB9A30EEF9"
+    }
+  ],
+  "started_at": "2026-10-29T03:52:19.6786890+08:00",
+  "process_id": 8332,
+  "wall_seconds": 21.1111116,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 454909952,
+  "process_memory_samples": 185,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

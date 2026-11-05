@@ -1,0 +1,1413 @@
+{
+  "method": "Three serial independent same-round fixture-matched pairs per operation, AB/BA/AB by round. Each datum is one direct coflow.exe OS cumulative peak, sampled approximately every 100ms with best-effort startup/exit observations. Absolute targets use the arithmetic median of optimized peaks from the three valid pairs; relative targets use the ratio of optimized/baseline medians from those same pairs. Per-round values and full ranges are retained. Any missing/invalid/null-count process prevents that operation from passing. Decimal MB/GB. No latency distribution or allocation/retained-heap inference.",
+  "evidence_directory": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\cli-memory-r4",
+  "expected_sampled_processes": 24,
+  "observed_process_metadata": 24,
+  "valid_sampled_processes": 24,
+  "expected_fixture_verifications": 12,
+  "passed_fixture_verifications": 12,
+  "cli_artifacts": {
+    "baseline": {
+      "expected_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "observed_sha256": [
+        "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae"
+      ]
+    },
+    "optimized": {
+      "expected_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "observed_sha256": [
+        "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027"
+      ]
+    }
+  },
+  "round_order": [
+    {
+      "round": 1,
+      "expected": [
+        "baseline",
+        "optimized"
+      ],
+      "complete": true,
+      "observed_order_matches": true
+    },
+    {
+      "round": 2,
+      "expected": [
+        "optimized",
+        "baseline"
+      ],
+      "complete": true,
+      "observed_order_matches": true
+    },
+    {
+      "round": 3,
+      "expected": [
+        "baseline",
+        "optimized"
+      ],
+      "complete": true,
+      "observed_order_matches": true
+    }
+  ],
+  "counts": {
+    "passed": 0,
+    "not_met": 4,
+    "insufficient_evidence": 0
+  },
+  "results": [
+    {
+      "id": "cli-memory-10000-set",
+      "records": 10000,
+      "operation": "set",
+      "paired_rounds": 3,
+      "baseline_median_bytes": 1200218112,
+      "optimized_median_bytes": 744198144,
+      "baseline_range_bytes": {
+        "min": 1200050176,
+        "max": 1200259072
+      },
+      "optimized_range_bytes": {
+        "min": 744181760,
+        "max": 744210432
+      },
+      "paired_peak_ratio": 0.6200524192722731,
+      "criteria": [
+        {
+          "kind": "absolute",
+          "unit": "bytes",
+          "limit": 500000000,
+          "observed": 744198144,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 276,
+            "text": "| P2：CLI 进程内存 | 万条写入/批次观测峰值约 1.20 GB；十万条读取/检查约 2.28 GB | 同口径分别 ≤500 MB / ≤1.2 GB，重复采样确认 | 减少全量 DTO/JSON 副本、候选输入复制及加载中间表示；按阶段记录峰值 |"
+          },
+          "status": "not_met"
+        },
+        {
+          "kind": "relative",
+          "unit": "optimized/baseline",
+          "limit": 1.05,
+          "observed": 0.6200524192722731,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 298,
+            "text": "同值/预览和安全千项批次使用上表之前的专项预算；各操作仍分别保留实际影响数量和正确性结果，不能用族内较快操作代替较慢操作通过。恢复预算只适用于工具的局部错误夹具，模板级联与节点预算拒绝按 P0 专项验收。内存目标除已给出的 C# 分配/保留预算外，先要求各自口径的峰值不回归超过 5%，再由阶段分配剖析设定削减量。"
+          },
+          "status": "passed"
+        }
+      ],
+      "pairs": [
+        {
+          "round": 1,
+          "valid": true,
+          "baseline_bytes": 1200050176,
+          "optimized_bytes": 744198144,
+          "ratio": 0.620139189913339,
+          "baseline_source": "r1-baseline/10000/cli-memory-10000-set.meta.json",
+          "optimized_source": "r1-optimized/10000/cli-memory-10000-set.meta.json",
+          "problems": []
+        },
+        {
+          "round": 2,
+          "valid": true,
+          "baseline_bytes": 1200259072,
+          "optimized_bytes": 744181760,
+          "ratio": 0.6200176089983347,
+          "baseline_source": "r2-baseline/10000/cli-memory-10000-set.meta.json",
+          "optimized_source": "r2-optimized/10000/cli-memory-10000-set.meta.json",
+          "problems": []
+        },
+        {
+          "round": 3,
+          "valid": true,
+          "baseline_bytes": 1200218112,
+          "optimized_bytes": 744210432,
+          "ratio": 0.6200626574113889,
+          "baseline_source": "r3-baseline/10000/cli-memory-10000-set.meta.json",
+          "optimized_source": "r3-optimized/10000/cli-memory-10000-set.meta.json",
+          "problems": []
+        }
+      ],
+      "status": "not_met"
+    },
+    {
+      "id": "cli-memory-10000-batch",
+      "records": 10000,
+      "operation": "batch",
+      "paired_rounds": 3,
+      "baseline_median_bytes": 1203716096,
+      "optimized_median_bytes": 770416640,
+      "baseline_range_bytes": {
+        "min": 1203625984,
+        "max": 1207095296
+      },
+      "optimized_range_bytes": {
+        "min": 769613824,
+        "max": 771297280
+      },
+      "paired_peak_ratio": 0.6400318501680982,
+      "criteria": [
+        {
+          "kind": "absolute",
+          "unit": "bytes",
+          "limit": 500000000,
+          "observed": 770416640,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 276,
+            "text": "| P2：CLI 进程内存 | 万条写入/批次观测峰值约 1.20 GB；十万条读取/检查约 2.28 GB | 同口径分别 ≤500 MB / ≤1.2 GB，重复采样确认 | 减少全量 DTO/JSON 副本、候选输入复制及加载中间表示；按阶段记录峰值 |"
+          },
+          "status": "not_met"
+        },
+        {
+          "kind": "relative",
+          "unit": "optimized/baseline",
+          "limit": 1.05,
+          "observed": 0.6400318501680982,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 298,
+            "text": "同值/预览和安全千项批次使用上表之前的专项预算；各操作仍分别保留实际影响数量和正确性结果，不能用族内较快操作代替较慢操作通过。恢复预算只适用于工具的局部错误夹具，模板级联与节点预算拒绝按 P0 专项验收。内存目标除已给出的 C# 分配/保留预算外，先要求各自口径的峰值不回归超过 5%，再由阶段分配剖析设定削减量。"
+          },
+          "status": "passed"
+        }
+      ],
+      "pairs": [
+        {
+          "round": 1,
+          "valid": true,
+          "baseline_bytes": 1207095296,
+          "optimized_bytes": 771297280,
+          "ratio": 0.6389696675613588,
+          "baseline_source": "r1-baseline/10000/cli-memory-10000-batch.meta.json",
+          "optimized_source": "r1-optimized/10000/cli-memory-10000-batch.meta.json",
+          "problems": []
+        },
+        {
+          "round": 2,
+          "valid": true,
+          "baseline_bytes": 1203625984,
+          "optimized_bytes": 770416640,
+          "ratio": 0.6400797675035902,
+          "baseline_source": "r2-baseline/10000/cli-memory-10000-batch.meta.json",
+          "optimized_source": "r2-optimized/10000/cli-memory-10000-batch.meta.json",
+          "problems": []
+        },
+        {
+          "round": 3,
+          "valid": true,
+          "baseline_bytes": 1203716096,
+          "optimized_bytes": 769613824,
+          "ratio": 0.6393649022036505,
+          "baseline_source": "r3-baseline/10000/cli-memory-10000-batch.meta.json",
+          "optimized_source": "r3-optimized/10000/cli-memory-10000-batch.meta.json",
+          "problems": []
+        }
+      ],
+      "status": "not_met"
+    },
+    {
+      "id": "cli-memory-100000-get",
+      "records": 100000,
+      "operation": "get",
+      "paired_rounds": 3,
+      "baseline_median_bytes": 2277273600,
+      "optimized_median_bytes": 2280759296,
+      "baseline_range_bytes": {
+        "min": 2277273600,
+        "max": 2277326848
+      },
+      "optimized_range_bytes": {
+        "min": 2280579072,
+        "max": 2280775680
+      },
+      "paired_peak_ratio": 1.0015306443635055,
+      "criteria": [
+        {
+          "kind": "absolute",
+          "unit": "bytes",
+          "limit": 1200000000,
+          "observed": 2280759296,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 276,
+            "text": "| P2：CLI 进程内存 | 万条写入/批次观测峰值约 1.20 GB；十万条读取/检查约 2.28 GB | 同口径分别 ≤500 MB / ≤1.2 GB，重复采样确认 | 减少全量 DTO/JSON 副本、候选输入复制及加载中间表示；按阶段记录峰值 |"
+          },
+          "status": "not_met"
+        },
+        {
+          "kind": "relative",
+          "unit": "optimized/baseline",
+          "limit": 1.05,
+          "observed": 1.0015306443635055,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 298,
+            "text": "同值/预览和安全千项批次使用上表之前的专项预算；各操作仍分别保留实际影响数量和正确性结果，不能用族内较快操作代替较慢操作通过。恢复预算只适用于工具的局部错误夹具，模板级联与节点预算拒绝按 P0 专项验收。内存目标除已给出的 C# 分配/保留预算外，先要求各自口径的峰值不回归超过 5%，再由阶段分配剖析设定削减量。"
+          },
+          "status": "passed"
+        }
+      ],
+      "pairs": [
+        {
+          "round": 1,
+          "valid": true,
+          "baseline_bytes": 2277273600,
+          "optimized_bytes": 2280579072,
+          "ratio": 1.0014515041143937,
+          "baseline_source": "r1-baseline/100000/cli-memory-100000-get.meta.json",
+          "optimized_source": "r1-optimized/100000/cli-memory-100000-get.meta.json",
+          "problems": []
+        },
+        {
+          "round": 2,
+          "valid": true,
+          "baseline_bytes": 2277326848,
+          "optimized_bytes": 2280759296,
+          "ratio": 1.0015072267746785,
+          "baseline_source": "r2-baseline/100000/cli-memory-100000-get.meta.json",
+          "optimized_source": "r2-optimized/100000/cli-memory-100000-get.meta.json",
+          "problems": []
+        },
+        {
+          "round": 3,
+          "valid": true,
+          "baseline_bytes": 2277273600,
+          "optimized_bytes": 2280775680,
+          "ratio": 1.0015378389316065,
+          "baseline_source": "r3-baseline/100000/cli-memory-100000-get.meta.json",
+          "optimized_source": "r3-optimized/100000/cli-memory-100000-get.meta.json",
+          "problems": []
+        }
+      ],
+      "status": "not_met"
+    },
+    {
+      "id": "cli-memory-100000-check",
+      "records": 100000,
+      "operation": "check",
+      "paired_rounds": 3,
+      "baseline_median_bytes": 2277232640,
+      "optimized_median_bytes": 2280681472,
+      "baseline_range_bytes": {
+        "min": 2276950016,
+        "max": 2277253120
+      },
+      "optimized_range_bytes": {
+        "min": 2280644608,
+        "max": 2280730624
+      },
+      "paired_peak_ratio": 1.0015144838254206,
+      "criteria": [
+        {
+          "kind": "absolute",
+          "unit": "bytes",
+          "limit": 1200000000,
+          "observed": 2280681472,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 276,
+            "text": "| P2：CLI 进程内存 | 万条写入/批次观测峰值约 1.20 GB；十万条读取/检查约 2.28 GB | 同口径分别 ≤500 MB / ≤1.2 GB，重复采样确认 | 减少全量 DTO/JSON 副本、候选输入复制及加载中间表示；按阶段记录峰值 |"
+          },
+          "status": "not_met"
+        },
+        {
+          "kind": "relative",
+          "unit": "optimized/baseline",
+          "limit": 1.05,
+          "observed": 1.0015144838254206,
+          "budget_source": {
+            "path": "docs/archive/benchmarks/non-editor-2026-10-28/README.md",
+            "line": 298,
+            "text": "同值/预览和安全千项批次使用上表之前的专项预算；各操作仍分别保留实际影响数量和正确性结果，不能用族内较快操作代替较慢操作通过。恢复预算只适用于工具的局部错误夹具，模板级联与节点预算拒绝按 P0 专项验收。内存目标除已给出的 C# 分配/保留预算外，先要求各自口径的峰值不回归超过 5%，再由阶段分配剖析设定削减量。"
+          },
+          "status": "passed"
+        }
+      ],
+      "pairs": [
+        {
+          "round": 1,
+          "valid": true,
+          "baseline_bytes": 2276950016,
+          "optimized_bytes": 2280644608,
+          "ratio": 1.001622605667247,
+          "baseline_source": "r1-baseline/100000/cli-memory-100000-check.meta.json",
+          "optimized_source": "r1-optimized/100000/cli-memory-100000-check.meta.json",
+          "problems": []
+        },
+        {
+          "round": 2,
+          "valid": true,
+          "baseline_bytes": 2277232640,
+          "optimized_bytes": 2280681472,
+          "ratio": 1.0015144838254206,
+          "baseline_source": "r2-baseline/100000/cli-memory-100000-check.meta.json",
+          "optimized_source": "r2-optimized/100000/cli-memory-100000-check.meta.json",
+          "problems": []
+        },
+        {
+          "round": 3,
+          "valid": true,
+          "baseline_bytes": 2277253120,
+          "optimized_bytes": 2280730624,
+          "ratio": 1.0015270608126339,
+          "baseline_source": "r3-baseline/100000/cli-memory-100000-check.meta.json",
+          "optimized_source": "r3-optimized/100000/cli-memory-100000-check.meta.json",
+          "problems": []
+        }
+      ],
+      "status": "not_met"
+    }
+  ],
+  "observations": [
+    {
+      "round": 1,
+      "arm": "baseline",
+      "records": 10000,
+      "operation": "set",
+      "source": "r1-baseline/10000/cli-memory-10000-set.meta.json",
+      "metadata_present": true,
+      "process_id": 1740,
+      "started_at": "2026-10-29T07:18:53.8216125+08:00",
+      "wall_seconds": 22.1444425,
+      "peak_bytes": 1200050176,
+      "process_memory_samples": 200,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "baseline",
+      "records": 10000,
+      "operation": "batch",
+      "source": "r1-baseline/10000/cli-memory-10000-batch.meta.json",
+      "metadata_present": true,
+      "process_id": 780,
+      "started_at": "2026-10-29T07:19:16.7520697+08:00",
+      "wall_seconds": 48.6384321,
+      "peak_bytes": 1207095296,
+      "process_memory_samples": 434,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "baseline",
+      "records": 100000,
+      "operation": "get",
+      "source": "r1-baseline/100000/cli-memory-100000-get.meta.json",
+      "metadata_present": true,
+      "process_id": 32068,
+      "started_at": "2026-10-29T07:20:07.1841930+08:00",
+      "wall_seconds": 5.4422434,
+      "peak_bytes": 2277273600,
+      "process_memory_samples": 47,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "baseline",
+      "records": 100000,
+      "operation": "check",
+      "source": "r1-baseline/100000/cli-memory-100000-check.meta.json",
+      "metadata_present": true,
+      "process_id": 32664,
+      "started_at": "2026-10-29T07:20:13.0486762+08:00",
+      "wall_seconds": 4.695171,
+      "peak_bytes": 2276950016,
+      "process_memory_samples": 42,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "optimized",
+      "records": 10000,
+      "operation": "set",
+      "source": "r1-optimized/10000/cli-memory-10000-set.meta.json",
+      "metadata_present": true,
+      "process_id": 30344,
+      "started_at": "2026-10-29T07:20:23.0349371+08:00",
+      "wall_seconds": 2.3312798,
+      "peak_bytes": 744198144,
+      "process_memory_samples": 19,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "optimized",
+      "records": 10000,
+      "operation": "batch",
+      "source": "r1-optimized/10000/cli-memory-10000-batch.meta.json",
+      "metadata_present": true,
+      "process_id": 29740,
+      "started_at": "2026-10-29T07:20:26.1830009+08:00",
+      "wall_seconds": 2.574928,
+      "peak_bytes": 771297280,
+      "process_memory_samples": 24,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "optimized",
+      "records": 100000,
+      "operation": "get",
+      "source": "r1-optimized/100000/cli-memory-100000-get.meta.json",
+      "metadata_present": true,
+      "process_id": 32136,
+      "started_at": "2026-10-29T07:20:30.5679542+08:00",
+      "wall_seconds": 5.5244658,
+      "peak_bytes": 2280579072,
+      "process_memory_samples": 50,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 1,
+      "arm": "optimized",
+      "records": 100000,
+      "operation": "check",
+      "source": "r1-optimized/100000/cli-memory-100000-check.meta.json",
+      "metadata_present": true,
+      "process_id": 7516,
+      "started_at": "2026-10-29T07:20:36.4993772+08:00",
+      "wall_seconds": 4.6814753,
+      "peak_bytes": 2280644608,
+      "process_memory_samples": 42,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "baseline",
+      "records": 10000,
+      "operation": "set",
+      "source": "r2-baseline/10000/cli-memory-10000-set.meta.json",
+      "metadata_present": true,
+      "process_id": 26668,
+      "started_at": "2026-10-29T07:21:09.8246398+08:00",
+      "wall_seconds": 22.1432911,
+      "peak_bytes": 1200259072,
+      "process_memory_samples": 198,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "baseline",
+      "records": 10000,
+      "operation": "batch",
+      "source": "r2-baseline/10000/cli-memory-10000-batch.meta.json",
+      "metadata_present": true,
+      "process_id": 12720,
+      "started_at": "2026-10-29T07:21:32.7589389+08:00",
+      "wall_seconds": 48.2218052,
+      "peak_bytes": 1203625984,
+      "process_memory_samples": 426,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "baseline",
+      "records": 100000,
+      "operation": "get",
+      "source": "r2-baseline/100000/cli-memory-100000-get.meta.json",
+      "metadata_present": true,
+      "process_id": 29740,
+      "started_at": "2026-10-29T07:22:22.8092282+08:00",
+      "wall_seconds": 5.5785579,
+      "peak_bytes": 2277326848,
+      "process_memory_samples": 50,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "baseline",
+      "records": 100000,
+      "operation": "check",
+      "source": "r2-baseline/100000/cli-memory-100000-check.meta.json",
+      "metadata_present": true,
+      "process_id": 26028,
+      "started_at": "2026-10-29T07:22:28.7993286+08:00",
+      "wall_seconds": 4.6772824,
+      "peak_bytes": 2277232640,
+      "process_memory_samples": 43,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "optimized",
+      "records": 10000,
+      "operation": "set",
+      "source": "r2-optimized/10000/cli-memory-10000-set.meta.json",
+      "metadata_present": true,
+      "process_id": 13384,
+      "started_at": "2026-10-29T07:20:46.5182810+08:00",
+      "wall_seconds": 2.2993229,
+      "peak_bytes": 744181760,
+      "process_memory_samples": 20,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "optimized",
+      "records": 10000,
+      "operation": "batch",
+      "source": "r2-optimized/10000/cli-memory-10000-batch.meta.json",
+      "metadata_present": true,
+      "process_id": 32288,
+      "started_at": "2026-10-29T07:20:49.6350048+08:00",
+      "wall_seconds": 2.5848776,
+      "peak_bytes": 770416640,
+      "process_memory_samples": 23,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "optimized",
+      "records": 100000,
+      "operation": "get",
+      "source": "r2-optimized/100000/cli-memory-100000-get.meta.json",
+      "metadata_present": true,
+      "process_id": 17376,
+      "started_at": "2026-10-29T07:20:54.0250972+08:00",
+      "wall_seconds": 5.4354048,
+      "peak_bytes": 2280759296,
+      "process_memory_samples": 49,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 2,
+      "arm": "optimized",
+      "records": 100000,
+      "operation": "check",
+      "source": "r2-optimized/100000/cli-memory-100000-check.meta.json",
+      "metadata_present": true,
+      "process_id": 29716,
+      "started_at": "2026-10-29T07:20:59.8606348+08:00",
+      "wall_seconds": 4.68532,
+      "peak_bytes": 2280681472,
+      "process_memory_samples": 40,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "baseline",
+      "records": 10000,
+      "operation": "set",
+      "source": "r3-baseline/10000/cli-memory-10000-set.meta.json",
+      "metadata_present": true,
+      "process_id": 4244,
+      "started_at": "2026-10-29T07:22:38.7446484+08:00",
+      "wall_seconds": 21.9341739,
+      "peak_bytes": 1200218112,
+      "process_memory_samples": 195,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "baseline",
+      "records": 10000,
+      "operation": "batch",
+      "source": "r3-baseline/10000/cli-memory-10000-batch.meta.json",
+      "metadata_present": true,
+      "process_id": 26524,
+      "started_at": "2026-10-29T07:23:01.4619862+08:00",
+      "wall_seconds": 48.2193673,
+      "peak_bytes": 1203716096,
+      "process_memory_samples": 428,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "baseline",
+      "records": 100000,
+      "operation": "get",
+      "source": "r3-baseline/100000/cli-memory-100000-get.meta.json",
+      "metadata_present": true,
+      "process_id": 22500,
+      "started_at": "2026-10-29T07:23:51.4688700+08:00",
+      "wall_seconds": 5.386389,
+      "peak_bytes": 2277273600,
+      "process_memory_samples": 49,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "baseline",
+      "records": 100000,
+      "operation": "check",
+      "source": "r3-baseline/100000/cli-memory-100000-check.meta.json",
+      "metadata_present": true,
+      "process_id": 21024,
+      "started_at": "2026-10-29T07:23:57.2645413+08:00",
+      "wall_seconds": 4.6776891,
+      "peak_bytes": 2277253120,
+      "process_memory_samples": 40,
+      "process_memory_sample_errors": 2,
+      "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "optimized",
+      "records": 10000,
+      "operation": "set",
+      "source": "r3-optimized/10000/cli-memory-10000-set.meta.json",
+      "metadata_present": true,
+      "process_id": 31468,
+      "started_at": "2026-10-29T07:24:07.2494452+08:00",
+      "wall_seconds": 2.3160773,
+      "peak_bytes": 744210432,
+      "process_memory_samples": 20,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "optimized",
+      "records": 10000,
+      "operation": "batch",
+      "source": "r3-optimized/10000/cli-memory-10000-batch.meta.json",
+      "metadata_present": true,
+      "process_id": 26452,
+      "started_at": "2026-10-29T07:24:10.3759414+08:00",
+      "wall_seconds": 2.5863033,
+      "peak_bytes": 769613824,
+      "process_memory_samples": 21,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "optimized",
+      "records": 100000,
+      "operation": "get",
+      "source": "r3-optimized/100000/cli-memory-100000-get.meta.json",
+      "metadata_present": true,
+      "process_id": 31232,
+      "started_at": "2026-10-29T07:24:14.7754766+08:00",
+      "wall_seconds": 5.5101436,
+      "peak_bytes": 2280775680,
+      "process_memory_samples": 50,
+      "process_memory_sample_errors": 2,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    },
+    {
+      "round": 3,
+      "arm": "optimized",
+      "records": 100000,
+      "operation": "check",
+      "source": "r3-optimized/100000/cli-memory-100000-check.meta.json",
+      "metadata_present": true,
+      "process_id": 6432,
+      "started_at": "2026-10-29T07:24:20.6942687+08:00",
+      "wall_seconds": 4.6890706,
+      "peak_bytes": 2280730624,
+      "process_memory_samples": 43,
+      "process_memory_sample_errors": 1,
+      "cli_sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "verification_status": "passed",
+      "problems": [],
+      "valid": true
+    }
+  ],
+  "fixture_verifications": [
+    {
+      "round": 1,
+      "arm": "baseline",
+      "records": 10000,
+      "path": "r1-baseline/10000",
+      "verification_status": "passed",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "config": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 1,
+      "arm": "baseline",
+      "records": 100000,
+      "path": "r1-baseline/100000",
+      "verification_status": "passed",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "config": {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 1,
+      "arm": "optimized",
+      "records": 10000,
+      "path": "r1-optimized/10000",
+      "verification_status": "passed",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "config": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 1,
+      "arm": "optimized",
+      "records": 100000,
+      "path": "r1-optimized/100000",
+      "verification_status": "passed",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "config": {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 2,
+      "arm": "baseline",
+      "records": 10000,
+      "path": "r2-baseline/10000",
+      "verification_status": "passed",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "config": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 2,
+      "arm": "baseline",
+      "records": 100000,
+      "path": "r2-baseline/100000",
+      "verification_status": "passed",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "config": {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 2,
+      "arm": "optimized",
+      "records": 10000,
+      "path": "r2-optimized/10000",
+      "verification_status": "passed",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "config": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 2,
+      "arm": "optimized",
+      "records": 100000,
+      "path": "r2-optimized/100000",
+      "verification_status": "passed",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "config": {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 3,
+      "arm": "baseline",
+      "records": 10000,
+      "path": "r3-baseline/10000",
+      "verification_status": "passed",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "config": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 3,
+      "arm": "baseline",
+      "records": 100000,
+      "path": "r3-baseline/100000",
+      "verification_status": "passed",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "config": {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 3,
+      "arm": "optimized",
+      "records": 10000,
+      "path": "r3-optimized/10000",
+      "verification_status": "passed",
+      "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+      "source_bytes": 3602385,
+      "config": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    },
+    {
+      "round": 3,
+      "arm": "optimized",
+      "records": 100000,
+      "path": "r3-optimized/100000",
+      "verification_status": "passed",
+      "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+      "source_bytes": 37424451,
+      "config": {
+        "records": 100000,
+        "files": 100,
+        "fields": 20,
+        "samples": 3,
+        "warmups": 1,
+        "batch": 1000,
+        "variants": 1,
+        "coverage": "sparse",
+        "topology": "sparse",
+        "timeout_ms": 300000
+      },
+      "problems": []
+    }
+  ],
+  "issues": [],
+  "inputs": [
+    {
+      "path": "r1-baseline/10000/cli-memory-10000-fixture.json",
+      "sha256": "f81668f031ab187b74f08051427ff98aa1d64d4acdd2e13a8c7bb8aa72dfdbf8"
+    },
+    {
+      "path": "r1-baseline/10000/cli-memory-10000-verification.json",
+      "sha256": "8d724deb0382c32e7a4e72cb78a1c0ed64aa3732ec74fd2b12abb7cb16731298"
+    },
+    {
+      "path": "r1-baseline/10000/cli-memory-10000-set.meta.json",
+      "sha256": "8864770224f31170cfa6f76558b3d03d2543cb15dd494f286434034fad6be758"
+    },
+    {
+      "path": "r1-baseline/10000/cli-memory-10000-set.stdout.ndjson",
+      "sha256": "0dde06d2e2a24da33cea1c2800f84ab2dbdaab7790d042ed53255fcfc218c6c9"
+    },
+    {
+      "path": "r1-baseline/10000/cli-memory-10000-batch.meta.json",
+      "sha256": "3a8b0c1f5c68c796592d04ad5ad04aba6678d68ff14b7987d40ab16f25a5165c"
+    },
+    {
+      "path": "r1-baseline/10000/cli-memory-10000-batch.stdout.ndjson",
+      "sha256": "a0b1db70cdf80e3b427751c9417978d3e99a3b76caa20fdfb626659e2179a4bc"
+    },
+    {
+      "path": "r1-baseline/100000/cli-memory-100000-fixture.json",
+      "sha256": "d77c839f0a6e1fba5b08bbc6962a9efdfb8f1bb041a92254a50874f680cf84c0"
+    },
+    {
+      "path": "r1-baseline/100000/cli-memory-100000-verification.json",
+      "sha256": "ffb03445d3f3f77f4b75143a61b11ad6e85d7f2fb3560553ff5c1db92efce480"
+    },
+    {
+      "path": "r1-baseline/100000/cli-memory-100000-get.meta.json",
+      "sha256": "3a1581ec4b358172bc4938f406ed70ebbd13666353af060f04d07a0f98035597"
+    },
+    {
+      "path": "r1-baseline/100000/cli-memory-100000-get.stdout.ndjson",
+      "sha256": "57e92e3f448c9ad30fdc0241b192db85199d89845d337e1208eedc686cb54070"
+    },
+    {
+      "path": "r1-baseline/100000/cli-memory-100000-check.meta.json",
+      "sha256": "82e436c57460d9a578b093de1fe10ce141a6ee29a5ab32d3415ff7eaa05d112b"
+    },
+    {
+      "path": "r1-baseline/100000/cli-memory-100000-check.stdout.ndjson",
+      "sha256": "1144fe0ed5010422ea9a4ce7c74971976b55cf8f8c9ffe5015ac58fa7ce7df60"
+    },
+    {
+      "path": "r1-optimized/10000/cli-memory-10000-fixture.json",
+      "sha256": "fdd73f3bc8c12950075f085efafac6147a912e380ffaf9613cbf2571e8301777"
+    },
+    {
+      "path": "r1-optimized/10000/cli-memory-10000-verification.json",
+      "sha256": "c12f2a85cde5a911792766fadb6b1ad88cd414bdaefc3399310c9d1b02c5b409"
+    },
+    {
+      "path": "r1-optimized/10000/cli-memory-10000-set.meta.json",
+      "sha256": "9cc42aea87495ba5fa1776dd8530a1c4ece409d8f9741d344f41ac32814859f1"
+    },
+    {
+      "path": "r1-optimized/10000/cli-memory-10000-set.stdout.ndjson",
+      "sha256": "7321da617b2ca805fe96b39c8c34384bfd6a3fc9b4126ab077551c821fa02a1d"
+    },
+    {
+      "path": "r1-optimized/10000/cli-memory-10000-batch.meta.json",
+      "sha256": "b0be053e23d12eed599bc52f86f6bcb0e59e40834396c8fc54eec940a05b9813"
+    },
+    {
+      "path": "r1-optimized/10000/cli-memory-10000-batch.stdout.ndjson",
+      "sha256": "44694977a97e6f46ce5f5a5fbfb00a88a3c4d86c5d265a315a557b8975796ca5"
+    },
+    {
+      "path": "r1-optimized/100000/cli-memory-100000-fixture.json",
+      "sha256": "58a7003310cfc059723e20978c2d28b036a882093dfc07e64b5c8bfd5fe93076"
+    },
+    {
+      "path": "r1-optimized/100000/cli-memory-100000-verification.json",
+      "sha256": "43cc1e3122efba4cfb09d7a1449e4a1a625fa101dd32de7062284fe675db430f"
+    },
+    {
+      "path": "r1-optimized/100000/cli-memory-100000-get.meta.json",
+      "sha256": "1fc6b030a0b21987f8f63075736bcdf02f420513b956b419cf5b26df80beba7d"
+    },
+    {
+      "path": "r1-optimized/100000/cli-memory-100000-get.stdout.ndjson",
+      "sha256": "a856884e8825a7629c44b5751fab23c15df8d0ff5f3d22cbf7e7acfd932e782a"
+    },
+    {
+      "path": "r1-optimized/100000/cli-memory-100000-check.meta.json",
+      "sha256": "0108c1aaceefde151e604f5e72ba8554a79e769e283d80ea92277e429ee9d726"
+    },
+    {
+      "path": "r1-optimized/100000/cli-memory-100000-check.stdout.ndjson",
+      "sha256": "6d9dfcf74fc460f2fab0e24115ae3b1146c829c20de7a6bb87e266fd71af4a5e"
+    },
+    {
+      "path": "r2-baseline/10000/cli-memory-10000-fixture.json",
+      "sha256": "8cc30f9295c90bc3ee1605e1ffa6baf3adda254a2c801c201b0d03f2a33ba8e2"
+    },
+    {
+      "path": "r2-baseline/10000/cli-memory-10000-verification.json",
+      "sha256": "8d724deb0382c32e7a4e72cb78a1c0ed64aa3732ec74fd2b12abb7cb16731298"
+    },
+    {
+      "path": "r2-baseline/10000/cli-memory-10000-set.meta.json",
+      "sha256": "4c9d975af9fd83d330bf42132472b07b926360bd6b13cbf3eeb07c4b19af5512"
+    },
+    {
+      "path": "r2-baseline/10000/cli-memory-10000-set.stdout.ndjson",
+      "sha256": "bd07e7c58dbbcfc024acd97cf3a137fb593cc14cff7f92cd3c66e30dcfe9394c"
+    },
+    {
+      "path": "r2-baseline/10000/cli-memory-10000-batch.meta.json",
+      "sha256": "bf156f7ac275beba54a7729a655072ae43f9f5437ea7128017663796ede0198a"
+    },
+    {
+      "path": "r2-baseline/10000/cli-memory-10000-batch.stdout.ndjson",
+      "sha256": "530915760fb928aee5b7b07d0b71620b10e09ce7bbc8ef77613aadd02c49453d"
+    },
+    {
+      "path": "r2-baseline/100000/cli-memory-100000-fixture.json",
+      "sha256": "3fc30af8d259021ec49217f1be9b309bfd6175470311746db8051a57cff80135"
+    },
+    {
+      "path": "r2-baseline/100000/cli-memory-100000-verification.json",
+      "sha256": "ffb03445d3f3f77f4b75143a61b11ad6e85d7f2fb3560553ff5c1db92efce480"
+    },
+    {
+      "path": "r2-baseline/100000/cli-memory-100000-get.meta.json",
+      "sha256": "4bd690aa419a02a7eeb89a71b4cd98a2020120f5b9c8a53bd567a05e1259aab1"
+    },
+    {
+      "path": "r2-baseline/100000/cli-memory-100000-get.stdout.ndjson",
+      "sha256": "7017bbcba1037b87f20e58f0a95a4a66eea3f5978868acc370af08aed87de61a"
+    },
+    {
+      "path": "r2-baseline/100000/cli-memory-100000-check.meta.json",
+      "sha256": "1811dd15edff0e9b887abf2746e5f2635f73c64fcda8062b83018dc3f563d89f"
+    },
+    {
+      "path": "r2-baseline/100000/cli-memory-100000-check.stdout.ndjson",
+      "sha256": "01a02caa1c5ac2658569293277e947117e7ea2ed888610d3fb7518cf407218c8"
+    },
+    {
+      "path": "r2-optimized/10000/cli-memory-10000-fixture.json",
+      "sha256": "1306dcceae96ed10864d94823afcdbf50531bb0e1529e4ea8ebdeace24c3bfcf"
+    },
+    {
+      "path": "r2-optimized/10000/cli-memory-10000-verification.json",
+      "sha256": "c12f2a85cde5a911792766fadb6b1ad88cd414bdaefc3399310c9d1b02c5b409"
+    },
+    {
+      "path": "r2-optimized/10000/cli-memory-10000-set.meta.json",
+      "sha256": "2b52499e185acac416902672f99d2eec301126c6ee90b234e34641725c727865"
+    },
+    {
+      "path": "r2-optimized/10000/cli-memory-10000-set.stdout.ndjson",
+      "sha256": "edabf38af6859e8ffce346beb357037bace37c8498c77670ee1c39f65bd3170b"
+    },
+    {
+      "path": "r2-optimized/10000/cli-memory-10000-batch.meta.json",
+      "sha256": "1e56ec076c0e6ce692c60fd92bceff597a68a47257eb14b335e63b3291d8798f"
+    },
+    {
+      "path": "r2-optimized/10000/cli-memory-10000-batch.stdout.ndjson",
+      "sha256": "ed9bdcc3860f2162b264206bec3ccbe52747ceab6b17014ec08b6cec4e82ae38"
+    },
+    {
+      "path": "r2-optimized/100000/cli-memory-100000-fixture.json",
+      "sha256": "9f2da8f12b9623fbc89fe550ee11dcdefd906db2a05c395f9518e153e8aa7da3"
+    },
+    {
+      "path": "r2-optimized/100000/cli-memory-100000-verification.json",
+      "sha256": "43cc1e3122efba4cfb09d7a1449e4a1a625fa101dd32de7062284fe675db430f"
+    },
+    {
+      "path": "r2-optimized/100000/cli-memory-100000-get.meta.json",
+      "sha256": "5cc0669e97a71db946d08b9e9901259d743753be8b05422587624609ec14be61"
+    },
+    {
+      "path": "r2-optimized/100000/cli-memory-100000-get.stdout.ndjson",
+      "sha256": "733316c7840062c4e1a2774dded31986ff1eb64a0f54b7f8b4ac25e89377e746"
+    },
+    {
+      "path": "r2-optimized/100000/cli-memory-100000-check.meta.json",
+      "sha256": "16bae0dbe9ac5cd2bbefefe9c664c7f244e1303876fea910e92f53fe1e197815"
+    },
+    {
+      "path": "r2-optimized/100000/cli-memory-100000-check.stdout.ndjson",
+      "sha256": "ffb0fd31a7784ec5fb1b70a57030a824ff9983d81c409a16a9e51cbde4a062c8"
+    },
+    {
+      "path": "r3-baseline/10000/cli-memory-10000-fixture.json",
+      "sha256": "69e56423fed744e8c4535259450ac378e53fd148b4f059b680f282dafaf96c1b"
+    },
+    {
+      "path": "r3-baseline/10000/cli-memory-10000-verification.json",
+      "sha256": "8d724deb0382c32e7a4e72cb78a1c0ed64aa3732ec74fd2b12abb7cb16731298"
+    },
+    {
+      "path": "r3-baseline/10000/cli-memory-10000-set.meta.json",
+      "sha256": "481d8d51358eaf262363356fa8fc7ff428cff80b1fa50cebec2cc228f3386e63"
+    },
+    {
+      "path": "r3-baseline/10000/cli-memory-10000-set.stdout.ndjson",
+      "sha256": "783cb50774c9848a221834a210f173b2ec2edb0cc5b62aa2a037e7f590febbac"
+    },
+    {
+      "path": "r3-baseline/10000/cli-memory-10000-batch.meta.json",
+      "sha256": "330405390d02abe4faa1831e0006b27eccf1dd10cb51ca558e301017e1bc2d43"
+    },
+    {
+      "path": "r3-baseline/10000/cli-memory-10000-batch.stdout.ndjson",
+      "sha256": "125421d5bf77b2f65acb0c248f748a83543ef31c014cb2534dec9d65af433136"
+    },
+    {
+      "path": "r3-baseline/100000/cli-memory-100000-fixture.json",
+      "sha256": "ea4b2bf9caa600e877fc425ea08bc24877bc267d2d38721f59f855592148f8a1"
+    },
+    {
+      "path": "r3-baseline/100000/cli-memory-100000-verification.json",
+      "sha256": "ffb03445d3f3f77f4b75143a61b11ad6e85d7f2fb3560553ff5c1db92efce480"
+    },
+    {
+      "path": "r3-baseline/100000/cli-memory-100000-get.meta.json",
+      "sha256": "f33080221096e8df890e63bba3b8fca72be1d60031d007686a0f6d5119670cb5"
+    },
+    {
+      "path": "r3-baseline/100000/cli-memory-100000-get.stdout.ndjson",
+      "sha256": "c15bf495d54ede096a4d251edf5309608225a7c54aaa5437dcbfc23afc66e734"
+    },
+    {
+      "path": "r3-baseline/100000/cli-memory-100000-check.meta.json",
+      "sha256": "96bb9ee33ae503cbe37b8fb55a45e46ea7efe67a44b61634ac5f35c5f4b48755"
+    },
+    {
+      "path": "r3-baseline/100000/cli-memory-100000-check.stdout.ndjson",
+      "sha256": "7545b7305aa216dd496e0a3e040392109ed88e2b1ce0fca3f01dc9604a7c47d2"
+    },
+    {
+      "path": "r3-optimized/10000/cli-memory-10000-fixture.json",
+      "sha256": "5bf55cb989cb8bcd6ea1189766a1d8b7221b59f98f47bd89c54718d7ada78bba"
+    },
+    {
+      "path": "r3-optimized/10000/cli-memory-10000-verification.json",
+      "sha256": "c12f2a85cde5a911792766fadb6b1ad88cd414bdaefc3399310c9d1b02c5b409"
+    },
+    {
+      "path": "r3-optimized/10000/cli-memory-10000-set.meta.json",
+      "sha256": "5335a72cf0faef3db6d56b262f7a0567fa99512e2e9fba5f0b2e67aa4d124f70"
+    },
+    {
+      "path": "r3-optimized/10000/cli-memory-10000-set.stdout.ndjson",
+      "sha256": "be2ab36c12d0d357543587123d3f1c5526a6f330c081cefd052280e47994dd3b"
+    },
+    {
+      "path": "r3-optimized/10000/cli-memory-10000-batch.meta.json",
+      "sha256": "f7c7db522d4dbc297ab27a9817983a8ff5f88bcd7b02ec242e2307cd294ce8be"
+    },
+    {
+      "path": "r3-optimized/10000/cli-memory-10000-batch.stdout.ndjson",
+      "sha256": "45cc5e8ec349c4606550eb1ed623f05676f2ab7779b2cca8b233e1e13786f47d"
+    },
+    {
+      "path": "r3-optimized/100000/cli-memory-100000-fixture.json",
+      "sha256": "4046fbcf2de9b3eeacc645db1c55b9379fb599be2cb58a7c23d253bf1dfdc3ca"
+    },
+    {
+      "path": "r3-optimized/100000/cli-memory-100000-verification.json",
+      "sha256": "43cc1e3122efba4cfb09d7a1449e4a1a625fa101dd32de7062284fe675db430f"
+    },
+    {
+      "path": "r3-optimized/100000/cli-memory-100000-get.meta.json",
+      "sha256": "492b4ec0f057817399eb2d97f7832b3bb6187569bb2d377f595d9d80e441ccc6"
+    },
+    {
+      "path": "r3-optimized/100000/cli-memory-100000-get.stdout.ndjson",
+      "sha256": "ee336d8dc279eb3bd8853dd3686ba3504943ed77094834b4152e12c6beb299e5"
+    },
+    {
+      "path": "r3-optimized/100000/cli-memory-100000-check.meta.json",
+      "sha256": "ec41f9f71c287d1c182964fe6aace4f59a4518fbbf9b286006657ef54f88dd94"
+    },
+    {
+      "path": "r3-optimized/100000/cli-memory-100000-check.stdout.ndjson",
+      "sha256": "991df8d4f182963f281d5ff3edfa214c627e24b7ba3c3bd7c949cc30a375fc00"
+    }
+  ],
+  "budget_input": {
+    "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\README.md",
+    "sha256": "0d07f8c8e177dc5d674285cf8ab80e3a815a72d6c7f20f06c99e38508cefb582"
+  },
+  "limitations": [
+    "Only sampled command processes count toward 24; fixture creation and subsequent verification commands are excluded.",
+    "Last-interval process peaks can be missed; null or nonpositive measurements never become zero.",
+    "CLI hashes are checked against archived spec, measured executable input hash and verification; optional expected hashes bind the report to independently frozen artifacts.",
+    "Fixture hashes are cross-checked across the archived fixture, spec and verification; temporary source directories are removed by the measurement tool, so this report cannot rehash their historical bytes.",
+    "Filesystem caches are uncontrolled. Three peaks describe these runs and are not confidence intervals or permanent memory guarantees."
+  ]
+}

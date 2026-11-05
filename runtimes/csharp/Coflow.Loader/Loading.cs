@@ -269,7 +269,7 @@ internal sealed class LoadContext
         if (!(node is CfdReferenceValue reference)) throw owner.Error(node, "CFD-TYPE", "expected record reference");
         var record = Find(reference.TypeName ?? expected, reference.Id, owner.Path, node.Span);
         if (!Assignable(record.Type, expected) || !typeof(T).IsAssignableFrom(record.Type.ValueType)) throw owner.Error(node, "CFD-TYPE", "reference type mismatch");
-        return new BoundValue<T>(reader => (T)reader.Session.Reader(record.Data).Value, reader => reader.Session.Reader(record.Data));
+        return new BoundValue<T>(reader => (T)reader.Session.Reader(record.Data).Identity, reader => reader.Session.Reader(record.Data));
     }
     internal BoundValue<T> BindObject<T>(string expected, CfdValueNode node, BindingScope owner)
     {
@@ -393,17 +393,18 @@ public sealed class CfdReader
                 (_selected ??= new Dictionary<int, BoundValue>()).Add(field.Key, value);
     }
     public string Id => Data.Id ?? throw new InvalidOperationException("Inline data has no record identity.");
+    internal object Identity => _value ??= Data.Type.Create(Data.Id ?? "");
     internal object Value
     {
         get
         {
             if (_built || _building) return _value!;
-            _value = Data.Type.Create(Data.Id ?? "");
+            _ = Identity;
             _building = true;
             try
             {
                 for (var i = 0; i < _fields.Length; i++) Read(i);
-                _value = Data.Type.Fill(_value, this);
+                _value = Data.Type.Fill(_value!, this);
                 _built = true;
                 return _value;
             }

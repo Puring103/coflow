@@ -1,0 +1,16 @@
+RUN data_get records=10000 files=10
+PASS data_get p50=396.483ms
+RUN check_rules records=10000 files=10
+PASS check_rules p50=464.328ms
+RUN set_field records=10000 files=10
+PASS set_field p50=2218.258ms
+RUN set_field_rules records=10000 files=10
+PASS set_field_rules p50=2335.956ms
+RUN set_noop records=10000 files=10
+PASS set_noop p50=2153.782ms
+RUN set_preview records=10000 files=10
+PASS set_preview p50=2232.961ms
+RUN batch_same_file records=10000 files=10
+PASS batch_same_file p50=2446.098ms
+RUN batch_cross_file records=10000 files=10
+PASS batch_cross_file p50=2630.221ms

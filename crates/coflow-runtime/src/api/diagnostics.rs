@@ -596,10 +596,17 @@ impl LineIndex {
             Err(index) => index.saturating_sub(1),
         };
         let line_start = self.line_starts[line];
-        // 记录跨度来自解析器，通常是字符边界；非边界偏移回退到逐字符扫描，
-        // 保持与 [`byte_position`] 完全一致的行为。
+        // 空跨度的最小宽度可能落在 UTF-8 字符内部。只扫描当前行，仍按原语义
+        // 计入起点位于目标偏移之前的完整字符，避免错误密集时退回全文件扫描。
         let Some(slice) = source.get(line_start..target) else {
-            return byte_position(source, target);
+            return TextPosition {
+                line,
+                character: source[line_start..]
+                    .char_indices()
+                    .take_while(|(offset, _)| *offset < target - line_start)
+                    .map(|(_, ch)| ch.len_utf16())
+                    .sum(),
+            };
         };
         TextPosition {
             line,
@@ -648,14 +655,11 @@ mod tests {
     use super::{byte_position, Diagnostic, DiagnosticContext, LineIndex, TextRange};
 
     #[test]
-    fn line_index_matches_linear_scan_for_every_boundary() {
-        // 覆盖纯 ASCII、多字节字符与 CRLF；索引路径必须与逐字符扫描逐点一致。
-        let source = "alpha\n婆 beta\r\ngamma\n\nδelta 尾巴";
+    fn line_index_matches_linear_scan_for_every_offset() {
+        // 覆盖 UTF-8 内部偏移、代理对、CRLF 与空跨度，保持公开 UTF-16 位置契约。
+        let source = "alpha\n婆 😀beta\r\ngamma\n\nδelta 尾巴\n";
         let index = LineIndex::new(source);
         for offset in 0..=source.len() {
-            if !source.is_char_boundary(offset) {
-                continue;
-            }
             assert_eq!(
                 index.position(source, offset),
                 byte_position(source, offset),
@@ -664,9 +668,6 @@ mod tests {
         }
         for start in 0..=source.len() {
             for end in start..=source.len() {
-                if !source.is_char_boundary(start) || !source.is_char_boundary(end) {
-                    continue;
-                }
                 assert_eq!(
                     index.range(source, start, end),
                     TextRange::from_byte_offsets(source, start, end),
@@ -674,6 +675,18 @@ mod tests {
                 );
             }
         }
+        assert_eq!(
+            index.position(source, usize::MAX),
+            byte_position(source, usize::MAX)
+        );
+        assert_eq!(
+            index.range(source, usize::MAX, 0),
+            TextRange::from_byte_offsets(source, usize::MAX, 0)
+        );
+        assert_eq!(
+            LineIndex::new("").range("", 0, 0),
+            TextRange::from_byte_offsets("", 0, 0)
+        );
     }
 
     #[test]

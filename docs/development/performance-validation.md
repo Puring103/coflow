@@ -45,6 +45,8 @@
 
 近期测量保存在[性能测量索引](../archive/README.md)，绑定当时的版本和夹具。核心验收见[增量与图测量](../archive/benchmarks/incremental-graph-acceptance-2026-10-26.md)，其中相对热编辑时延、图首屏和稳态帧间隔等目标存在未达项。
 
+共享 Runtime、独立 CLI 和 C# 应用宿主的专项使用[非编辑器基准协议](non-editor-benchmarks.md)。[0.14.0 基线报告](../archive/benchmarks/non-editor-2026-10-28/README.md)保留原始操作矩阵、容量结果及拒绝路径证据；[优化方案](non-editor-performance-plan.md)给出阶段依赖、工作量目标和 .NET/Unity 分别验收的要求。
+
 引擎使用 `crates/coflow-runtime/examples/engine_perf.rs`，编辑器后端使用 `editors/cfd-editor/core/examples/perf_smoke.rs`；浏览器使用 `frontend/tests/browser/performance.mjs` 与 `graph-acceptance.mjs`。原始结果复算使用 `scripts/summarize-incremental-graph.mjs`。测量输出写入独立文件，保留基线和采样协议。
 
 开发和发布检查遵循 [AGENTS.md](../../AGENTS.md)。性能改动按影响范围补充增量等价、预算边界或无头浏览器验证。

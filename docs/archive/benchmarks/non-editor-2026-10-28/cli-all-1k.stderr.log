@@ -1,0 +1,78 @@
+RUN project_inspect records=1000 files=10
+PASS project_inspect p50=30.842ms
+RUN schema_inspect records=1000 files=10
+PASS schema_inspect p50=34.133ms
+RUN data_get records=1000 files=10
+PASS data_get p50=73.957ms
+RUN data_list records=1000 files=10
+PASS data_list p50=76.621ms
+RUN filter_sort records=1000 files=10
+PASS filter_sort p50=74.076ms
+RUN data_search records=1000 files=10
+PASS data_search p50=74.300ms
+RUN data_refs records=1000 files=10
+PASS data_refs p50=166.815ms
+RUN check_structure records=1000 files=10
+PASS check_structure p50=73.684ms
+RUN check_rules records=1000 files=10
+PASS check_rules p50=83.398ms
+RUN stats_field records=1000 files=10
+PASS stats_field p50=85.750ms
+RUN dimension_get records=1000 files=10
+PASS dimension_get p50=98.438ms
+RUN dimension_missing records=1000 files=10
+PASS dimension_missing p50=109.044ms
+RUN dimension_diff records=1000 files=10
+PASS dimension_diff p50=107.809ms
+RUN dimension_query records=1000 files=10
+PASS dimension_query p50=96.577ms
+RUN set_field records=1000 files=10
+PASS set_field p50=2319.608ms
+RUN set_field_rules records=1000 files=10
+PASS set_field_rules p50=2390.140ms
+RUN set_noop records=1000 files=10
+PASS set_noop p50=2414.680ms
+RUN set_preview records=1000 files=10
+PASS set_preview p50=2409.595ms
+RUN batch_same_file records=1000 files=10
+PASS batch_same_file p50=4414.193ms
+RUN batch_cross_file records=1000 files=10
+PASS batch_cross_file p50=3238.720ms
+RUN set_where records=1000 files=10
+PASS set_where p50=4663.773ms
+RUN array_insert records=1000 files=10
+PASS array_insert p50=2462.415ms
+RUN array_remove records=1000 files=10
+PASS array_remove p50=2428.532ms
+RUN array_move records=1000 files=10
+PASS array_move p50=2434.558ms
+RUN dict_set records=1000 files=10
+PASS dict_set p50=2456.341ms
+RUN dict_remove records=1000 files=10
+PASS dict_remove p50=2431.501ms
+RUN create_record records=1000 files=10
+PASS create_record p50=2403.272ms
+RUN delete_record records=1000 files=10
+PASS delete_record p50=2425.002ms
+RUN rename_record records=1000 files=10
+PASS rename_record p50=2448.266ms
+RUN transfer_record records=1000 files=10
+PASS transfer_record p50=2399.877ms
+RUN unset_field records=1000 files=10
+PASS unset_field p50=2401.917ms
+RUN dimension_set records=1000 files=10
+PASS dimension_set p50=2437.148ms
+RUN dimension_add_variant records=1000 files=10
+PASS dimension_add_variant p50=2679.161ms
+RUN dimension_clear records=1000 files=10
+PASS dimension_clear p50=2413.952ms
+RUN source_write records=1000 files=10
+PASS source_write p50=2419.140ms
+RUN reject_invalid_value records=1000 files=10
+PASS reject_invalid_value p50=1253.881ms
+RUN reject_invalid_source records=1000 files=10
+PASS reject_invalid_source p50=1275.327ms
+RUN repair_invalid_source records=1000 files=10
+PASS repair_invalid_source p50=1303.847ms
+RUN revision_conflict records=1000 files=10
+PASS revision_conflict p50=120.282ms

@@ -1,0 +1,31 @@
+{
+  "id": "rust-singlefile-100k",
+  "spec": {
+    "id": "rust-singlefile-100k",
+    "group": "rust",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+    "arguments": [],
+    "environment": {
+      "MATRIX_RECORDS": "100000",
+      "MATRIX_FILES": "1",
+      "MATRIX_FIELDS": "20",
+      "MATRIX_SAMPLES": "3",
+      "MATRIX_WARMUPS": "1",
+      "MATRIX_BATCH": "1000",
+      "MATRIX_COLLECTION": "8",
+      "MATRIX_VARIANTS": "0",
+      "MATRIX_STRIDE": "100",
+      "MATRIX_TOPOLOGY": "ring",
+      "MATRIX_TEMPLATES": "1",
+      "MATRIX_QUERY_BATCH": "1000",
+      "MATRIX_CASES": "load_checks,set_scalar,batch_grouped"
+    }
+  },
+  "started_at": "2026-10-28T21:18:02.0458607+08:00",
+  "wall_seconds": 744.9089889,
+  "exit_code": -1,
+  "timed_out": false,
+  "sampled_process_peak_working_set_bytes": 1077977088,
+  "process_memory_samples": 6379,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics."
+}

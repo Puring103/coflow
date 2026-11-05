@@ -6,6 +6,10 @@ pub(crate) use dimension_inputs::DimensionInputIndex;
 mod draft;
 mod incremental;
 mod inputs;
+mod membership;
+mod projection;
+pub(crate) use projection::{projection_input, try_project};
+mod rejection;
 pub use inputs::CfdInputBatch;
 pub(crate) use inputs::SharedInputRange;
 mod resolve;
@@ -86,6 +90,48 @@ pub struct CfdModelBuildStats {
     pub reused_records: usize,
     pub rebuilt_ref_hosts: usize,
     pub rebuilt_ref_edges: usize,
+}
+
+impl CfdModelBuildStats {
+    /// 容错构建累计所有失败轮与依赖闭包的工作，不能只报告最后成功轮。
+    pub fn accumulate(&mut self, other: Self) {
+        self.resolved_root_fields = self
+            .resolved_root_fields
+            .saturating_add(other.resolved_root_fields);
+        self.reused_literal_fields = self
+            .reused_literal_fields
+            .saturating_add(other.reused_literal_fields);
+        self.dimension_inputs_checked = self
+            .dimension_inputs_checked
+            .saturating_add(other.dimension_inputs_checked);
+        self.identity_records_checked = self
+            .identity_records_checked
+            .saturating_add(other.identity_records_checked);
+        self.origin_records_checked = self
+            .origin_records_checked
+            .saturating_add(other.origin_records_checked);
+        self.validated_records = self
+            .validated_records
+            .saturating_add(other.validated_records);
+        self.materialized_records = self
+            .materialized_records
+            .saturating_add(other.materialized_records);
+        self.reused_records = self.reused_records.saturating_add(other.reused_records);
+        self.rebuilt_ref_hosts = self
+            .rebuilt_ref_hosts
+            .saturating_add(other.rebuilt_ref_hosts);
+        self.rebuilt_ref_edges = self
+            .rebuilt_ref_edges
+            .saturating_add(other.rebuilt_ref_edges);
+    }
+}
+
+/// 基础模板错误按原剔除轮次传播后的结果；句柄始终指向本次 builder 的原输入。
+#[derive(Debug)]
+pub struct CfdTemplateRejections {
+    pub rejected_records: Vec<CfdRecordHandle>,
+    pub diagnostics: CfdDiagnostics,
+    pub statistics: CfdModelBuildStats,
 }
 
 impl<'a> CfdModelBuilder<'a> {
@@ -218,7 +264,17 @@ impl<'a> CfdModelBuilder<'a> {
     ///
     /// Returns diagnostics when invalid input cannot be represented without
     /// dropping records or values.
-    pub fn build_partial(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+    pub fn build_partial(self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+        self.build_partial_with_statistics()
+            .map_err(|(diagnostics, _)| diagnostics)
+    }
+
+    /// 与 `build_partial` 相同，同时保留失败阶段已经发生的实际工作量。
+    /// # Errors
+    /// 返回不可表示的输入诊断及失败轮统计。
+    pub fn build_partial_with_statistics(
+        mut self,
+    ) -> Result<CfdModelBuildOutput, (CfdDiagnostics, CfdModelBuildStats)> {
         let dimension_batches = self.dimension_batches.clone();
         let unbatched_dimensions = !self.dimension_values.is_empty();
         self.dimension_values.extend(
@@ -252,6 +308,26 @@ impl<'a> CfdModelBuilder<'a> {
             }
         }
         Ok(output)
+    }
+
+    /// 对无基础校验/身份诊断且不含 singleton 的输入计算模板拒绝闭包。
+    /// 其他输入返回空闭包，由普通构建继续按既定阶段处理；维度仍由最终构建验证。
+    #[must_use]
+    pub fn template_rejection_closure(&self) -> CfdTemplateRejections {
+        rejection::template_rejection_closure(self)
+    }
+
+    /// 尝试复用健康基础模型中业务输入未变的记录，允许成员增删、重排或来源迁移。
+    /// `unchanged` 与当前输入一一对应；`Some` 必须指向原始字段值完全相同的旧记录。
+    /// 身份、引用和 singleton 重新校验，所有模板根完整求值；维度成员变化返回 `None`。
+    /// 成功后的句柄属于新成员顺序，调用方须重建依赖旧句柄的检查和来源索引。
+    #[must_use]
+    pub fn try_build_membership_updates(
+        self,
+        previous: &CfdDataModel,
+        unchanged: &[Option<CfdRecordHandle>],
+    ) -> Option<CfdModelBuildOutput> {
+        membership::rebuild(&self, previous, unchanged)
     }
 
     /// 尝试复用同一 schema、同一记录身份与顺序的健康模型。
@@ -290,6 +366,7 @@ pub(crate) struct ModelCompiler<'a> {
     literal_field_costs: resolve::LiteralFieldCosts,
     resolved_root_fields: usize,
     reused_literal_fields: usize,
+    statistics: CfdModelBuildStats,
 }
 
 impl<'a> ModelCompiler<'a> {
@@ -312,10 +389,13 @@ impl<'a> ModelCompiler<'a> {
             literal_field_costs: resolve::LiteralFieldCosts::default(),
             resolved_root_fields: 0,
             reused_literal_fields: 0,
+            statistics: CfdModelBuildStats::default(),
         }
     }
 
-    pub(crate) fn build(mut self) -> Result<CfdModelBuildOutput, CfdDiagnostics> {
+    pub(crate) fn build(
+        mut self,
+    ) -> Result<CfdModelBuildOutput, (CfdDiagnostics, CfdModelBuildStats)> {
         let input_manifest = self.input.manifest();
         let drafts = self.validate_input_records();
         self.move_editable_diagnostics(|code| {
@@ -327,6 +407,7 @@ impl<'a> ModelCompiler<'a> {
         self.fail_if_diagnostics()?;
 
         let indexes = indexes::build_indexes(self.schema, &drafts, &mut self.diagnostics);
+        self.statistics.identity_records_checked += drafts.len();
         // Singleton diagnostics intentionally join the rest of index validation.
         indexes::validate_singletons(self.schema, &drafts, &indexes.tables, &mut self.diagnostics);
         self.move_editable_diagnostics(|code| {
@@ -340,6 +421,7 @@ impl<'a> ModelCompiler<'a> {
         self.fail_if_diagnostics()?;
 
         let mut records = self.resolve_records(&drafts, &indexes.record_by_domain_id);
+        self.statistics.materialized_records += records.len();
         self.fail_if_diagnostics()?;
         let reference_plan = ReferenceFieldPlan::new(self.schema);
         validate_resolved_records(
@@ -425,6 +507,7 @@ impl<'a> ModelCompiler<'a> {
     }
 
     fn validate_input_records(&mut self) -> Vec<RecordDraft> {
+        self.statistics.validated_records += self.input.len();
         let mut drafts = Vec::new();
         let mut validator =
             Validator::new(&self.schema, &mut self.diagnostics, self.structural_limits);
@@ -441,6 +524,7 @@ impl<'a> ModelCompiler<'a> {
                 continue;
             };
             draft.origin = record.origin.clone();
+            self.statistics.origin_records_checked += 1;
             drafts.push(draft);
         }
         drafts
@@ -741,13 +825,15 @@ impl<'a> ModelCompiler<'a> {
         (explicit_values, effective_values)
     }
 
-    fn fail_if_diagnostics(&mut self) -> Result<(), CfdDiagnostics> {
+    fn fail_if_diagnostics(&mut self) -> Result<(), (CfdDiagnostics, CfdModelBuildStats)> {
         if self.diagnostics.is_empty() {
             Ok(())
         } else {
             let mut diagnostics = std::mem::take(&mut self.diagnostics);
             diagnostics.append(&mut self.editable_diagnostics);
-            Err(CfdDiagnostics::new(diagnostics))
+            self.statistics.resolved_root_fields = self.resolved_root_fields;
+            self.statistics.reused_literal_fields = self.reused_literal_fields;
+            Err((CfdDiagnostics::new(diagnostics), self.statistics))
         }
     }
 }

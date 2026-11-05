@@ -1,0 +1,8 @@
+{
+  "stopped_at": "2026-10-29T03:34:02.7095683+08:00",
+  "reason": "Investigate R3 dense membership invalidation regression",
+  "driver_pid": 25440,
+  "paused_runner_pid": 24568,
+  "benchmark_started": false,
+  "pending_case": "rust-recovery-10k-r1-optimized"
+}

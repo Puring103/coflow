@@ -1,0 +1,25 @@
+{
+  "id": "rust-dim10-existing-sparse-10k-r1-optimized",
+  "scenario": "rust-dim10-existing-sparse-10k",
+  "round": 1,
+  "arm": "optimized",
+  "group": "rust",
+  "arguments": [],
+  "timeout_seconds": 1800,
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r2\\runtime_matrix.exe",
+  "environment": {
+    "MATRIX_RECORDS": "10000",
+    "MATRIX_FILES": "10",
+    "MATRIX_FIELDS": "20",
+    "MATRIX_SAMPLES": "1",
+    "MATRIX_WARMUPS": "0",
+    "MATRIX_BATCH": "1000",
+    "MATRIX_COLLECTION": "8",
+    "MATRIX_VARIANTS": "10",
+    "MATRIX_STRIDE": "100",
+    "MATRIX_TOPOLOGY": "ring",
+    "MATRIX_TEMPLATES": "1",
+    "MATRIX_QUERY_BATCH": "1000",
+    "MATRIX_CASES": "dimension_existing_set,dimension_existing_clear"
+  }
+}

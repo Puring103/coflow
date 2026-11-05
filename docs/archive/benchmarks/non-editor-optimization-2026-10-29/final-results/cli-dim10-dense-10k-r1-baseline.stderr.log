@@ -1,0 +1,6 @@
+RUN dimension_query records=10000 files=10
+PASS dimension_query p50=1250.488ms
+RUN dimension_set records=10000 files=10
+PASS dimension_set p50=75589.618ms
+RUN dimension_clear records=10000 files=10
+PASS dimension_clear p50=76132.512ms

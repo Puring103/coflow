@@ -17,6 +17,16 @@ impl CfdWriter {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// 宿主批次回归复用真实解析入口，以小预算覆盖中间前缀而不分配百万节点。
+    #[cfg(test)]
+    pub(crate) fn write_field_batch_for_test(
+        &self,
+        requests: &[WriteCellRequest<'_>],
+        options: CfdParseOptions,
+    ) -> Result<Vec<WriteOutcome>, WriteBatchFailure> {
+        self.write_field_batch_with_options(requests, options)
+    }
+
     pub(crate) fn write_field_batch(
         &self,
         requests: &[WriteCellRequest<'_>],

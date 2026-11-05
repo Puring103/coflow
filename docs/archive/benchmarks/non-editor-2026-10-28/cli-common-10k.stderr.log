@@ -1,0 +1,44 @@
+RUN set_preview records=10000 files=10
+PASS set_preview p50=43974.606ms
+RUN batch_same_file records=10000 files=10
+PASS batch_same_file p50=91445.817ms
+RUN batch_cross_file records=10000 files=10
+PASS batch_cross_file p50=116734.925ms
+RUN set_where records=10000 files=10
+PASS set_where p50=111055.813ms
+RUN array_insert records=10000 files=10
+PASS array_insert p50=47006.234ms
+RUN array_remove records=10000 files=10
+PASS array_remove p50=47559.332ms
+RUN array_move records=10000 files=10
+PASS array_move p50=45906.002ms
+RUN dict_set records=10000 files=10
+PASS dict_set p50=45310.916ms
+RUN dict_remove records=10000 files=10
+PASS dict_remove p50=46239.032ms
+RUN create_record records=10000 files=10
+PASS create_record p50=46350.550ms
+RUN delete_record records=10000 files=10
+PASS delete_record p50=46337.599ms
+RUN rename_record records=10000 files=10
+PASS rename_record p50=46128.001ms
+RUN transfer_record records=10000 files=10
+PASS transfer_record p50=44501.512ms
+RUN unset_field records=10000 files=10
+PASS unset_field p50=45254.564ms
+RUN dimension_set records=10000 files=10
+PASS dimension_set p50=45089.059ms
+RUN dimension_add_variant records=10000 files=10
+PASS dimension_add_variant p50=61798.262ms
+RUN dimension_clear records=10000 files=10
+PASS dimension_clear p50=23362.427ms
+RUN source_write records=10000 files=10
+PASS source_write p50=22995.955ms
+RUN reject_invalid_value records=10000 files=10
+PASS reject_invalid_value p50=11224.403ms
+RUN reject_invalid_source records=10000 files=10
+PASS reject_invalid_source p50=11875.944ms
+RUN repair_invalid_source records=10000 files=10
+PASS repair_invalid_source p50=11834.143ms
+RUN revision_conflict records=10000 files=10
+PASS revision_conflict p50=165.300ms

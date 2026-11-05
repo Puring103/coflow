@@ -1,0 +1,107 @@
+[
+  {
+    "case": "scalar8",
+    "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\scalar8.ndjson",
+    "exit_code": 0,
+    "timed_out": false,
+    "complete": true,
+    "validation": [
+      {
+        "success": true,
+        "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+        "kind": "validation"
+      }
+    ],
+    "contracts": [],
+    "formal_measurements": 0
+  },
+  {
+    "case": "scalar20",
+    "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\scalar20.ndjson",
+    "exit_code": 0,
+    "timed_out": false,
+    "complete": true,
+    "validation": [
+      {
+        "success": true,
+        "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+        "kind": "validation"
+      }
+    ],
+    "contracts": [
+      {
+        "success": true,
+        "cases_per_thread": 15,
+        "threads": "Unity main thread and new Thread without a requested stack size",
+        "worker_managed_thread_id": 5,
+        "scope": "256/257-level references/templates; variant-only 300-level rejection; deep cycles; list/dictionary continuation identity; DFS order; mixed explicit references/templates/collections; pending ancestor cycles; depth limit before missing target",
+        "kind": "contract_validation"
+      }
+    ],
+    "formal_measurements": 0
+  },
+  {
+    "case": "scalar100",
+    "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\scalar100.ndjson",
+    "exit_code": 0,
+    "timed_out": false,
+    "complete": true,
+    "validation": [
+      {
+        "success": true,
+        "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+        "kind": "validation"
+      }
+    ],
+    "contracts": [],
+    "formal_measurements": 0
+  },
+  {
+    "case": "tables32",
+    "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\tables32.ndjson",
+    "exit_code": 0,
+    "timed_out": false,
+    "complete": true,
+    "validation": [
+      {
+        "success": true,
+        "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+        "kind": "validation"
+      }
+    ],
+    "contracts": [],
+    "formal_measurements": 0
+  },
+  {
+    "case": "complex",
+    "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\complex.ndjson",
+    "exit_code": 0,
+    "timed_out": false,
+    "complete": true,
+    "validation": [
+      {
+        "success": true,
+        "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+        "kind": "validation"
+      }
+    ],
+    "contracts": [],
+    "formal_measurements": 0
+  },
+  {
+    "case": "dimensions",
+    "output": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-smoke\\dimensions.ndjson",
+    "exit_code": 0,
+    "timed_out": false,
+    "complete": true,
+    "validation": [
+      {
+        "success": true,
+        "scope": "all base fields, collections, templates and references; all variants on representative records; derived table identity; dimension references; selection order; unknown-variant fallback",
+        "kind": "validation"
+      }
+    ],
+    "contracts": [],
+    "formal_measurements": 0
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "run": "rust-singlefile-100k",
+  "utc": "2026-10-28T13:30:26.8986145Z",
+  "reason": "Fixture exceeds per-file 1,000,000 syntax-node limit; stopped owned benchmark during unbounded diagnostic mapping. Not a healthy-load measurement.",
+  "process_id": 47204,
+  "elapsed_seconds": 744.8542584,
+  "cpu_seconds": 707.578125
+}

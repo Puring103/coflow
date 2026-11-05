@@ -1,0 +1,1255 @@
+{
+  "success": true,
+  "scope": "Existing JSON analysis only; no measured executable, build or benchmark was run.",
+  "tool": {
+    "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\report-optimization-targets.mjs",
+    "sha256": "1d294d73fc2ad47c468cfc1d81b97f74dd143880add9a8b5262d71b115f57e09"
+  },
+  "original_evidence_unchanged": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\README.md",
+      "sha256": "0d07f8c8e177dc5d674285cf8ab80e3a815a72d6c7f20f06c99e38508cefb582"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-all-1k-r1-baseline.results.json",
+      "sha256": "c2e79e259c1cfd42ce32cfa47cc8fc7889898244f817e92f126e476696e0b096"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-all-1k-r1-optimized.results.json",
+      "sha256": "9681ee0c9526512e3f8cbeef6b248e17f458c4dcd6adeb88d682f9f6d266f0ef"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-all-1k-r2-baseline.results.json",
+      "sha256": "d16e6564c05c582bdf53c789c607669bc1714ac165dd11911ec57161e03a1553"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-all-1k-r2-optimized.results.json",
+      "sha256": "0424bd9b59d88b8504ed05b65b99a9a14d3366eaf906f81659f0e172fbc59777"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-all-1k-r3-baseline.results.json",
+      "sha256": "0b77039770ecb11af07cb7089f9626ba42c3544c6597d0820cb055e82965a986"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-all-1k-r3-optimized.results.json",
+      "sha256": "e9d930ad5b0e5f6cd2ad1efe7e0b647c619b5ad54b74beb0e2abd2f881af9a56"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-common-10k-r1-baseline.results.json",
+      "sha256": "786e7ce590e267dfb5c71d12e45fc930b667218ef85465f98caeae6df383b2ea"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-common-10k-r1-optimized.results.json",
+      "sha256": "752146184d288c95ac5d687c73a450911d5707887abbea203d82af3a9189b1ac"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-common-10k-r2-baseline.results.json",
+      "sha256": "82fa18541211d1a25dfd5e66f9c1d02962f16356c65f0492c3ad19fab48f48b7"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-common-10k-r2-optimized.results.json",
+      "sha256": "c2a910d2e82c9a14c9fa22c347bf6f6af17c067ef323d8537c5d99672b354784"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-common-10k-r3-baseline.results.json",
+      "sha256": "3ac94c327e797afd0157a71265e3dd753a2ee8dc362eed6a521ece7f33577b13"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-common-10k-r3-optimized.results.json",
+      "sha256": "d3cb6928bb24403419cc0f17ba12a071fc057bef22edb16c76f17583325d2f01"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-dense-10k-r1-baseline.results.json",
+      "sha256": "7ad2bc5d4b3557da332ded5985bf38140e6aaada61e3ab76dde9835de39ab82f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-dense-10k-r1-optimized.results.json",
+      "sha256": "058e93b8264f01fd394e5734f86f9dfd129e369ca0bfda087869f9bb61977ba3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-dense-10k-r2-baseline.results.json",
+      "sha256": "a2538d543b80895f316a5e7f7e5962e90fceefe79522711dee8e38999297daef"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-dense-10k-r2-optimized.results.json",
+      "sha256": "f647fdd5f521f6232fb0fa82359d2e4385328c519370e8b679313a0dcf601184"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-dense-10k-r3-baseline.results.json",
+      "sha256": "555e17c33e7da602a1b0136453f7f3ac294749e0579b208ec9861d118ee8cc81"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-dense-10k-r3-optimized.results.json",
+      "sha256": "4b94bf7c772fbb9d5dd64a64d9d258f5b4a8d62c85073bb07b76d07559b61ae0"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-sparse-10k-r1-baseline.results.json",
+      "sha256": "ba88022af9ea9f7e8ec092eccd770daa9df6764c55fdd91ef79d7498ea0562f3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-sparse-10k-r1-optimized.results.json",
+      "sha256": "8b7192b224bb95c6f66fc05897021e1efdb3685d25d3ea19aa35134d12c688b1"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-sparse-10k-r2-baseline.results.json",
+      "sha256": "ccebeca0d2dba744a26411dd3839c46eaddcff55f9e01c3e8269a306bff7339d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-sparse-10k-r2-optimized.results.json",
+      "sha256": "1c0a9e600403f21c7f756e77c3907712390dd85409a76703ab5ed6c5f131afa3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-sparse-10k-r3-baseline.results.json",
+      "sha256": "536657731d9b8a199ef7bfe730f8d469a75b6e7de7bf474e86f7023b3f8c5e29"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-dim10-sparse-10k-r3-optimized.results.json",
+      "sha256": "bdc1343b70ceb73368150e125e35470be500f009ff19c343d523e55273f5b357"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-expanded-10k-r1-baseline.results.json",
+      "sha256": "9c24f3d9dec6ae01efb6503aa07a8d736f4295ed31dcba7c11030478dd92f4cf"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-expanded-10k-r1-optimized.results.json",
+      "sha256": "094bfa7589dbe52f827b61ac9ca216c29bc9271c898208b584f3283e2afaef62"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-expanded-10k-r2-baseline.results.json",
+      "sha256": "719771c769c74488341ddcba6ab2fbc253a1ea7c51311d509b12afad2b17cdb5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-expanded-10k-r2-optimized.results.json",
+      "sha256": "6af444982dfb95bdea192e3380fa44f394b70b814ca8197bdffaacd78a9d3565"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-expanded-10k-r3-baseline.results.json",
+      "sha256": "d90b976696a3fdd93a8e50f7bf06fa827138fb62b0ca8624a10a66f70000862d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-expanded-10k-r3-optimized.results.json",
+      "sha256": "8a94b22adf02612b863c362d95d53121329637a26ded1306b6a878c4c6eee9c3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-main-100k-r1-baseline.results.json",
+      "sha256": "87a5e13e31aaa0b1a0075c0aaa7c22b53ce368a52e7d471284a7b245ef948249"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-main-100k-r1-optimized.results.json",
+      "sha256": "f6ba4ab06cd9af21bcaabe6e097269582b3c253959ac436efb02fb14479625c2"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-main-100k-r2-baseline.results.json",
+      "sha256": "1b33f49d0f78532ebb3a3c85226730d34ddc4580d730d028390c9282ba61e2c7"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-main-100k-r2-optimized.results.json",
+      "sha256": "02436856f432f9fb99e70671aaf1cd1321c531ab816c2decd9d2872b8590290c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-main-100k-r3-baseline.results.json",
+      "sha256": "c5d68f244ef2362ef08a9b6b0696f9a2bd2e8dbc2fe11cbaa934f0ed8b0f3888"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-main-100k-r3-optimized.results.json",
+      "sha256": "22226dffac06ecb1a585918b7a6f87e1b6577a2b0af2f67988de2f2af69fe850"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-width100-10k-r1-baseline.results.json",
+      "sha256": "18e8684fe36bbaa397dc9b534faa683384937b1167777e4ad9e24b25169ec14f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-width100-10k-r1-optimized.results.json",
+      "sha256": "272dee879657d45f7a2c70d4035ea3fdd54112c2a84eea113e27025bff143d87"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-width100-10k-r2-baseline.results.json",
+      "sha256": "5f9dfe5ba2c60eecebe0d2d00af1afc719bd06202e877db0368dddc67161bca4"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-width100-10k-r2-optimized.results.json",
+      "sha256": "c995376fce0d29e7659bce1d8bb8ecc684822312ef8bc24a5403457b123bc644"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-width100-10k-r3-baseline.results.json",
+      "sha256": "eb8a2ff2c8d4974cd68ae3cd7f4bb7e508d12034e6964c24b5a91f063d29eeaa"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\cli-width100-10k-r3-optimized.results.json",
+      "sha256": "7d6e43fc74282d9916fcecf837f71ebec47ffac7ca5e3a5d2abb92fd31ee164c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\comparison.json",
+      "sha256": "b4251f9e36ac997f1185f7eb85c1845d3449b12bdbc7a32b54b596f102de5d6e"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-complex-100k-r1-baseline.stdout.ndjson",
+      "sha256": "b4a084df969ee26a3f0b07880522eda8f18748f6e48c51c0ee97d4a8df91402d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-complex-100k-r1-optimized.stdout.ndjson",
+      "sha256": "2d94336394422eb442a23be6a1d889fcd90ef060997b2356ae469dc3fc83cce6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-complex-100k-r2-baseline.stdout.ndjson",
+      "sha256": "104393167bcb846ca94dde87fb85cce2d30d019559d86970434d28f825d739e8"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-complex-100k-r2-optimized.stdout.ndjson",
+      "sha256": "431d28e1c1b4f97aa506fd5c049098ae725e6744f9a0799a11d1e3b51542acf7"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-complex-100k-r3-baseline.stdout.ndjson",
+      "sha256": "d9f2c113fc19e1593abde33561f2d36c48929f8855fda6b09827e1af8a5f8416"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-complex-100k-r3-optimized.stdout.ndjson",
+      "sha256": "079e1799bdbf7f8e226bdbf53e594cfb276efaf90401de68881d1f512ca5f5f6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+      "sha256": "65a5a8b4e585ba4e3f572b41052c6652c410294f58793f6058cd134da318a1fa"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+      "sha256": "fe8cf4d588dce8624fcde03922f6af045c660b5ae3ec03b12b0727257a353bd9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim1-sparse-10k-r2-baseline.stdout.ndjson",
+      "sha256": "50b4502d36764d3ece9b0601cec04a5a33b4e54abc9b7665b209d22f809b1ef5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim1-sparse-10k-r2-optimized.stdout.ndjson",
+      "sha256": "972094377b01955e7d41c2039303ee8c20d7e7df16393a30aa0c8657ba1258cf"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim1-sparse-10k-r3-baseline.stdout.ndjson",
+      "sha256": "bd97e9ad9f5c0e5515292013c81f1f9ce7663503f1ded29cdde50093e2fd4fc6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim1-sparse-10k-r3-optimized.stdout.ndjson",
+      "sha256": "f3d3da971a87f1d81f17af82d5c1cfd976e68c554e0951e7190c9b5d145cac63"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-dense-10k-r1-baseline.stdout.ndjson",
+      "sha256": "78242571acb7189f58ab540aa789e15913a7d60b83db5d0dc67a4f31d86b55a3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-dense-10k-r1-optimized.stdout.ndjson",
+      "sha256": "d89426191e8283be4ff24c5fd18c2181ddb9e629b5ed2400465c33d5ac1ee045"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-dense-10k-r2-baseline.stdout.ndjson",
+      "sha256": "f159b5ea02fd95d27b7008add0766b0a3d3903319465be06bdd9a0aff2ae5b97"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-dense-10k-r2-optimized.stdout.ndjson",
+      "sha256": "b818117b28e6942c5023f242878ff45572e9d3ae50eb933019b9433f19e319e6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-dense-10k-r3-baseline.stdout.ndjson",
+      "sha256": "5955282d3b06ac2bc94ae72d46bac27b1f0004e410c64f30c42f13f59ee1db9b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-dense-10k-r3-optimized.stdout.ndjson",
+      "sha256": "c9fd8c49a9354f1da0987aa966eade8420900be4d8b19b6809cc11725b23bced"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-no-templates-10k-r1-baseline.stdout.ndjson",
+      "sha256": "1e533c873a4f503ace56a424840a60d53acfc6a3d31d83ef81170cb0ece22a44"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-no-templates-10k-r1-optimized.stdout.ndjson",
+      "sha256": "5fdcc92d4df26e10ed45267690b3e1d2cc011cdab89432423a89c38306ec2e67"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-no-templates-10k-r2-baseline.stdout.ndjson",
+      "sha256": "12d40a7b8725ac347a07659aa446fb594a3d816c79dd9df92ab9bd6bb5cda2a3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-no-templates-10k-r2-optimized.stdout.ndjson",
+      "sha256": "5a084017552820bf2da2de95e87683d2aa11cd5a2d595390c32b670c75ba015f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-no-templates-10k-r3-baseline.stdout.ndjson",
+      "sha256": "c4bf901319bbf7196dac389d5df32e0f2eb61fa0bbd3a27742e8a0472ceddc75"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-no-templates-10k-r3-optimized.stdout.ndjson",
+      "sha256": "a50715793c20d6e96254dc991b01fb49bd92f0b5af0e6812e4b09c81fab9e312"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-sparse-10k-r1-baseline.stdout.ndjson",
+      "sha256": "d9f0553e458b2601d993afc0c7ac81492d6c0ccd3674bc1bb350d25f3d6c8205"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-sparse-10k-r1-optimized.stdout.ndjson",
+      "sha256": "625e36bf003e89749459d528a0540e29c8159b5415be1373543ac57ccebb1000"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-sparse-10k-r2-baseline.stdout.ndjson",
+      "sha256": "2dd774d575b49b4a0e6a3c8965f7e8b0110807c644c457887c4e1d1377654268"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-sparse-10k-r2-optimized.stdout.ndjson",
+      "sha256": "949cde5e826b17ab34c2de0a2054add0e1fc3e0202248d61a63d60838f2fd4c6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-sparse-10k-r3-baseline.stdout.ndjson",
+      "sha256": "87c05cd1268e269313a004c1e788d020fe7814d3db1167b3546964da068182f2"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-dim10-sparse-10k-r3-optimized.stdout.ndjson",
+      "sha256": "4db7b50b0477fd5436689d3b0873dc40713874fd26b620fa9d585b006c349cd5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-ring-10k-r1-baseline.stdout.ndjson",
+      "sha256": "f8f83e1eaf64394262da2947e7f4dd0573e58c045f1b101bf3b7caac8ab4cf26"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-ring-10k-r1-optimized.stdout.ndjson",
+      "sha256": "5f695ed84fc1c32b2d8eaabaa9e330a6ce4c112c8fc942190554d8b1d6f4c9eb"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-ring-10k-r2-baseline.stdout.ndjson",
+      "sha256": "7de53d3db2bb95ee7c9f959d53b27bd1982c7e709be5be30a347f6fdb878394f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-ring-10k-r2-optimized.stdout.ndjson",
+      "sha256": "e8dc965d4103daea9ac6191fcbf8a7316dc96a779a3f135af132a23ad41592af"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-ring-10k-r3-baseline.stdout.ndjson",
+      "sha256": "9174bb163189a5681aaeda341869903432def7d91de2f9f3df53d983c7c682d5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-ring-10k-r3-optimized.stdout.ndjson",
+      "sha256": "e8dfee2a1600fe4d7dac59e78714aacba9f030755df5ddea1c1352b9cf82e97c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+      "sha256": "cf36a1a4569da44aa296a6ffa3569ec8ba9f2a622a21bbb9b94982fbe9d43ae5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+      "sha256": "1e8f1de673941899646f6ec90544d0ea1fa3292f355d6f6d27d82f8acf050f39"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-100k-r2-baseline.stdout.ndjson",
+      "sha256": "7a7d3718e7d1fbe3565a2672323b9ef38579ae2f81b47c69bd08004a40335f0d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-100k-r2-optimized.stdout.ndjson",
+      "sha256": "b899b9443e7c07dd102dfae63b26604f719138bc0a9c2f14492d8c219fd905c0"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-100k-r3-baseline.stdout.ndjson",
+      "sha256": "22d0e952010c908dc589c83d020e6e788e02344285dd805c1fccca39fa24a478"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-100k-r3-optimized.stdout.ndjson",
+      "sha256": "4261c43e5ea15ba0c747438f98fdead378862f1b7976a69809f044c8bd088d5e"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-1k-r1-baseline.stdout.ndjson",
+      "sha256": "7c98416631593c540dd937613011d5f4742d29246eb89154825bd37694f61bf5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-1k-r1-optimized.stdout.ndjson",
+      "sha256": "27ec8bd35647d60ea910df4f6ae690d0185396011e3533b04f40055524362394"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-1k-r2-baseline.stdout.ndjson",
+      "sha256": "8470347b355ae9b84edb0a9e420daaaf20a56676520df31469c9607e8e424f33"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-1k-r2-optimized.stdout.ndjson",
+      "sha256": "1b1b02e0ab15c3e76b0dd4313a9547f194a0e18679f67a8481cd99a86ca2d041"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-1k-r3-baseline.stdout.ndjson",
+      "sha256": "4698ab69db1f7866ab40c0095b93cfcf00bd3b999e7eca1c29bc547da30bf85b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-scalar20-1k-r3-optimized.stdout.ndjson",
+      "sha256": "6a231f804cfa0040ab4c261ece85062e4eb46b5b78678f6ba5cc5a22fb766326"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-tables32-10k-r1-baseline.stdout.ndjson",
+      "sha256": "1f6b8bdb9f7dfa31401fd86d3d62b997aa111bffef95b6d53d3ee9d2c9a8a8ae"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-tables32-10k-r1-optimized.stdout.ndjson",
+      "sha256": "bc2fced870b3be9b0b52396eba0ee14aab6fb633ed78cff6ea77b43e8728b974"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-tables32-10k-r2-baseline.stdout.ndjson",
+      "sha256": "18af78143710d6d602d898f18eefbb5272841af19ea38e7bf2c764ba98c6835f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-tables32-10k-r2-optimized.stdout.ndjson",
+      "sha256": "c1b07e7241ee7ff0c6ca6b8d29434fa549a3c820ee9e38f704c95396510e9ae7"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-tables32-10k-r3-baseline.stdout.ndjson",
+      "sha256": "c80f7e62541ec77e365d1fd893f9f8fe01d5023e570c37710684592d4b4fdb6f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-tables32-10k-r3-optimized.stdout.ndjson",
+      "sha256": "522eebf55d1be542641e9c1459c1bd83d25def323bc8fe4ba9d897ce6ac4509d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-templates-10k-r1-baseline.stdout.ndjson",
+      "sha256": "7a1b2419a2fa25e7e048d804529a4100cfcf61e4f7fde6167dbe55eaabf3a152"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-templates-10k-r1-optimized.stdout.ndjson",
+      "sha256": "bd3832419b2f8c1c734663175b0aac0010d52c0d1f64a6de75e0a9415ef41e43"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-templates-10k-r2-baseline.stdout.ndjson",
+      "sha256": "186917489e3ef4d98d9ec2f2e6768990d2601f8188c91b047bb6601926a8080f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-templates-10k-r2-optimized.stdout.ndjson",
+      "sha256": "ffccc774d4d0488b16214ae4306a506eb1d6e029ba47ba009e0f4bfdd54b98ff"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-templates-10k-r3-baseline.stdout.ndjson",
+      "sha256": "b4f97a39384e46191179fde1faaa0edfaadc92bb89a52871ec6abfe4015b0963"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-templates-10k-r3-optimized.stdout.ndjson",
+      "sha256": "fb1a5ddf745f19e377a1a6c55be51f0d8c374c88b623d933c6f6a680e0a958d1"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width100-10k-r1-baseline.stdout.ndjson",
+      "sha256": "7ea67fd014f38fe5435b6158e4a594e8fb62da39dd0110c842a7804cd16b1b16"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width100-10k-r1-optimized.stdout.ndjson",
+      "sha256": "9c7b280289f55048ecf7455e43b15f45c4740047f8509b8b6cca702cf01624f8"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width100-10k-r2-baseline.stdout.ndjson",
+      "sha256": "dcadb458b3bb4195462c30c72f4387eca8a4d99029b9cc816a16c197a4f99237"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width100-10k-r2-optimized.stdout.ndjson",
+      "sha256": "7b770f6a2d964a720d7002bb56ae6b8cb6c07eb0c6498d0ac42b790c2fdfd86c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width100-10k-r3-baseline.stdout.ndjson",
+      "sha256": "8a64c27a301d4aaf77058656cc05c6682ecfe17072e71605eb3ef5c25a99000a"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width100-10k-r3-optimized.stdout.ndjson",
+      "sha256": "862c94e9dc2a3784b5fa85bd3b7862448d5739acdab38813059427d5d60cab74"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width8-10k-r1-baseline.stdout.ndjson",
+      "sha256": "453492ad3b0dc1941eae7748ae8329c23358dabfec41f1bd14ac40d8837192c1"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width8-10k-r1-optimized.stdout.ndjson",
+      "sha256": "2fd2e48348840f392e1571d7dd2c2ae1ca420ede36fe3f80a5044ef5dfaeb5b1"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width8-10k-r2-baseline.stdout.ndjson",
+      "sha256": "fb9e18427724c097db998db3027554b50c3609958c005001dcdeb4823f09ac8a"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width8-10k-r2-optimized.stdout.ndjson",
+      "sha256": "e96e42f47b7136e6d63f627c56317ce5ae13787bba6430dd0431a8a2c7fd6568"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width8-10k-r3-baseline.stdout.ndjson",
+      "sha256": "232ce447e8faa49c070992ac87fcf64de1443579bfe1930187629c65012c7419"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\csharp-width8-10k-r3-optimized.stdout.ndjson",
+      "sha256": "3949a8a6e93082688c7eafdb7e1e1a59d2ae797d7036755b5129472043ba1820"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\engine-model-10000-r1-baseline.stdout.ndjson",
+      "sha256": "aba36be4127785c917688a2f82ec3c2d7b4cb58802c36fd2442d3d16c427699f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\engine-model-10000-r1-optimized.stdout.ndjson",
+      "sha256": "38dc7171bf5fa9d8ddfde87cb75b5b0f5a214fcb29d109da447d1d4c499f9576"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\engine-model-10000-r2-baseline.stdout.ndjson",
+      "sha256": "ec9b03a45f9b54851b2edf95097bffcf45f44f384c200298c2ba90de40a6c595"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\engine-model-10000-r2-optimized.stdout.ndjson",
+      "sha256": "dd2b5ee9d7d9c0f0473ee9f0cccea875f1d095f848dc11c0d71d65e38364e8bc"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\engine-model-10000-r3-baseline.stdout.ndjson",
+      "sha256": "32ba0521908e7ffaa1238d0fd2ad33b8b4b1cb0b1805c2bc9982f1cc77207656"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\engine-model-10000-r3-optimized.stdout.ndjson",
+      "sha256": "e8ef05dfb5b084523217ac86aa24d11e418be74f14be87156588c11070619ea0"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-complex-100k-r1-baseline.stdout.ndjson",
+      "sha256": "2d265198121b03beba277a8e915561a8a013f2b80eb205bce09f2616e65b2e7a"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-complex-100k-r1-optimized.stdout.ndjson",
+      "sha256": "41b3b8899769c232e23f75bfc7db111971a4f5bf3c927255eb4ca1f07ca87252"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-complex-100k-r2-baseline.stdout.ndjson",
+      "sha256": "5efe1b371f934aa0ab8670c39b1c1bcfffbb218a714ddb82460725097da2db89"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-complex-100k-r2-optimized.stdout.ndjson",
+      "sha256": "784ef488dfba245b93932e8c88b5c784fcafe86848b19706e25bdd795645d439"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-complex-100k-r3-baseline.stdout.ndjson",
+      "sha256": "303f1e58466e008c6f8134b889178c3027e84ad2d1cd877161a8f6cc8be8beb5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-complex-100k-r3-optimized.stdout.ndjson",
+      "sha256": "7d011b156fbbd98b65c224a4c7803cbc80e5d6134393259d84eb6c97f521a03f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+      "sha256": "fa2e71ae184bca860ec8f418e3128f6af2a12bf8bc624cee72857730ba62d106"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+      "sha256": "28a6c990f03ac80b14d020c0e1bb5af2420b29e85c2b6bd9d3d51785fcb43074"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim1-sparse-10k-r2-baseline.stdout.ndjson",
+      "sha256": "efdd9d95f13890fb205f57d00239bb90825febfb08b7143e0a78e09fc31eac56"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim1-sparse-10k-r2-optimized.stdout.ndjson",
+      "sha256": "42c53869a5dfa3cdd082a504a72893f0b9b845017883690ee206d78343f43652"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim1-sparse-10k-r3-baseline.stdout.ndjson",
+      "sha256": "0a72adc0173d77cc49e6cfffc35bc462da628552da597ab541fd84ccca142f1c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim1-sparse-10k-r3-optimized.stdout.ndjson",
+      "sha256": "90ebe3c52bb3360a43fb9ee1d88d5d960d3bc4666f5ea7665293021f7089cd98"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-dense-10k-r1-baseline.stdout.ndjson",
+      "sha256": "ba88487a53b3baba22e207bab13fd4d429cdb054364b68520c62e9b6fc94d2c5"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-dense-10k-r1-optimized.stdout.ndjson",
+      "sha256": "fcdfb702ba4eacf0ab3bf52c50d571d04797c7c6ec0f155b7d3fd45c9a58b114"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-dense-10k-r2-baseline.stdout.ndjson",
+      "sha256": "18a10d0ffd802ce358c442ad6340902fe9b35c5fb9b4fdaa016d1c7e6a7e6063"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-dense-10k-r2-optimized.stdout.ndjson",
+      "sha256": "341084685aa2cf08cccbf69194815c6cbf2bf6c3f9ddc24b2924d9b7406e8102"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-dense-10k-r3-baseline.stdout.ndjson",
+      "sha256": "c2d94ce9a5155cf18784e9f7fe57fe4a756fddca0b999cdfb98563fabfb0674b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-dense-10k-r3-optimized.stdout.ndjson",
+      "sha256": "8c24c711d2af3bef7a364e412c6fbf3a0283f8b6e456015040bedee0c7c49e7d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-no-templates-10k-r1-baseline.stdout.ndjson",
+      "sha256": "f50f1232012bd45b9073b5222137c8cfc75efdf11678920bf64f098c55b763ee"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-no-templates-10k-r1-optimized.stdout.ndjson",
+      "sha256": "aa7776488ede84249d1ed21ba09cf099cf07d98f59b06c26cc99c63fa4436584"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-no-templates-10k-r2-baseline.stdout.ndjson",
+      "sha256": "848541fcde4834790633f49fb1e226a724f99afd1052601fd9a1f072148db20f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-no-templates-10k-r2-optimized.stdout.ndjson",
+      "sha256": "820a4229d7f4b3f27161ceda16d92ada890b02ab89f731aad91b16e2e0aa42ff"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-no-templates-10k-r3-baseline.stdout.ndjson",
+      "sha256": "cf07efc4f900f7d5c61d03958cac98e1d57abb4ec708a7900154624961a5a93c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-no-templates-10k-r3-optimized.stdout.ndjson",
+      "sha256": "4ac80a94a0f368f6d6537d6c681ca664edb3030225fc09045a2fb46ac8e02024"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-sparse-10k-r1-baseline.stdout.ndjson",
+      "sha256": "2fa4651eaa1b9d570777d6ba6df6e4a739e1e7f73ed6ac032aac95c99662151c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-sparse-10k-r1-optimized.stdout.ndjson",
+      "sha256": "00324e21a2b809be3be51b56a9916057d750603a496663bdd92d88215cb87b57"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-sparse-10k-r2-baseline.stdout.ndjson",
+      "sha256": "9316c1eef2ba026500e4494dc00b5aef70c5f4471e79c009fa5362add9deea23"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-sparse-10k-r2-optimized.stdout.ndjson",
+      "sha256": "4d1f44bbdbeefa6000c5f53eeb81ea605cbd8afc259884818d89cb025e7da288"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-sparse-10k-r3-baseline.stdout.ndjson",
+      "sha256": "6a878580607ef437010eda7e5901d4230e7138f779bbebd605ed64c5cc99ee6a"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-dim10-sparse-10k-r3-optimized.stdout.ndjson",
+      "sha256": "e57e568ec867ddb41e60db69cdb293dbf5654fa0e2f18ce2b937978d97c9f577"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-ring-10k-r1-baseline.stdout.ndjson",
+      "sha256": "5de325552f3ee7c968f17fd45dd4cf2d528bfbdd2926bc062422bd4dfea7f4e9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-ring-10k-r1-optimized.stdout.ndjson",
+      "sha256": "edfb8f0643b6823fb5d8a91dea2d84f9ed2e370a538d3a40f47a0d0b4ec7d93b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-ring-10k-r2-baseline.stdout.ndjson",
+      "sha256": "5f85d9a42c6ce329267c307dd58a8d8cd3ece4a9d32c232b051cb3616f3e50c9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-ring-10k-r2-optimized.stdout.ndjson",
+      "sha256": "627bffdf949c1f28c90d2e0d7d4a2e56b8c0b598bac752cecfe97a280b4d024b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-ring-10k-r3-baseline.stdout.ndjson",
+      "sha256": "94a4200eb98491439c8cb02ae5ce7c0e0988b522635502195a2b017dd446e5ec"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-ring-10k-r3-optimized.stdout.ndjson",
+      "sha256": "d6f5f889c3836c68b468b76b1b6cce329025a7ad5643d80c1cb48fc82bf7a752"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-100k-r1-baseline.stdout.ndjson",
+      "sha256": "fd231a405560a95c10603b044e362fb5b77ca7043b24164f6c2eac8b407eca98"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-100k-r1-optimized.stdout.ndjson",
+      "sha256": "59f985ca03f2fb4899c703cfe62ad65a8efefd51bb00b33955ea59b9056bc5c9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-100k-r2-baseline.stdout.ndjson",
+      "sha256": "913161d9104ab607c5d57d5e2ed636c3636193d96200ededc9989706b718302b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-100k-r2-optimized.stdout.ndjson",
+      "sha256": "019574db3bf5a3b8e6e3a6f3f5b16a8f9ff962e49db4eb5124ceeac1ae1d7e18"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-100k-r3-baseline.stdout.ndjson",
+      "sha256": "746b5ae56b7fff589a4f7fc7fb53944fa5b2a0e030a7717102717648511923f9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-100k-r3-optimized.stdout.ndjson",
+      "sha256": "c385c06019d652adaa7937416f6d4b8beb9a3a8962d8029b42f9913d012f8bb9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-1k-r1-baseline.stdout.ndjson",
+      "sha256": "817165e08a0791d20809ee5037e655ddbb96606bb7f4a921460b8c8d1bf22d9b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-1k-r1-optimized.stdout.ndjson",
+      "sha256": "26cd96def370575a5e0f161ba43a65681bb587e62cb080cd9ad956ee7d27253c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-1k-r2-baseline.stdout.ndjson",
+      "sha256": "bc30acf7c05b2e64505d55edb4c52ce295196718fb5a84aba96a380bd70e7fba"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-1k-r2-optimized.stdout.ndjson",
+      "sha256": "d9a6b70bd93e4312b56f39935a63299a0040b3edf0c7f7896e5117d8a7c4e754"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-1k-r3-baseline.stdout.ndjson",
+      "sha256": "19215ff8f6d928abf3cf733cc6e5ddd3b145b6fbeb77d7a724d95fd7fe3483cb"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-scalar20-1k-r3-optimized.stdout.ndjson",
+      "sha256": "617ff553aab537bdf6e7aa2280e1872d65c62deba3547171586031a8bc8a4e2f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-tables32-10k-r1-baseline.stdout.ndjson",
+      "sha256": "3ca01e0d480ae92907e337b9ceaed7940a39b96744a8ae4df2d27fc976b6cc1d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-tables32-10k-r1-optimized.stdout.ndjson",
+      "sha256": "86ccb56b41929775be227e2c2b6609beadc06ecf27fe1a99c81c04407cf48e00"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-tables32-10k-r2-baseline.stdout.ndjson",
+      "sha256": "5ab258c50de5760e69abe2e24f68195c6241c2b00f8edaeed9c6ee3fa5fdf1d3"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-tables32-10k-r2-optimized.stdout.ndjson",
+      "sha256": "64c9b7c5b13ec0c79f968cc610abcbc6c039fa45a69a59abeb04189a5313c371"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-tables32-10k-r3-baseline.stdout.ndjson",
+      "sha256": "8345c4ffef16a9de2433b980683c73a3f8ee0cca49471e83031b7e2a2ab5fb73"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-tables32-10k-r3-optimized.stdout.ndjson",
+      "sha256": "ae8f1fae07a0eba3bc1d03f399f987fffabdf8d309535267598593c3eaec43cc"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-templates-10k-r1-baseline.stdout.ndjson",
+      "sha256": "293099cc1619488b59191f1e1ecef2e0f77c71da8b04f152bdc46f5997b76726"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-templates-10k-r1-optimized.stdout.ndjson",
+      "sha256": "2025418c4f8b078132ae55c8316154d57e5ecc0994ebbf53dd59e30573778ac1"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-templates-10k-r2-baseline.stdout.ndjson",
+      "sha256": "16d3e1691fd644c53c0c3a5eb03ff1d479519c2bdf0eb674864e71da68cd474b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-templates-10k-r2-optimized.stdout.ndjson",
+      "sha256": "29102f47b4e8e17bfeabb8f7e128c51128635859464d3c77330c1c04a3413033"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-templates-10k-r3-baseline.stdout.ndjson",
+      "sha256": "6662ca3a365a3373b5fa197013d05ac0e72225a5c0a609b239483448be1eba05"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-templates-10k-r3-optimized.stdout.ndjson",
+      "sha256": "39f3913bc66a19224365e6502ac4faf564c883d1657a76b917606fac12bf94df"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width100-10k-r1-baseline.stdout.ndjson",
+      "sha256": "ebb243e384692d56eda1a17b4c65798c53800c8a82edb22f69fd565bc974e696"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width100-10k-r1-optimized.stdout.ndjson",
+      "sha256": "b6be71710df713d8feccab27a1ea34ba63df67b3fe0d096338411ba038414a93"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width100-10k-r2-baseline.stdout.ndjson",
+      "sha256": "4667ca84e921d8cbb36c90f8af43e5bb98909fddd8758a4da70bf046edb65de4"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width100-10k-r2-optimized.stdout.ndjson",
+      "sha256": "568800ca9f5cfc0b75ea954874360159e201dfb520c247d858fbcf4f65e9bd2d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width100-10k-r3-baseline.stdout.ndjson",
+      "sha256": "87c233727543fb4391a1d4c0f2126b845aa71cc8291b1b4e9c35b84a99e02393"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width100-10k-r3-optimized.stdout.ndjson",
+      "sha256": "ba4f7c056098ebec103324cc4c1410c0d0ef71175796f44f869a23f60c94c153"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width8-10k-r1-baseline.stdout.ndjson",
+      "sha256": "af5625779f1bc705fcd5bf616c1dd377ece1249c16842f2c416da690bb37aaed"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width8-10k-r1-optimized.stdout.ndjson",
+      "sha256": "0f5eed9396bdb8c8d0c60a3a86d1551fe7779768add035f8a6bd0b8c4b9585fb"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width8-10k-r2-baseline.stdout.ndjson",
+      "sha256": "5c58db4d7530da0d4fdb27d79a76918a83f954c6f21aa4bd42a3864efa08f47c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width8-10k-r2-optimized.stdout.ndjson",
+      "sha256": "8420c1b26540223d7cb6d7ab68aff85765577a46e2731f3851f060c01cf5a212"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width8-10k-r3-baseline.stdout.ndjson",
+      "sha256": "c2ed10f73a55df2ec2a21d25883d88ddbffce123a14097f56819f512609465ca"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\mono-width8-10k-r3-optimized.stdout.ndjson",
+      "sha256": "3a01c7afd1e4a8b3773ba49f9a716069b1f91a57f26a154124eadf865ca14d4f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-all-1k-r1-baseline.stdout.ndjson",
+      "sha256": "b805d9ee15896e391c012b404a1065a1175026b9f21840554055d06af272c602"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-all-1k-r1-optimized.stdout.ndjson",
+      "sha256": "d02faf49169aac239ea9eb91f5d61e5ffb3955f5bdd236ec6093265fcb5203e8"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-all-1k-r2-baseline.stdout.ndjson",
+      "sha256": "4a2ded8eaed588a075e2ab9ef6ba3c500778e7f35bd369d06c3b57e8691eb228"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-all-1k-r2-optimized.stdout.ndjson",
+      "sha256": "6c073611034c857110509f6cab11d4570aa61f4262dae0699ce6553f61f37a0d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-all-1k-r3-baseline.stdout.ndjson",
+      "sha256": "ef2351a35e3342da043152626d5a63c244fd71ca0d7e1ec400811570c0636f72"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-all-1k-r3-optimized.stdout.ndjson",
+      "sha256": "790d8d7457a123d17239cde36db2d863a704ca521027f7fc05e46a3b5bc7bff1"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-budget-20000-r1-baseline.stdout.ndjson",
+      "sha256": "6227e380f6df47c4243260e0599fe929611310c1bc8ac485cafe3e4c098fe997"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-budget-20000-r1-optimized.stdout.ndjson",
+      "sha256": "ddb6f33a833dfebf418c1a96c5904a4117ecb634d762108367dca6f6f7818bff"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-budget-20000-r2-baseline.stdout.ndjson",
+      "sha256": "39f25d03cb60dc8df7bb9c0e953fd7119c0e5d7b86054047ac66f24bc149995e"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-budget-20000-r2-optimized.stdout.ndjson",
+      "sha256": "7234e6638a6329d9c7b18c4df436e7583212420015a0aea460b79641998dde47"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-budget-20000-r3-baseline.stdout.ndjson",
+      "sha256": "351ae28e2ab514a0eacf600eef97abe59e50ae3905426ef6ddfea36611c687b2"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-budget-20000-r3-optimized.stdout.ndjson",
+      "sha256": "4748952fcbbc4a2ab69c70554d472f80090530c10853895ecf199731ce861f90"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-common-10k-r1-baseline.stdout.ndjson",
+      "sha256": "21e79aaf2273070694f76bb2966dbd8965a780b5a914ead464a07abb7e297b85"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-common-10k-r1-optimized.stdout.ndjson",
+      "sha256": "47587b847a272e0f1b2ddac710789b846b8b985791b0033ab01a1e33101dd4fd"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-common-10k-r2-baseline.stdout.ndjson",
+      "sha256": "d72015589b84b4cd67604eca431adf18862121c7e08b8342ac56488cbb8be148"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-common-10k-r2-optimized.stdout.ndjson",
+      "sha256": "773a6ee0ba2571646ac9ed7be56f0f95c8e991c2d5e45cae9b22121425b2aca2"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-common-10k-r3-baseline.stdout.ndjson",
+      "sha256": "02c138f4a90c6a78e4ff9042d70d9bd54607320dae85d1e25099a26177de0a20"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-common-10k-r3-optimized.stdout.ndjson",
+      "sha256": "d6f8c32a6e4d7769a64735807effc02e125b812e8fc0f7cc9d7d1f170cf459c7"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-dense-10k-r1-baseline.stdout.ndjson",
+      "sha256": "ff6f2178f2ea42c42ba1847404b024c8613bef45a19472b17a9c2f16c2652921"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-dense-10k-r1-optimized.stdout.ndjson",
+      "sha256": "812e54d181b01c238c02d7d7ff907140bf405ff40d0c0410c4e876470a212d90"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-dense-10k-r2-baseline.stdout.ndjson",
+      "sha256": "cabec6a790c89ad6fb95391b0f09261faa78a313c9c1438d0232170807509839"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-dense-10k-r2-optimized.stdout.ndjson",
+      "sha256": "f919955e7a4f47738f164668c78b6be7e13be0656c02698ba39b07ca05e030eb"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-dense-10k-r3-baseline.stdout.ndjson",
+      "sha256": "ef184c521657aac041fd5def93268c9d5b1572e0df3c98ba6d5becc5735bcd68"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-dense-10k-r3-optimized.stdout.ndjson",
+      "sha256": "a591642085926f2fc0677e382030a74bc143b7fabf24a24c7b5b70730a946826"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-sparse-10k-r1-baseline.stdout.ndjson",
+      "sha256": "164c9e571300afb0ef0f3297561f7d7ff2ebcd7e81a53db35f2a9027f7342351"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-sparse-10k-r1-optimized.stdout.ndjson",
+      "sha256": "801b39aee91ec1a2d3ab2f671d1ff74c48d703ae99480212c717b9871eb5d329"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-sparse-10k-r2-baseline.stdout.ndjson",
+      "sha256": "564f7729e2c4a52d71a22adaafe4f2aec013d7249ca6e25c5863eef92e543f25"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-sparse-10k-r2-optimized.stdout.ndjson",
+      "sha256": "cd59ee4c51bd4a1bbe605c57b84e8490d8afd33d40842156843a8cf44be03f0d"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-sparse-10k-r3-baseline.stdout.ndjson",
+      "sha256": "8660ec5aa83b1b839adae7148725492e59306d55159c177e5749c9091d259426"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-dim10-existing-sparse-10k-r3-optimized.stdout.ndjson",
+      "sha256": "c248d26ce1c885de187b2c1406a04e5166719bb9cb1d0ebf72b198f233a9e219"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-hot-100k-r1-baseline.stdout.ndjson",
+      "sha256": "ed0edc3247d7fab060da4259ffaf783852d4467f4a7163f54e516e850ea95f1c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-hot-100k-r1-optimized.stdout.ndjson",
+      "sha256": "c69961b96396c35e0cec488f060cf3dd306daf04690aacdac69dcf92aa3efdde"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-hot-100k-r2-baseline.stdout.ndjson",
+      "sha256": "797939675b62d200804e0828811484d41c3c1a41584a85aa5e55cf097f21786a"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-hot-100k-r2-optimized.stdout.ndjson",
+      "sha256": "91989ef8fc3b50749e789f246bb67524db513acfc41fc06435b6ee07d2387c28"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-hot-100k-r3-baseline.stdout.ndjson",
+      "sha256": "d89daab073e3a5c2340d407d9042b32ede61afbfe4bdedd1a1dac2ae4a5c1d79"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-hot-100k-r3-optimized.stdout.ndjson",
+      "sha256": "16e4bac66f3fea2cde1810f29fcdb0c9b8022190a8d621c4ba6d3964038e6443"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-10000-r1-optimized.stdout.ndjson",
+      "sha256": "58caec4dff79bb77cc93b0d67255e16cd52e6f7a7c21fcdcd64e2b011f2a2973"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-10000-r2-optimized.stdout.ndjson",
+      "sha256": "2f852281ccd667068cf94cb63bb61d8941358ca5720258baa0fd4bf8eaccc472"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-10000-r3-optimized.stdout.ndjson",
+      "sha256": "e9bd85892938fe9371c476efd29a93170b1a4e9e99b0f99519d6a9dc1a3f4d31"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-100000-r1-optimized.stdout.ndjson",
+      "sha256": "7bca391ed540f5e50562e65949c7647d6ae89a7e1a8bfb5b7002e02a729b3df8"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-100000-r2-optimized.stdout.ndjson",
+      "sha256": "c7e2f2005d072d9fbf677fbb6b760d3598e9a82d0d9bd6a2d13aadbfb4ae5162"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-100000-r3-optimized.stdout.ndjson",
+      "sha256": "e0facc1590533f8f647ea3dcdf1aa2030654e98b0bf63a99daa4cf8e1e089050"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-2000-r1-baseline.stdout.ndjson",
+      "sha256": "2d4b223536df3e34a78f27ef0ab1d06abfd06d0f0e9761650f074922d0a66bad"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-2000-r1-optimized.stdout.ndjson",
+      "sha256": "3974cfc8f5be0a88911a537f659347cda66f8d7ee4db7c5893c667a211f128cd"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-2000-r2-baseline.stdout.ndjson",
+      "sha256": "452df6617d6f5e706f11c3325613ac44053e07a10db84424e0e2930ba25c5599"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-2000-r2-optimized.stdout.ndjson",
+      "sha256": "c9b79b10703eceb8180427f105fd3ebe5dfe6c8c3699e5fea5e7f0b457b8a8e0"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-2000-r3-baseline.stdout.ndjson",
+      "sha256": "284b919e0867421cd73a89617a4aadf72ee3b0153a6ef96727a00eb89b3bc872"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-2000-r3-optimized.stdout.ndjson",
+      "sha256": "61aca44a4a2ccf1a9150ee6b2ede584e6dd1f7a1680e6c511fa4293433beb275"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-fanin-10k-r1-baseline.stdout.ndjson",
+      "sha256": "f4ef953ce1aaa7a1ab6fbcc738d0708da0ed3829345990ef5d9f2b5087a98b03"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-fanin-10k-r1-optimized.stdout.ndjson",
+      "sha256": "a90d5242576fff4c4d348dff3a9ac847c0632f4dde37c05945a2f5b3c880322c"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-fanin-10k-r2-baseline.stdout.ndjson",
+      "sha256": "b69d19c6bae864f82b08a6594374dab4198db38f8608ef16951ffa08734e3ea2"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-fanin-10k-r2-optimized.stdout.ndjson",
+      "sha256": "a6d0ec56fd9f28ca6b3ad95eb6d823abc0894fd991712399a4be1335366904a4"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-fanin-10k-r3-baseline.stdout.ndjson",
+      "sha256": "fb211409d7f89a02959ad2bfc0e17f6a264f8c779587d499c5a9c867e2f09f00"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-fanin-10k-r3-optimized.stdout.ndjson",
+      "sha256": "c465bb778be80c2b3ade22fa3dd04d5107d6855f0c7bb2542961515f6e60a0c0"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-no-templates-10k-r1-baseline.stdout.ndjson",
+      "sha256": "e3f7056788164bb71b3de95e558c75d1dd8e11e15d9733096a223ebbd11b4225"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-no-templates-10k-r1-optimized.stdout.ndjson",
+      "sha256": "7d3774a19564f8f954de57abcd0fe4bf8c0a544063e44ccba608a8f6b6319b4b"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-no-templates-10k-r2-baseline.stdout.ndjson",
+      "sha256": "bcbbce2ab0195eb2a8fede1c1deba9800456883870973d6b484a0cdad49fcb3a"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-no-templates-10k-r2-optimized.stdout.ndjson",
+      "sha256": "a723ee786e2a85ddef60da446c65b7277cdbefd68faa34ec24c2e113475b3549"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-no-templates-10k-r3-baseline.stdout.ndjson",
+      "sha256": "e8336ad1bd03f1c6611b665cef8274b5e249204db879e49bd4354f3745d3ac69"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-invalid-no-templates-10k-r3-optimized.stdout.ndjson",
+      "sha256": "8ad706787f1e3fa19573fb901f46979b50b77f3247791dc4a8fe61b80302fadb"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-main-100k-r1-baseline.stdout.ndjson",
+      "sha256": "a9eb32aff547d708599e63e675c328ebda4fdb0da5aa7d52ef443b66607d1cdb"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-main-100k-r1-optimized.stdout.ndjson",
+      "sha256": "c42e163d2410ecb039ca120b89c815c1326837bae48c77affffba4de9dd05d9e"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-main-100k-r2-baseline.stdout.ndjson",
+      "sha256": "b55c12399f1fa510d343f22ca32257c33d55047a8df1314bbc7135a34176cb1f"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-main-100k-r2-optimized.stdout.ndjson",
+      "sha256": "636ff0e23e1579268543a51dbd7915d8ccf91f0c57e6af75d5e2536f7f90b523"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-main-100k-r3-baseline.stdout.ndjson",
+      "sha256": "ae6b366ecc6a1cb18b2d47b6125afe9ea6e6e431c093b9fb4d83c3f888b9d263"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-main-100k-r3-optimized.stdout.ndjson",
+      "sha256": "d0d33e8e8f8fa76dd9581d8a6e4928427d3722ad1915580ab2485fcb359623ca"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-recovery-10k-r1-optimized.stdout.ndjson",
+      "sha256": "a72227621cace08c58f0ab7756e43d8a6bb2a8061b36a820754de41024a62e26"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-recovery-10k-r2-optimized.stdout.ndjson",
+      "sha256": "533aefc951565603bf8730cb22a16e47bd3093dbd130a138f2196b24e5275e13"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-recovery-10k-r3-optimized.stdout.ndjson",
+      "sha256": "29eff5959014522f67abc6707925774bdb296475855138b5ac02f08c8ed6c889"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-singlefile-10k-r1-baseline.stdout.ndjson",
+      "sha256": "d4b31fa469f47376028e6b273710697f1a269e82578f681fd55b9a0a80273fca"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-singlefile-10k-r1-optimized.stdout.ndjson",
+      "sha256": "0b832763a57350efc698028776c56fec306bf1d19127c11921f0e0dac350d9c6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-singlefile-10k-r2-baseline.stdout.ndjson",
+      "sha256": "f9ea35e60c6836e51648d7f38d389cb50c01fe04c46fc1231f6e10f7332b7724"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-singlefile-10k-r2-optimized.stdout.ndjson",
+      "sha256": "cb12f5726d3be0978e6af6c0b31748e663da967d8bc453b49db7f1e6f5336c24"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-singlefile-10k-r3-baseline.stdout.ndjson",
+      "sha256": "0af1afc4b4b88efe687f7700875ba72cf2852466c432668aaa072b073ab80256"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-singlefile-10k-r3-optimized.stdout.ndjson",
+      "sha256": "8a5f280cc8b5b9b03aa4d829e32e559daabcab8647bf1d4d754cc4a5f0883fbe"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-100k-r1-baseline.stdout.ndjson",
+      "sha256": "8b0d59057d426d809a36ad218ad853ceb0f51ee8a0a4d1c56d0b53fc415c5c33"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-100k-r1-optimized.stdout.ndjson",
+      "sha256": "b3714dc79a498f89c912864c89622a3e7edbdb6dbbcfcee6cd6896e8acfcf736"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-100k-r2-baseline.stdout.ndjson",
+      "sha256": "b8f6f8b0758e054263534681366b5363aed7cdfec1b8924b60115754ae27c621"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-100k-r2-optimized.stdout.ndjson",
+      "sha256": "1e3c71984d697281366fa2ec78216985a349502b01c72a74fb2c94ff2c0f14c6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-100k-r3-baseline.stdout.ndjson",
+      "sha256": "4612c3960383d4e2e9697fb066821e62d30adf7144050a22e5db27f1efb610af"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-100k-r3-optimized.stdout.ndjson",
+      "sha256": "86b7d37395e3aafcac2617ac206dee94b40cdf9889ce51e5ac9f559b20d17e16"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-literal-100k-r1-baseline.stdout.ndjson",
+      "sha256": "a4bf19d652a55bc1d73046ece6d7b76b68e71a190593f10abb9c5d4a083a7680"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-literal-100k-r1-optimized.stdout.ndjson",
+      "sha256": "1fa704159168fefb5083ed517fa91cd7bbc0eae5e9e944ab536e8b4457c47495"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-literal-100k-r2-baseline.stdout.ndjson",
+      "sha256": "6ab1f1ce253fb7760d00a734e1be1ceda4856dbd4db71b65a4f1c1bcb1f689b0"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-literal-100k-r2-optimized.stdout.ndjson",
+      "sha256": "ae986e1face445f0d0af1452a9200faf1286e91b385943115decb364679b1c98"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-literal-100k-r3-baseline.stdout.ndjson",
+      "sha256": "314fecbb0945cb8c6da1621e6eeb21d015909161f7d715a285a0b72be33dfce8"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-structures-literal-100k-r3-optimized.stdout.ndjson",
+      "sha256": "f18a2c30f33cee8fe4cd2a4d599f519d19463a2cf6270dfa45142c7f75c795a6"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-width100-10k-r1-baseline.stdout.ndjson",
+      "sha256": "7e0af20e05dc30737d88756fbafda58d35f42c5cca0fe39c9d11292a563088d7"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-width100-10k-r1-optimized.stdout.ndjson",
+      "sha256": "25f45a1cc6b7a332cb83bd367135ae2aab35c35b97bb32930c85b3f192653a40"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-width100-10k-r2-baseline.stdout.ndjson",
+      "sha256": "75b611cfc4536efc8aa1381674a35f4af67c827298bf42a26b24e216c80d50e8"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-width100-10k-r2-optimized.stdout.ndjson",
+      "sha256": "c45790f95dfac42e678e5334979628f0e868e167b34e8aca7f32d842fdf36506"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-width100-10k-r3-baseline.stdout.ndjson",
+      "sha256": "07346bc434914e8827069c33fd8823923ce3b5ed55a6ec13b84fb14a53ac8aca"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\rust-width100-10k-r3-optimized.stdout.ndjson",
+      "sha256": "b695dc2e2bf800450d97521aa10188b8c49fc5041215e2070d7fa1d308b5c836"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-results\\summary.json",
+      "sha256": "8446c3fe8cab482e153bbf01daca24e3b8a28138ddf9344cd96b9dc6f94f15fd"
+    }
+  ],
+  "five_targets": [
+    {
+      "id": "rust-node-budget",
+      "status": "passed",
+      "observed": 453.85589999999996,
+      "limit": 1000,
+      "optimized_processes": 3,
+      "paired_rounds": 3
+    },
+    {
+      "id": "rust-sparse-dimension_existing_set",
+      "status": "passed",
+      "observed": 8.1342,
+      "limit": 30,
+      "optimized_processes": 3,
+      "paired_rounds": 3
+    },
+    {
+      "id": "rust-sparse-dimension_existing_clear",
+      "status": "passed",
+      "observed": 8.194099999999999,
+      "limit": 30,
+      "optimized_processes": 3,
+      "paired_rounds": 3
+    },
+    {
+      "id": "rust-dense-dimension_existing_set",
+      "status": "passed",
+      "observed": 405.1046,
+      "limit": 500,
+      "optimized_processes": 3,
+      "paired_rounds": 3
+    },
+    {
+      "id": "rust-dense-dimension_existing_clear",
+      "status": "passed",
+      "observed": 436.3125,
+      "limit": 500,
+      "optimized_processes": 3,
+      "paired_rounds": 3
+    }
+  ],
+  "clean_counts": {
+    "passed": 185,
+    "not_met": 63,
+    "insufficient_evidence": 7
+  },
+  "clean_peak_counts": {
+    "passed": 39,
+    "not_met": 0,
+    "insufficient_evidence": 3
+  },
+  "negative_cases": {
+    "real_aggregate_duplicate": {
+      "status": "insufficient_evidence",
+      "optimized_processes": 2,
+      "paired_rounds": 2,
+      "rejected_sources": [
+        {
+          "source": "rust-budget-20000-r1-optimized.stdout.ndjson",
+          "problems": [
+            "duplicate_raw_metric"
+          ]
+        }
+      ]
+    },
+    "unknown_event": {
+      "status": "insufficient_evidence",
+      "optimized_processes": 2,
+      "paired_rounds": 2,
+      "rejected_sources": [
+        {
+          "source": "rust-budget-20000-r1-optimized.stdout.ndjson",
+          "problems": [
+            "duplicate_raw_metric"
+          ]
+        }
+      ]
+    },
+    "missing_aggregate_samples": {
+      "status": "insufficient_evidence",
+      "optimized_processes": 2,
+      "paired_rounds": 2,
+      "rejected_sources": [
+        {
+          "source": "rust-budget-20000-r1-optimized.stdout.ndjson",
+          "problems": [
+            "invalid_raw_samples"
+          ]
+        }
+      ]
+    }
+  }
+}

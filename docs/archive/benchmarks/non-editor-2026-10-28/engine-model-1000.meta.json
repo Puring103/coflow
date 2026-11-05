@@ -1,0 +1,33 @@
+{
+  "id": "engine-model-1000",
+  "spec": {
+    "id": "engine-model-1000",
+    "group": "model",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\engine_perf.exe",
+    "arguments": [],
+    "environment": {
+      "ENGINE_MODE": "model",
+      "ENGINE_RECORDS": "1000",
+      "ENGINE_DIMENSION_RECORDS": "1000",
+      "ENGINE_SAMPLES": "3"
+    }
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\engine_perf.exe",
+      "sha256": "E62CC008F81491BABDFE9F38BB6ACA4FBFEC849BAF9741FA4F256907576AA96D"
+    }
+  ],
+  "started_at": "2026-10-28T23:37:51.6839185+08:00",
+  "process_id": 49192,
+  "wall_seconds": 0.7006663,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 59842560,
+  "process_memory_samples": 6,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

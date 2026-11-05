@@ -1,0 +1,36 @@
+{
+  "protocol_version": 1,
+  "hash_algorithm": "SHA256",
+  "adaptation": "Archived copies only: resolve the default archive from the repository working directory and accept one explicit archive-root argument. Analysis and output logic are unchanged.",
+  "files": [
+    {
+      "file": "consolidate-final.mjs",
+      "sha256": "00c3bea9895db9e982b10d9dce66f3a6beeca9831de200c7094726baa7d9ba95",
+      "bytes": 3645,
+      "original_source": "target/performance-worklogs/consolidate-final.mjs",
+      "original_sha256": "9b66182e68b7eec62a5557fb36b36b10663d8c4a29aebc4c94596d6d55561694"
+    },
+    {
+      "file": "audit-final-serial.mjs",
+      "sha256": "018a813d1e2d11e9bcdb8411a31aec28484db6019ccc433eb0b0604fd04ed3ba",
+      "bytes": 2838,
+      "original_source": "target/performance-worklogs/audit-final-serial.mjs",
+      "original_sha256": "5742580bb6e0a68183e94143730944e2e5321fda00a3db51e9700cde95faf49e"
+    },
+    {
+      "file": "build-report-tables.mjs",
+      "sha256": "a52839c31659be0574b63af07313e0495f9e4e59f82bdfc69041715afb993154",
+      "bytes": 27133,
+      "original_source": "target/performance-worklogs/build-report-tables.mjs",
+      "original_sha256": "13eed043debedc345ee13b567a1f27866887a3e240af316d893b7025cabdbf36"
+    },
+    {
+      "file": "verify-report-progress-events.mjs",
+      "sha256": "fcf25e77ff2b950fd61e8762334635f276ca26c4b56f1fe2cc5b4896311c354f",
+      "bytes": 7856,
+      "original_source": "target/performance-worklogs/analysis-regression/verify-report-progress-events.mjs",
+      "original_sha256": "fcf25e77ff2b950fd61e8762334635f276ca26c4b56f1fe2cc5b4896311c354f"
+    }
+  ],
+  "duplicate_plan_policy": "Retain all plan files. Deduplicate only identical process specifications and references to the same original file path; conflicting specifications or different source paths with the same destination name fail. Unique process counts do not increase for repeated references."
+}

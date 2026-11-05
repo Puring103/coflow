@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiffFieldState {
     pub assigned: bool,
     pub origin: String,
@@ -69,6 +69,8 @@ pub(crate) struct SemanticSnapshot {
     schema: BTreeMap<(String, String), Value>,
     records: BTreeMap<Coordinate, Option<String>>,
     fields: BTreeMap<FieldCoordinate, DiffFieldState>,
+    /// 维度视图只保存相对基础字段的差异；上下文单独登记，保留空覆盖变体的存在语义。
+    contexts: BTreeMap<(String, String), BTreeMap<FieldCoordinate, DiffFieldState>>,
 }
 
 impl SemanticSnapshot {
@@ -172,6 +174,10 @@ impl SemanticSnapshot {
         // 每个维度投影先整体合并再渲染，间接引用产生的变化也进入字段差异。
         for dimension in session.queries().dimensions() {
             for variant in dimension.variants {
+                snapshot
+                    .contexts
+                    .entry((dimension.name.clone(), variant.clone()))
+                    .or_default();
                 let selector = Selector {
                     view: "both".into(),
                     dimensions: BTreeMap::from([(dimension.name.clone(), variant.clone())]),
@@ -216,31 +222,72 @@ impl SemanticSnapshot {
         variant: Option<&str>,
         sources: &mut super::query::RecordSources,
     ) -> Result<()> {
-        let result: super::RecordResult = serde_json::from_value(
-            super::query::record_json_with_sources(project, session, record, selector, sources)?,
+        if let Some((dimension, variant)) = dimension.zip(variant) {
+            let unchanged_object = session
+                .model()
+                .record_by_type_id(record.actual_type(), record.id())
+                .and_then(|id| session.model().record(id))
+                .is_some_and(|base| std::sync::Arc::ptr_eq(&base.object, &record.object));
+            let explicit_override = record.dimension_fields.values().any(|field| {
+                field.dimension.as_str() == dimension && field.variants.contains_key(variant)
+            });
+            // 投影共享的未影响记录具有相同有效值；没有显式覆盖时来源状态也与基础一致。
+            if unchanged_object && !explicit_override {
+                return Ok(());
+            }
+        }
+        let result = super::query::record_result_with_sources(
+            project, session, record, selector, sources, false,
         )?;
         for (field, source) in result.source.unwrap_or_default() {
-            self.fields.insert(
-                (
-                    record.actual_type().into(),
-                    record.id().into(),
-                    field.clone(),
-                    dimension.map(str::to_string),
-                    variant.map(str::to_string),
-                ),
-                DiffFieldState {
-                    assigned: source.assigned,
-                    origin: source.origin,
-                    expression: source.expression,
-                    effective: source.effective,
-                    rendered: result.rendered.get(&field).cloned(),
-                },
+            let state = DiffFieldState {
+                assigned: source.assigned,
+                origin: source.origin,
+                expression: source.expression,
+                effective: source.effective,
+                rendered: result.rendered.get(&field).cloned(),
+            };
+            let base = (
+                record.actual_type().into(),
+                record.id().into(),
+                field.clone(),
+                None,
+                None,
             );
+            if dimension.is_some() && self.fields.get(&base) == Some(&state) {
+                continue;
+            }
+            if let Some(context) = dimension.zip(variant) {
+                self.contexts
+                    .entry((context.0.into(), context.1.into()))
+                    .or_default()
+                    .insert(base, state);
+            } else {
+                self.fields.insert(base, state);
+            }
         }
         Ok(())
     }
+
+    fn field(
+        &self,
+        base: &FieldCoordinate,
+        context: Option<&(String, String)>,
+    ) -> Option<&DiffFieldState> {
+        let Some(context) = context else {
+            return self.fields.get(base);
+        };
+        self.contexts
+            .get(context)?
+            .get(base)
+            .or_else(|| self.fields.get(base))
+    }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "基础值、上下文增删和稀疏覆盖差异按同一稳定顺序归并，集中保持完整报告语义。"
+)]
 pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> SemanticDifference {
     let available = before.available && after.available;
     let schema_available = before.schema_available && after.schema_available;
@@ -269,45 +316,68 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
     let mut fields = Vec::new();
     let mut dimensions = Vec::new();
     if available {
-        // 两端共有键只比较一次，保持排序与去重语义。
-        for key in BTreeSet::from_iter(before.fields.keys().chain(after.fields.keys())) {
-            let previous = before.fields.get(key);
-            let current = after.fields.get(key);
-            let assignment_changed = previous.map(assignment) != current.map(assignment);
-            let effective_changed = previous.and_then(|value| value.effective.as_ref())
-                != current.and_then(|value| value.effective.as_ref());
-            let rendered_changed = previous.and_then(|value| value.rendered.as_ref())
-                != current.and_then(|value| value.rendered.as_ref());
-            if !assignment_changed && !effective_changed && !rendered_changed {
-                continue;
-            }
-            let change = SemanticFieldDiff {
-                actual_type: key.0.clone(),
-                id: key.1.clone(),
-                field: key.2.clone(),
-                dimension: key.3.clone(),
-                variant: key.4.clone(),
-                assignment_changed,
-                effective_changed,
-                rendered_changed,
-                before: previous.cloned(),
-                after: current.cloned(),
-            };
-            if key.3.is_some() {
-                dimensions.push(change);
-            } else {
+        let base_keys = BTreeSet::from_iter(before.fields.keys().chain(after.fields.keys()));
+        let mut changed_base = BTreeSet::new();
+        for key in &base_keys {
+            if let Some(change) =
+                field_difference(key, None, before.fields.get(*key), after.fields.get(*key))
+            {
+                changed_base.insert(*key);
                 fields.push(change);
             }
         }
+        for context in BTreeSet::from_iter(before.contexts.keys().chain(after.contexts.keys())) {
+            let old = before.contexts.get(context);
+            let new = after.contexts.get(context);
+            // 已有上下文仅比较基础差异与显式差异并集；变体增删仍比较其全部有效字段。
+            let keys = if old.is_some() && new.is_some() {
+                old.into_iter()
+                    .flat_map(BTreeMap::keys)
+                    .chain(new.into_iter().flat_map(BTreeMap::keys))
+                    .chain(changed_base.iter().copied())
+                    .collect::<BTreeSet<_>>()
+            } else {
+                base_keys.clone()
+            };
+            for key in keys {
+                if let Some(change) = field_difference(
+                    key,
+                    Some(context),
+                    before.field(key, Some(context)),
+                    after.field(key, Some(context)),
+                ) {
+                    dimensions.push(change);
+                }
+            }
+        }
+        dimensions.sort_by(|left, right| {
+            (
+                &left.actual_type,
+                &left.id,
+                &left.field,
+                &left.dimension,
+                &left.variant,
+            )
+                .cmp(&(
+                    &right.actual_type,
+                    &right.id,
+                    &right.field,
+                    &right.dimension,
+                    &right.variant,
+                ))
+        });
+        // 按变化记录建立一次索引，避免每条记录再扫描全部字段差异。
+        let changed_coordinates = fields
+            .iter()
+            .chain(&dimensions)
+            .map(|field| (field.actual_type.as_str(), field.id.as_str()))
+            .collect::<BTreeSet<_>>();
         // 两端共有键只比较一次，保持排序与去重语义。
         for key in BTreeSet::from_iter(before.records.keys().chain(after.records.keys())) {
             let previous = before.records.get(key);
             let current = after.records.get(key);
             if previous != current
-                || fields
-                    .iter()
-                    .chain(&dimensions)
-                    .any(|field| field.actual_type == key.0 && field.id == key.1)
+                || changed_coordinates.contains(&(key.0.as_str(), key.1.as_str()))
             {
                 records.push(SemanticRecordDiff {
                     actual_type: key.0.clone(),
@@ -346,6 +416,31 @@ pub(crate) fn compare(before: &SemanticSnapshot, after: &SemanticSnapshot) -> Se
     }
 }
 
+fn field_difference(
+    key: &FieldCoordinate,
+    context: Option<&(String, String)>,
+    previous: Option<&DiffFieldState>,
+    current: Option<&DiffFieldState>,
+) -> Option<SemanticFieldDiff> {
+    let assignment_changed = assignment_changed(previous, current);
+    let effective_changed = previous.and_then(|value| value.effective.as_ref())
+        != current.and_then(|value| value.effective.as_ref());
+    let rendered_changed = previous.and_then(|value| value.rendered.as_ref())
+        != current.and_then(|value| value.rendered.as_ref());
+    (assignment_changed || effective_changed || rendered_changed).then(|| SemanticFieldDiff {
+        actual_type: key.0.clone(),
+        id: key.1.clone(),
+        field: key.2.clone(),
+        dimension: context.map(|(dimension, _)| dimension.clone()),
+        variant: context.map(|(_, variant)| variant.clone()),
+        assignment_changed,
+        effective_changed,
+        rendered_changed,
+        before: previous.cloned(),
+        after: current.cloned(),
+    })
+}
+
 fn assignment(value: &DiffFieldState) -> (bool, &str, Option<Vec<&str>>) {
     // 排版与注释属于源码差异，不把它们计入显式赋值变化。
     (
@@ -360,6 +455,61 @@ fn assignment(value: &DiffFieldState) -> (bool, &str, Option<Vec<&str>>) {
         }),
     )
 }
+
+fn assignment_changed(before: Option<&DiffFieldState>, after: Option<&DiffFieldState>) -> bool {
+    match (before, after) {
+        (Some(before), Some(after)) => {
+            // 大多数字段源码完全相同，无需为它们重新分词；有改动时仍忽略排版和注释。
+            before.assigned != after.assigned
+                || before.origin != after.origin
+                || (before.expression != after.expression
+                    && assignment(before) != assignment(after))
+        }
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod assignment_tests {
+    use super::*;
+
+    #[test]
+    fn assignment_comparison_preserves_trivia_and_missing_semantics() {
+        let state = |expression: Option<&str>| DiffFieldState {
+            assigned: true,
+            origin: "explicit_base".into(),
+            expression: expression.map(str::to_owned),
+            effective: None,
+            rendered: None,
+        };
+        for (before, after, changed) in [
+            (Some("[1,2]"), Some("[1,2]"), false),
+            (Some("[1,2]"), Some("[ 1, # note\n2 ]"), false),
+            (Some("[1,2]"), Some("[1,3]"), true),
+            (None, None, false),
+            (None, Some("None"), true),
+        ] {
+            assert_eq!(
+                assignment_changed(Some(&state(before)), Some(&state(after))),
+                changed
+            );
+        }
+        assert!(!assignment_changed(None, None));
+        assert!(assignment_changed(Some(&state(None)), None));
+        let before = state(Some("1"));
+        let mut after = before.clone();
+        after.origin = "schema_default".into();
+        assert!(assignment_changed(Some(&before), Some(&after)));
+        after = before.clone();
+        after.assigned = false;
+        assert!(assignment_changed(Some(&before), Some(&after)));
+    }
+}
+
+#[cfg(test)]
+#[path = "semantic_diff_sparse_tests.rs"]
+mod sparse_tests;
 
 pub(crate) fn select(mut difference: SemanticDifference, args: &Arguments) -> Result<Value> {
     if let Some(ty) = args.get("type") {
@@ -412,3 +562,7 @@ pub(crate) fn select(mut difference: SemanticDifference, args: &Arguments) -> Re
     }
     Ok(result)
 }
+
+#[cfg(test)]
+#[path = "semantic_diff_capture_tests.rs"]
+mod capture_tests;

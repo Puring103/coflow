@@ -1,5 +1,7 @@
 using Coflow.Loader;
 
+if (args.Contains("--case")) { Environment.ExitCode = Coflow.Benchmarks.Program.Run(args); return; }
+
 if (args.Contains("--help"))
 {
     Console.WriteLine("Coflow.Loader.Benchmarks [records=500] [samples=7] [count-descriptors] " +

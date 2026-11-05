@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-10-28T13:36:53.2858637Z",
+  "binary_observed_before_rebuild": true,
+  "binary_path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+  "binary_sha256": "9CD896C25534B49B02A3AEC35CBD15E11C9BC5055705195798309EFDF9FA8443",
+  "binary_size_bytes": 7901696,
+  "binary_modified_utc": "2026-10-28T12:58:09.6164980Z",
+  "pre_budget_source": {
+    "path": "runtime_matrix-pre-budget.reconstructed.rs",
+    "sha256": "CE2E16F18FE73C42722D66989E43BD13C15229F3E0F329916C2F8BBB6671939E",
+    "provenance": "Reconstructed by reversing only the just-applied load_budget_rejected patch before any rebuild; LF normalized snapshot, not an independently captured pre-edit byte hash."
+  },
+  "post_budget_source": {
+    "path": "runtime_matrix-post-budget.rs",
+    "sha256": "09683DD65877D50E09183F9696A70108F3C024C975462316BB4F05EC3E9DACA4"
+  },
+  "fixture_sha256": "6C37202A6633E35ACD00C00304B1285EB8FA3BB9C57603F13F868CBB348CAC36",
+  "change_scope": "Benchmark-only optional rejection case and phase markers; production sources unchanged."
+}

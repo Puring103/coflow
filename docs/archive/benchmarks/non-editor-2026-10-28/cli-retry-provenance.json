@@ -1,0 +1,9 @@
+{
+  "baseline_commit": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "executable": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-benchmark-cli-1ba9428c34f749aaba3560e35167ae57\\coflow.exe",
+  "sha256": "AFF414FBE2701A20901B6DAEE67C7846A93022FC6F48B965B05D8F691BF0E0AE",
+  "previous_sha256": "826BA384334015E1E7F57B583C7309092EEB98118B4B7C940CFA9581E78E00F7",
+  "build_command": "cargo build --release --locked -p coflow -p coflow-runtime --example engine_perf --bin coflow",
+  "captured_at": "2026-10-28T16:17:31.2272687Z",
+  "incident": "During cli-main-100k, target/release/coflow.exe became unavailable. Cause unconfirmed. Earlier get/check completed; set and same-file batch timed out; cross-file batch and five later groups failed with ENOENT. Retried runs use a dedicated binary copy. Rebuilt SHA differs from original; source baseline is unchanged."
+}

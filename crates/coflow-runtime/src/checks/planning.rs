@@ -196,6 +196,19 @@ pub(super) fn plan_precise_check_plan_with_limit<'schema>(
         }
         if let Some(record) = model.record_by_type_id(&coordinate.actual_type, &coordinate.id) {
             insert_data_tasks(schema, model, record, None, Some(changes), &mut tasks);
+            // 新成员没有上一代读集，All 也可能替换整个记录；常量规则和虚拟 id 规则同样要执行。
+            if matches!(changes, ChangedRecordFields::All) {
+                for statement in schema.check_statements_for_actual_type(&coordinate.actual_type) {
+                    if let Some(info) = schema.check_statement(statement).map(|value| value.info) {
+                        insert_statement_task(
+                            schema,
+                            info,
+                            &CheckTarget::Record(record),
+                            &mut tasks,
+                        );
+                    }
+                }
+            }
         }
     }
     for task in affected {

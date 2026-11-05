@@ -37,7 +37,8 @@ mod semantics;
 pub mod serde_i64;
 
 pub use build::{
-    CfdDimensionInputBatch, CfdInputBatch, CfdModelBuildOutput, CfdModelBuildStats, CfdModelBuilder,
+    CfdDimensionInputBatch, CfdInputBatch, CfdModelBuildOutput, CfdModelBuildStats,
+    CfdModelBuilder, CfdTemplateRejections,
 };
 pub use coflow_language::limits::StructuralLimits;
 pub use diagnostics::{

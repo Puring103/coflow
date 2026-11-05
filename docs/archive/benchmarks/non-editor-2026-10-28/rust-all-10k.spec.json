@@ -1,0 +1,21 @@
+{
+  "id": "rust-all-10k",
+  "group": "rust",
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+  "arguments": [],
+  "environment": {
+    "MATRIX_RECORDS": "10000",
+    "MATRIX_FILES": "10",
+    "MATRIX_FIELDS": "20",
+    "MATRIX_SAMPLES": "3",
+    "MATRIX_WARMUPS": "1",
+    "MATRIX_BATCH": "1000",
+    "MATRIX_COLLECTION": "8",
+    "MATRIX_VARIANTS": "1",
+    "MATRIX_STRIDE": "100",
+    "MATRIX_TOPOLOGY": "ring",
+    "MATRIX_TEMPLATES": "1",
+    "MATRIX_QUERY_BATCH": "1000",
+    "MATRIX_CASES": "load_checks,load_no_checks,field_lookup,record_scan,references,validate_same,validate_changed,validate_invalid,refresh_same,error_recovery,set_scalar,set_dependency,set_noop,unset_field,batch_grouped,batch_interleaved,array_element,array_replace,dict_element,dict_replace,nested_field,option_field,insert_record,delete_record,rename_record,swap_records,transfer_record,dimension_set,dimension_add,dimension_clear,dimension_lookup,external_conflict"
+  }
+}

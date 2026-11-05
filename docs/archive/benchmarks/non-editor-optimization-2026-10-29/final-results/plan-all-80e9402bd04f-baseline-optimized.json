@@ -1,0 +1,191 @@
+{
+  "created_at": "2026-10-28T19:43:11.021Z",
+  "protocol": "Serial paired independent processes; A/B then B/A by round. Full raw samples retained. OS caches uncontrolled. Builds/tests excluded.",
+  "plans": [
+    {
+      "id": "rust-structures-literal-100k-r1-baseline",
+      "scenario": "rust-structures-literal-100k",
+      "round": 1,
+      "arm": "baseline",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 1800,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "100000",
+        "MATRIX_FILES": "100",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "1",
+        "MATRIX_WARMUPS": "0",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "0",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "ring",
+        "MATRIX_TEMPLATES": "0",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "insert_record,delete_record,rename_record,transfer_record"
+      }
+    },
+    {
+      "id": "rust-structures-literal-100k-r1-optimized",
+      "scenario": "rust-structures-literal-100k",
+      "round": 1,
+      "arm": "optimized",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 1800,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "100000",
+        "MATRIX_FILES": "100",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "1",
+        "MATRIX_WARMUPS": "0",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "0",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "ring",
+        "MATRIX_TEMPLATES": "0",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "insert_record,delete_record,rename_record,transfer_record"
+      }
+    },
+    {
+      "id": "rust-hot-100k-r1-baseline",
+      "scenario": "rust-hot-100k",
+      "round": 1,
+      "arm": "baseline",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 1800,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "100000",
+        "MATRIX_FILES": "100",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "100",
+        "MATRIX_WARMUPS": "1",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "0",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "ring",
+        "MATRIX_TEMPLATES": "1",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "set_scalar,set_dependency,refresh_same"
+      }
+    },
+    {
+      "id": "rust-hot-100k-r1-optimized",
+      "scenario": "rust-hot-100k",
+      "round": 1,
+      "arm": "optimized",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 1800,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "100000",
+        "MATRIX_FILES": "100",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "100",
+        "MATRIX_WARMUPS": "1",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "0",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "ring",
+        "MATRIX_TEMPLATES": "1",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "set_scalar,set_dependency,refresh_same"
+      }
+    },
+    {
+      "id": "rust-invalid-100000-r1-optimized",
+      "scenario": "rust-invalid-100000",
+      "round": 1,
+      "arm": "optimized",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 120,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "100000",
+        "MATRIX_FILES": "100",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "1",
+        "MATRIX_WARMUPS": "0",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "1",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "ring",
+        "MATRIX_TEMPLATES": "1",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "validate_invalid"
+      }
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r1-baseline",
+      "scenario": "rust-invalid-fanin-10k",
+      "round": 1,
+      "arm": "baseline",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 120,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "10000",
+        "MATRIX_FILES": "10",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "1",
+        "MATRIX_WARMUPS": "0",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "1",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "star",
+        "MATRIX_TEMPLATES": "1",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "validate_invalid"
+      }
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r1-optimized",
+      "scenario": "rust-invalid-fanin-10k",
+      "round": 1,
+      "arm": "optimized",
+      "group": "rust",
+      "arguments": [],
+      "timeout_seconds": 120,
+      "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "environment": {
+        "MATRIX_RECORDS": "10000",
+        "MATRIX_FILES": "10",
+        "MATRIX_FIELDS": "20",
+        "MATRIX_SAMPLES": "1",
+        "MATRIX_WARMUPS": "0",
+        "MATRIX_BATCH": "1000",
+        "MATRIX_COLLECTION": "8",
+        "MATRIX_VARIANTS": "1",
+        "MATRIX_STRIDE": "100",
+        "MATRIX_TOPOLOGY": "star",
+        "MATRIX_TEMPLATES": "1",
+        "MATRIX_QUERY_BATCH": "1000",
+        "MATRIX_CASES": "validate_invalid"
+      }
+    }
+  ],
+  "payloads": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+      "sha256": "c2ddedc6ebfe42149cd24a526d619a9a4917bbb5e602af4e3753ef688ca1c604"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "sha256": "6b12b7d87c805f08e7ef50071a87e0c458a275d2cd1d48ab4b85cfbb9a30eef9"
+    }
+  ]
+}

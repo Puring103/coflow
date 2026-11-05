@@ -1,0 +1,61 @@
+{
+  "id": "mono-width100-10k-r2-optimized",
+  "spec": {
+    "id": "mono-width100-10k-r2-optimized",
+    "scenario": "mono-width100-10k",
+    "round": 2,
+    "arm": "optimized",
+    "group": "mono",
+    "arguments": [
+      "-batchmode",
+      "-nographics",
+      "-logFile",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\managed-r6\\mono-width100-10k-r2-optimized.player.log",
+      "--output",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\managed-r6\\mono-width100-10k-r2-optimized.measurements.ndjson",
+      "--case",
+      "scalar100",
+      "--records",
+      "10000",
+      "--files",
+      "100",
+      "--samples",
+      "1",
+      "--query-samples",
+      "100",
+      "--query-batch",
+      "10000",
+      "--variants",
+      "1",
+      "--density",
+      "sparse",
+      "--topology",
+      "none",
+      "--templates",
+      "false",
+      "--operations",
+      "load,queries"
+    ],
+    "timeout_seconds": 1800,
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark.exe",
+    "memory_scope": "Actual Unity Mono player, including engine, fixtures, preflight, warmup and validation; not model retained heap."
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark.exe",
+      "sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036"
+    }
+  ],
+  "started_at": "2026-10-29T06:55:53.9166845+08:00",
+  "process_id": 11720,
+  "wall_seconds": 4.1962785,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 380768256,
+  "process_memory_samples": 36,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Actual Unity Mono player, including engine, fixtures, preflight, warmup and validation; not model retained heap.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

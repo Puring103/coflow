@@ -1,0 +1,143 @@
+{
+  "captured_at": "2026-10-29T02:22:21.9429070+08:00",
+  "rust_check": {
+    "command": "cargo check --workspace",
+    "log": "verification/workspace-check-optimized-r4.log",
+    "exit_code": 0
+  },
+  "rust_tests": {
+    "log": "verification/workspace-test-optimized-r4.log",
+    "ignored": 0,
+    "exit_code": 0,
+    "failed": 0,
+    "passed": 815,
+    "command": "cargo test --workspace",
+    "groups": 96,
+    "top_level_passed": 811,
+    "isolated_worker_passed": 4,
+    "counting_note": "815 successful test output results = 811 top-level results plus 4 isolated settings-process worker results; not 815 unique top-level test cases.",
+    "independent_review": "verification/final-semantic-review.md"
+  },
+  "csharp_tests": {
+    "failed": 0,
+    "passed": 86,
+    "skipped": 0,
+    "configuration": "Release",
+    "log": "verification/csharp-r6-tests.log"
+  },
+  "netstandard_smoke": "passed",
+  "generated_integration": "passed",
+  "mono": {
+    "backend": "Mono",
+    "unity_version": "2022.3.62f3",
+    "fixture_smokes": 6,
+    "thread_contract_assertions": 30,
+    "formal_samples_in_smoke": 0,
+    "evidence": "verification/csharp-r6-build-smoke.json"
+  },
+  "il2cpp": {
+    "reason": "Windows IL2CPP module unavailable; previously authorized installation blocked by official download redirect returning HTTP 404",
+    "status": "unmeasured",
+    "baseline_evidence": "../non-editor-2026-10-28/unity-il2cpp-install.txt"
+  },
+  "release_publication": "not_requested_for_this_optimization_change",
+  "updated_at": "2026-10-29T00:07:19.342Z",
+  "source_manifest": "source-manifest-final.json",
+  "release_build": {
+    "exit_code": 0,
+    "log": "verification/release-optimized-r4.log"
+  },
+  "rust_artifacts": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\coflow.exe",
+      "sha256": "fa3259043a2ff64c8776e5c44567279270037f4a3f7277e2e278802dead15027"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\runtime_matrix.exe",
+      "sha256": "6b12b7d87c805f08e7ef50071a87e0c458a275d2cd1d48ab4b85cfbb9a30eef9"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\engine_perf.exe",
+      "sha256": "4caca4e6994a41cd376bc542c533c542eabe99286223282211bca47a262d38df"
+    }
+  ],
+  "managed_artifacts": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r6\\dotnet\\Coflow.Loader.dll",
+      "sha256": "179C99640086C198161D791A61B19CDDF4AC976645BFFE015906C7302091101C",
+      "bytes": 94720
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r6\\dotnet\\Coflow.Loader.Benchmarks.dll",
+      "sha256": "082FB58503881F865B1FFC77AEA71FB5D3CC83326E3E9E70B0A58EACC0677F66",
+      "bytes": 152576
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark.exe",
+      "sha256": "F5F73D8616A2500E0FB0223D83774E2D7F6A74C1BBDAD772F4FEFC9BF5812036",
+      "bytes": 666624
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark_Data\\Managed\\Coflow.Loader.dll",
+      "sha256": "1C841801E9448737E96A126DED2EBBBCD6D7E400A34AC64E1D4EF5C88810297A",
+      "bytes": 94208
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\benchmarks\\unity-optimized-20261029-r6-mono-verified\\CoflowBenchmark_Data\\Managed\\Assembly-CSharp.dll",
+      "sha256": "E5C2EA2A42DA30E3AE36D483C76D75614EF993C9D8BE73744BBD5CAEC82A5D2E",
+      "bytes": 150016
+    }
+  ],
+  "final_measurements": {
+    "directory": "final-results",
+    "scenarios": 49,
+    "processes": 291,
+    "optimized_successful_processes": 147,
+    "counts": {
+      "pending": 0,
+      "completed": 282,
+      "partial": 3,
+      "censored": 6,
+      "failed": 0
+    },
+    "independent_audit": "audit-final.json",
+    "audit_issues": 0,
+    "comparison_rows": 328,
+    "raw_measurement_rows": 1950,
+    "cli_10k_operations": 39,
+    "cli_10k_operations_with_three_pairs": 39,
+    "provenance": "final-results/evidence-provenance.json",
+    "source_manifest_sha256": "b93c4d3beb5cc79e6355d29fe27e827753ce73b27a620500bf0c357589aee184"
+  },
+  "target_status": {
+    "evidence": "final-results/target-status.json",
+    "counts": {
+      "passed": 185,
+      "not_met": 63,
+      "insufficient_evidence": 7
+    },
+    "process_peak_counts": {
+      "passed": 39,
+      "not_met": 0,
+      "insufficient_evidence": 3
+    },
+    "cli_absolute_memory": {
+      "passed": 0,
+      "not_met": 4,
+      "insufficient_evidence": 0
+    },
+    "mechanism_status": "goals-status.md"
+  },
+  "final_audits": {
+    "freeze": "verification/final-freeze-audit.json",
+    "serial": "verification/final-serial-audit.json",
+    "serial_process_intervals": 353,
+    "semantic": "verification/final-semantic-review.md",
+    "managed_semantic": "verification/csharp-semantic-review.md",
+    "analysis_regression": "verification/report-progress-event-regression.json",
+    "report_review": "verification/final-report-review.md",
+    "documentation": "verification/final-documentation-check.json"
+  },
+  "post_gate_changes": "Documentation and analysis tooling only; production source and frozen measured executables unchanged after the recorded functional gates.",
+  "git_diff_check": "passed"
+}

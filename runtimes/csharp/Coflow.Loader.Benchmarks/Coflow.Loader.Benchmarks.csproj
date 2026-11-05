@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- 链接源码以测量内部构造阶段；LoaderSourceRoot 可绑定同构造协议的独立源码副本。 -->
+    <Compile Include="../../../scripts/performance/unity/ConstructionContracts.cs" />
     <Compile Include="$(LoaderSourceRoot)/*.cs" />
     <Compile Include="$(LoaderSourceRoot)/Cfd/*.cs" />
   </ItemGroup>

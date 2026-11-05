@@ -1,0 +1,6 @@
+RUN data_refs records=10000 files=10
+PASS data_refs p50=1324.460ms
+RUN set_field_rules records=10000 files=10
+PASS set_field_rules p50=47651.792ms
+RUN rename_record records=10000 files=10
+PASS rename_record p50=48208.307ms

@@ -1,0 +1,26 @@
+{
+  "baseline_manifest": "../../non-editor-2026-10-28/toolchain-final-manifest.json",
+  "files": [
+    {
+      "path": "crates/coflow-runtime/examples/engine_perf.rs",
+      "bytes": 21941,
+      "sha256": "b76c5105e4358663e66cae268dc995c7219b19b982515f3f75df6a45a9be09bf",
+      "current_sha256": "b76c5105e4358663e66cae268dc995c7219b19b982515f3f75df6a45a9be09bf",
+      "matches": true
+    },
+    {
+      "path": "crates/coflow-runtime/examples/runtime_matrix.rs",
+      "bytes": 39207,
+      "sha256": "51125a4fd39d3105d4f7a1eddaad0f548dc995d5ac9549c264a1ecd9d330779f",
+      "current_sha256": "51125a4fd39d3105d4f7a1eddaad0f548dc995d5ac9549c264a1ecd9d330779f",
+      "matches": true
+    },
+    {
+      "path": "crates/coflow-runtime/examples/runtime_matrix/fixture.rs",
+      "bytes": 6545,
+      "sha256": "6c37202a6633e35acd00c00304b1285eb8fa3bb9c57603f13f868cbb348cac36",
+      "current_sha256": "6c37202a6633e35acd00c00304b1285eb8fa3bb9c57603f13f868cbb348cac36",
+      "matches": true
+    }
+  ]
+}

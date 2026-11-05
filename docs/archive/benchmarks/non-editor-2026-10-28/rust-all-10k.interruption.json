@@ -1,0 +1,6 @@
+{
+  "pid": 43132,
+  "parent": "pwsh -NoProfile -File C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\run-case.ps1 -Spec C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\rust-all-10k.spec.json -OutputDirectory C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28",
+  "stopped_at": "2026-10-28T20:47:27.0534041+08:00",
+  "reason": "Bounded invalid-candidate scalability run; other cases continue separately"
+}

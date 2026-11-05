@@ -1,0 +1,65 @@
+{
+  "id": "cli-singlefile-10k",
+  "spec": {
+    "id": "cli-singlefile-10k",
+    "group": "cli",
+    "executable": "C:\\Program Files\\nodejs\\node.exe",
+    "timeout_seconds": 1800,
+    "timeout_scope": "Whole Node CLI-matrix run including fixture/reset, warmup, timed commands and correctness queries. Each individual CLI invocation has a separate 120000ms bound; neither timeout is a completed latency.",
+    "memory_scope": "Node CLI-matrix driver only; this memory metric excludes coflow.exe descendants and must not be reported as CLI memory. Use measure-cli-memory.mjs for direct CLI measurements.",
+    "arguments": [
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\cli-matrix.mjs",
+      "--cli",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\coflow.exe",
+      "--output",
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-2026-10-28\\cli-singlefile-10k.results.json",
+      "--records",
+      "10000",
+      "--files",
+      "1",
+      "--fields",
+      "20",
+      "--samples",
+      "1",
+      "--warmups",
+      "0",
+      "--batch",
+      "1000",
+      "--variants",
+      "1",
+      "--coverage",
+      "sparse",
+      "--topology",
+      "sparse",
+      "--case",
+      "data_get,set_field,batch_same_file",
+      "--timeout-ms",
+      "120000",
+      "--continue-on-error",
+      "true"
+    ],
+    "continue_after_failure": true
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Program Files\\nodejs\\node.exe",
+      "sha256": "DCCC52DE28D8DF2EE22D2062424F8C563070D95D8AD70C54C4BF01D590DEC14F"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\scripts\\performance\\cli-matrix.mjs",
+      "sha256": "1897C9D6E2D01306CF0280F20820FBFE3A153922F8100CE808C31630BEF54DFE"
+    }
+  ],
+  "started_at": "2026-10-28T23:37:48.9278338+08:00",
+  "process_id": 47112,
+  "wall_seconds": 0.0606386,
+  "exit_code": 1,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole Node CLI-matrix run including fixture/reset, warmup, timed commands and correctness queries. Each individual CLI invocation has a separate 120000ms bound; neither timeout is a completed latency.",
+  "sampled_process_peak_working_set_bytes": 39608320,
+  "process_memory_samples": 1,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Node CLI-matrix driver only; this memory metric excludes coflow.exe descendants and must not be reported as CLI memory. Use measure-cli-memory.mjs for direct CLI measurements.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

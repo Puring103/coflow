@@ -1,6 +1,6 @@
 # C# Loader 性能观测
 
-该工具使用共享 CFD 夹具和只读业务视图，输出各场景的 NDJSON 样本。字段访问采用 `reader.Get<T>(string)`。工具使用当前 Loader 构造协议，不属于发布门禁；历史对照应使用对应版本的工具。
+该工具使用 CFD 夹具与完整构建的业务数据，输出各场景的 NDJSON 样本。`CfdReader.Get<T>` 仅用于加载阶段填充字段，业务属性直接读取最终值。工具使用当前 Loader 构造协议，不属于发布门禁；历史对照应使用对应版本的工具。
 
 ## 运行
 
@@ -57,3 +57,17 @@ dotnet run --project runtimes/csharp/Coflow.Loader.Benchmarks --configuration Re
 当前运行时为完整预构建模型，历史稀疏视图报告只描述其标注的历史代码快照。当前 first-for 与 cached-for 均为已完成结果的查询。
 
 0.16.0 的当前测量见 [完整预构建数据测量](../../../docs/archive/benchmarks/csharp-prebuilt-2026-11-06.md)。
+
+## 生成代码矩阵
+
+`--case` 选择 `scalar8`、`scalar20`、`scalar100`、`tables32`、`complex` 或 `dimensions`，使用 `fixtures/` 中真实生成的类型。修改生成器后运行 `./generate.ps1` 更新六套代码。
+
+```powershell
+dotnet run --project runtimes/csharp/Coflow.Loader.Benchmarks --configuration Release -- --case dimensions --records 1000 --files 10 --samples 7 --query-samples 100 --query-batch 10000 --variants 2 --topology ring --templates true --operations load,queries,dimensions,contracts
+```
+
+操作组为 `startup`、`load`、`io`、`reload`、`queries`、`dimensions`、`error`、`contracts`。矩阵输出操作分配、GC 次数、保留堆与进程内存；各指标的具体口径由 NDJSON metadata 描述。查询基准使用普通业务表，维度基准直接使用 `Dimension<T>`，不会通过业务对象反查容器。
+
+维度夹具声明 language 和 balance 的各 N 个变体，以及 language 的空变体 `fallback`。加载时额外构建 N 个同序号的两维组合；组合选择使用提前创建的 `DimensionSelection`。所有首次和重复 `For` 都只是读取已完成的数据，空变体使用加载时构建的基础字段结果，未知变体报错。
+
+`contracts` 在调用线程与默认新线程执行引用、模板深度、集合身份与诊断检查。该实现与 Unity Player 共用；在 .NET 通过不等于已验证 Unity Mono 或 IL2CPP。共享适配器采用 C# 9，Unity 工程准备脚本直接复制此文件。

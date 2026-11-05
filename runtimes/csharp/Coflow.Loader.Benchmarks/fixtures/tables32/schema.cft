@@ -1,0 +1,54 @@
+abstract table Row {
+  f0: int;
+  f1: int;
+  f2: int;
+  f3: int;
+  f4: int;
+  f5: int;
+  f6: int;
+  f7: int;
+  f8: int;
+  f9: int;
+  f10: int;
+  f11: int;
+  f12: int;
+  f13: int;
+  f14: int;
+  f15: int;
+  f16: int;
+  f17: int;
+  f18: int;
+  f19: int;
+}
+table Row0: Row {}
+table Row1: Row {}
+table Row2: Row {}
+table Row3: Row {}
+table Row4: Row {}
+table Row5: Row {}
+table Row6: Row {}
+table Row7: Row {}
+table Row8: Row {}
+table Row9: Row {}
+table Row10: Row {}
+table Row11: Row {}
+table Row12: Row {}
+table Row13: Row {}
+table Row14: Row {}
+table Row15: Row {}
+table Row16: Row {}
+table Row17: Row {}
+table Row18: Row {}
+table Row19: Row {}
+table Row20: Row {}
+table Row21: Row {}
+table Row22: Row {}
+table Row23: Row {}
+table Row24: Row {}
+table Row25: Row {}
+table Row26: Row {}
+table Row27: Row {}
+table Row28: Row {}
+table Row29: Row {}
+table Row30: Row {}
+table Row31: Row {}

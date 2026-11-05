@@ -1,0 +1,145 @@
+{
+  "protocol_version": 1,
+  "suite": "cli_matrix",
+  "started_at_utc": "2026-10-28T16:32:11.630Z",
+  "config": {
+    "records": 10000,
+    "files": 1,
+    "fields": 20,
+    "samples": 1,
+    "warmups": 0,
+    "batch": 1000,
+    "variants": 1,
+    "coverage": "sparse",
+    "topology": "sparse",
+    "timeout_ms": 120000
+  },
+  "cli": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-benchmark-cli-1ba9428c34f749aaba3560e35167ae57\\coflow.exe",
+  "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+  "tool_sha256": "1897c9d6e2d01306cf0280f20820fbfe3a153922f8100ce808c31630bef54dfe",
+  "environment": {
+    "platform": "win32",
+    "architecture": "x64",
+    "node": "v22.23.4",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "logical_cpus": 20,
+    "total_memory_bytes": 34190790656
+  },
+  "timing": "Independent CLI process spawn through close and stdout collection; fixture generation/reset, input construction, JSON parsing and correctness checks excluded. Filesystem cache is warm; no OS cache eviction.",
+  "validation": "Every sample validates exit/status, operation results and fresh CLI semantic queries. Nonpublishing cases compare the entire selected input path/content fingerprint, including added/deleted matching files. Each case ends with full check --rules. Original fixture is restored before each mutating sample.",
+  "memory": {
+    "collected": false,
+    "reason": "Node parent memory does not represent the CLI child. No child working-set sampler is included."
+  },
+  "metrics": [
+    {
+      "metric": "data_get",
+      "records": 10000,
+      "files": 1,
+      "fields": 20,
+      "fixture_sha256": "79cd935361246129ea5f7588327d237031e4b34cc8197bd90f978ee6db07c972",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        459.2577
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 459.2577,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 1478,
+          "changed": null,
+          "written": null,
+          "affected_records": 0,
+          "submitted_file_records": null,
+          "revision": "43b628cbdd2a48ebebbe83ad248e0c2cb79a4088b207289cbc3e5456999a861f",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "get",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--fields",
+            "value,name,description"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 459.2577,
+      "p95_ms": null,
+      "min_ms": 459.2577,
+      "max_ms": 459.2577
+    },
+    {
+      "metric": "set_field",
+      "records": 10000,
+      "files": 1,
+      "fields": 20,
+      "fixture_sha256": "79cd935361246129ea5f7588327d237031e4b34cc8197bd90f978ee6db07c972",
+      "source_bytes": 3602385,
+      "samples_ms": [
+        42820.004
+      ],
+      "samples_detail": [
+        {
+          "elapsed_ms": 42820.004,
+          "exit_code": 0,
+          "status": "success",
+          "stdout_bytes": 2565,
+          "changed": true,
+          "written": true,
+          "affected_records": 1,
+          "submitted_file_records": null,
+          "revision": "a0a4583745f70867c417f1086d20604700f578b77815916e644468f28bdac118",
+          "diagnostic_count": 0,
+          "args": [
+            "data",
+            "set",
+            "--type",
+            "Row",
+            "--id",
+            "r000000",
+            "--path",
+            "value",
+            "--value-cfd",
+            "1000000"
+          ],
+          "stdin_sha256": null,
+          "stderr": ""
+        }
+      ],
+      "warmups_ms": [],
+      "correctness": "passed",
+      "p50_ms": 42820.004,
+      "p95_ms": null,
+      "min_ms": 42820.004,
+      "max_ms": 42820.004
+    },
+    {
+      "metric": "batch_same_file",
+      "records": 10000,
+      "files": 1,
+      "fields": 20,
+      "fixture_sha256": "79cd935361246129ea5f7588327d237031e4b34cc8197bd90f978ee6db07c972",
+      "source_bytes": 3602385,
+      "samples_ms": [],
+      "samples_detail": [],
+      "warmups_ms": [],
+      "correctness": "failed",
+      "error": "Error: CLI timeout: apply --input - --rules\n    at invoke (file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:72:37)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/wtlll/Desktop/projects/coflow/scripts/performance/cli-matrix.mjs:333:19",
+      "fixture_path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-9YeHgv",
+      "failure": {
+        "elapsed_ms": 120057.0244,
+        "exit_code": null,
+        "stderr": ""
+      }
+    }
+  ],
+  "completed_at_utc": "2026-10-28T16:34:58.187Z",
+  "success": false
+}

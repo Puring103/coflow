@@ -1,0 +1,31 @@
+{
+  "id": "rust-common-10k",
+  "spec": {
+    "id": "rust-common-10k",
+    "group": "rust",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+    "arguments": [],
+    "environment": {
+      "MATRIX_RECORDS": "10000",
+      "MATRIX_FILES": "10",
+      "MATRIX_FIELDS": "20",
+      "MATRIX_SAMPLES": "3",
+      "MATRIX_WARMUPS": "1",
+      "MATRIX_BATCH": "1000",
+      "MATRIX_COLLECTION": "8",
+      "MATRIX_VARIANTS": "1",
+      "MATRIX_STRIDE": "100",
+      "MATRIX_TOPOLOGY": "ring",
+      "MATRIX_TEMPLATES": "1",
+      "MATRIX_QUERY_BATCH": "1000",
+      "MATRIX_CASES": "load_checks,load_no_checks,field_lookup,record_scan,references,validate_same,validate_changed,refresh_same,set_scalar,set_dependency,set_noop,unset_field,batch_grouped,batch_interleaved,array_element,array_replace,dict_element,dict_replace,nested_field,option_field,insert_record,delete_record,rename_record,swap_records,transfer_record,dimension_set,dimension_add,dimension_clear,dimension_lookup,external_conflict"
+    }
+  },
+  "started_at": "2026-10-28T21:06:19.2550518+08:00",
+  "wall_seconds": 65.1882565,
+  "exit_code": 0,
+  "timed_out": false,
+  "sampled_process_peak_working_set_bytes": 477802496,
+  "process_memory_samples": 557,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics."
+}

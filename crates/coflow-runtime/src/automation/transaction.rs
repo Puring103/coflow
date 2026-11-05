@@ -84,6 +84,30 @@ struct CacheStats {
     cfd_parses: usize,
 }
 
+/// 路径身份属于候选输入代次；同一文件的所有记录共享一次反向映射和展示路径。
+#[derive(Debug, Default)]
+struct CandidatePaths {
+    ancestors: Option<Vec<(PathBuf, PathBuf)>>,
+    exact: BTreeMap<PathBuf, PathBuf>,
+    resolved: BTreeMap<PathBuf, PathBuf>,
+    display: BTreeMap<PathBuf, String>,
+    #[cfg(test)]
+    builds: usize,
+    #[cfg(test)]
+    resolutions: usize,
+    #[cfg(test)]
+    displays: usize,
+}
+
+impl CandidatePaths {
+    fn invalidate(&mut self) {
+        self.ancestors = None;
+        self.exact.clear();
+        self.resolved.clear();
+        self.display.clear();
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CandidateSource {
     pub absolute: PathBuf,
@@ -135,6 +159,11 @@ pub(crate) struct Candidate {
     _temp: tempfile::TempDir,
     temp_root: PathBuf,
     cache: RefCell<OperationCache>,
+    paths: RefCell<CandidatePaths>,
+    mapped_project: RefCell<Option<Project>>,
+    original_project: Project,
+    original_roots: Vec<PathBuf>,
+    current_roots: Vec<PathBuf>,
     pub original: Project,
     pub snapshot: InputSnapshot,
     config_path: PathBuf,
@@ -160,6 +189,11 @@ impl Candidate {
             _temp: temp,
             temp_root,
             cache: RefCell::new(OperationCache::default()),
+            paths: RefCell::new(CandidatePaths::default()),
+            mapped_project: RefCell::new(None),
+            original_project: project.clone(),
+            original_roots: project.source_roots(),
+            current_roots: Vec::new(),
             original: project.clone(),
             snapshot: snapshot.clone(),
             config_path: PathBuf::new(),
@@ -202,10 +236,7 @@ impl Candidate {
         candidate.set_config_source(config.contents.clone())?;
         candidate.baseline =
             SemanticSnapshot::capture_from_schema(&candidate.schema_session()?, None, |path| {
-                Ok(crate::project_path(
-                    candidate.original.root_dir(),
-                    &candidate.unshadow(path)?,
-                ))
+                candidate.display_path(path)
             })?;
         Ok(candidate)
     }
@@ -280,6 +311,19 @@ impl Candidate {
         &self,
         target: &super::RecordTarget,
     ) -> Result<(PathBuf, coflow_language::cfd::CfdRecord, String)> {
+        let (source, index) = self.cached_record_source(target)?;
+        Ok((
+            source.absolute.clone(),
+            source.ast.records[index].clone(),
+            source.text.clone(),
+        ))
+    }
+
+    /// 单记录写入和批量准备共同借用本代次的文件内容，不按操作复制整份文本。
+    pub(crate) fn cached_record_source(
+        &self,
+        target: &super::RecordTarget,
+    ) -> Result<(Arc<CandidateSource>, usize)> {
         self.ensure_data_sources()?;
         let cache = self.cache.borrow();
         let files = &cache.files;
@@ -293,14 +337,7 @@ impl Candidate {
             .records
             .get(&(target.actual_type.clone(), target.id.clone()));
         match locations.map(Vec::as_slice) {
-            Some([(path, index)]) => {
-                let source = &files[path];
-                Ok((
-                    path.clone(),
-                    source.ast.records[*index].clone(),
-                    source.text.clone(),
-                ))
-            }
+            Some([(path, index)]) => Ok((Arc::clone(&files[path]), *index)),
             Some(_) => Err(Failure::conflict("record identity is ambiguous")),
             None => Err(Failure::missing(format!(
                 "record `{}::{}` does not exist",
@@ -331,7 +368,7 @@ impl Candidate {
             let (ast, errors) = coflow_language::cfd::parse_cfd(&text);
             Some(CandidateSource {
                 absolute: path.into(),
-                path: crate::project_path(self.original.root_dir(), &self.unshadow(path)?),
+                path: self.display_path(path)?,
                 text,
                 ast,
                 malformed: !errors.is_empty(),
@@ -356,7 +393,12 @@ impl Candidate {
     }
 
     pub fn project(&self) -> Result<Project> {
-        Ok(Project::open_schema_only(Some(&self.config_path))?)
+        if let Some(project) = self.mapped_project.borrow().as_ref() {
+            return Ok(project.clone());
+        }
+        let project = Project::open_schema_only(Some(&self.config_path))?;
+        *self.mapped_project.borrow_mut() = Some(project.clone());
+        Ok(project)
     }
     pub fn shadow(&self, original: &Path) -> PathBuf {
         let original = crate::normalize_path(original);
@@ -380,60 +422,110 @@ impl Candidate {
             .join(suffix)
     }
     pub fn unshadow(&self, path: &Path) -> Result<PathBuf> {
-        // 非标准扩展名实体的临时语言路径必须先做精确反向映射。
-        if let Some(original) = self
-            .source_entries
-            .keys()
-            .find(|original| self.shadow(original) == path)
-        {
+        if let Some(original) = self.paths.borrow().resolved.get(path) {
             return Ok(original.clone());
         }
-        let project = self.original_view()?;
-        for root in project
-            .source_roots()
-            .iter()
-            .chain(self.original.source_roots().iter())
-            .chain(self.originals.keys())
-        {
-            for ancestor in root.ancestors() {
-                if let Ok(relative) = path.strip_prefix(self.shadow(ancestor)) {
+        self.prepare_paths();
+        let mut paths = self.paths.borrow_mut();
+        // 非标准扩展名实体的临时语言路径必须先做精确反向映射。
+        let original = if let Some(original) = paths.exact.get(path) {
+            Some(original.clone())
+        } else {
+            let mut resolved = None;
+            for (shadow, ancestor) in paths.ancestors.iter().flatten() {
+                if let Ok(relative) = path.strip_prefix(shadow) {
                     // 精确匹配文件根时不能 join 空路径；Windows 会把它变成文件后的目录分隔符。
                     let original = if relative.as_os_str().is_empty() {
-                        ancestor.to_path_buf()
+                        ancestor.clone()
                     } else {
                         ancestor.join(relative)
                     };
-                    return crate::resolve_existing_or_future_path(&original).map_err(|error| {
-                        Failure::new(
-                            Status::Error,
-                            "CLI-CANDIDATE",
-                            format!(
-                                "cannot map candidate path {} to {}: {error}",
-                                path.display(),
-                                original.display()
-                            ),
-                        )
-                    });
+                    resolved = Some(crate::resolve_existing_or_future_path(&original).map_err(
+                        |error| {
+                            Failure::new(
+                                Status::Error,
+                                "CLI-CANDIDATE",
+                                format!(
+                                    "cannot map candidate path {} to {}: {error}",
+                                    path.display(),
+                                    original.display()
+                                ),
+                            )
+                        },
+                    )?);
+                    break;
+                }
+            }
+            resolved
+        };
+        let original = original.ok_or_else(|| {
+            Failure::new(
+                Status::Error,
+                "CLI-CANDIDATE",
+                format!(
+                    "candidate path has no original identity: {}",
+                    path.display()
+                ),
+            )
+        })?;
+        paths.resolved.insert(path.to_path_buf(), original.clone());
+        #[cfg(test)]
+        {
+            paths.resolutions += 1;
+        }
+        Ok(original)
+    }
+
+    fn prepare_paths(&self) {
+        if self.paths.borrow().ancestors.is_some() {
+            return;
+        }
+        let mut exact = BTreeMap::new();
+        for original in self.source_entries.keys() {
+            exact
+                .entry(self.shadow(original))
+                .or_insert_with(|| original.clone());
+        }
+        let mut ancestors = Vec::new();
+        let mut seen = BTreeSet::new();
+        // 保留当前范围、原始范围、被操作文件的优先顺序；只合并相同祖先。
+        for root in self
+            .current_roots
+            .iter()
+            .chain(&self.original_roots)
+            .chain(self.originals.keys())
+        {
+            for ancestor in root.ancestors() {
+                if seen.insert(ancestor.to_path_buf()) {
+                    ancestors.push((self.shadow(ancestor), ancestor.to_path_buf()));
                 }
             }
         }
-        Err(Failure::new(
-            Status::Error,
-            "CLI-CANDIDATE",
-            format!(
-                "candidate path has no original identity: {}",
-                path.display()
-            ),
-        ))
+        let mut paths = self.paths.borrow_mut();
+        paths.exact = exact;
+        paths.ancestors = Some(ancestors);
+        #[cfg(test)]
+        {
+            paths.builds += 1;
+        }
     }
-    fn original_view(&self) -> Result<Project> {
-        let mut project = self.original.clone();
-        project.config = serde_yaml::from_slice(&self.config_contents)
-            .map_err(|e| Failure::new(Status::Invalid, "PROJECT-CONFIG-PARSE", e.to_string()))?;
-        project.config_source = String::from_utf8(self.config_contents.clone())
-            .map_err(|e| Failure::new(Status::Invalid, "PROJECT-CONFIG-PARSE", e.to_string()))?
-            .into();
-        Ok(project)
+
+    fn display_path(&self, path: &Path) -> Result<String> {
+        if let Some(display) = self.paths.borrow().display.get(path) {
+            return Ok(display.clone());
+        }
+        let display = crate::project_path(self.original.root_dir(), &self.unshadow(path)?);
+        let mut paths = self.paths.borrow_mut();
+        paths.display.insert(path.to_path_buf(), display.clone());
+        #[cfg(test)]
+        {
+            paths.displays += 1;
+        }
+        Ok(display)
+    }
+
+    fn original_view(&self) -> Project {
+        self.original_project.clone()
     }
     fn mapped_config(&self, project: &Project) -> ProjectConfig {
         let mut config = project.config().clone();
@@ -458,27 +550,32 @@ impl Candidate {
     }
     fn set_config_source(&mut self, contents: Vec<u8>) -> Result<()> {
         // 解析失败的请求不能替换已经建立的候选配置身份。
-        let _: ProjectConfig = serde_yaml::from_slice(&contents)
+        let config: ProjectConfig = serde_yaml::from_slice(&contents)
             .map_err(|e| Failure::new(Status::Invalid, "PROJECT-CONFIG-PARSE", e.to_string()))?;
-        let previous_config = self.original_view().ok().map(|project| project.config);
+        let source = String::from_utf8(contents.clone())
+            .map_err(|e| Failure::new(Status::Invalid, "PROJECT-CONFIG-PARSE", e.to_string()))?;
+        let previous_config = self.original_project.config.clone();
+        let mut project = self.original.clone();
+        project.config = config;
+        project.config_source = source.into();
         self.config_contents = contents;
-        let project = self.original_view()?;
+        self.original_project = project.clone();
+        self.current_roots = project.source_roots();
+        *self.mapped_project.borrow_mut() = None;
+        self.paths.borrow_mut().invalidate();
         let mut cache = self.cache.borrow_mut();
-        if previous_config
+        if serde_json::to_value((
+            &previous_config.schema,
+            &previous_config.dimensions,
+            &previous_config.codegen,
+        ))? != serde_json::to_value((
+            &project.config.schema,
+            &project.config.dimensions,
+            &project.config.codegen,
+        ))? || cache
+            .schema
             .as_ref()
-            .map(|config| {
-                serde_json::to_value((&config.schema, &config.dimensions, &config.codegen))
-            })
-            .transpose()?
-            != Some(serde_json::to_value((
-                &project.config.schema,
-                &project.config.dimensions,
-                &project.config.codegen,
-            ))?)
-            || cache
-                .schema
-                .as_ref()
-                .is_some_and(crate::sessions::session::ProjectSchemaSession::has_diagnostics)
+            .is_some_and(crate::sessions::session::ProjectSchemaSession::has_diagnostics)
         {
             cache.schema = None;
         }
@@ -503,6 +600,7 @@ impl Candidate {
                     .insert(file.absolute.clone(), file.selected.clone());
             }
         }
+        self.paths.borrow_mut().invalidate();
         for file in &scope.files {
             if file.absolute == self.original.config_path()
                 || self.originals.contains_key(&file.absolute)
@@ -513,14 +611,14 @@ impl Candidate {
                 .insert(file.absolute.clone(), Some(file.contents.clone()));
             self.write(&file.absolute, &file.contents)?;
         }
-        for root in project.source_roots().iter().filter(|root| root.is_dir()) {
+        for root in self.current_roots.iter().filter(|root| root.is_dir()) {
             fs::create_dir_all(self.shadow(root))?;
         }
         self.input_scopes.push((project, scope));
         Ok(())
     }
     fn write_config(&mut self, config: &ProjectConfig) -> Result<()> {
-        if serde_json::to_value(config)? == serde_json::to_value(self.original_view()?.config())? {
+        if serde_json::to_value(config)? == serde_json::to_value(self.original_view().config())? {
             return Ok(());
         }
         self.set_config_source(
@@ -535,6 +633,7 @@ impl Candidate {
         if !self.originals.contains_key(original) {
             self.originals
                 .insert(original.to_path_buf(), optional_read(original)?);
+            self.paths.borrow_mut().invalidate();
         }
         Ok(())
     }
@@ -551,7 +650,7 @@ impl Candidate {
         let original =
             crate::resolve_existing_or_future_path(&self.original.resolve_path(Path::new(file)))?;
         let inside = crate::path_is_same_or_descendant(&original, self.original.root_dir());
-        let candidate = self.original_view()?;
+        let candidate = self.original_view();
         if !inside
             && !source_scope_contains(&candidate, &original)
             && !source_scope_contains(&self.original, &original)
@@ -589,7 +688,7 @@ impl Candidate {
         Ok(original)
     }
     pub fn include(&mut self, original: &Path) -> Result<()> {
-        let mut project = self.original_view()?;
+        let mut project = self.original_view();
         if source_scope_contains(&project, original) {
             return Ok(());
         }
@@ -609,7 +708,7 @@ impl Candidate {
         }
         let original =
             crate::resolve_existing_or_future_path(&self.original.resolve_path(Path::new(path)))?;
-        let mut project = self.original_view()?;
+        let mut project = self.original_view();
         let mut paths = if kind == "schema" {
             project.config().schema.paths().to_vec()
         } else {
@@ -709,7 +808,7 @@ impl Candidate {
                         }
                         fs::remove_file(self.shadow(&path))?;
                         self.refresh_source(&self.shadow(&path), None)?;
-                        let mut project = self.original_view()?;
+                        let mut project = self.original_view();
                         let target = path;
                         project.config.schema.paths = project
                             .config()
@@ -983,12 +1082,7 @@ impl Candidate {
         let after = SemanticSnapshot::capture_from_schema(
             &self.schema_session()?,
             session.as_ref().ok(),
-            |path| {
-                Ok(crate::project_path(
-                    self.original.root_dir(),
-                    &self.unshadow(path)?,
-                ))
-            },
+            |path| self.display_path(path),
         )?;
         let difference = super::semantic_diff::compare(&self.baseline, &after);
         let config = crate::project_path(self.original.root_dir(), self.original.config_path());
@@ -1145,6 +1239,7 @@ mod cache_tests {
     #![allow(clippy::unwrap_used, reason = "测试的前置步骤失败应直接报告失败。")]
     use super::*;
     use crate::automation::{FieldPath, InputValue, Operation, RecordTarget, Selector};
+    use std::fmt::Write as _;
 
     fn fixture(files: usize) -> (tempfile::TempDir, Project, InputSnapshot) {
         let root = tempfile::tempdir().unwrap();
@@ -1180,6 +1275,69 @@ mod cache_tests {
     }
 
     #[test]
+    fn repeated_record_paths_reuse_file_identity_and_display() {
+        let (_root, project, snapshot) = fixture(3);
+        let candidate = Candidate::new(&project, &snapshot).unwrap();
+        let before = {
+            let paths = candidate.paths.borrow();
+            (paths.builds, paths.resolutions, paths.displays)
+        };
+        for _ in 0..100 {
+            for file in snapshot.files.iter().filter(|file| file.kind == "data") {
+                let shadow = candidate.shadow(&file.absolute);
+                assert_eq!(candidate.unshadow(&shadow).unwrap(), file.absolute);
+                assert_eq!(candidate.display_path(&shadow).unwrap(), file.path);
+            }
+        }
+        let paths = candidate.paths.borrow();
+        assert_eq!((paths.builds, paths.resolutions, paths.displays), before);
+        // 候选配置的解析结果也由本代次复用，不随记录或操作数量重新读取 YAML。
+        let first = candidate.project().unwrap();
+        let second = candidate.project().unwrap();
+        assert!(Arc::ptr_eq(&first.config_source, &second.config_source));
+    }
+
+    #[test]
+    fn changing_input_scope_rebuilds_configuration_and_path_cache() {
+        let (root, project, snapshot) = fixture(1);
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        let initial = candidate.project().unwrap();
+        let previous_builds = candidate.paths.borrow().builds;
+        fs::create_dir(root.path().join("extra")).unwrap();
+        let additional = root.path().join("extra/added.cfd");
+        fs::write(&additional, "added: Item { value: 3 }\n").unwrap();
+        candidate.set_config_source(b"schema: schema.cft\ndata: [data/, extra/]\ncodegen: [{language: csharp, dir: generated/}]\n".to_vec()).unwrap();
+        let changed = candidate.project().unwrap();
+        assert_eq!(changed.config.data.len(), 2);
+        assert!(!Arc::ptr_eq(&initial.config_source, &changed.config_source));
+        let shadow = candidate.shadow(&additional);
+        assert_eq!(
+            candidate.unshadow(&shadow).unwrap(),
+            crate::normalize_path(&additional)
+        );
+        assert_eq!(candidate.display_path(&shadow).unwrap(), "extra/added.cfd");
+        assert_eq!(candidate.paths.borrow().builds, previous_builds + 1);
+        assert!(candidate
+            .data_session()
+            .unwrap()
+            .model()
+            .record_by_type_id("Item", "added")
+            .is_some());
+
+        // 失败配置不替换当前缓存及正式输入；后续仍可按原身份操作。
+        assert!(candidate.set_config_source(b"schema: [".to_vec()).is_err());
+        assert_eq!(candidate.project().unwrap().config.data.len(), 2);
+        assert_eq!(
+            candidate.unshadow(&shadow).unwrap(),
+            crate::normalize_path(&additional)
+        );
+        assert_eq!(
+            fs::read_to_string(&additional).unwrap(),
+            "added: Item { value: 3 }\n"
+        );
+    }
+
+    #[test]
     fn batch_reuses_schema_and_discovers_sources_once() {
         let (_root, project, snapshot) = fixture(64);
         let mut candidate = Candidate::new(&project, &snapshot).unwrap();
@@ -1203,6 +1361,75 @@ mod cache_tests {
         assert_eq!(stats.source_discoveries, 1);
         // 64 个初始文件各解析一次，之后只重新解析被修改的 64 个文件。
         assert_eq!(stats.cfd_parses, 128);
+    }
+
+    #[test]
+    fn same_file_batch_refreshes_the_source_once() {
+        let (root, project, _) = fixture(1);
+        let mut source = String::new();
+        for index in 0..32 {
+            writeln!(source, "r{index}: Item {{ value: 1 }}").unwrap();
+        }
+        fs::write(root.path().join("data/0.cfd"), &source).unwrap();
+        let snapshot = InputSnapshot::capture(&project).unwrap();
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        let operations = (0..32)
+            .map(|index| Operation::SetField {
+                record: RecordTarget {
+                    actual_type: "Item".into(),
+                    id: format!("r{index}"),
+                },
+                path: vec![FieldPath::Field {
+                    name: "value".into(),
+                }],
+                value: InputValue::Expression { source: "2".into() },
+                expected: Some(InputValue::Expression { source: "1".into() }),
+            })
+            .collect::<Vec<_>>();
+        candidate.apply_operations(&operations).unwrap();
+        let (_, validation) = candidate.finish(&Arguments::default(), true).unwrap();
+        assert!(validation.passed());
+        // 初始文件及最终候选各解析一次，批次不会逐条刷新文件缓存。
+        assert_eq!(candidate.cache.borrow().stats.cfd_parses, 2);
+        assert_eq!(
+            fs::read_to_string(root.path().join("data/0.cfd")).unwrap(),
+            source
+        );
+    }
+
+    #[test]
+    fn interleaved_file_batch_refreshes_each_source_once() {
+        let (root, project, _) = fixture(8);
+        for file in 0..8 {
+            let mut text = String::new();
+            for row in 0..4 {
+                writeln!(text, "r{file}_{row}: Item {{ value: 1 }}").unwrap();
+            }
+            fs::write(root.path().join(format!("data/{file}.cfd")), text).unwrap();
+        }
+        let snapshot = InputSnapshot::capture(&project).unwrap();
+        let mut candidate = Candidate::new(&project, &snapshot).unwrap();
+        let operations = (0..4)
+            .flat_map(|row| {
+                (0..8).map(move |file| Operation::SetField {
+                    record: RecordTarget {
+                        actual_type: "Item".into(),
+                        id: format!("r{file}_{row}"),
+                    },
+                    path: vec![FieldPath::Field {
+                        name: "value".into(),
+                    }],
+                    value: InputValue::Expression { source: "2".into() },
+                    expected: Some(InputValue::Expression { source: "1".into() }),
+                })
+            })
+            .collect::<Vec<_>>();
+        candidate.apply_operations(&operations).unwrap();
+        let (_, validation) = candidate.finish(&Arguments::default(), true).unwrap();
+        assert!(validation.passed());
+        // 32 个交错操作只产生 8 个初始解析和 8 个最终候选刷新。
+        assert_eq!(candidate.cache.borrow().stats.cfd_parses, 16);
+        snapshot.verify(&project).unwrap();
     }
 
     #[test]

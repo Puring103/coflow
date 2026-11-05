@@ -1,0 +1,16 @@
+{
+  "id": "engine-model-10000-r2-optimized",
+  "scenario": "engine-model-10000",
+  "round": 2,
+  "arm": "optimized",
+  "group": "model",
+  "arguments": [],
+  "timeout_seconds": 1800,
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r4\\engine_perf.exe",
+  "environment": {
+    "ENGINE_MODE": "model",
+    "ENGINE_RECORDS": "10000",
+    "ENGINE_DIMENSION_RECORDS": "10000",
+    "ENGINE_SAMPLES": "3"
+  }
+}

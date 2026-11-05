@@ -1,0 +1,70 @@
+{
+  "from": "../final-r3",
+  "reason": "R4 modifies Rust check indexing only. C# Loader and benchmark DLLs remain byte-identical; preserved process times and raw output. Final plans use the same --dotnet artifact directory and strictly verify identical specifications on resume.",
+  "files": [
+    {
+      "name": "csharp-scalar20-100k-r1-baseline.meta.json",
+      "sha256": "10b15e07652086834eda9ddbc461d4d25f46cadfb96e837eb81a0315d88f08ea"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-baseline.spec.json",
+      "sha256": "35d402dad79faac05c4e1fc87fef24d5af743681ccf84983e00251d081c9a90d"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-baseline.stdout.ndjson",
+      "sha256": "3f0bfef94b6afb9be5f9223e309a9c980d15b6eb1c61757fa94c3939b1dca431"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-baseline.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-optimized.meta.json",
+      "sha256": "47bc195ee76b1485f174cbf16c83d02ad0502f331c0ed2cf7a5027c83fad7334"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-optimized.spec.json",
+      "sha256": "721c43614ed4eaa06b1f6a906f02de234c242317ce45e3e35f340e04e4c793ce"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-optimized.stdout.ndjson",
+      "sha256": "45b5cbeae83d5336de1aae2be3887e32820c4319e7a0e71beeddaef7a4ad3649"
+    },
+    {
+      "name": "csharp-scalar20-100k-r1-optimized.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-baseline.meta.json",
+      "sha256": "f3fbd89155d4be663d6fd79aef9cb8f021ac5101f20b678d7e1272f2a1e5ca7f"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-baseline.spec.json",
+      "sha256": "32abd932395f07f6a85a4ae38a335d132b7958d56052a36ac585a3dbd0510176"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-baseline.stdout.ndjson",
+      "sha256": "d2fd9ac8d380b52f34c299583a323ad892a4420c8b28b45d848e013fc6367ebc"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-baseline.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-optimized.meta.json",
+      "sha256": "e5939a98c8cf3f6f792a72c29c8e07ebf5416b1ad708f25e2f9ba92f61d56929"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-optimized.spec.json",
+      "sha256": "2da04229cf3c9b6d2361a76dbc55511995a4a685526d376bd432b693c0e898e4"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-optimized.stdout.ndjson",
+      "sha256": "c1be533bcd52509f23848705e033c74147550ebbfaf7a528275d1c159bf493e2"
+    },
+    {
+      "name": "csharp-dim1-sparse-10k-r1-optimized.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "rust-structures-literal-100k-r2-baseline",
+  "scenario": "rust-structures-literal-100k",
+  "round": 2,
+  "arm": "baseline",
+  "group": "rust",
+  "arguments": [],
+  "timeout_seconds": 1800,
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\runtime_matrix.exe",
+  "environment": {
+    "MATRIX_RECORDS": "100000",
+    "MATRIX_FILES": "100",
+    "MATRIX_FIELDS": "20",
+    "MATRIX_SAMPLES": "1",
+    "MATRIX_WARMUPS": "0",
+    "MATRIX_BATCH": "1000",
+    "MATRIX_COLLECTION": "8",
+    "MATRIX_VARIANTS": "0",
+    "MATRIX_STRIDE": "100",
+    "MATRIX_TOPOLOGY": "ring",
+    "MATRIX_TEMPLATES": "0",
+    "MATRIX_QUERY_BATCH": "1000",
+    "MATRIX_CASES": "insert_record,delete_record,rename_record,transfer_record"
+  }
+}

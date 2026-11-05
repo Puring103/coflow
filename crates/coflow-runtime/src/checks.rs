@@ -1,6 +1,8 @@
 pub(crate) mod impact;
 #[cfg(test)]
 mod incremental_tests;
+#[cfg(test)]
+mod membership_tests;
 pub(crate) mod planning;
 mod read_graph;
 pub(crate) mod render;

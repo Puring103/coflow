@@ -1,0 +1,59 @@
+{
+  "id": "csharp-dim10-dense-10k-r2-optimized",
+  "spec": {
+    "id": "csharp-dim10-dense-10k-r2-optimized",
+    "scenario": "csharp-dim10-dense-10k",
+    "round": 2,
+    "arm": "optimized",
+    "group": "csharp",
+    "arguments": [
+      "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r6\\dotnet\\Coflow.Loader.Benchmarks.dll",
+      "--case",
+      "dimensions",
+      "--records",
+      "10000",
+      "--files",
+      "100",
+      "--samples",
+      "1",
+      "--query-samples",
+      "100",
+      "--query-batch",
+      "10000",
+      "--variants",
+      "10",
+      "--density",
+      "dense",
+      "--topology",
+      "pairs",
+      "--templates",
+      "true",
+      "--operations",
+      "load"
+    ],
+    "timeout_seconds": 1800,
+    "executable": "dotnet"
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Program Files\\dotnet\\dotnet.exe",
+      "sha256": "ABCE6623A6729059CF39BB0F728C4A7804F625895099C88C17E6E704661E09EB"
+    },
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-optimized-20261029-r6\\dotnet\\Coflow.Loader.Benchmarks.dll",
+      "sha256": "082FB58503881F865B1FFC77AEA71FB5D3CC83326E3E9E70B0A58EACC0677F66"
+    }
+  ],
+  "started_at": "2026-10-29T07:01:47.0267986+08:00",
+  "process_id": 32176,
+  "wall_seconds": 6.4447178,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "Whole benchmark process including fixture, warmup, timed samples and correctness validation; timeout is censored run evidence, not an operation latency.",
+  "sampled_process_peak_working_set_bytes": 416661504,
+  "process_memory_samples": 58,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Top-level benchmark process, sampled every 100ms; includes fixture, warmup and oracle. Child CLI peaks require per-command metrics.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

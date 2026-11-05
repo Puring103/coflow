@@ -1,0 +1,21 @@
+{
+  "id": "rust-singlefile-100k",
+  "group": "rust",
+  "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\release\\examples\\runtime_matrix.exe",
+  "arguments": [],
+  "environment": {
+    "MATRIX_RECORDS": "100000",
+    "MATRIX_FILES": "1",
+    "MATRIX_FIELDS": "20",
+    "MATRIX_SAMPLES": "3",
+    "MATRIX_WARMUPS": "1",
+    "MATRIX_BATCH": "1000",
+    "MATRIX_COLLECTION": "8",
+    "MATRIX_VARIANTS": "0",
+    "MATRIX_STRIDE": "100",
+    "MATRIX_TOPOLOGY": "ring",
+    "MATRIX_TEMPLATES": "1",
+    "MATRIX_QUERY_BATCH": "1000",
+    "MATRIX_CASES": "load_checks,set_scalar,batch_grouped"
+  }
+}

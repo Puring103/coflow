@@ -1,0 +1,7 @@
+{
+  "source_manifest": "source-manifest-r3.json",
+  "verified_source_directory": "source-r3-verified",
+  "verified_files": 128,
+  "original_malformed_snapshots_preserved": "target/performance-malformed-snapshots-20261029",
+  "method": "Original malformed directories moved intact inside workspace; verified source copied only after every current file matched its frozen SHA256."
+}

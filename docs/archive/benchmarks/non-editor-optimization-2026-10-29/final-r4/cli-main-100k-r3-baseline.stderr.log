@@ -1,0 +1,10 @@
+RUN data_get records=100000 files=100
+PASS data_get p50=3772.303ms
+RUN check_rules records=100000 files=100
+PASS check_rules p50=4685.646ms
+RUN set_field records=100000 files=100
+FAIL set_field: CLI timeout: data set --type Row --id r000000 --path value --value-cfd 1000000
+RUN batch_same_file records=100000 files=100
+FAIL batch_same_file: CLI timeout: apply --input - --rules
+RUN batch_cross_file records=100000 files=100
+FAIL batch_cross_file: CLI timeout: apply --input - --rules

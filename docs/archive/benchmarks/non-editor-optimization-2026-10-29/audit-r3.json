@@ -1,0 +1,530 @@
+{
+  "directory": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\non-editor-optimization-2026-10-29\\final-r3",
+  "audited_at": "2026-10-28T19:19:21.675Z",
+  "audit_status": "incomplete",
+  "method": "Read-only audit of archived plans, metadata and complete raw results. Does not rerun benchmarks or hash current binaries.",
+  "counts": {
+    "pending": 98,
+    "completed": 13,
+    "censored": 0,
+    "failed": 0
+  },
+  "completed_pairs": [
+    {
+      "scenario": "rust-structures-literal-100k",
+      "round": 1,
+      "metrics": 4
+    },
+    {
+      "scenario": "cli-common-10k",
+      "round": 1,
+      "metrics": 8
+    },
+    {
+      "scenario": "csharp-scalar20-100k",
+      "round": 1,
+      "metrics": 9
+    },
+    {
+      "scenario": "csharp-dim1-sparse-10k",
+      "round": 1,
+      "metrics": 13
+    },
+    {
+      "scenario": "rust-all-1k",
+      "round": 1,
+      "metrics": 32
+    },
+    {
+      "scenario": "rust-common-10k",
+      "round": 1,
+      "metrics": 11
+    }
+  ],
+  "issues": [],
+  "runs": [
+    {
+      "id": "rust-structures-literal-100k-r1-baseline",
+      "status": "completed",
+      "start": 1793214176028,
+      "end": 1793214293493.1804,
+      "metrics": 4
+    },
+    {
+      "id": "rust-structures-literal-100k-r1-optimized",
+      "status": "completed",
+      "start": 1793214293868,
+      "end": 1793214368404.3096,
+      "metrics": 4
+    },
+    {
+      "id": "cli-common-10k-r1-baseline",
+      "status": "completed",
+      "start": 1793214368866,
+      "end": 1793214725402.819,
+      "metrics": 8
+    },
+    {
+      "id": "cli-common-10k-r1-optimized",
+      "status": "completed",
+      "start": 1793214725889,
+      "end": 1793214753006.45,
+      "metrics": 8
+    },
+    {
+      "id": "csharp-scalar20-100k-r1-baseline",
+      "status": "completed",
+      "start": 1793214753421,
+      "end": 1793214828380.7285,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-scalar20-100k-r1-optimized",
+      "status": "completed",
+      "start": 1793214828766,
+      "end": 1793214874734.784,
+      "metrics": 9
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r1-baseline",
+      "status": "completed",
+      "start": 1793214875154,
+      "end": 1793214907689.9458,
+      "metrics": 13
+    },
+    {
+      "id": "csharp-dim1-sparse-10k-r1-optimized",
+      "status": "completed",
+      "start": 1793214908115,
+      "end": 1793214925049.7444,
+      "metrics": 13
+    },
+    {
+      "id": "rust-all-1k-r1-baseline",
+      "status": "completed",
+      "start": 1793214983474,
+      "end": 1793215004716.2917,
+      "metrics": 32
+    },
+    {
+      "id": "rust-all-1k-r1-optimized",
+      "status": "completed",
+      "start": 1793215005132,
+      "end": 1793215010111.645,
+      "metrics": 32
+    },
+    {
+      "id": "rust-common-10k-r1-baseline",
+      "status": "completed",
+      "start": 1793215010569,
+      "end": 1793215035062.2102,
+      "metrics": 11
+    },
+    {
+      "id": "rust-common-10k-r1-optimized",
+      "status": "completed",
+      "start": 1793215035451,
+      "end": 1793215057065.3652,
+      "metrics": 11
+    },
+    {
+      "id": "rust-main-100k-r1-baseline",
+      "status": "completed",
+      "start": 1793215057465,
+      "end": 1793215131590.191,
+      "metrics": 5
+    },
+    {
+      "id": "rust-main-100k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-100k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-100k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-hot-100k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-hot-100k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-budget-20000-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-budget-20000-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-2000-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-2000-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-10000-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-10000-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-100000-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-recovery-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-recovery-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-width100-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-width100-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-singlefile-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-singlefile-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "engine-model-10000-r1-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "engine-model-10000-r1-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-all-1k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-all-1k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-common-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-common-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-main-100k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-main-100k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-100k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-100k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-literal-100k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-literal-100k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-hot-100k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-hot-100k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-budget-20000-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-budget-20000-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-2000-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-2000-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-10000-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-10000-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-100000-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-recovery-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-recovery-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-width100-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-width100-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-singlefile-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-singlefile-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "engine-model-10000-r2-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "engine-model-10000-r2-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-all-1k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-all-1k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-common-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-common-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-main-100k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-main-100k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-100k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-100k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-literal-100k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-structures-literal-100k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-hot-100k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-hot-100k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-budget-20000-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-budget-20000-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-2000-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-2000-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-10000-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-10000-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-100000-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-no-templates-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-invalid-fanin-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-recovery-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-recovery-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-width100-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-width100-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-singlefile-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-singlefile-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-sparse-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "rust-dim10-existing-dense-10k-r3-optimized",
+      "status": "pending"
+    },
+    {
+      "id": "engine-model-10000-r3-baseline",
+      "status": "pending"
+    },
+    {
+      "id": "engine-model-10000-r3-optimized",
+      "status": "pending"
+    }
+  ]
+}

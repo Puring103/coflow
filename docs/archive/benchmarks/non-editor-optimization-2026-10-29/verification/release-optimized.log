@@ -1,0 +1,10 @@
+   Compiling coflow-language v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-language)
+   Compiling coflow-model v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-model)
+   Compiling coflow-format v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-format)
+   Compiling coflow-codegen v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-codegen)
+   Compiling coflow-checker v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-checker)
+   Compiling coflow-codegen-csharp v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-codegen-csharp)
+   Compiling coflow-runtime v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-runtime)
+   Compiling coflow-lsp v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow\crates\coflow-lsp)
+   Compiling coflow v0.14.0 (C:\Users\wtlll\Desktop\projects\coflow)
+    Finished `release` profile [optimized] target(s) in 1m 01s

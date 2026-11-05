@@ -1,0 +1,3 @@
+# 性能归档按原字节保存，确保跨平台检出后源码快照和原始样本的摘要不变。
+docs/archive/benchmarks/non-editor-2026-10-28/** -text -whitespace
+docs/archive/benchmarks/non-editor-optimization-2026-10-29/** -text -whitespace

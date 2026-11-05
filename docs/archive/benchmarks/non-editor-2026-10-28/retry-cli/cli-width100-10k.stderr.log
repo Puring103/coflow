@@ -1,0 +1,4 @@
+RUN data_get records=10000 files=10
+PASS data_get p50=1349.338ms
+RUN set_field records=10000 files=10
+PASS set_field p50=116067.014ms

@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-10-28T20:06:07.6476366+08:00",
+  "commit": "3742bf1e9dc8d3a22a263f1db48be32412b1b3a4",
+  "version": "0.14.0",
+  "os": "Microsoft Windows NT 10.0.26300.0",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "logical_processors": 20,
+  "memory_bytes": 34190790656,
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "node": "v22.23.4",
+  "dotnet": "8.0.426",
+  "scope": "Rust runtime, independent CLI, C# Loader; no editor",
+  "sampling": "serial; filesystem cache not flushed; no competing agent builds during measurement"
+}

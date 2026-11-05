@@ -1,0 +1,24 @@
+{
+  "protocol_version": 1,
+  "suite": "cli_matrix_fixture",
+  "prepared_at_utc": "2026-10-28T23:24:06.885Z",
+  "root": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-nQFFQG",
+  "config": {
+    "records": 10000,
+    "files": 10,
+    "fields": 20,
+    "samples": 3,
+    "warmups": 1,
+    "batch": 1000,
+    "variants": 1,
+    "coverage": "sparse",
+    "topology": "sparse",
+    "timeout_ms": 300000
+  },
+  "source_bytes": 3602385,
+  "fixture_sha256": "410d823407b0086f019ae2d269f478954fe872436422e172abd94070490c6831",
+  "file_for_zero": "data/0000.cfd",
+  "first_data_file": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-nQFFQG\\data\\0000.cfd",
+  "retained": true,
+  "cli_executed": false
+}

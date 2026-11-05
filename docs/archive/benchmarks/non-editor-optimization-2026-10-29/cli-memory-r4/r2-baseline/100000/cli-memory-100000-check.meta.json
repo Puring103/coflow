@@ -1,0 +1,39 @@
+{
+  "id": "cli-memory-100000-check",
+  "spec": {
+    "id": "cli-memory-100000-check",
+    "executable": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\coflow.exe",
+    "arguments": [
+      "check",
+      "--rules",
+      "--project",
+      "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-cli-matrix-EJCJa9",
+      "--json"
+    ],
+    "environment": {
+      "COFLOW_LOG": "0"
+    },
+    "cli_sha256": "aff414fbe2701a20901b6daee67c7846a93022fc6f48b965b05d8f691bf0e0ae",
+    "fixture_sha256": "307aaa67b919bfdeee2748c8b28609663e23e759ce44ad808f0a3e383441548c",
+    "memory_scope": "Direct coflow.exe process for one command, excluding the Node and PowerShell drivers, fixture generation and subsequent verification. No warmup; filesystem caches are uncontrolled.",
+    "timeout_scope": "One direct CLI command including startup, loading, operation and output; a timeout is censored command evidence, not a completed latency."
+  },
+  "input_hashes": [
+    {
+      "path": "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\target\\performance-baseline-20261029\\coflow.exe",
+      "sha256": "AFF414FBE2701A20901B6DAEE67C7846A93022FC6F48B965B05D8F691BF0E0AE"
+    }
+  ],
+  "started_at": "2026-10-29T07:22:28.7993286+08:00",
+  "process_id": 26028,
+  "wall_seconds": 4.6772824,
+  "exit_code": 0,
+  "timed_out": false,
+  "timeout_seconds": 1800,
+  "timeout_scope": "One direct CLI command including startup, loading, operation and output; a timeout is censored command evidence, not a completed latency.",
+  "sampled_process_peak_working_set_bytes": 2277232640,
+  "process_memory_samples": 43,
+  "process_memory_sample_errors": 1,
+  "memory_scope": "Direct coflow.exe process for one command, excluding the Node and PowerShell drivers, fixture generation and subsequent verification. No warmup; filesystem caches are uncontrolled.",
+  "memory_limitations": "OS cumulative PeakWorkingSet64 is observed at startup, approximately every 100ms, and best-effort after exit. The last interval can be missed; no successful observations produce null, not zero. Descendant processes are excluded."
+}

@@ -1,0 +1,57 @@
+{
+  "checks": [
+    {
+      "name": "three-independent-pairs",
+      "status": "passed"
+    },
+    {
+      "name": "only-two-optimized",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "incomplete-managed-output",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "null-allocation",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "one-nonzero-allocation",
+      "status": "not_met"
+    },
+    {
+      "name": "failed-process",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "censored-process",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "duplicate-round",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "summary-mismatch",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "three-relative-pairs",
+      "status": "passed"
+    },
+    {
+      "name": "relative-fixture-mismatch",
+      "status": "insufficient_evidence"
+    },
+    {
+      "name": "p95-twenty-samples",
+      "status": "passed"
+    },
+    {
+      "name": "p95-nineteen-samples",
+      "status": "insufficient_evidence"
+    }
+  ],
+  "checked": 13
+}

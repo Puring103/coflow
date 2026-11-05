@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-10-29T04:21:53.5726113+08:00",
+  "processor": [
+    {
+      "Name": "13th Gen Intel(R) Core(TM) i5-13600KF",
+      "NumberOfLogicalProcessors": 20,
+      "CurrentClockSpeed": 3500,
+      "MaxClockSpeed": 3500,
+      "LoadPercentage": 4
+    }
+  ],
+  "os_memory": {
+    "TotalVisibleMemorySize": 33389444,
+    "FreePhysicalMemory": 20186184,
+    "LastBootUpTime": "2026-10-29T00:08:02.5+08:00"
+  },
+  "affinity_controlled": false,
+  "note": "Read-only host observation during sampling. Background load, scheduling, thermal state and OS filesystem caches are uncontrolled. This snapshot does not identify the cause of shared round-to-round timing changes."
+}

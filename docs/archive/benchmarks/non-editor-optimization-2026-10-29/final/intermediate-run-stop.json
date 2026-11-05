@@ -1,0 +1,7 @@
+{
+  "stopped_at": "2026-10-29T02:45:06.5382786+08:00",
+  "reason": "Stopped between benchmark processes to validate and measure precise membership check reuse",
+  "benchmark_started": false,
+  "pending_id": "rust-main-100k-r2-baseline",
+  "preserved_completed_samples": true
+}
