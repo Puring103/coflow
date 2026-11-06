@@ -46,8 +46,6 @@
 .git-diff-selectable .git-source-pane {
   user-select: text;
 }
-.git-diff-selectable .table-view .table-row td,
-.git-diff-selectable .record-view .dc-row,
 .git-diff-selectable .git-record-list-item.selected { background: var(--accent-soft); }
 .git-record-list-item .tree-item-label {
   flex: 1;
@@ -58,31 +56,18 @@
 }
 
 /* 表格 diff 三色——新增/删除整行绿/红（整行皆为变化）；修改行仅 Key 头部与真正变化的单元格着色，其余单元格保持中性。 */
-.table-view-comparison .table-row.table-diff-added td {
-  background: color-mix(in srgb, var(--green) 26%, var(--bg-1));
+.table-view-comparison .table-row.table-diff-added {
+  --table-row-surface: color-mix(in srgb, var(--green) 26%, var(--bg-1));
 }
-.table-view-comparison .table-row.table-diff-deleted td {
-  background: color-mix(in srgb, var(--red) 26%, var(--bg-1));
+.table-view-comparison .table-row.table-diff-deleted {
+  --table-row-surface: color-mix(in srgb, var(--red) 26%, var(--bg-1));
 }
 .table-view-comparison .table-row.table-diff-modified td:first-child {
-  background: color-mix(in srgb, var(--yellow) 22%, var(--bg-1));
+  --table-cell-surface: color-mix(in srgb, var(--yellow) 22%, var(--bg-1));
 }
 .git-diff-head { color: var(--text-mute); font: var(--fs-xs) 'JetBrains Mono', monospace; }
 .git-diff-view-tabs { margin-right: auto; }
 .git-diff-updating { color: var(--text-mute); font-size: var(--fs-xs); }
-.git-diff-message { padding: 12px; color: var(--text-mute); font-size: var(--fs-sm); }
-.git-diff-message.centered {
-  display: flex;
-  min-height: 180px;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-}
-.git-diff-message.error { color: var(--red); }
-.git-diff-message.warning { color: var(--yellow); }
-
 .git-record-comparison,
 .git-source-comparison {
   display: grid;
@@ -124,17 +109,19 @@
 .git-record-comparison.modified .git-record-pane { box-shadow: inset 4px 0 var(--yellow); }
 .git-record-pane .record-view { min-height: 0; }
 .git-record-pane .rv-main { min-width: 0; }
-.dc-row-diff-modified { background: color-mix(in srgb, var(--yellow) 30%, transparent); }
+.dc-row-diff-modified { --dc-row-surface: color-mix(in srgb, var(--yellow) 30%, transparent); }
 
-.table-view-comparison .table-row.table-diff-added td:first-child { box-shadow: inset 4px 0 var(--green); }
-.table-view-comparison .table-row.table-diff-deleted td:first-child { box-shadow: inset 4px 0 var(--red); }
-.table-view-comparison .table-row.table-diff-modified td:first-child { box-shadow: inset 4px 0 var(--yellow); }
+/* 差异底色与边标只描述数据状态，悬停、选区和诊断在共享表格样式中独立叠加。 */
+.table-view-comparison .table-row { --table-diff-width: 4px; }
+.table-view-comparison .table-row.table-diff-added { --table-diff-color: var(--green); }
+.table-view-comparison .table-row.table-diff-deleted { --table-diff-color: var(--red); }
+.table-view-comparison .table-row.table-diff-modified { --table-diff-color: var(--yellow); }
 /* 每条变化记录为一组，组首行顶部加粗分隔线；表格首行除外，避免与表头底边重叠。 */
 .table-view-comparison tbody tr.table-diff-group-start:not(:first-child) td {
   border-top: 2px solid var(--border-strong);
 }
 .table-view-comparison .table-row .table-diff-cell-modified {
-  background: color-mix(in srgb, var(--yellow) 38%, var(--bg-1));
+  --table-cell-surface: color-mix(in srgb, var(--yellow) 38%, var(--bg-1));
   font-weight: 600;
 }
 .table-comparison-version { font: 600 11px 'JetBrains Mono', monospace; }

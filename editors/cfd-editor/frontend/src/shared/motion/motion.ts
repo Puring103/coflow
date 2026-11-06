@@ -11,6 +11,14 @@ export function reducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+/** 动态偏好在播放中改变时立即落定；解除监听与动画共用生命周期。 */
+export function observeReducedMotion(settle: () => void): () => void {
+  const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const changed = () => { if (preference.matches) settle() }
+  preference.addEventListener('change', changed)
+  return () => preference.removeEventListener('change', changed)
+}
+
 export interface MotionOrigin {
   resolve: () => HTMLElement | null
   focus: () => void
@@ -50,21 +58,25 @@ export function originBounds(origin: MotionOrigin | null | undefined): DOMRect |
 const emphasis = new WeakMap<HTMLElement, () => void>()
 
 /** 强调在目标到达后开始；重复定位会替换旧反馈，减少动态模式只保留静态提示。 */
-export function emphasize(element: HTMLElement): () => void {
+export function emphasize(element: HTMLElement, subtle = false): () => void {
   emphasis.get(element)?.()
   const background = getComputedStyle(element).backgroundColor
   const highlighted = `color-mix(in srgb, var(--accent) 22%, ${background})`
   element.classList.add('motion-target')
-  const animation = !reducedMotion() ? element.animate([
+  // 批量提交仅标记范围，避免每个可见单元格同时播放底色强调。
+  if (subtle) element.classList.add('motion-target-subtle')
+  const animation = !subtle && !reducedMotion() ? element.animate([
     { backgroundColor: highlighted, outlineColor: 'var(--accent)', offset: 0 },
     { backgroundColor: highlighted, outlineColor: 'var(--accent)', offset: .6 },
     { backgroundColor: background, outlineColor: 'transparent', offset: 1 },
   ], { duration: motionDuration('emphasis'), easing: 'linear' }) : null
+  const stopPreference = animation ? observeReducedMotion(() => animation.cancel()) : () => {}
   const timer = window.setTimeout(() => cleanup(), motionDuration('emphasis'))
   const cleanup = () => {
     clearTimeout(timer)
     animation?.cancel()
-    element.classList.remove('motion-target')
+    stopPreference()
+    element.classList.remove('motion-target', 'motion-target-subtle')
     if (emphasis.get(element) === cleanup) emphasis.delete(element)
   }
   emphasis.set(element, cleanup)
@@ -86,10 +98,13 @@ export function revealAndEmphasize(target: HTMLElement, scroller: HTMLElement): 
   let frame = 0
   let cancelled = false
   let cancelEmphasis: (() => void) | undefined
+  let finishScroll: (() => void) | undefined
+  const stopPreference = observeReducedMotion(() => finishScroll?.())
   const cancel = () => {
     cancelled = true
     cancelAnimationFrame(frame)
     cancelEmphasis?.()
+    stopPreference()
     for (const type of ['wheel', 'pointerdown', 'keydown']) scroller.removeEventListener(type, cancel)
     if (cancelNavigation === cancel) cancelNavigation = undefined
   }
@@ -103,7 +118,11 @@ export function revealAndEmphasize(target: HTMLElement, scroller: HTMLElement): 
     const from = scroller.scrollTop
     const to = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight,
       from + (rect.top + rect.bottom - bounds.top - bounds.bottom) / 2))
-    const arrive = () => { if (target.isConnected) cancelEmphasis = emphasize(target) }
+    const arrive = () => {
+      finishScroll = undefined
+      stopPreference()
+      if (target.isConnected) cancelEmphasis = emphasize(target)
+    }
     if (visible) arrive()
     else if (reducedMotion() || Math.abs(to - from) > scroller.clientHeight) {
       scroller.scrollTop = to
@@ -111,6 +130,11 @@ export function revealAndEmphasize(target: HTMLElement, scroller: HTMLElement): 
     } else {
       const started = performance.now()
       const duration = motionDuration('layout')
+      finishScroll = () => {
+        cancelAnimationFrame(frame)
+        scroller.scrollTop = to
+        arrive()
+      }
       const tick = (now: number) => {
         const progress = Math.min(1, (now - started) / duration)
         // 短距离导航采用单调减速，用户输入会立即取消剩余帧。

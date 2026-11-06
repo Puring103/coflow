@@ -1,7 +1,40 @@
-.diagnostic-center { position: fixed; right: 12px; bottom: 8px; z-index: 10000; font-size: 12px; }
-.diagnostic-center section { width: min(620px, 90vw); max-height: 75vh; overflow: auto; padding: 16px; background: var(--bg-primary, #20242c); color: var(--text-primary, #eee); border: 1px solid #888; border-radius: 8px; box-shadow: 0 8px 32px #0006; }
-.diagnostic-center header { display: flex; justify-content: space-between; }
-.diagnostic-center button, .diagnostic-center a { margin: 4px; }
-.diagnostic-center label { display: block; margin: 8px 0; }
-.diagnostic-center textarea { width: 100%; min-height: 180px; font-family: monospace; }
-.diagnostic-center pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+.diagnostic-center { position: fixed; right: 12px; bottom: 8px; z-index: 10000; font-size: 12px; color: var(--text); }
+.diagnostic-center-trigger { background: var(--bg-1); }
+/* 日志面板和主编辑区共享语义色，明暗主题均保留一致的文字层级。 */
+.diagnostic-center section {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: min(620px, calc(100vw - 24px));
+  max-height: min(75vh, calc(100vh - 64px));
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px #0003;
+  line-height: 1.6;
+}
+.diagnostic-center header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.diagnostic-center header strong { font-size: 14px; }
+.diagnostic-center .btn { min-height: 28px; height: auto; white-space: normal; }
+.diagnostic-center a { text-decoration: none; }
+.diagnostic-center-description { color: var(--text-dim); font-weight: 400; }
+.diagnostic-center-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.diagnostic-center-error { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; padding: 8px 10px; color: var(--red); background: color-mix(in srgb, var(--red) 7%, var(--bg-1)); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.diagnostic-center-error svg { margin-top: 3px; }
+.diagnostic-center-export { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.diagnostic-center label { display: flex; align-items: flex-start; gap: 7px; }
+.diagnostic-center label input { margin-top: 4px; accent-color: var(--accent); }
+.diagnostic-center textarea { width: 100%; min-height: 180px; padding: 10px; font: 12px/1.6 'JetBrains Mono', Consolas, monospace; background: var(--bg-0); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); resize: vertical; }
+.diagnostic-center textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.diagnostic-center h4 { margin: 14px 0 8px; font-size: 12px; }
+.diagnostic-center-empty { display: flex; align-items: center; gap: 7px; padding: 8px 0; color: var(--text-dim); }
+.diagnostic-center-empty svg { color: var(--green); }
+.diagnostic-center details { padding: 10px 0; border-top: 1px solid var(--border); }
+.diagnostic-center summary { cursor: pointer; overflow-wrap: anywhere; }
+.diagnostic-center summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+.diagnostic-center-time { color: var(--text-mute); font-size: 11px; font-variant-numeric: tabular-nums; margin-right: 8px; }
+.diagnostic-center-message { color: var(--text); }
+.diagnostic-center-incident-id { color: var(--text-dim); margin-top: 8px; overflow-wrap: anywhere; }
+.diagnostic-center pre { margin: 8px 0; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--radius-sm); font: 12px/1.6 'JetBrains Mono', Consolas, monospace; }

@@ -1,4 +1,5 @@
 import { textSearchMatches } from '../../source-editor/language/textSearch'
+import { ContentState } from '../../../shared/ui/ContentState'
 import { InspectorPanel } from '../../record-editing/components/InspectorPanel'
 import { BuiltinViewPicker } from '../../workspace/components/ViewPicker'
 import { ViewToolbar, ViewSearchField } from '../../workspace/components/ViewToolbar'
@@ -127,9 +128,9 @@ export function GitDiffSidebar({ diff, loading, error, selection, onSelectionCha
       <button className="btn btn-icon" onClick={onRefresh} disabled={loading} title="刷新 Git Diff" aria-label="刷新 Git Diff"><Icon name="refresh" size={14} /></button>
     </div>
     {counts && <div className="git-changes-counts" aria-label="变更统计"><span className="added">+{counts.added}</span><span className="deleted">-{counts.deleted}</span><span className="modified">M{counts.modified}</span></div>}
-    {error && <div className="git-diff-message error">{error}</div>}
-    {!diff && !error && <div className="git-diff-message">{loading ? '正在比较 HEAD...' : '尚未获得比较结果'}</div>}
-    {diff && !hasProjectDiffChanges(diff) && <div className="git-diff-message">工作区与 HEAD 一致</div>}
+    {error && <ContentState kind="error" title="比较失败" description={error} compact />}
+    {!diff && !error && <ContentState kind={loading ? 'loading' : 'empty'} title={loading ? '正在比较 HEAD...' : '尚未获得比较结果'} compact />}
+    {diff && !hasProjectDiffChanges(diff) && <ContentState kind="empty" title="工作区与 HEAD 一致" compact />}
     <FileTree nodes={filtered} dimensions={diffDimensions} fileTypes={types} groups={groups} readOnly
       selectedFile={selection.dimension ? null : selection.filePath} selectedType={selection.typeName ?? ''}
       selectedDimension={selection.dimension && selection.filePath ? { dimension: selection.dimension, filePath: selection.filePath } : null}
@@ -186,7 +187,7 @@ export function GitDiffMode({ diff, loading, error, selection, onSelectionChange
   // 项目加载失败时仍允许切换标签，但不能读取会话或显示旧项目的差异。
   if (sessionId === null) return <ModeMessage text="请先成功打开项目后查看 Git 变更" onRefresh={onRefresh} />
   if (error) return <ModeMessage tone="error" text={error} onRefresh={onRefresh} />
-  if (!diff) return <ModeMessage text={loading ? '正在比较 HEAD...' : '尚未获得比较结果'} onRefresh={onRefresh} />
+  if (!diff) return <ModeMessage tone={loading ? 'loading' : 'empty'} text={loading ? '正在比较 HEAD...' : '尚未获得比较结果'} onRefresh={onRefresh} />
   if (!hasProjectDiffChanges(diff)) return <ModeMessage text="工作区与 HEAD 一致" onRefresh={onRefresh} />
   if (!activeFilePath) return <ModeMessage text="没有可显示的变化文件" onRefresh={onRefresh} />
 
@@ -282,7 +283,7 @@ function RecordDiffView({ search, records, selection, onSelectionChange, changed
   useSelectionSlide(listRef, '[aria-selected="true"]')
   const comparisonRef = useRef<HTMLDivElement>(null)
   useDiffRowAlignment(comparisonRef, activeRecord)
-  if (records.length === 0) return <div className="git-diff-message centered">没有可显示的记录变化</div>
+  if (records.length === 0) return <ContentState kind="empty" title="没有可显示的记录变化" />
   return (
     <div className="git-record-diff">
       <aside className="git-record-list" aria-label="变化记录">
@@ -298,7 +299,7 @@ function RecordDiffView({ search, records, selection, onSelectionChange, changed
               </button>
             )
           })}
-          {filtered.length === 0 && <div className="git-diff-message">无匹配记录</div>}
+          {filtered.length === 0 && <ContentState kind="empty" title="无匹配记录" compact />}
         </div>
       </aside>
       <div ref={comparisonRef} className={`git-record-comparison ${activeRecord?.change ?? ''}`}>
@@ -321,7 +322,7 @@ function RecordPane({ label, snapshot, record, changedPaths, visibleTopFields, e
   // 只读但保留选中能力， selection 状态本地维护，不触发任何写操作。
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const side = label === 'HEAD' ? 'before' : 'after'
-  if (!record) return <div className="git-diff-message centered">没有可显示的记录变化</div>
+  if (!record) return <ContentState kind="empty" title="没有可显示的记录变化" />
   if (!snapshot) {
     return <section className={`git-record-pane missing ${record.change}`}><header>{label}</header><div>{side === 'before' ? 'HEAD 中不存在' : '当前工作区中不存在'}</div></section>
   }
@@ -390,7 +391,7 @@ function TableComparison({ search, diff, dimension, filePath, actualType, change
     return columns.length > 0 ? columns : undefined
   }, [changedOnly, projected])
   if (!actualType || projected.data.records.length === 0) {
-    return <div className="git-diff-message centered">没有可显示的记录变化</div>
+    return <ContentState kind="empty" title="没有可显示的记录变化" />
   }
   return (
     <div className="git-table-comparison">
@@ -426,7 +427,7 @@ function SourceComparison({ file, sessionId, searchQuery, searchStep }: { file: 
   const total = beforeCount + textSearchMatches(file?.after ?? '', searchQuery).length
   const current = total ? ((searchStep % total) + total) % total : -1
   const decorations = useMemo(() => file ? sourceLineDecorations(file.patch) : { before: [], after: [] }, [file])
-  if (!file) return <div className="git-diff-message centered">没有可显示的源码变化</div>
+  if (!file) return <ContentState kind="empty" title="没有可显示的源码变化" />
   return (
     <div className={`git-source-comparison ${file.change}`}>
       <SourcePane searchQuery={searchQuery} searchStep={current} searchActive={current >= 0 && current < beforeCount} sessionId={sessionId} filePath={file.path} label="HEAD" source={file.before} missing="HEAD 中不存在" decorations={decorations.before} />
@@ -469,12 +470,11 @@ function SourcePane({ label, source, missing, decorations, sessionId, filePath, 
   )
 }
 
-function ModeMessage({ text, tone = '', onRefresh }: { text: string, tone?: string, onRefresh(): void }) {
+function ModeMessage({ text, tone = 'empty', onRefresh }: { text: string, tone?: 'empty' | 'loading' | 'error', onRefresh(): void }) {
   return (
-    <div className={`git-diff-message centered ${tone}`}>
-      <span>{text}</span>
+    <ContentState kind={tone} title={text}>
       <button className="btn btn-outlined" onClick={onRefresh}><Icon name="refresh" size={13} />刷新</button>
-    </div>
+    </ContentState>
   )
 }
 

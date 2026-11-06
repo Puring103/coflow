@@ -53,6 +53,7 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
 
   const errors   = diagnostics.filter(d => d.severity === 'error').length
   const warnings = diagnostics.filter(d => d.severity === 'warning').length
+  const infos = diagnostics.filter(d => d.severity === 'info').length
 
   // No diagnostics → keep header only, no body region.
   const isEmpty = diagnostics.length === 0
@@ -152,8 +153,8 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
       <button
         type="button"
         className="diag-header"
-        title={`诊断 · ${errors} 个错误，${warnings} 个警告`}
-        aria-label={`诊断 · ${errors} 个错误，${warnings} 个警告`}
+        title={`诊断 · ${errors} 个错误，${warnings} 个警告，${infos} 条信息`}
+        aria-label={`诊断 · ${errors} 个错误，${warnings} 个警告，${infos} 条信息`}
         aria-expanded={!collapsed && !isEmpty}
         aria-controls="diag-list-region"
         disabled={isEmpty}
@@ -161,6 +162,7 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
       >
         <span className="diag-title">
           <Icon name={collapsed || isEmpty ? 'panel-bottom-closed' : 'panel-bottom'} size={15} aria-hidden />
+          <span className="diag-title-label">诊断</span>
         </span>
         {errors > 0 && (
           <span className="diag-badge error">
@@ -174,20 +176,28 @@ export function DiagnosticsPanel({ currentFile, diagnostics, focus, onFocusConsu
             {warnings}
           </span>
         )}
-        {errors === 0 && warnings === 0 && (
+        {infos > 0 && (
+          <span className="diag-badge info">
+            <Icon name="info" size={11} aria-hidden />
+            {infos}
+          </span>
+        )}
+        {isEmpty && (
           <span className="diag-badge ok">
             <Icon name="check" size={11} aria-hidden />
           </span>
         )}
+        {isEmpty && <span className="diag-summary">暂无诊断</span>}
       </button>
       {!isEmpty && (
         <div className="diag-body" id="diag-list-region" inert={collapsed} aria-hidden={collapsed}>
           <div className="diag-filters">
             <select aria-label="诊断级别" value={severity} onChange={event => setSeverity(event.target.value)}><option value="all">所有级别</option><option value="error">错误</option><option value="warning">警告</option><option value="info">信息</option></select>
             <label><input type="checkbox" checked={onlyCurrentFile} disabled={!currentFile} onChange={event => setOnlyCurrentFile(event.target.checked)} />当前文件</label>
-            <span>{filtered.length} / {diagnostics.length}</span>
+            <span>{onlyCurrentFile && currentFile ? '当前文件' : '整个项目'} · 显示 {filtered.length} / {diagnostics.length} 条</span>
           </div>
           <div className="diag-list" role="list" ref={listRef}>
+            {filtered.length === 0 && <div className="diag-empty" role="status">当前筛选下无诊断</div>}
             {filtered.map((d, i) => {
               const key = diagnosticKey(d)
               const canJump = d.target.kind !== 'none' && !!onJump

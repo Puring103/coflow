@@ -1,4 +1,6 @@
 import { useSelectionSlide } from '../../../shared/motion/useSelectionSlide'
+import { ContentState } from '../../../shared/ui/ContentState'
+import { FeedbackNotice } from '../../../shared/ui/FeedbackNotice'
 import { motionRecordKey } from '../hooks/useMutationFeedback'
 import { revealAndEmphasize } from '../../../shared/motion/motion'
 import { defaultValueForClear } from '../../workspace/state/selectionKeyboard'
@@ -234,7 +236,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   }, [firstRecordFocusRequest])
 
   if (!record) {
-    return <div className="record-view"><div className="empty-hint">记录 "{coordinate.actual_type}.{coordinate.id}" 未找到</div></div>
+    return <div className="record-view"><ContentState kind="empty" title={`记录 "${coordinate.actual_type}.${coordinate.id}" 未找到`} compact /></div>
   }
 
   const fields = fieldSearch
@@ -606,7 +608,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           diffChangedPaths={diffChangedPaths}
         />
         </Fragment>
-        {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
+        {keyboardNotice && <FeedbackNotice tone="error" message={keyboardNotice} className="table-cell-notice" />}
         </>}
       </div>
       {recordTreeMenu && (

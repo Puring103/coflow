@@ -1,4 +1,6 @@
 import { revealTableCell } from '../../../shared/lib/tableViewport'
+import { ContentState } from '../../../shared/ui/ContentState'
+import { FeedbackNotice } from '../../../shared/ui/FeedbackNotice'
 import { useTableSelectionDismiss } from '../hooks/useTableSelectionDismiss'
 import { EditableCell } from './TableCell'
 import { InspectorPanel } from '../../record-editing/components/InspectorPanel'
@@ -327,7 +329,7 @@ export function DimensionTableView({
             }}
           >
             {selected ? <DimensionRecord row={selected} variants={data.variants} onWrite={onWrite} selectedField={recordField} onSelectField={setRecordField} /> : (
-              <div className="empty-hint">没有可显示的记录</div>
+              <ContentState kind="empty" title="没有可显示的记录" compact />
             )}
           </main>
         </div>
@@ -637,7 +639,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
         select(next, event.shiftKey)
       }}
     >
-      {clipboardError && <div role="alert" className="table-cell-notice">{clipboardError}</div>}
+      {clipboardError && <FeedbackNotice tone="error" message={clipboardError} className="table-cell-notice" />}
       <table className="dimension-table data-table">
         <thead>
           <tr>
@@ -715,7 +717,7 @@ function DimensionGrid({ data, onWrite, onRenderCellText, onParseCellText, rootR
           {padAfter > 0 && <tr aria-hidden><td colSpan={columnCount} style={{ height: padAfter, padding: 0, border: 0 }} /></tr>}
         </tbody>
       </table>
-      {data.rows.length === 0 && <div className="empty-hint">没有可显示的记录</div>}
+      {data.rows.length === 0 && <ContentState kind="empty" title="没有可显示的记录" compact />}
     </div>
   )
 }

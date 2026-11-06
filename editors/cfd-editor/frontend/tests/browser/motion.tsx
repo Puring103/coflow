@@ -3,7 +3,7 @@ import { DimensionTableView } from '../../src/features/table/components/Dimensio
 import type { DimensionFileRecords } from '../../src/bindings/DimensionFileRecords'
 import type { ProjectDiff } from '../../src/bindings/ProjectDiff'
 import type { FieldValue } from '../../src/wire'
-import { StrictMode, useEffect, useState, useSyncExternalStore } from 'react'
+import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { InspectorPanel } from '../../src/features/record-editing/components/InspectorPanel'
 import { ReferencePanel } from '../../src/features/record-editing/components/ReferencePanel'
@@ -17,6 +17,10 @@ import { MOCK_FILE_RECORDS } from '../../src/test-support/mock'
 import { createMockLookups } from '../../src/test-support/mockLookups'
 import { committed, MutationHistoryController } from '../../src/features/workspace/state/editorState'
 import { useMutationFeedback } from '../../src/features/record-editing/hooks/useMutationFeedback'
+import { ViewEditorDialog } from '../../src/features/workspace/components/ViewEditorDialog'
+import { useSelectionSlide } from '../../src/shared/motion/useSelectionSlide'
+import { useContentMotion } from '../../src/shared/motion/useContentMotion'
+import { FeedbackNotice } from '../../src/shared/ui/FeedbackNotice'
 import type { FileRecords } from '../../src/bindings/FileRecords'
 import '../../src/style.css'
 
@@ -47,7 +51,7 @@ function Fixture() {
   const [origin, setOrigin] = useState<MotionOrigin | null>(null)
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const [references, setReferences] = useState<string[]>([])
-  useMutationFeedback(snapshot, origin, open)
+  const mutationNotice = useMutationFeedback(snapshot, origin, open)
   useEffect(() => registerDataEdit(async () => {
     control.commits++
     await new Promise(resolve => setTimeout(resolve, control.delay))
@@ -60,6 +64,14 @@ function Fixture() {
       oldValue: { kind: 'string', value: '旧值' }, newValue: { kind: 'string', value: '新值' } }),
     undo: () => history.undo(async () => committed(undefined)),
     failedUndo: () => history.undo(async () => ({ status: 'failed' })),
+    redo: () => history.redo(async () => committed(undefined)),
+    batch: () => {
+      history.record({ kind: 'batch-field', revision: snapshot.undo.length + 1,
+        edits: data.records.map(record => ({ filePath: data.file_path, coordinate: record.coordinate,
+          fieldPath: [{ kind: 'field', value: 'name' }], oldValue: { kind: 'string', value: '旧值' }, newValue: { kind: 'string', value: '新值' } })) })
+      return data.records.length
+    },
+    clear: () => history.clear(),
     bounds: () => originBounds(origin),
     reference: () => setReferences(['A']),
     open: () => {
@@ -75,6 +87,7 @@ function Fixture() {
   } })
   return <ObjectDraftHost lookups={lookups} generationKey="1" sessionId={1} onOpenReference={() => {}}>
     <div className="app" style={{ display: 'block', padding: 24 }}>
+      {mutationNotice && <FeedbackNotice className="mutation-feedback-notice" tone="success" message={mutationNotice} />}
       <div style={{ height: 380, width: 850 }}>
         <TableView onWriteField={new URLSearchParams(location.search).has('overflow') ? async () => {} : undefined} data={file} activeType={data.records[0].coordinate.actual_type} selection={selection}
           visibleColumns={complex ? ['name', 'Config'] : ['name']} onOpenRecord={() => {}}
@@ -100,6 +113,7 @@ function Fixture() {
       <div id="scroller" style={{ height: 160, overflowY: 'auto', width: 300 }}>
         {Array.from({ length: 30 }, (_, index) => <div id={`target-${index}`} key={index} style={{ height: 40 }}>目标 {index}</div>)}
       </div>
+      <input id="reference-background-editor" aria-label="引用背景编辑输入" />
     </div>
     <InspectorPanel modal open={open} origin={origin} data={file} selection={selection} width={420} onWidthChange={() => {}}
       onClose={() => { control.closes++; setOpen(false) }} />
@@ -109,6 +123,33 @@ function Fixture() {
       <button onClick={() => setReferences(current => [...current, 'B'])}>打开下一引用</button>
     </ReferencePanel></StrictMode>}
   </ObjectDraftHost>
+}
+
+function SurfaceFixture() {
+  const [selected, setSelected] = useState(0)
+  const [viewOpen, setViewOpen] = useState(false)
+  const list = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  const state = useRef({ submits: 0, closes: 0, fail: false, delay: 0 })
+  useSelectionSlide(list, '[aria-selected="true"]')
+  useContentMotion(content, String(selected))
+  Object.assign(window, { surfaceTest: { select: setSelected, state: state.current } })
+  return <div className="app" style={{ display: 'block', padding: 24 }}>
+    <button id="open-view" onClick={() => setViewOpen(true)}>新建测试视图</button>
+    <input id="background-editor" aria-label="背景编辑输入" />
+    <div ref={list} className="view-picker" style={{ display: 'block', width: 180, height: 300 }}>
+      {Array.from({ length: 10 }, (_, index) => <button key={index} role="tab" aria-selected={selected === index}
+        className="view-picker-tab" style={{ display: 'block', width: 180, height: 30 }} onClick={() => setSelected(index)}>测试项 {index}</button>)}
+    </div>
+    <div ref={content} id="motion-content">当前内容 {selected}</div>
+    <span className="icon-spin">构建中</span><span className="update-icon-spinning">更新中</span>
+    {viewOpen && <ViewEditorDialog initial={null} availableFields={['name', 'amount']} availableRelations={[]} groups={[]}
+      onSubmit={async () => {
+        state.current.submits++
+        await new Promise(resolve => setTimeout(resolve, state.current.delay))
+        if (state.current.fail) throw new Error('测试保存失败')
+      }} onClose={() => { state.current.closes++; setViewOpen(false) }} />}
+  </div>
 }
 
 const extensionValue: FieldValue = { kind: 'array', value: Array.from({ length: 24 }, (_, index) => ({ kind: 'string', value: `value-${index}` })) }
@@ -135,4 +176,5 @@ function ExtensionFixture() {
     </div>
   </ObjectDraftHost>
 }
-createRoot(document.getElementById('root')!).render(new URLSearchParams(location.search).has('extension') ? <ExtensionFixture /> : <Fixture />)
+createRoot(document.getElementById('root')!).render(new URLSearchParams(location.search).has('surfaces') ? <SurfaceFixture />
+  : new URLSearchParams(location.search).has('extension') ? <ExtensionFixture /> : <Fixture />)

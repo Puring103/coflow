@@ -32,6 +32,8 @@ import { CreateRecordDialog } from '../../record-editing/components/CreateRecord
 import { ConfirmDialog, TextInputDialog } from '../../../shared/ui/ActionDialog'
 import { DiagBadge } from '../../diagnostics/components/DiagBadge'
 import { Icon } from '../../../shared/ui/Icon'
+import { ContentState } from '../../../shared/ui/ContentState'
+import { FeedbackNotice } from '../../../shared/ui/FeedbackNotice'
 
 import { visibilityScrollDelta } from '../state/scrollVisibility'
 import { fieldMetadataTitle } from '../../../shared/lib/fieldMetadata'
@@ -166,6 +168,11 @@ interface TableContextMenu {
   records: RecordCoordinate[]
 }
 
+interface CellNotice {
+  message: string
+  tone: 'info' | 'success' | 'warning' | 'error'
+}
+
 export const TableView = memo(function TableView({ rowHeights, onRowHeightsChange, onExpandCell, data, activeType, readOnly, diagnostics, searchQuery, keyOnlySearch = false, fullTextSearch = false, recordGroups, collapsedGroupKeys, onToggleGroup, onDropRecordOntoRecord, onDropRecordAfterRecord, onCreateGroup, onDropRecordIntoGroup, onDropRecordIntoUngrouped, onRenameGroup, onColorGroup, selection, onSelectRecord, onSelectValue, onValueSelectionCellsChange, onRenderCellText, onParseCellText, onClearSelection, onOpenRecord, onWriteField, onWriteFieldBatch, onRenameRecord, onInsertRecord, onCreateRecordDraft, onDeleteRecords, onMoveRecord, onDiagnosticBadgeClick, columnWidths, onColumnWidthsChange, visibleColumns, onEnterInspector, focusRequest, firstRecordFocusRequest, onFirstRecordFocusConsumed, onNavigationBoundary, rowPresentation }: Props) {
   const expansionStore = useMemo(() => new TableExpansionStore(), [data.file_path, activeType])
   const [pendingRecordReveal, setPendingRecordReveal] = useState<{ filePath: string; coordinate: RecordCoordinate } | null>(null)
@@ -193,7 +200,8 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
   useEffect(() => { setShortNameMenu(null) }, [data.file_path, activeType])
   const [insertAfterRow, setInsertAfterRow] = useState<RecordRow | null>(null)
   const [syntaxEdit, setSyntaxEdit] = useState<{ key: string; initialText: string } | null>(null)
-  const [cellNotice, setCellNotice] = useState<string | null>(null)
+  // 提示语义只控制颜色和图标，原有显示、清除和剪切生命周期保持一致。
+  const [cellNotice, setCellNotice] = useState<CellNotice | null>(null)
   const [recordAction, setRecordAction] = useState<
     | { kind: 'rename'; coordinate: RecordCoordinate; id: string }
     | { kind: 'delete'; records: RecordCoordinate[]; message: string }
@@ -542,7 +550,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                       setCellNotice(null)
                       requestAnimationFrame(() => tableScrollRef.current?.focus({ preventScroll: true }))
                     } catch (error) {
-                      setCellNotice(`输入格式不正确：${errorMessage(error)}`)
+                      setCellNotice({ message: `输入格式不正确：${errorMessage(error)}`, tone: 'error' })
                       setSyntaxEdit(current => current?.key === editKey ? null : current)
                       requestAnimationFrame(() => tableScrollRef.current?.focus({ preventScroll: true }))
                     }
@@ -880,7 +888,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
     if (!data.records.some(row => sameCoordinate(row.coordinate, target))) return
     setPendingRecordReveal(null)
     if (!visibleRowIndexes.has(coordinateId(target))) {
-      setCellNotice('记录已创建，当前筛选或分组隐藏了该记录')
+      setCellNotice({ message: '记录已创建，当前筛选或分组隐藏了该记录', tone: 'success' })
       return
     }
     // 等待真实记录进入视图后再选中和定位，不等待或播放虚拟行高度动画。
@@ -1147,7 +1155,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                     )
                     setCellNotice(null)
                   } catch (error) {
-                    setCellNotice(`无法编辑：${errorMessage(error)}`)
+                    setCellNotice({ message: `无法编辑：${errorMessage(error)}`, tone: 'error' })
                   }
                   return
                 }
@@ -1190,9 +1198,9 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                   }
                 }
                 if (shortcut === 'c') pendingCut.current = null
-                setCellNotice(shortcut === 'x' ? '已标记剪切，粘贴成功后移除来源；Esc 取消' : null)
+                setCellNotice(shortcut === 'x' ? { message: '已标记剪切，粘贴成功后移除来源；Esc 取消', tone: 'info' } : null)
               } catch (error) {
-                setCellNotice(`${shortcut === 'x' ? '剪切' : '复制'}失败：${errorMessage(error)}`)
+                setCellNotice({ message: `${shortcut === 'x' ? '剪切' : '复制'}失败：${errorMessage(error)}`, tone: 'error' })
               } finally {
                 clipboardBusyRef.current = false
               }
@@ -1202,11 +1210,11 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
               e.preventDefault()
               if (clipboardBusyRef.current) return
               if (selection.kind !== 'value') {
-                setCellNotice('记录选择模式不支持粘贴')
+                setCellNotice({ message: '记录选择模式不支持粘贴', tone: 'warning' })
                 return
               }
               if (!onParseCellText || !onWriteFieldBatch) {
-                setCellNotice('当前来源不支持批量粘贴')
+                setCellNotice({ message: '当前来源不支持批量粘贴', tone: 'warning' })
                 return
               }
               clipboardBusyRef.current = true
@@ -1254,7 +1262,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 pendingCut.current = null
                 setCellNotice(null)
               } catch (error) {
-                setCellNotice(`粘贴失败：${errorMessage(error)}`)
+                setCellNotice({ message: `粘贴失败：${errorMessage(error)}`, tone: 'error' })
               } finally {
                 clipboardBusyRef.current = false
               }
@@ -1284,7 +1292,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                   if (writes.length > 0) await onWriteFieldBatch(writes)
                   setCellNotice(null)
                 } catch (error) {
-                  setCellNotice(`无法编辑：${errorMessage(error)}`)
+                  setCellNotice({ message: `无法编辑：${errorMessage(error)}`, tone: 'error' })
                 }
                 return
               }
@@ -1318,7 +1326,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 )
                 setCellNotice(null)
               } catch (error) {
-                setCellNotice(`无法编辑：${errorMessage(error)}`)
+                setCellNotice({ message: `无法编辑：${errorMessage(error)}`, tone: 'error' })
               }
               return
             }
@@ -1337,7 +1345,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 )
                 setCellNotice(null)
               } catch (error) {
-                setCellNotice(`无法编辑：${errorMessage(error)}`)
+                setCellNotice({ message: `无法编辑：${errorMessage(error)}`, tone: 'error' })
               }
               return
             }
@@ -1350,7 +1358,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
                 setCellNotice(null)
               }
             } catch (error) {
-              setCellNotice(`无法编辑：${errorMessage(error)}`)
+              setCellNotice({ message: `无法编辑：${errorMessage(error)}`, tone: 'error' })
             }
           }}
         >
@@ -1694,10 +1702,10 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
             <div className="table-scroll-width-floor" style={{ width: scrollWidthFloor }} aria-hidden />
           )}
           {filtered.length === 0 && (
-            <div className="empty-hint">暂无 {activeType} 类型的记录</div>
+            <ContentState kind="empty" title={`暂无 ${activeType} 类型的记录`} compact />
           )}
           {filtered.length > 0 && rows.length === 0 && (
-            <div className="empty-hint">无匹配 "{globalFilter}" 的记录</div>
+            <ContentState kind="empty" title={`无匹配 "${globalFilter}" 的记录`} description="可调整搜索条件查看其他记录。" compact />
           )}
         </div>
 
@@ -1712,7 +1720,7 @@ export const TableView = memo(function TableView({ rowHeights, onRowHeightsChang
               新建记录
             </button>
           )}
-          {cellNotice && <span className="table-cell-notice" role="status">{cellNotice}</span>}
+          {cellNotice && <FeedbackNotice message={cellNotice.message} tone={cellNotice.tone} className="table-cell-notice" />}
         </div>
       </div>
 

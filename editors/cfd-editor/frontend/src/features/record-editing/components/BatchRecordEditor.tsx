@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { ContentState } from '../../../shared/ui/ContentState'
 import type { RecordRow } from '../../../bindings/RecordRow'
 import { cellDeclaredType, cellEnumType, cellEnumIsFlag, cellNullable, cellRefTargetType, fieldPathField, nullValue, presentationValue, type FieldPathSegment, type FieldValue } from '../../../wire'
 import { projectBatchRecordFields } from '../state/batchRecordProjection'
@@ -32,7 +33,7 @@ export function BatchRecordEditor({ records, readOnly, onWriteFields }: Props) {
         <span>{fields.length} 个公共字段</span>
       </div>
       {fields.length === 0 ? (
-        <div className="empty-hint">所选记录没有类型兼容的公共字段</div>
+        <ContentState kind="empty" title="所选记录没有类型兼容的公共字段" compact />
       ) : fields.map(field => {
         const path = [fieldPathField(field.cell.name)]
         const editable = !readOnly && field.editable && !!onWriteFields && !busyField

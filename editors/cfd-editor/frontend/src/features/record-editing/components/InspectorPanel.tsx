@@ -1,4 +1,6 @@
 import { motionRecordKey } from '../hooks/useMutationFeedback'
+import { ContentState } from '../../../shared/ui/ContentState'
+import { FeedbackNotice } from '../../../shared/ui/FeedbackNotice'
 import { createPortal } from 'react-dom'
 import { useInspectorMotion } from '../hooks/useInspectorMotion'
 import type { MotionOrigin } from '../../../shared/motion/motion'
@@ -129,7 +131,7 @@ export function InspectorPanel({
     const dismiss = (event: PointerEvent) => {
       const target = event.target
       if (!(target instanceof Element)) return
-      if (target.closest('.searchable-select-menu, .context-menu')) return
+      if (target.closest('.searchable-select-menu, .context-menu, .feedback-notice')) return
       if (bodyRef.current?.contains(target) && target.closest('.dc-row, .dc-row-add')) return
       setKeyboardFieldPath(null)
       setSelectedActionPathWire(null)
@@ -553,12 +555,12 @@ export function InspectorPanel({
                     : undefined}
                 />
               ) : (
-                <div className="empty-hint">选中的单元格不存在</div>
+                <ContentState kind="empty" title="选中的单元格不存在" compact />
               )}
-              {keyboardNotice && <span className="table-cell-notice" role="status">{keyboardNotice}</span>}
+              {keyboardNotice && <FeedbackNotice tone="error" message={keyboardNotice} className="table-cell-notice" />}
             </>
           ) : (
-            <div className="empty-hint">未选择记录</div>
+            <ContentState kind="empty" title="未选择记录" compact />
           )}
           </Fragment>
         </div>

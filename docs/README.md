@@ -28,6 +28,7 @@
 - [性能约束](editor-design/performance.md)：选区、索引、后端列统计、挂载与查询缓存。
 - [记录展示](editor-design/record-display.md)：缩略名和记录标识。
 - [编辑器动效](editor-design/motion.md)：来源展开、窗口退出、导航定位与提交反馈。
+- [信息与视觉呈现](editor-design/presentation.md)：通知语义、保存状态、诊断概览与视觉状态组合。
 - [Git Diff](editor-design/git-diff.md)：工作区与历史数据比较。
 - [插件接口](editor-design/plugins.md)：注册、事件、数据访问和展示出口。
 - [视觉规范](../assets/visual-style.md)：品牌、界面与图标的共同设计。

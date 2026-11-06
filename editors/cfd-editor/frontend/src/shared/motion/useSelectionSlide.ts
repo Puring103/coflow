@@ -20,8 +20,15 @@ export function useSelectionSlide(root: RefObject<HTMLElement | null>, selector:
     if (!from || reducedMotion()) return
     const to = next.getBoundingClientRect()
     if (!to.width || !to.height) return
+    const dx = from.x + matrix.e - to.x
+    const dy = from.y + matrix.f - to.y
+    // 只衔接相邻选择；长列表跳转直接显示目标，底色不扫过大量无关条目。
+    const viewport = root.current!.getBoundingClientRect()
+    const horizontalLimit = Math.min(viewport.width, Math.max(240, Math.max(from.width, to.width) * 3))
+    const verticalLimit = Math.min(viewport.height, Math.max(240, Math.max(from.height, to.height) * 3))
+    if (Math.abs(dx) > horizontalLimit || Math.abs(dy) > verticalLimit) return
     // 首帧先落到旧位置再启动，避免伪元素首次生成时短暂绘制在终点。
-    const offset = `translate(${from.x + matrix.e - to.x}px, ${from.y + matrix.f - to.y}px)`
+    const offset = `translate(${dx}px, ${dy}px)`
     next.style.setProperty('--selection-offset', offset)
     void getComputedStyle(next, '::before').transform
     motion.current = next.animate([

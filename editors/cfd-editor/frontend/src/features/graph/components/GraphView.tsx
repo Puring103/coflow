@@ -1,4 +1,5 @@
 import { nodeTypes, GraphGeometryProbeHost, type NodeData } from './GraphNode'
+import { ContentState } from '../../../shared/ui/ContentState'
 import { geometryHandles, GraphPortWindow } from '../layout/portGeometry'
 import { GraphPortWindowContext } from '../layout/portWindow'
 import { GraphEdgeGeometry } from '../layout/edgeGeometry'
@@ -1115,15 +1116,10 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
     >
       <div className="graph-view">
         {rfNodes.length === 0 ? (
-          <div className="empty-hint">
-            {layoutBusy
-              ? '布局图谱中…'
-              : layoutError
-                ? `图谱布局失败：${layoutError}`
-                : availableFields.length > 0 && enabledFields.size === 0
-                  ? '未选择引用字段'
-                  : '无可显示的引用关系'}
-          </div>
+          <ContentState kind={layoutBusy ? 'loading' : layoutError ? 'error' : 'empty'}
+            title={layoutBusy ? '布局图谱中…' : layoutError ? '图谱布局失败'
+              : availableFields.length > 0 && enabledFields.size === 0 ? '未选择引用字段' : '无可显示的引用关系'}
+            description={!layoutBusy && layoutError ? layoutError : undefined} />
         ) : (
           <>
             <GraphPortWindowContext.Provider value={published.paths}>

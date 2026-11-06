@@ -1,4 +1,5 @@
 import { lazy } from 'react'
+import { ContentState } from '../shared/ui/ContentState'
 
 // 预加载与 React.lazy 共享同一 Promise，切换视图时复用已经加载的模块。
 function cachedViewModule<T>(loader: () => Promise<T>): () => Promise<T> {
@@ -24,4 +25,4 @@ export const DimensionTableView = lazy(viewModules.dimension)
 export const GitDiffMode = lazy(viewModules.diff)
 export const GitDiffSidebar = lazy(() => import('../features/git-diff/components/GitDiffMode').then(module => ({ default: module.GitDiffSidebar })))
 
-export const ViewLoading = () => <div className="content-empty" role="status"><div className="content-empty-title">加载视图中…</div></div>
+export const ViewLoading = () => <ContentState kind="loading" title="加载视图中…" />

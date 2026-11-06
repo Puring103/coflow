@@ -98,6 +98,8 @@ test('public node geometry keeps an unmounted source anchor reconnectable from t
   await page.goto(`${server.resolvedUrls.local[0]}tests/browser/graph-geometry.html`)
   const edge = page.locator('.graph-edge-drag')
   await edge.waitFor()
+  // 线体会先于 ResizeObserver 的公开 handles 回写挂载；等待锚点发布后再验证坐标和重连。
+  await page.waitForFunction(() => window.geometryFlow?.getInternalNode('source')?.internals.handleBounds?.source?.some(handle => handle.id === 'row-60'))
   assert.equal(await page.locator('.react-flow__handle.source').count(), 0)
   const anchor = await page.evaluate(() => {
     const node = window.geometryFlow.getInternalNode('source')

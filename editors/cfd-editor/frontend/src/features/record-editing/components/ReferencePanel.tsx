@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { typeColor } from '../../../shared/lib/typeColor'
 import { flushDataEdits } from '../state/editSession'
 import { useSurfaceExit } from '../../../shared/motion/useSurfaceExit'
-import { motionDuration, motionToken, reducedMotion } from '../../../shared/motion/motion'
+import { motionDuration, motionToken, observeReducedMotion, reducedMotion } from '../../../shared/motion/motion'
 
 /** 复用 Inspector 的浮层容器；退出前等待草稿保存，并恢复原视图焦点。 */
 export function ReferencePanel({ title, recordId, actualType, children, depth, onBack, onClose, onNavigate }: {
@@ -25,7 +25,9 @@ export function ReferencePanel({ title, recordId, actualType, children, depth, o
     const animation = element.animate([{ opacity: 0, transform: from }, { opacity: 1, transform: 'none' }], {
       duration: motionDuration('enter'), easing: motionToken('enter-ease'),
     })
-    return () => animation.cancel()
+    const stopPreference = observeReducedMotion(() => animation.finish())
+    void animation.finished.then(stopPreference, stopPreference)
+    return () => { stopPreference(); animation.cancel() }
   }, [identity, depth])
   const leaving = useRef(false)
   const leave = async (action: () => void) => {
@@ -40,8 +42,14 @@ export function ReferencePanel({ title, recordId, actualType, children, depth, o
   }
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
-    panel.current?.focus({ preventScroll: true })
-    return () => { if (previous?.isConnected) previous.focus({ preventScroll: true }) }
+    const element = panel.current
+    element?.focus({ preventScroll: true })
+    return () => {
+      // 整层退出已释放背景命中，新输入焦点属于用户，不能在卸载时夺回。
+      if (previous?.isConnected && (document.activeElement === document.body || element?.contains(document.activeElement))) {
+        previous.focus({ preventScroll: true })
+      }
+    }
   }, [])
   useEffect(() => { panel.current?.focus({ preventScroll: true }) }, [identity])
   return createPortal(<div className="reference-panel-overlay" onClick={event => {

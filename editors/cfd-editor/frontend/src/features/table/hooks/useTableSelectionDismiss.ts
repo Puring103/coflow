@@ -8,7 +8,7 @@ export function useTableSelectionDismiss(root: RefObject<HTMLDivElement | null>,
       const target = event.target
       if (!(target instanceof Element)) return
       if (kind === 'record' && target !== root.current) return
-      if (target.closest('.inspector-modal-backdrop, .inspector-panel, .searchable-select-menu, .context-menu, .reference-panel-overlay')) return
+      if (target.closest('.inspector-modal-backdrop, .inspector-panel, .searchable-select-menu, .context-menu, .reference-panel-overlay, .feedback-notice')) return
       const cell = target.closest('[data-table-cell-key]')
       if (cell && root.current?.contains(cell)) return
       clear()

@@ -8,6 +8,7 @@ import { codeMirrorDiagnostics, completionItem, decodeSemanticTokens, rangeOffse
 import { CfdCodeEditor, type CodeSemanticToken } from './CfdCodeEditor'
 import { SourceAutosave, registerSourceSave } from '../state/sourceAutosave'
 import { Icon } from '../../../shared/ui/Icon'
+import { ContentState } from '../../../shared/ui/ContentState'
 import { fetchSourceText } from '../../../app/editorQueries'
 import { queryClient } from '../../../app/queryClient'
 
@@ -156,26 +157,35 @@ export function SourceEditorView({ sessionId, revision, filePath, readOnly, onSa
     await controller.flush()
   }
 
-  if (loading) return <div className="empty-hint">{error ?? '加载源码中...'}</div>
+  if (loading) return <ContentState kind={error ? 'error' : 'loading'} title={error ?? '加载源码中…'} />
 
   return (
     <section className="source-editor-view">
       <header className="source-editor-toolbar">
         <div className="source-editor-file">
           <Icon name="code" size={14} aria-hidden />
-          <span>{filePath}</span>
-          <span>{saving ? '保存中…' : dirty ? '等待保存' : '已保存'}</span>
+          <span className="source-editor-path" title={filePath}>{filePath}</span>
           {dirty && <span className="source-editor-dirty" aria-label="有未保存更改" />}
         </div>
-        {(error || languageError) && <span className="source-editor-error" role="alert">{error || languageError}</span>}
+        <span className={`source-editor-status source-editor-status-${saving ? 'saving' : dirty ? 'pending' : 'saved'}`}>
+          <Icon name={saving ? 'refresh' : dirty ? 'save' : 'check'} size={13} className={saving ? 'icon-spin' : undefined} aria-hidden />
+          <span>{saving ? '保存中…' : dirty ? '等待保存' : '已保存'}</span>
+        </span>
       </header>
-      {state.conflict !== null && <div role="alert">
-        磁盘文件已变化，当前输入已保留。
-        <button onClick={() => controller.useDisk()}>使用磁盘内容</button>
-        <button onClick={() => { void controller.keepLocal() }}>保留本地并覆盖</button>
+      {(error || languageError) && <div className="source-editor-error" role="alert">
+        <Icon name="error" size={14} aria-hidden />
+        <span>{error || languageError}</span>
       </div>}
-      {state.recovery && <button onClick={() => { void controller.recover() }}>恢复项目（不重复保存）</button>}
-      {error && !state.recovery && state.conflict === null && <button onClick={() => { void save() }}>重试保存</button>}
+      {state.conflict !== null && <div className="source-editor-alert" role="alert">
+        <Icon name="warning" size={15} aria-hidden />
+        <span>磁盘文件已变化，<strong>当前输入已保留。</strong></span>
+        <div className="source-editor-alert-actions">
+          <button className="btn btn-outlined" onClick={() => controller.useDisk()}>使用磁盘内容</button>
+          <button className="btn btn-outlined" onClick={() => { void controller.keepLocal() }}>保留本地并覆盖</button>
+        </div>
+      </div>}
+      {state.recovery && <div className="source-editor-recovery"><button className="btn btn-outlined" onClick={() => { void controller.recover() }}>恢复项目（不重复保存）</button></div>}
+      {error && !state.recovery && state.conflict === null && <div className="source-editor-recovery"><button className="btn btn-outlined" onClick={() => { void save() }}>重试保存</button></div>}
       <div className="source-editor-main" onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !readOnly && api.isTauri && !error) void controller.flush()
       }}>

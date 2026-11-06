@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorRecordGroup } from '../../../bindings/EditorRecordGroup'
@@ -7,6 +7,7 @@ import type { ViewKind } from '../../../bindings/ViewKind'
 import { DEFAULT_TABLE_VIEW_ID, newViewId } from '../state/views'
 import { Icon } from '../../../shared/ui/Icon'
 import { errorMessage } from '../../../wire'
+import { useSurfaceExit } from '../../../shared/motion/useSurfaceExit'
 
 interface Props {
   /** null => create mode; an existing ViewConfig => edit mode. */
@@ -38,9 +39,36 @@ export function ViewEditorDialog({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [fieldSearch, setFieldSearch] = useState('')
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const surfaceRef = useRef<HTMLElement>(null)
   const discardDialogRef = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
-    if (confirmDiscard) discardDialogRef.current?.showModal()
+  const discardReturnFocus = useRef<HTMLElement | null>(null)
+  const previousFocus = useRef(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const exit = useSurfaceExit(surfaceRef)
+  const exitDiscard = useSurfaceExit(discardDialogRef, confirmDiscard)
+  const dismiss = () => exit(() => {
+    const focused = document.activeElement
+    const restoreFocus = focused === document.body || surfaceRef.current?.contains(focused) || discardDialogRef.current?.contains(focused)
+    discardDialogRef.current?.close()
+    onClose()
+    // 背景已可交互时尊重用户的新焦点；只接回退出层因 inert 释放的焦点。
+    if (restoreFocus && previousFocus.current?.isConnected) previousFocus.current.focus({ preventScroll: true })
+  })
+  // 原生确认层在退场完成后关闭，继续编辑时由 dialog 恢复进入确认前的焦点。
+  const continueEditing = () => exitDiscard(() => setConfirmDiscard(false))
+  const discardChanges = () => {
+    void exitDiscard(() => {})
+    void dismiss()
+  }
+  useLayoutEffect(() => {
+    if (!confirmDiscard) {
+      if (discardReturnFocus.current?.isConnected) discardReturnFocus.current.focus({ preventScroll: true })
+      discardReturnFocus.current = null
+      return
+    }
+    const dialog = discardDialogRef.current!
+    dialog.showModal()
+    // 卸载提交后再恢复原生焦点，避免焦点先返回时快速 Esc 重开仍在退出的旧节点。
+    return () => dialog.close()
   }, [confirmDiscard])
   const [name, setName] = useState(initial?.name ?? '')
   const [kind, setKind] = useState<ViewKind>(initial?.kind ?? 'table')
@@ -78,7 +106,12 @@ export function ViewEditorDialog({
   const visibleFieldRows = fieldRows.filter(field => field.toLocaleLowerCase().includes(fieldSearch.trim().toLocaleLowerCase()))
   const draftSignature = JSON.stringify([name, kind, fieldRows.filter(field => selected.has(field)), relations, groupFilter])
   const initialSignature = useRef(draftSignature)
-  const requestClose = () => saving ? undefined : draftSignature === initialSignature.current ? onClose() : setConfirmDiscard(true)
+  const requestClose = () => {
+    if (saving || confirmDiscard) return
+    if (draftSignature === initialSignature.current) { void dismiss(); return }
+    discardReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConfirmDiscard(true)
+  }
 
   async function submit() {
     if (!trimmedName) return
@@ -96,7 +129,8 @@ export function ViewEditorDialog({
       relations: kind === 'graph' ? relations : [],
       fields: kind === 'graph' ? cleanFields : [],
     })
-    onClose()
+    // 保存成功后才开始视觉退场，失败继续保留当前草稿与错误。
+    await dismiss()
     } catch (error) { setSaveError(errorMessage(error)) } finally { setSaving(false) }
   }
 
@@ -172,12 +206,20 @@ export function ViewEditorDialog({
       onMouseDown={e => { if (e.target === e.currentTarget) requestClose() }}
     >
       <section
+        ref={surfaceRef}
         className="create-record-dialog view-editor"
         role="dialog"
         aria-modal="true"
         aria-label={initial ? '编辑视图' : '新建视图'}
         onMouseDown={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Escape') requestClose() }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') {
+            // 本次 Esc 只处理当前层，不能同时触发刚打开的原生确认层取消。
+            e.preventDefault()
+            e.stopPropagation()
+            requestClose()
+          }
+        }}
       >
         <header className="view-editor-heading"><div><h2>{initial ? '视图设置' : '新建视图'}</h2><p>选择字段、调整顺序，保存常用的工作视图。</p></div><button className="btn btn-icon" aria-label="关闭视图设置" onClick={requestClose}><Icon name="close" size={16} /></button></header>
         <div className="view-editor-body">
@@ -296,10 +338,10 @@ export function ViewEditorDialog({
         </div>
 
         {saveError && <div className="view-save-error" role="alert">{saveError}</div>}
-        {confirmDiscard && createPortal(<dialog ref={discardDialogRef} className="view-discard-dialog" aria-label="放弃更改" onCancel={() => setConfirmDiscard(false)} onKeyDown={event => event.stopPropagation()}>
+        {confirmDiscard && createPortal(<dialog ref={discardDialogRef} className="view-discard-dialog" aria-label="放弃更改" onCancel={event => { event.preventDefault(); void continueEditing() }} onKeyDown={event => event.stopPropagation()}>
           <h3>放弃尚未保存的视图设置？</h3>
           <p>确认后，本次修改将不会保存。</p>
-          <div className="view-editor-actions"><button autoFocus className="btn" onClick={() => setConfirmDiscard(false)}>继续编辑</button><button className="btn btn-primary" onClick={onClose}>确认</button></div>
+          <div className="view-editor-actions"><button autoFocus className="btn" onClick={() => { void continueEditing() }}>继续编辑</button><button className="btn btn-primary" onClick={discardChanges}>确认</button></div>
         </dialog>, document.body)}
         <div className="view-editor-actions">
           <button className="btn btn-outlined" onClick={requestClose}>取消</button>

@@ -1,0 +1,24 @@
+.content-state {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.content-state-icon { display: flex; color: var(--text-mute); }
+.content-state-loading .content-state-icon { color: var(--accent); }
+.content-state-error .content-state-icon { color: var(--red); }
+.content-state-copy { min-width: 0; max-width: 560px; overflow-wrap: anywhere; }
+.content-state-title { color: var(--text); font-size: 13px; line-height: 1.6; }
+.content-state-description { margin-top: 4px; font-size: 12px; line-height: 1.6; }
+.content-state-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.content-state-compact { gap: 8px; padding: 24px 16px; }
+/* 减少动态效果时仍用图标和文字完整表达加载状态。 */
+@media (prefers-reduced-motion: reduce) {
+  .content-state .icon-spin { animation: none; }
+}

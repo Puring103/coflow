@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { motionDuration, motionToken, reducedMotion } from './motion'
+import { motionDuration, motionToken, observeReducedMotion, reducedMotion } from './motion'
 
 /** 普通窗口退出只负责视觉收尾；提交、校验和导航仍由调用方先完成。 */
 export function useSurfaceExit(ref: RefObject<HTMLElement | null>, identity: boolean | string = true) {
@@ -21,8 +21,12 @@ export function useSurfaceExit(ref: RefObject<HTMLElement | null>, identity: boo
     element.inert = true
     element.dataset.motionExiting = 'true'
     const overlay = element.closest<HTMLElement>('.create-record-backdrop, .help-overlay, .reference-panel-overlay')
+    const releaseOverlay = overlay && options?.fadeOverlay !== false
+    const previousPointerEvents = overlay?.style.pointerEvents ?? ''
     let fade: Animation | undefined
-    if (overlay && options?.fadeOverlay !== false) {
+    if (releaseOverlay) {
+      // 整层关闭已经获准时立即释放背景命中；视觉退场不能延迟下一次编辑操作。
+      overlay.style.pointerEvents = 'none'
       const opacity = getComputedStyle(overlay).opacity
       overlay.getAnimations().forEach(animation => animation.cancel())
       fade = overlay.animate([{ opacity }, { opacity: 0 }], { duration: motionDuration('exit'), fill: 'forwards' })
@@ -30,13 +34,20 @@ export function useSurfaceExit(ref: RefObject<HTMLElement | null>, identity: boo
     const animation = element.animate([start, { opacity: 0, transform: options?.transform ?? 'translateY(4px)' }], {
       duration: motionDuration('exit'), easing: motionToken('exit-ease'), fill: 'forwards',
     })
+    const stopPreference = observeReducedMotion(() => {
+      fade?.finish()
+      animation.finish()
+    })
     exit.current = () => {
+      stopPreference()
       animation.cancel()
       fade?.cancel()
       element.inert = previousInert
+      if (releaseOverlay) overlay.style.pointerEvents = previousPointerEvents
       delete element.dataset.motionExiting
     }
     await animation.finished.catch(() => {})
+    stopPreference()
     if (generation.current !== current) return
     action()
     // 结束帧保留到卸载；避免退出完成后出现一帧完整窗口。

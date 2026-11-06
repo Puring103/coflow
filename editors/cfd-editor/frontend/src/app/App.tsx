@@ -23,6 +23,8 @@ import { DiagnosticsPanel } from '../features/diagnostics/components/Diagnostics
 import { InspectorPanel } from '../features/record-editing/components/InspectorPanel'
 import { finishActiveDataEdit, deferDataNavigation } from '../features/record-editing/state/editSession'
 import { Icon } from '../shared/ui/Icon'
+import { ContentState } from '../shared/ui/ContentState'
+import { FeedbackNotice } from '../shared/ui/FeedbackNotice'
 import { ObjectDraftHost } from '../features/record-editing/components/ObjectDraftHost'
 import { ShortNameContext } from '../features/record-editing/components/ShortNameContext'
 import { UpdateControl } from '../features/workspace/components/UpdateControl'
@@ -382,7 +384,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
   // column and graph nodes select the whole record.
   const [inspectorDialogOpen, setInspectorDialogOpen] = useState(false)
   const [inspectorOrigin, setInspectorOrigin] = useState<MotionOrigin | null>(null)
-  useMutationFeedback(historySnapshot, inspectorOrigin, inspectorDialogOpen)
+  const mutationNotice = useMutationFeedback(historySnapshot, inspectorOrigin, inspectorDialogOpen)
   const [inspectorSelection, setInspectorSelection] = useState<EditorSelection | null>(null)
   const inspectorCoord = useMemo(() => inspectorSelection
     ? { file: inspectorSelection.filePath, coordinate: inspectorSelection.coordinate }
@@ -2799,7 +2801,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 context={pluginPageContext}
                 className="plugin-page-host"
                 retainOnError
-                fallback={<div className="content-empty"><div className="content-empty-title">插件页面加载失败</div></div>}
+                fallback={<ContentState kind="error" title="插件页面加载失败" />}
               />
             </div>
           ) : currentRoute && (activeSchemaFile || activeViewKind === 'source') && project ? (
@@ -2913,7 +2915,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                 )}
                 {activeViewKind === 'record' && activeRecordCoordinate && (
                   documentSearch.trim() && matchedCount === 0 ? (
-                    <div className="empty-hint">无匹配 "{documentSearch}" 的记录</div>
+                    <ContentState kind="empty" title={`无匹配 "${documentSearch}" 的记录`} description="可调整搜索条件后查看。" />
                   ) : <RecordView
                     data={activeFileData}
                     coordinate={activeRecordCoordinate}
@@ -3006,7 +3008,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                       onFirstRecordFocusConsumed={consumeFirstRecordFocusRequest}
                     />
                   ) : (
-                    <div className="empty-hint">加载图谱中…</div>
+                    <ContentState kind="loading" title="加载图谱中…" />
                   )
                 )}
 
@@ -3044,17 +3046,12 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
               </div>
             </>
           ) : dataQueries.fileQuery.isFetching || dataQueries.dimensionQuery.isFetching ? (
-            <div className="content-empty">
-              <div className="content-empty-title">加载 {dataQueries.file} 中…</div>
-            </div>
+            <ContentState kind="loading" title={`加载 ${dataQueries.file} 中…`} />
           ) : (
-            <div className="content-empty">
-              <Icon name="open" size={40} />
-              <div className="content-empty-title">
-                {project ? '请选择文件' : '请打开项目'}
-              </div>
+            <ContentState kind="empty" title={project ? '请选择文件' : '请打开项目'}
+              description={project ? '从左侧选择文件，查看和编辑内容。' : '打开已有项目，或新建一个工程。'}>
               {!project && (
-                <div className="content-empty-actions">
+                <>
                   <button className="btn btn-primary" onClick={openProject}>
                     <Icon name="open" size={13} />
                     打开项目
@@ -3063,9 +3060,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
                     <Icon name="plus" size={13} />
                     新建工程
                   </button>
-                </div>
+                </>
               )}
-            </div>
+            </ContentState>
           )}
           </Suspense>
         </div>
@@ -3085,14 +3082,9 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
       </div>
 
       {projectActionNotice && (
-        <div
-          className={`project-action-toast project-action-toast-${projectActionNotice.tone}`}
-          role={projectActionNotice.tone === 'error' ? 'alert' : 'status'}
-        >
-          <Icon name={projectActionNotice.tone === 'error' ? 'error' : 'check'} size={14} />
-          <span>{projectActionNotice.message}</span>
-        </div>
+        <FeedbackNotice className="project-action-toast" tone={projectActionNotice.tone} message={projectActionNotice.message} />
       )}
+      {mutationNotice && <FeedbackNotice className="mutation-feedback-notice" tone="success" message={mutationNotice} />}
 
       {viewEditor && activeFile && activeType && (
         <ViewEditorDialog
@@ -3184,7 +3176,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
         onBack={() => setReferenceHistory(current => current.slice(0, -1))}
         onClose={() => setReferenceHistory([])}
         onNavigate={() => { navigateReference(referenceTarget.coordinate.actual_type, referenceTarget.coordinate.id); setReferenceHistory([]) }}>
-        {referenceError ? <div role="alert" className="content-empty">{referenceError}</div> : <InspectorPanel
+        {referenceError ? <ContentState kind="error" title="引用加载失败" description={referenceError} /> : <InspectorPanel
           open embedded data={fileDataCache[referenceTarget.file_path] ?? null}
           selection={recordSelection(referenceTarget.file_path, referenceTarget.coordinate)}
           readOnly={!isEditableFile(fileDataCache[referenceTarget.file_path])}
