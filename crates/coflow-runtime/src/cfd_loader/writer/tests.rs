@@ -1067,6 +1067,10 @@ fn model_structural_and_dimension_writes_reuse_validated_candidates() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "事务回归连续覆盖同文件批次、文件切换、删除恢复和发布后复用。"
+)]
 fn model_writer_lowers_only_latest_candidates_and_keeps_one_pending_ast() {
     let directory = tempfile::tempdir().expect("bounded pending AST");
     let a = directory.path().join("a.cfd");
@@ -1133,7 +1137,9 @@ fn model_writer_lowers_only_latest_candidates_and_keeps_one_pending_ast() {
     assert_eq!(pending_count(), 0);
     assert_eq!(loaded[&crate::normalize_path(&a)].records.len(), 11);
     assert_eq!(loaded[&crate::normalize_path(&b)].records.len(), 2);
-    for (path, artifact) in &loaded {
+    // 缓存键已规范化，来源仍保留请求路径；短路径临时目录也必须用同一来源进行对照。
+    for path in [&a, &b] {
+        let artifact = &loaded[&crate::normalize_path(path)];
         let expected = crate::cfd_loader::CfdLoader::load_partial(
             crate::api::CfdLoadContext {
                 schema: &schema,
