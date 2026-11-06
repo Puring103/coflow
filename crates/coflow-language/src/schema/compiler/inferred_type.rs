@@ -72,32 +72,8 @@ impl InferredType {
             _ => Self::Unknown,
         }
     }
-    // check 读取模板得到文本；集合与可选值中的模板也按读取类型参与检查。
-    pub(super) fn read_type(self) -> Self {
-        fn read_value_type(ty: CftValueType) -> CftValueType {
-            match ty {
-                CftValueType::Array(inner) => {
-                    CftValueType::Array(Box::new(read_value_type(*inner)))
-                }
-                CftValueType::Option(inner) => {
-                    CftValueType::Option(Box::new(read_value_type(*inner)))
-                }
-                CftValueType::Dict(key, value) => {
-                    CftValueType::Dict(key, Box::new(read_value_type(*value)))
-                }
-                other => other,
-            }
-        }
-        match self {
-            Self::Value(ty) => Self::Value(read_value_type(ty)),
-            other => other,
-        }
-    }
-
     pub(super) fn from_const(value_type: Option<&CftValueType>) -> Self {
-        value_type.map_or(Self::Unknown, |value_type| {
-            Self::Value(value_type.clone()).read_type()
-        })
+        value_type.map_or(Self::Unknown, |value_type| Self::Value(value_type.clone()))
     }
 
     pub(super) const fn value_type(&self) -> Option<&CftValueType> {

@@ -361,7 +361,7 @@ fn default_value_info(value: &CftSchemaDefaultValue) -> SchemaDefaultValueInfo {
         CftSchemaDefaultValue::Bool(value) => SchemaDefaultValueInfo::Bool(*value),
         CftSchemaDefaultValue::String(value) => SchemaDefaultValueInfo::String(value.clone()),
         CftSchemaDefaultValue::FormattedString(source) => {
-            SchemaDefaultValueInfo::FormattedString(source.clone())
+            SchemaDefaultValueInfo::FormattedString(source.source.clone())
         }
 
         CftSchemaDefaultValue::Enum {
@@ -409,7 +409,7 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::Bool(value) => SchemaConstValueInfo::Bool(*value),
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
         CftConstValue::FormattedString(source) => {
-            SchemaConstValueInfo::FormattedString(source.clone())
+            SchemaConstValueInfo::FormattedString(source.source.clone())
         }
 
         CftConstValue::Enum {

@@ -1,0 +1,18 @@
+{
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\n",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+  "physical_cores": 14,
+  "logical_processors": 20,
+  "profile": "release",
+  "locked": true,
+  "allocator": "mimalloc",
+  "cli_log": "COFLOW_LOG=0",
+  "timing_notes": "OS file cache is not cleared; independent process rounds; warmups excluded; fixture/verification excluded; no P95/P99 claims",
+  "build_command": "cargo build --release --locked -p coflow-runtime --example core_simplification_perf --example language_regression_probe -p coflow --bin coflow",
+  "lock_sha256": "7226436e102aa614858755d523e5f8f56ecf003cc8108acdc97bf280c7a3faf8",
+  "harness_sha256": "e2a86de66a6ec0f212b2384a9f494fd070735674af71a2a3513ca161e982258a",
+  "cli_driver_sha256": "1897c9d6e2d01306cf0280f20820fbfe3a153922f8100ce808c31630bef54dfe",
+  "node": "v22.23.4",
+  "memory_collected": false
+}

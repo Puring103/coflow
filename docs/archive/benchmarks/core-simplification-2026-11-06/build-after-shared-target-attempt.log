@@ -1,0 +1,22 @@
+   Compiling coflow-model v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-model)
+error[E0425]: cannot find function `parse_cfd_value` in module `coflow_language::cfd`
+  --> crates\coflow-model\src\cell_value\strings.rs:53:39
+   |
+53 |     let value = coflow_language::cfd::parse_cfd_value(text.trim())
+   |                                       ^^^^^^^^^^^^^^^ not found in `coflow_language::cfd`
+
+error[E0282]: type annotations needed
+  --> crates\coflow-model\src\schema_defaults.rs:32:76
+   |
+32 |         (T::String, D::FormattedString(value)) => V::FormattedString(value.as_ref().into()),
+   |                                                                            ^^^^^^
+   |
+help: try using a fully qualified path to specify the expected types
+   |
+32 -         (T::String, D::FormattedString(value)) => V::FormattedString(value.as_ref().into()),
+32 +         (T::String, D::FormattedString(value)) => V::FormattedString(<std::string::String as AsRef<T>>::as_ref(value).into()),
+   |
+
+Some errors have detailed explanations: E0282, E0425.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `coflow-model` (lib) due to 2 previous errors

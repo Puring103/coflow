@@ -6,9 +6,10 @@ use crate::diagnostics::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::ingest::LoadedValueDraft;
 use crate::model::{CfdEnumValue, CfdRecordHandle, CfdValue};
 use crate::semantics::{CfdValueSemanticContext, ValueValidationMode, ValueValidationRequest};
-use coflow_language::cft::{CftField, CftValueType, TypeName};
+use coflow_language::cft::{CftField, CftValueType, FieldName, TypeName};
 use coflow_language::limits::{StructuralBudget, StructuralLimits, StructureKind, TraversalCursor};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// Validation and resolution helper.
 ///
@@ -23,6 +24,8 @@ pub(super) struct Validator<'s, 'schema> {
     pub(super) schema: &'s BuildSchema<'schema>,
     pub(super) diagnostics: &'s mut Vec<CfdDiagnostic>,
     pub(super) default_objects: BTreeMap<String, CachedDefaultObject>,
+    pub(super) default_inputs:
+        BTreeMap<(&'schema TypeName, &'schema FieldName), Arc<LoadedValueDraft>>,
     structural_limits: StructuralLimits,
     budget: StructuralBudget,
     budget_exhausted: bool,
@@ -45,6 +48,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
             schema,
             diagnostics,
             default_objects: BTreeMap::new(),
+            default_inputs: BTreeMap::new(),
             structural_limits,
             budget: StructuralBudget::new(structural_limits),
             budget_exhausted: false,
@@ -64,6 +68,7 @@ impl<'s, 'schema> Validator<'s, 'schema> {
         self.budget = StructuralBudget::new(self.structural_limits);
         self.budget_exhausted = false;
         self.default_objects.clear();
+        // 显式默认输入只依赖不可变 schema，跨记录复用；预算和物化结果仍逐记录独立。
         let cursor = self.enter_value(TraversalCursor::root(), record, &path)?;
         self.validate_record(
             expected_type,

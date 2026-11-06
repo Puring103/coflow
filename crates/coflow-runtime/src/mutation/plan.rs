@@ -5,9 +5,8 @@ use crate::api::{Diagnostic, DiagnosticSet};
 use crate::{ProjectSession, RecordCoordinate};
 
 use super::prepare::{
-    prepare_delete_on_pending_insert, prepare_one, prepare_rename_on_pending_insert,
-    prepare_set_on_pending_insert, rename_pending_insert_references,
-    rename_prepared_field_references, PendingInsertSetRequest,
+    prepare_delete_on_pending_insert, prepare_one, prepare_set_on_pending_insert,
+    PendingInsertSetRequest,
 };
 use super::types::PreparedMutationOp;
 use super::{MutationFailedOp, MutationOp, MutationRequest};
@@ -114,7 +113,8 @@ fn prepare_planned_op(
         | MutationOp::ClearDimensionValue { .. }
         | MutationOp::SwapRecords { .. }
         | MutationOp::MoveRecord { .. }
-        | MutationOp::TransferRecord { .. }) => prepare_one(session, op, pending_inserts),
+        | MutationOp::TransferRecord { .. }
+        | MutationOp::RenameRecord { .. }) => prepare_one(session, op, pending_inserts),
         MutationOp::InsertRecord {
             file,
             actual_type,
@@ -133,32 +133,6 @@ fn prepare_planned_op(
                 materialization,
             },
         ),
-        MutationOp::RenameRecord {
-            record,
-            file,
-            new_id,
-        } => {
-            let Some(insert_index) = pending_inserts.get(&record).copied() else {
-                return prepare_one(
-                    session,
-                    MutationOp::RenameRecord {
-                        record,
-                        file,
-                        new_id,
-                    },
-                    pending_inserts,
-                );
-            };
-            fold_pending_insert_rename(
-                session,
-                planned,
-                pending_inserts,
-                insert_index,
-                &record,
-                file.as_deref(),
-                &new_id,
-            )
-        }
         MutationOp::DeleteRecord { record, file } => {
             let Some(insert_index) = pending_inserts.get(&record).copied() else {
                 return prepare_one(
@@ -275,93 +249,6 @@ fn prepare_insert(
         pending_inserts.insert(coordinate, planned_len);
     }
     Ok(prepared)
-}
-
-fn fold_pending_insert_rename(
-    session: &ProjectSession,
-    planned: &mut [PlannedMutationOp],
-    pending_inserts: &mut BTreeMap<RecordCoordinate, usize>,
-    insert_index: usize,
-    record: &RecordCoordinate,
-    file_guard: Option<&str>,
-    new_id: &str,
-) -> Result<PreparedMutationOp, DiagnosticSet> {
-    let Some(pending_insert) = planned.get(insert_index) else {
-        return Err(mutation_invariant_error(
-            "pending rename index is outside the planned operation list",
-        ));
-    };
-    let PreparedMutationOp::InsertRecord { file, .. } = &pending_insert.op else {
-        return Err(mutation_invariant_error(
-            "pending rename index does not identify an insert operation",
-        ));
-    };
-    let insert_file = file.clone();
-    let folded =
-        prepare_rename_on_pending_insert(session, &insert_file, record, file_guard, new_id)?;
-    let new_record = RecordCoordinate::try_new(&record.actual_type, new_id).map_err(|error| {
-        DiagnosticSet::one(Diagnostic::error(
-            "MUTATION-COORDINATE",
-            "MUTATION",
-            error.to_string(),
-        ))
-    })?;
-    let typed_new_id = new_record.id.clone();
-    if new_record != *record && pending_inserts.contains_key(&new_record) {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "MUTATION-RENAME-CONFLICT",
-            "MUTATION",
-            format!(
-                "record `{}.{}` is already pending insertion in the same mutation",
-                new_record.actual_type, new_record.id
-            ),
-        )));
-    }
-    for planned_op in planned.iter_mut() {
-        match &mut planned_op.op {
-            PreparedMutationOp::InsertRecord {
-                actual_type,
-                fields,
-                ..
-            } => rename_pending_insert_references(
-                session,
-                &record.actual_type,
-                actual_type,
-                fields,
-                &record.id,
-                &typed_new_id,
-            )?,
-            PreparedMutationOp::SetField {
-                write_record,
-                path,
-                value,
-                ..
-            } => rename_prepared_field_references(
-                session,
-                &record.actual_type,
-                &write_record.actual_type,
-                path,
-                value,
-                &record.id,
-                &typed_new_id,
-            )?,
-            _ => {}
-        }
-    }
-    let Some(pending_insert) = planned.get_mut(insert_index) else {
-        return Err(mutation_invariant_error(
-            "pending rename index disappeared during planning",
-        ));
-    };
-    let PreparedMutationOp::InsertRecord { id, .. } = &mut pending_insert.op else {
-        return Err(mutation_invariant_error(
-            "pending rename target changed during planning",
-        ));
-    };
-    *id = typed_new_id;
-    pending_inserts.remove(record);
-    pending_inserts.insert(new_record, insert_index);
-    Ok(folded)
 }
 
 fn fold_pending_insert_delete(

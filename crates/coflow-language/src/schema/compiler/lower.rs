@@ -1,15 +1,16 @@
 use super::annotations::{field_dimension_name, find_annotation, has_annotation};
+use super::inferred_type::InferredType;
 use super::ValidatedSchema;
 use crate::schema::{
     CftAnnotation, CftAnnotationValue, CftConst, CftConstValue, CftDisplayMetadata, CftEnum,
-    CftEnumVariant, CftField, CftFieldDimension, CftSchemaBinOp, CftSchemaCheckBlock,
-    CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessage,
-    CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaDefaultValue,
-    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaUnaryOp, CftTopLevelCheck, CftType,
+    CftEnumVariant, CftField, CftFieldDimension, CftSchemaCheckBlock, CftSchemaCheckExpr,
+    CftSchemaCheckExprKind, CftSchemaCheckFormatSegment, CftSchemaCheckMessage,
+    CftSchemaCheckMessageKind, CftSchemaCheckStmt, CftSchemaDefaultValue, CftSchemaTypePredicate,
+    CftTopLevelCheck, CftType,
 };
 use crate::syntax::ast::{
-    Annotation, AnnotationArg, BinOp, CheckExpr, CheckExprKind, CheckFormatSegment,
-    CheckMessageKind, CheckStmt, CmpOp, DefaultExpr, FieldDef, TypePredicate, UnaryOp,
+    Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckFormatSegment, CheckMessageKind,
+    CheckStmt, DefaultExpr, FieldDef, TypePredicate,
 };
 use crate::{CheckName, ConstName, EnumName, EnumVariantName, FieldName, TypeName};
 use std::collections::BTreeMap;
@@ -142,7 +143,15 @@ impl ValidatedSchema<'_> {
                     .def
                     .fields
                     .iter()
-                    .map(|field| Arc::new(self.build_schema_field(&info.module, field, &type_name)))
+                    .zip(self.declared_field_types(info))
+                    .map(|(field, declared_type)| {
+                        Arc::new(self.build_schema_field(
+                            &info.module,
+                            field,
+                            &type_name,
+                            declared_type,
+                        ))
+                    })
                     .collect::<Vec<_>>();
                 (type_name, fields)
             })
@@ -202,14 +211,14 @@ impl ValidatedSchema<'_> {
         module: &crate::ModuleId,
         field: &FieldDef,
         owner_type: &TypeName,
+        declared_type: &InferredType,
     ) -> CftField {
         let dimension =
             field_dimension_name(field).map(|dimension| CftFieldDimension { dimension });
         CftField {
             declaring_type: owner_type.clone(),
             name: FieldName::from_validated(field.name.clone()),
-            value_type: self
-                .resolve_field_type(&field.ty)
+            value_type: declared_type
                 .value_type()
                 .cloned()
                 .expect("validated field types must resolve before lowering"),
@@ -404,11 +413,7 @@ impl ValidatedSchema<'_> {
                 message,
                 span,
             } => CftSchemaCheckStmt::Quantifier {
-                kind: match kind {
-                    crate::syntax::ast::QuantifierKind::All => CftSchemaQuantifierKind::All,
-                    crate::syntax::ast::QuantifierKind::Any => CftSchemaQuantifierKind::Any,
-                    crate::syntax::ast::QuantifierKind::None => CftSchemaQuantifierKind::None,
-                },
+                kind: *kind,
                 bindings: self.quantifier_bindings[&(module.clone(), span.start, span.end)].clone(),
                 collection: self.convert_check_expr(module, collection),
                 message: message
@@ -510,7 +515,7 @@ impl ValidatedSchema<'_> {
                             CftSchemaTypePredicate::Type(TypeName::from_validated(
                                 self.resolved_aliases
                                     .get(&name.name)
-                                    .and_then(super::inferred_type::InferredType::object_name)
+                                    .and_then(InferredType::object_name)
                                     .map_or_else(|| name.name.clone(), ToString::to_string),
                             ))
                         }
@@ -536,25 +541,19 @@ impl ValidatedSchema<'_> {
                         .collect(),
                 },
                 CheckExprKind::BinOp { op, lhs, rhs } => CftSchemaCheckExprKind::BinOp {
-                    op: convert_bin_op(*op),
+                    op: *op,
                     lhs: Box::new(self.convert_check_expr(module, lhs)),
                     rhs: Box::new(self.convert_check_expr(module, rhs)),
                 },
                 CheckExprKind::Unary { op, expr: inner } => CftSchemaCheckExprKind::Unary {
-                    op: match op {
-                        UnaryOp::Not => CftSchemaUnaryOp::Not,
-                        UnaryOp::BitNot => CftSchemaUnaryOp::BitNot,
-                        UnaryOp::Neg => CftSchemaUnaryOp::Neg,
-                    },
+                    op: *op,
                     expr: Box::new(self.convert_check_expr(module, inner)),
                 },
                 CheckExprKind::CmpChain { first, rest } => CftSchemaCheckExprKind::CmpChain {
                     first: Box::new(self.convert_check_expr(module, first)),
                     rest: rest
                         .iter()
-                        .map(|(op, rhs)| {
-                            (convert_cmp_op(*op), self.convert_check_expr(module, rhs))
-                        })
+                        .map(|(op, rhs)| (*op, self.convert_check_expr(module, rhs)))
                         .collect(),
                 },
             },
@@ -578,36 +577,6 @@ impl ValidatedSchema<'_> {
                 }
             })
             .collect()
-    }
-}
-
-fn convert_bin_op(op: BinOp) -> CftSchemaBinOp {
-    match op {
-        BinOp::Or => CftSchemaBinOp::Or,
-        BinOp::And => CftSchemaBinOp::And,
-        BinOp::BitOr => CftSchemaBinOp::BitOr,
-        BinOp::BitXor => CftSchemaBinOp::BitXor,
-        BinOp::BitAnd => CftSchemaBinOp::BitAnd,
-        BinOp::Add => CftSchemaBinOp::Add,
-        BinOp::Sub => CftSchemaBinOp::Sub,
-        BinOp::Shl => CftSchemaBinOp::Shl,
-        BinOp::Shr => CftSchemaBinOp::Shr,
-        BinOp::Mul => CftSchemaBinOp::Mul,
-        BinOp::Div => CftSchemaBinOp::Div,
-        BinOp::IntDiv => CftSchemaBinOp::IntDiv,
-        BinOp::Mod => CftSchemaBinOp::Mod,
-        BinOp::Pow => CftSchemaBinOp::Pow,
-    }
-}
-
-fn convert_cmp_op(op: CmpOp) -> CftSchemaCmpOp {
-    match op {
-        CmpOp::Eq => CftSchemaCmpOp::Eq,
-        CmpOp::Ne => CftSchemaCmpOp::Ne,
-        CmpOp::Lt => CftSchemaCmpOp::Lt,
-        CmpOp::Le => CftSchemaCmpOp::Le,
-        CmpOp::Gt => CftSchemaCmpOp::Gt,
-        CmpOp::Ge => CftSchemaCmpOp::Ge,
     }
 }
 

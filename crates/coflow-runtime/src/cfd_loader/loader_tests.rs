@@ -724,26 +724,47 @@ fn cfd_enforces_ref_and_inline_types() -> TestResult {
 
 #[test]
 fn cfd_rejects_reserved_id_fields() {
+    for (declaration, record) in [
+        ("table Item", "sword: Item"),
+        ("singleton Config", "Config: Config"),
+    ] {
+        let schema = compile_schema(&format!("{declaration} {{ name: string; }}"));
+        let err = parse_cfd_input_records(
+            &schema,
+            &format!("{record} {{ id: \"duplicate\", name: \"Name\" }}"),
+        )
+        .expect_err("table and singleton id must be reserved");
+        assert_has_text_code(&err, CfdTextErrorCode::ReservedIdField);
+    }
+}
+
+#[test]
+fn cfd_preserves_id_business_fields_on_direct_and_nested_data() {
     let schema = compile_schema(
-        r#"
-            table Item {
-                name: string;
-            }
-        "#,
+        "data Payload { id: int; } data Envelope { id: string; payload: Payload; } \
+         table Item { direct: Payload; nested: Envelope; }",
     );
-
-    let err = parse_cfd_input_records(
+    let model = load_cfd_model(
         &schema,
-        r#"
-            sword: Item {
-                id: "sword",
-                name: "Iron Sword",
-            }
-        "#,
+        "one: Item { direct: { id: 7 }, nested: { id: \"business\", payload: { id: 9 } } }",
     )
-    .expect_err("id must be reserved");
-
-    assert_has_text_code(&err, CfdTextErrorCode::ReservedIdField);
+    .expect("data id fields");
+    let record = model.records().next().expect("item").1;
+    let Some(CfdValue::Object(direct)) = record.field("direct") else {
+        panic!("direct payload");
+    };
+    assert_eq!(direct.field("id"), Some(&CfdValue::Int(7)));
+    let Some(CfdValue::Object(nested)) = record.field("nested") else {
+        panic!("nested envelope");
+    };
+    assert_eq!(
+        nested.field("id"),
+        Some(&CfdValue::String("business".into()))
+    );
+    let Some(CfdValue::Object(payload)) = nested.field("payload") else {
+        panic!("nested payload");
+    };
+    assert_eq!(payload.field("id"), Some(&CfdValue::Int(9)));
 }
 
 #[test]

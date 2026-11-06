@@ -109,8 +109,12 @@ mod tests {
         .unwrap()
     }
 
-    fn value(schema: &CftSchema, ty: &str, source: &str) -> LoadedValueDraft {
-        match cell_value::parse_cell(schema, ty, source).unwrap() {
+    fn value(
+        schema: &CftSchema,
+        ty: &coflow_language::cft::CftValueType,
+        source: &str,
+    ) -> LoadedValueDraft {
+        match cell_value::parse_schema_cell(schema, ty, source).unwrap() {
             cell_value::ParsedCell::Value(value) => value,
             cell_value::ParsedCell::Omitted => panic!("value expected"),
         }
@@ -173,6 +177,10 @@ mod tests {
         actual
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "投影夹具集中覆盖嵌套集合、模板与维度组合。"
+    )]
     fn fixture() -> (CftSchema, CfdDataModel) {
         let schema = schema(
             r#"
@@ -207,17 +215,36 @@ mod tests {
                         ("parent", LoadedValueDraft::record_ref(parent)),
                         (
                             "bundle",
-                            value(&schema, "Detail", &format!("{{target: &{parent}}}")),
+                            value(
+                                &schema,
+                                &coflow_language::cft::CftValueType::Object(
+                                    TypeName::new("Detail").unwrap(),
+                                ),
+                                &format!("{{target: &{parent}}}"),
+                            ),
                         ),
                         (
                             "entries",
-                            value(&schema, "[Detail]", &format!("[{{target: &{parent}}}]")),
+                            value(
+                                &schema,
+                                &coflow_language::cft::CftValueType::Array(Box::new(
+                                    coflow_language::cft::CftValueType::Object(
+                                        TypeName::new("Detail").unwrap(),
+                                    ),
+                                )),
+                                &format!("[{{target: &{parent}}}]"),
+                            ),
                         ),
                         (
                             "metadata",
                             value(
                                 &schema,
-                                "{string: Detail}",
+                                &coflow_language::cft::CftValueType::Dict(
+                                    Box::new(coflow_language::cft::CftValueType::String),
+                                    Box::new(coflow_language::cft::CftValueType::Object(
+                                        TypeName::new("Detail").unwrap(),
+                                    )),
+                                ),
                                 &format!("{{\"key\": {{target: &{parent}}}}}"),
                             ),
                         ),
@@ -225,7 +252,11 @@ mod tests {
                             "optional",
                             value(
                                 &schema,
-                                "Option<Detail>",
+                                &coflow_language::cft::CftValueType::Option(Box::new(
+                                    coflow_language::cft::CftValueType::Object(
+                                        TypeName::new("Detail").unwrap(),
+                                    ),
+                                )),
                                 &format!("Some({{target: &{parent}}})"),
                             ),
                         ),
@@ -401,14 +432,22 @@ mod tests {
             "a",
             "left",
             "selected",
-            value(&schema, "string", "f\"{self.b}\""),
+            value(
+                &schema,
+                &coflow_language::cft::CftValueType::String,
+                "f\"{self.b}\"",
+            ),
         ));
         builder.add_dimension_value_draft(overlay(
             "a",
             "b",
             "right",
             "selected",
-            value(&schema, "string", "f\"{self.a}\""),
+            value(
+                &schema,
+                &coflow_language::cft::CftValueType::String,
+                "f\"{self.a}\"",
+            ),
         ));
         let model = builder.build().unwrap();
         assert_oracle(&model, &schema, &selections(&[("left", "selected")])).unwrap();

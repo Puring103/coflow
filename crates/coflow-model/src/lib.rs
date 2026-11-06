@@ -33,6 +33,7 @@ mod formatted;
 mod indexes;
 mod ingest;
 mod model;
+mod schema_defaults;
 mod semantics;
 pub mod serde_i64;
 
@@ -57,6 +58,7 @@ pub use model::{
     DimensionFieldLookupError, DimensionRefCoordinate, DimensionValueLookup, RecordCoordinate,
     RefEdge, RefSite,
 };
+pub use schema_defaults::lower_schema_default;
 pub use semantics::{
     validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,
     CfdValueSemanticError, CfdValueSemanticErrorKind, PendingInsertRef, ValueValidationMode,

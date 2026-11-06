@@ -1,7 +1,7 @@
 use crate::api::{Diagnostic, DiagnosticSet, Severity};
 use crate::data_model::{
     CfdPathSegment, CfdRecord, CfdRecordHandle, CfdValue, CfdValueSemanticContext,
-    ValueValidationMode, ValueValidationRequest,
+    ValueValidationRequest,
 };
 use coflow_language::cft::{CftSchema, CftValueType, TypeName};
 use std::collections::BTreeMap;
@@ -219,25 +219,6 @@ pub(crate) fn expected_type_for_record_path(
         current_value = next_value;
     }
     Ok(current_type)
-}
-
-pub(crate) fn validate_value_for_write(
-    session: &ProjectSession,
-    schema: &CftSchema,
-    expected: &CftValueType,
-    value: &CfdValue,
-    code: &'static str,
-    stage: &'static str,
-) -> Result<(), DiagnosticSet> {
-    validate_value_semantics(
-        session,
-        schema,
-        ValueValidationRequest::new(expected, value, ValueValidationMode::Mutation),
-        None,
-        code,
-        code,
-        stage,
-    )
 }
 
 pub(crate) fn validate_value_semantics(

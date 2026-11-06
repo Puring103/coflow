@@ -133,14 +133,15 @@ impl Parser<'_> {
 
     fn parse_check_message(&mut self) -> Result<Option<Parsed<CheckMessage>>, CftDiagnostics> {
         Ok(if self.eat(&TokenKind::Colon).is_some() {
-            let token = self.peek().clone();
-            match token.kind {
+            let span = self.peek().span;
+            match &mut self.tokens[self.pos].kind {
                 TokenKind::String(value) => {
+                    let value = std::mem::take(value);
                     self.bump();
                     Some(Parsed {
                         value: CheckMessage {
                             kind: CheckMessageKind::String(value),
-                            span: token.span,
+                            span,
                         },
                         depth: 0,
                     })
@@ -168,7 +169,7 @@ impl Parser<'_> {
                 _ => {
                     return self.err_at(
                         CftErrorCode::InvalidCheckStatement,
-                        token.span,
+                        span,
                         "check message must be a string or formatted string literal",
                     );
                 }
@@ -182,7 +183,7 @@ impl Parser<'_> {
         &mut self,
         kind: QuantifierKind,
     ) -> Result<Parsed<CheckStmt>, CftDiagnostics> {
-        let keyword = self.bump().span;
+        let keyword = self.bump();
         let start = keyword.start;
         let mut bindings = vec![self.expect_ident()?];
         if self.eat(&TokenKind::Comma).is_some() {
@@ -397,7 +398,7 @@ impl Parser<'_> {
     }
 
     fn parse_prefix_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
-        let token = self.peek().clone();
+        let token_span = self.peek().span;
         let op = if self.eat(&TokenKind::Bang).is_some() {
             Some(UnaryOp::Not)
         } else if self.eat(&TokenKind::Tilde).is_some() {
@@ -410,8 +411,8 @@ impl Parser<'_> {
         if let Some(op) = op {
             if matches!(op, UnaryOp::Neg) {
                 if let TokenKind::UIntOverflow(value) = self.peek().kind {
-                    let value_token = self.bump();
-                    let span = Span::new(token.span.start, value_token.span.end);
+                    let value_span = self.bump();
+                    let span = Span::new(token_span.start, value_span.end);
                     let Some(negated) = negate_u64_to_i64(value) else {
                         return self.err_at(
                             CftErrorCode::InvalidIntLiteral,
@@ -425,12 +426,12 @@ impl Parser<'_> {
                     });
                 }
             }
-            let expr = self.nested(StructureKind::CheckAst, token.span, |parser| {
+            let expr = self.nested(StructureKind::CheckAst, token_span, |parser| {
                 parser.parse_prefix_expr()
             })?;
-            let span = Span::new(token.span.start, expr.value.span.end);
+            let span = Span::new(token_span.start, expr.value.span.end);
             let depth = expr.depth;
-            return self.node(StructureKind::CheckAst, token.span, [depth], || CheckExpr {
+            return self.node(StructureKind::CheckAst, token_span, [depth], || CheckExpr {
                 span,
                 kind: CheckExprKind::Unary {
                     op,

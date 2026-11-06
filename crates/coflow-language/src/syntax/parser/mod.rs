@@ -100,21 +100,19 @@ impl<'a> Parser<'a> {
         code: CftErrorCode,
         allow_reserved_keywords: bool,
     ) -> Result<NameRef, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
+        let span = self.peek().span;
+        match &mut self.tokens[self.pos].kind {
             TokenKind::Ident(name) => {
+                let name = std::mem::take(name);
                 self.bump();
-                Ok(NameRef {
-                    name,
-                    span: token.span,
-                })
+                Ok(NameRef { name, span })
             }
             _ if allow_reserved_keywords => {
-                if let Some(name) = reserved_keyword_name(&token.kind) {
+                if let Some(name) = reserved_keyword_name(&self.peek().kind) {
                     self.bump();
                     Ok(NameRef {
                         name: name.to_string(),
-                        span: token.span,
+                        span,
                     })
                 } else {
                     self.err(code, "expected identifier")
@@ -130,7 +128,7 @@ impl<'a> Parser<'a> {
         code: CftErrorCode,
     ) -> Result<Span, CftDiagnostics> {
         if self.at(kind) {
-            Ok(self.bump().span)
+            Ok(self.bump())
         } else {
             self.err(code, format!("expected `{}`", token_name(kind)))
         }
@@ -138,7 +136,7 @@ impl<'a> Parser<'a> {
 
     pub(super) fn eat(&mut self, kind: &TokenKind) -> Option<Span> {
         if self.at(kind) {
-            Some(self.bump().span)
+            Some(self.bump())
         } else {
             None
         }
@@ -158,10 +156,11 @@ impl<'a> Parser<'a> {
         matches!(&self.peek().kind, TokenKind::Ident(value) if value == name)
     }
 
-    pub(super) fn bump(&mut self) -> Token {
-        let token = self.tokens[self.pos].clone();
+    pub(super) fn bump(&mut self) -> Span {
+        // 字符串载荷由使用点直接取走；推进保留种类和位置，供声明错误恢复回看。
+        let span = self.tokens[self.pos].span;
         self.pos += 1;
-        token
+        span
     }
 
     pub(super) fn peek(&self) -> &Token {

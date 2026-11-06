@@ -1,21 +1,49 @@
 use crate::{CfdDictKey, CfdEnumValue, CfdValue, LoadedDictKeyDraft as K, LoadedValueDraft as D};
 use coflow_language::cft::{CftSchema, CftValueType};
 
-// 这里只转换语法值；引用连接由最终候选模型执行，因此同批前向引用和环不受旧模型限制。
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
-)]
+#[derive(Clone, Copy)]
+enum TemplateDisplay {
+    Empty,
+    Source,
+}
+
+// 普通输入尚未求值时不提供渲染结果；声明默认草稿保留源码占位供编辑器展示。
 pub(crate) fn convert(
     schema: &CftSchema,
     expected: &CftValueType,
     value: D,
 ) -> Result<CfdValue, String> {
+    convert_with_template_display(schema, expected, value, TemplateDisplay::Empty)
+}
+
+pub(crate) fn convert_default(
+    schema: &CftSchema,
+    expected: &CftValueType,
+    value: D,
+) -> Result<CfdValue, String> {
+    convert_with_template_display(schema, expected, value, TemplateDisplay::Source)
+}
+
+// 这里只转换语法值；引用连接由最终候选模型执行，因此同批前向引用和环不受旧模型限制。
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "语言的 float 明确按 IEEE 754 binary32 舍入，转换后由范围校验处理非有限值。"
+)]
+fn convert_with_template_display(
+    schema: &CftSchema,
+    expected: &CftValueType,
+    value: D,
+    template_display: TemplateDisplay,
+) -> Result<CfdValue, String> {
     if let CftValueType::Option(inner) = expected {
         return match value {
             D::OptionNone => Ok(CfdValue::OptionNone),
-            D::OptionSome(v) => Ok(CfdValue::OptionSome(Box::new(convert(schema, inner, *v)?))),
-            v => Ok(CfdValue::OptionSome(Box::new(convert(schema, inner, v)?))),
+            D::OptionSome(v) => Ok(CfdValue::OptionSome(Box::new(
+                convert_with_template_display(schema, inner, *v, template_display)?,
+            ))),
+            v => Ok(CfdValue::OptionSome(Box::new(
+                convert_with_template_display(schema, inner, v, template_display)?,
+            ))),
         };
     }
     Ok(match value {
@@ -28,8 +56,11 @@ pub(crate) fn convert(
         }),
         D::String(v) => CfdValue::String(v),
         D::FormattedString(v) => CfdValue::FormattedString(crate::CfdFormattedString {
+            rendered: match template_display {
+                TemplateDisplay::Empty => String::new(),
+                TemplateDisplay::Source => v.source.clone(),
+            },
             source: v.source,
-            rendered: String::new(),
         }),
         D::RecordRef(key) => CfdValue::record_ref(key).map_err(|e| e.to_string())?,
         D::TypedRecordRef { type_name, id: key } => {
@@ -60,7 +91,7 @@ pub(crate) fn convert(
             CfdValue::Array(
                 items
                     .into_iter()
-                    .map(|v| convert(schema, inner, v))
+                    .map(|v| convert_with_template_display(schema, inner, v, template_display))
                     .collect::<Result<_, String>>()?,
             )
         }
@@ -71,40 +102,57 @@ pub(crate) fn convert(
             CfdValue::Dict(
                 items
                     .into_iter()
-                    .map(|(k, v)| Ok((dict_key(schema, k)?, convert(schema, inner, v)?)))
+                    .map(|(k, v)| {
+                        Ok((
+                            dict_key(schema, k)?,
+                            convert_with_template_display(schema, inner, v, template_display)?,
+                        ))
+                    })
                     .collect::<Result<_, String>>()?,
             )
         }
         D::Object {
             actual_type,
             fields,
-        } => {
-            let CftValueType::Object(expected_type) = expected else {
-                return Err("object type required".to_string());
-            };
-            let actual_type = actual_type.unwrap_or_else(|| expected_type.to_string());
-            if !schema.is_assignable(&actual_type, expected_type) {
-                return Err("object type is not assignable".to_string());
-            }
-            let fields = fields
-                .into_iter()
-                .map(|(name, value)| {
-                    let ty = &schema
-                        .field(&actual_type, &name)
-                        .ok_or_else(|| format!("unknown field `{actual_type}.{name}`"))?
-                        .value_type;
-                    Ok((name, convert(schema, ty, value)?))
-                })
-                .collect::<Result<_, String>>()?;
-            CfdValue::Object(Box::new(
-                crate::CfdObject::try_new(actual_type, fields).map_err(|e| e.to_string())?,
-            ))
-        }
+        } => convert_object(schema, expected, actual_type, fields, template_display)?,
         D::OptionNone | D::OptionSome(_) => {
             return Err("Option value requires an Option field".to_string())
         }
     })
 }
+// 对象转换逐字段使用实际类型，缺省字段由调用方的物化策略补齐。
+fn convert_object(
+    schema: &CftSchema,
+    expected: &CftValueType,
+    actual_type: Option<String>,
+    fields: std::collections::BTreeMap<String, D>,
+    template_display: TemplateDisplay,
+) -> Result<CfdValue, String> {
+    let CftValueType::Object(expected_type) = expected else {
+        return Err("object type required".to_string());
+    };
+    let actual_type = actual_type.unwrap_or_else(|| expected_type.to_string());
+    if !schema.is_assignable(&actual_type, expected_type) {
+        return Err("object type is not assignable".to_string());
+    }
+    let fields = fields
+        .into_iter()
+        .map(|(name, value)| {
+            let ty = &schema
+                .field(&actual_type, &name)
+                .ok_or_else(|| format!("unknown field `{actual_type}.{name}`"))?
+                .value_type;
+            Ok((
+                name,
+                convert_with_template_display(schema, ty, value, template_display)?,
+            ))
+        })
+        .collect::<Result<_, String>>()?;
+    Ok(CfdValue::Object(Box::new(
+        crate::CfdObject::try_new(actual_type, fields).map_err(|e| e.to_string())?,
+    )))
+}
+
 pub(crate) fn dict_key(schema: &CftSchema, value: K) -> Result<CfdDictKey, String> {
     Ok(match value {
         K::Int(v) => CfdDictKey::Int(v),

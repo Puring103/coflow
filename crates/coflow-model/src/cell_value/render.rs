@@ -25,7 +25,7 @@ impl fmt::Display for CellRenderError {
 impl std::error::Error for CellRenderError {}
 
 /// Renders a runtime value into the same CFD text grammar accepted by
-/// [`super::parse_cell`].
+/// [`super::parse_schema_cell`].
 ///
 /// # Errors
 ///

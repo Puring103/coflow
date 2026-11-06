@@ -88,11 +88,7 @@ impl CfdWriter {
             ast = next_ast;
             start = end;
         }
-        // 复用刚验证的 AST 立即降低，AST 随文件释放，避免跨文件批次积累大量语法树。
-        let preloaded =
-            crate::cfd_loader::CfdLoader::load_parsed_partial(first.schema, path, &source, &ast);
-        drop(ast);
-        self.stage_preloaded_source(path, source, Some(preloaded))
+        self.stage_parsed_source(path, source, ast)
             .map_err(|diagnostics| failure(requests.len() - 1, diagnostics))?;
         Ok(vec![WriteOutcome::default(); requests.len()])
     }
@@ -109,6 +105,9 @@ impl CfdWriter {
     ) -> Result<CfdAst, DiagnosticSet> {
         #[cfg(test)]
         self.field_batch_parses
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        #[cfg(test)]
+        self.parses
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (ast, diagnostics) = parse_cfd_with_options(source, options);
         ensure_parse_ok(path, source, &diagnostics)?;

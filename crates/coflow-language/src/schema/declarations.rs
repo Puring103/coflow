@@ -117,7 +117,7 @@ pub enum CftConstValue {
     Double(f64),
     Bool(bool),
     String(String),
-    FormattedString(String),
+    FormattedString(Arc<crate::cfd::CfdFormattedString>),
     Enum {
         enum_name: EnumName,
         variant: EnumVariantName,
@@ -185,7 +185,7 @@ pub enum CftSchemaDefaultValue {
     Float(f64),
     Bool(bool),
     String(String),
-    FormattedString(String),
+    FormattedString(Arc<crate::cfd::CfdFormattedString>),
     Enum {
         enum_name: EnumName,
         variant: EnumVariantName,
@@ -323,47 +323,11 @@ pub enum CftSchemaTypePredicate {
     Some { binding: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaQuantifierKind {
-    All,
-    Any,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaBinOp {
-    Or,
-    And,
-    BitOr,
-    BitXor,
-    BitAnd,
-    Add,
-    Sub,
-    Shl,
-    Shr,
-    Mul,
-    Div,
-    IntDiv,
-    Mod,
-    Pow,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaUnaryOp {
-    Not,
-    BitNot,
-    Neg,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CftSchemaCmpOp {
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-}
+// 操作种类不含源码或绑定状态；语法树和已编译规则直接共享同一类型。
+pub use crate::syntax::ast::{
+    BinOp as CftSchemaBinOp, CmpOp as CftSchemaCmpOp, QuantifierKind as CftSchemaQuantifierKind,
+    UnaryOp as CftSchemaUnaryOp,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftEnum {

@@ -37,6 +37,30 @@ pub struct LoadedFormattedString {
     pub segments: Vec<LoadedFormatSegment>,
 }
 
+impl From<&coflow_language::cfd::CfdFormattedString> for LoadedFormattedString {
+    fn from(value: &coflow_language::cfd::CfdFormattedString) -> Self {
+        use coflow_language::cfd::CfdFormatSegment;
+        // 语法位置留在 language；模型复用已解析片段，只移除来源坐标。
+        Self {
+            source: value.source.clone(),
+            segments: value
+                .segments
+                .iter()
+                .map(|segment| match segment {
+                    CfdFormatSegment::Text(text) => LoadedFormatSegment::Text(text.clone()),
+                    CfdFormatSegment::Reference(reference) => {
+                        LoadedFormatSegment::Reference(LoadedFieldReference {
+                            type_name: reference.type_name.clone(),
+                            id: reference.id.clone(),
+                            path: reference.path.clone(),
+                        })
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoadedFormatSegment {
     Text(String),

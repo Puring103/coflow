@@ -1,0 +1,59 @@
+{
+  "label": "r1-baseline-cli",
+  "version": "baseline",
+  "round": 1,
+  "kind": "cli",
+  "args": [
+    "C:\\Program Files\\nodejs\\node.EXE",
+    "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\core-simplification-2026-11-06\\cli-matrix.mjs",
+    "--cli",
+    "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\coflow.exe",
+    "--case",
+    "batch_same_file,batch_cross_file",
+    "--records",
+    "10000",
+    "--files",
+    "10",
+    "--fields",
+    "20",
+    "--samples",
+    "3",
+    "--warmups",
+    "1",
+    "--batch",
+    "1000",
+    "--variants",
+    "0",
+    "--topology",
+    "none",
+    "--timeout-ms",
+    "300000",
+    "--output",
+    "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\core-simplification-2026-11-06\\r1-baseline-cli.results.json"
+  ],
+  "cwd": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx",
+  "started_utc": "2026-11-06T09:10:33.011264+00:00",
+  "environment_overrides": {
+    "COFLOW_LOG": "0"
+  },
+  "binary_sha256": {
+    "coflow": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\coflow.exe",
+      "sha256": "217789f0a7334b72eae6f29c0089c514bf1ce0875a0c0bc8c02242f2cbcad891",
+      "bytes": 19316736
+    },
+    "core_simplification_perf": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\core_simplification_perf.exe",
+      "sha256": "04a4b65987a2bdf4272b127fc6a7bcdfdcd5fbacd0df01724009f3a91831c1c7",
+      "bytes": 8212992
+    },
+    "language_regression_probe": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\language_regression_probe.exe",
+      "sha256": "142a3bcd5db4e05f065f904d10707d44d8356774f57fd86c31f586e73b8c9359",
+      "bytes": 3652608
+    }
+  },
+  "exit_code": 0,
+  "total_wall_seconds": 22.81752459999916,
+  "ended_utc": "2026-11-06T09:10:55.829743+00:00"
+}

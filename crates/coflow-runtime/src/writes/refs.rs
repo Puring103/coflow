@@ -143,13 +143,8 @@ pub(super) fn reference_update_actions(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     target_id: CfdRecordHandle,
-    new_id: &str,
+    new_id: &RecordId,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
-    let new_id = RecordId::new(new_id).map_err(|error| {
-        transaction_invariant(format!(
-            "new record key became invalid before rewrite: {error}"
-        ))
-    })?;
     let mut actions = Vec::new();
     let mut source_actions = BTreeMap::<SourceId, usize>::new();
     let mut dimension_actions = BTreeMap::<(CfdRecordHandle, DimensionRefCoordinate), usize>::new();
@@ -174,7 +169,7 @@ pub(super) fn reference_update_actions(
                         "dimension action index must point to a dimension write",
                     ));
                 };
-                if !replace_ref_value(&mut request.new_value, relative_path, &new_id) {
+                if !replace_ref_value(&mut request.new_value, relative_path, new_id) {
                     return Err(transaction_invariant(
                         "indexed dimension reference disappeared before rename",
                     ));
@@ -188,7 +183,7 @@ pub(super) fn reference_update_actions(
                 continue;
             };
             let mut root = value.value.as_ref().clone();
-            if !replace_ref_value(&mut root, relative_path, &new_id) {
+            if !replace_ref_value(&mut root, relative_path, new_id) {
                 continue;
             }
             let field = session
@@ -228,20 +223,16 @@ pub(super) fn reference_update_actions(
                     source_field: field.name.clone(),
                     dimension: dimension.dimension.clone(),
                     variant: dimension.variant.clone(),
-                    source_id: RecordId::new(host_record.id()).map_err(|error| {
-                        transaction_invariant(format!(
-                            "validated model record key became invalid before reference rewrite: {error}"
-                        ))
-                    })?,
+                    source_id: host_record.id.clone(),
                     new_value: root,
                 }),
             });
             dimension_actions.insert(action_key, action_index);
         } else {
-            if !matches!(
-                host_record.value_at_path(&edge.site.path),
-                Some(CfdValue::Ref(_))
-            ) {
+            let Some(mut value) = host_record.value_at_path(&edge.site.path).cloned() else {
+                continue;
+            };
+            if !replace_ref_value(&mut value, &[], new_id) {
                 continue;
             }
             let request = OwnedWriteCellRequest {
@@ -249,7 +240,7 @@ pub(super) fn reference_update_actions(
                 record_id: host_ref.coordinate.id.to_string(),
                 actual_type: host_ref.coordinate.actual_type.to_string(),
                 field_path: edge.site.path.segments.clone(),
-                new_value: CfdValue::Ref(new_id.clone()),
+                new_value: value,
             };
             if let Some(index) = source_actions.get(&host_ref.source_id).copied() {
                 let ReferenceUpdateAction::Source { requests, .. } = &mut actions[index] else {
@@ -282,6 +273,10 @@ fn transaction_invariant(message: impl Into<String>) -> DiagnosticSet {
 }
 
 fn replace_ref_value(current: &mut CfdValue, path: &[CfdPathSegment], new_id: &RecordId) -> bool {
+    // 引用索引不把 Option 记作路径段；保留任意层 Some 外壳并继续使用同一路径。
+    if let CfdValue::OptionSome(inner) = current {
+        return replace_ref_value(inner, path, new_id);
+    }
     let Some((segment, rest)) = path.split_first() else {
         if matches!(current, CfdValue::Ref(_)) {
             *current = CfdValue::Ref(new_id.clone());

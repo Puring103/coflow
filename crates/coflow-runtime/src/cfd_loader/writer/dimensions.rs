@@ -1,7 +1,6 @@
 use crate::api::{
     DiagnosticSet, DimensionSourceResult, RewriteDimensionRecordRequest, WriteDimensionValueRequest,
 };
-use coflow_language::cfd::parse_cfd;
 
 use super::CfdWriter;
 
@@ -20,8 +19,7 @@ impl CfdWriter {
             Err(_) if !path.exists() => String::new(),
             Err(error) => return Err(error),
         };
-        let (ast, diagnostics) = parse_cfd(&text);
-        super::ensure_parse_ok(path, &text, &diagnostics)?;
+        let ast = self.parse_source(path, &text)?;
         let dimension = request.schema.dimension.name.as_str();
         let variant = request.variant.as_str();
         let field_name = request.schema.source_field.name.as_str();

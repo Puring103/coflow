@@ -15,7 +15,17 @@ fn unrelated_dimension_contexts_reuse_literal_costs_without_resolving_value_tree
             [
                 (
                     "values",
-                    value(&schema, "[Option<[int]>]", "[Some([1 | 2 | 3]) | None]"),
+                    value(
+                        &schema,
+                        &coflow_language::cft::CftValueType::Array(Box::new(
+                            coflow_language::cft::CftValueType::Option(Box::new(
+                                coflow_language::cft::CftValueType::Array(Box::new(
+                                    coflow_language::cft::CftValueType::Int,
+                                )),
+                            )),
+                        )),
+                        "[Some([1 | 2 | 3]) | None]",
+                    ),
                 ),
                 ("count", 4_i64.into()),
             ],
@@ -73,8 +83,13 @@ fn reused_literal_budget_replays_precise_failure_after_a_larger_dimension_overri
     assert_eq!(diagnostic.message, "data value exceeds structural nodes limit 7 (observed 8) (dimension `mode`, variant `large`)");
 }
 
-fn value(schema: &CftSchema, ty: &str, source: &str) -> LoadedValueDraft {
-    let cell_value::ParsedCell::Value(value) = cell_value::parse_cell(schema, ty, source).unwrap()
+fn value(
+    schema: &CftSchema,
+    ty: &coflow_language::cft::CftValueType,
+    source: &str,
+) -> LoadedValueDraft {
+    let cell_value::ParsedCell::Value(value) =
+        cell_value::parse_schema_cell(schema, ty, source).unwrap()
     else {
         panic!("expected value");
     };
@@ -142,12 +157,21 @@ fn variant_context_selects_sources_across_references_objects_and_collections() {
         "Offer",
         [
             ("target", LoadedValueDraft::record_ref("sword")),
-            ("bundle", value(&schema, "Bundle", "{ target: &sword }")),
+            (
+                "bundle",
+                value(
+                    &schema,
+                    &coflow_language::cft::CftValueType::Object(TypeName::new("Bundle").unwrap()),
+                    "{ target: &sword }",
+                ),
+            ),
             (
                 "texts",
                 value(
                     &schema,
-                    "[string]",
+                    &coflow_language::cft::CftValueType::Array(Box::new(
+                        coflow_language::cft::CftValueType::String,
+                    )),
                     "[f\"{&Item::sword.name}\" | \"literal {self.target}\"]",
                 ),
             ),
@@ -242,7 +266,11 @@ fn cycles_introduced_by_a_variant_are_reported() {
         "name",
         "language",
         "ja",
-        value(&schema, "string", "f\"{self.title}\""),
+        value(
+            &schema,
+            &coflow_language::cft::CftValueType::String,
+            "f\"{self.title}\"",
+        ),
     ));
     let diagnostics = builder.build().expect_err("variant dependency cycle");
     assert!(diagnostics
@@ -370,7 +398,14 @@ fn variant_reference_cycles_in_unannotated_templates_fail_during_loading() {
             "Entry",
             [
                 ("next", LoadedValueDraft::record_ref("b")),
-                ("title", value(&schema, "string", "f\"{self.next.title}\"")),
+                (
+                    "title",
+                    value(
+                        &schema,
+                        &coflow_language::cft::CftValueType::String,
+                        "f\"{self.next.title}\"",
+                    ),
+                ),
             ],
         )
         .with_origin(base_origin.clone()),

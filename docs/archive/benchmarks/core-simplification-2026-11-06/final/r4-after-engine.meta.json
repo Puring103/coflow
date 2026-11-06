@@ -1,0 +1,36 @@
+{
+  "label": "r4-after-engine",
+  "version": "after",
+  "round": 4,
+  "kind": "engine",
+  "args": [
+    "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\final-after\\core_simplification_perf.exe",
+    "all"
+  ],
+  "cwd": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx",
+  "started_utc": "2026-11-06T09:34:14.616966+00:00",
+  "environment_overrides": {
+    "CORE_SAMPLES": "3",
+    "COFLOW_LOG": "0"
+  },
+  "binary_sha256": {
+    "coflow": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\final-after\\coflow.exe",
+      "sha256": "d231d8794d8509659b3cd5997c556c70e59b1e2f0270e841453f3554e0380eb0",
+      "bytes": 19198464
+    },
+    "core_simplification_perf": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\final-after\\core_simplification_perf.exe",
+      "sha256": "c2b7bf7ad5189d8695b288bbba5a34b369af2cfff419bc59fce53435a0c67248",
+      "bytes": 8231424
+    },
+    "language_regression_probe": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\final-after\\language_regression_probe.exe",
+      "sha256": "7b34fd552e7900d185142abaaa2492a6cc46b3b7b4683ba5baa27678fb6eb57f",
+      "bytes": 3634688
+    }
+  },
+  "exit_code": 0,
+  "total_wall_seconds": 3.3341283000008843,
+  "ended_utc": "2026-11-06T09:34:17.951148+00:00"
+}

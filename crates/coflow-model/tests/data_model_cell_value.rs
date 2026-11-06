@@ -7,9 +7,12 @@
     clippy::unwrap_used
 )]
 
-use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
+use coflow_language::cft::{
+    build_schema, parse_modules, CftFile, CftSchema, CftValueType as V, EnumName, ModuleId,
+    TypeName,
+};
 use coflow_model::cell_value::{
-    parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
+    parse_schema_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
 };
 use coflow_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdValue, LoadedDictKeyDraft, LoadedValueDraft,
@@ -23,14 +26,14 @@ fn compile_schema(source: &str) -> Result<CftSchema, String> {
     build_schema(&modules).map_err(|err| format!("schema should compile: {err:?}"))
 }
 
-fn parse_ok(schema: &CftSchema, declared_type: &str, text: &str) -> Result<ParsedCell, String> {
-    parse_cell(schema, declared_type, text)
+fn parse_ok(schema: &CftSchema, declared_type: &V, text: &str) -> Result<ParsedCell, String> {
+    parse_schema_cell(schema, declared_type, text)
         .map_err(|err| format!("expected `{text}` as `{declared_type}` to parse: {err:?}"))
 }
 
 fn parse_value(
     schema: &CftSchema,
-    declared_type: &str,
+    declared_type: &V,
     text: &str,
 ) -> Result<LoadedValueDraft, String> {
     match parse_ok(schema, declared_type, text)? {
@@ -43,10 +46,10 @@ fn parse_value(
 
 fn parse_err(
     schema: &CftSchema,
-    declared_type: &str,
+    declared_type: &V,
     text: &str,
 ) -> Result<CellValueDiagnostics, String> {
-    match parse_cell(schema, declared_type, text) {
+    match parse_schema_cell(schema, declared_type, text) {
         Ok(value) => Err(format!(
             "expected `{text}` as `{declared_type}` to fail, got {value:?}"
         )),
@@ -75,9 +78,9 @@ fn assert_has_code(diags: &CellValueDiagnostics, code: CellValueErrorCode) {
 struct ErrorCodeCase {
     code: CellValueErrorCode,
     schema_source: &'static str,
-    declared_type: &'static str,
+    declared_type: V,
     invalid_text: &'static str,
-    adjacent_valid_declared_type: &'static str,
+    adjacent_valid_declared_type: V,
     adjacent_valid_text: &'static str,
 }
 
@@ -86,106 +89,98 @@ fn error_code_cases() -> Vec<ErrorCodeCase> {
         ErrorCodeCase {
             code: CellValueErrorCode::Syntax,
             schema_source: "",
-            declared_type: "[int]",
+            declared_type: V::Array(Box::new(V::Int)),
             invalid_text: "[1 | 2",
-            adjacent_valid_declared_type: "[int]",
+            adjacent_valid_declared_type: V::Array(Box::new(V::Int)),
             adjacent_valid_text: "[1 | 2]",
-        },
-        ErrorCodeCase {
-            code: CellValueErrorCode::InvalidDeclaredType,
-            schema_source: "",
-            declared_type: "[int",
-            invalid_text: "1",
-            adjacent_valid_declared_type: "[int]",
-            adjacent_valid_text: "1 | 2",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::UnknownType,
             schema_source: "data Item { name: string; }",
-            declared_type: "Missing",
+            declared_type: V::Object(TypeName::new("Missing").unwrap()),
             invalid_text: "{}",
-            adjacent_valid_declared_type: "Item",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Item").unwrap()),
             adjacent_valid_text: "{}",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::UnknownField,
             schema_source: "data Item { name: string; }",
-            declared_type: "Item",
+            declared_type: V::Object(TypeName::new("Item").unwrap()),
             invalid_text: "missing: Sword",
-            adjacent_valid_declared_type: "Item",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Item").unwrap()),
             adjacent_valid_text: "name: Sword",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::DuplicateField,
             schema_source: "data Item { name: string; }",
-            declared_type: "Item",
+            declared_type: V::Object(TypeName::new("Item").unwrap()),
             invalid_text: "name: Sword, name: Blade",
-            adjacent_valid_declared_type: "Item",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Item").unwrap()),
             adjacent_valid_text: "name: Sword",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::MissingBoundary,
             schema_source: "data Stats { hp: int; } data Zone { stats: Stats; }",
-            declared_type: "Zone",
+            declared_type: V::Object(TypeName::new("Zone").unwrap()),
             invalid_text: "stats: hp: 10",
-            adjacent_valid_declared_type: "Zone",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Zone").unwrap()),
             adjacent_valid_text: "stats: {hp: 10}",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::TypeMismatch,
             schema_source: "",
-            declared_type: "int",
+            declared_type: V::Int,
             invalid_text: "abc",
-            adjacent_valid_declared_type: "int",
+            adjacent_valid_declared_type: V::Int,
             adjacent_valid_text: "1",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::ObjectTypeMismatch,
             schema_source:
                 "abstract data Reward {} data CoinReward : Reward { amount: int; } table Item { name: string; }",
-            declared_type: "Reward",
+            declared_type: V::Object(TypeName::new("Reward").unwrap()),
             invalid_text: "Item{name: Sword}",
-            adjacent_valid_declared_type: "Reward",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Reward").unwrap()),
             adjacent_valid_text: "CoinReward{amount: 1}",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::AbstractObjectType,
             schema_source: "abstract data Reward {} data CoinReward : Reward { amount: int; }",
-            declared_type: "Reward",
+            declared_type: V::Object(TypeName::new("Reward").unwrap()),
             invalid_text: "Reward{}",
-            adjacent_valid_declared_type: "Reward",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Reward").unwrap()),
             adjacent_valid_text: "CoinReward{amount: 1}",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::InvalidEnumVariant,
             schema_source: "enum Rarity { Common, Rare, }",
-            declared_type: "Rarity",
+            declared_type: V::Enum(EnumName::new("Rarity").unwrap()),
             invalid_text: "Missing",
-            adjacent_valid_declared_type: "Rarity",
+            adjacent_valid_declared_type: V::Enum(EnumName::new("Rarity").unwrap()),
             adjacent_valid_text: "Rare",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::MixedObjectStyle,
             schema_source: "data Stats { hp: int; attack: int; }",
-            declared_type: "Stats",
+            declared_type: V::Object(TypeName::new("Stats").unwrap()),
             invalid_text: "hp: 1, 2",
-            adjacent_valid_declared_type: "Stats",
+            adjacent_valid_declared_type: V::Object(TypeName::new("Stats").unwrap()),
             adjacent_valid_text: "hp: 1, attack: 2",
         },
         ErrorCodeCase {
             code: CellValueErrorCode::StringNeedsQuotes,
             schema_source: "",
-            declared_type: "string",
+            declared_type: V::String,
             invalid_text: "a,b",
-            adjacent_valid_declared_type: "string",
+            adjacent_valid_declared_type: V::String,
             adjacent_valid_text: r#""a,b""#,
         },
         ErrorCodeCase {
             code: CellValueErrorCode::ReferenceNeedsMarker,
             schema_source: "table Item { name: string; }",
-            declared_type: "&Item",
+            declared_type: V::RecordRef(TypeName::new("Item").unwrap()),
             invalid_text: "item_1",
-            adjacent_valid_declared_type: "&Item",
+            adjacent_valid_declared_type: V::RecordRef(TypeName::new("Item").unwrap()),
             adjacent_valid_text: "&item_1",
         },
     ]
@@ -207,11 +202,11 @@ fn every_cell_value_error_code_has_negative_and_adjacent_valid_coverage() -> Tes
 
     for case in error_code_cases() {
         let schema = compile_schema(case.schema_source)?;
-        let err = parse_err(&schema, case.declared_type, case.invalid_text)?;
+        let err = parse_err(&schema, &case.declared_type, case.invalid_text)?;
         assert_has_code(&err, case.code);
         parse_ok(
             &schema,
-            case.adjacent_valid_declared_type,
+            &case.adjacent_valid_declared_type,
             case.adjacent_valid_text,
         )?;
     }
@@ -244,37 +239,37 @@ fn parses_schema_guided_scalar_values() -> TestResult {
     let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_ok(&schema, "int", "42")?,
+        parse_ok(&schema, &V::Int, "42")?,
         ParsedCell::Value(LoadedValueDraft::Int(42))
     );
     assert_eq!(
-        parse_ok(&schema, "float", "2.5")?,
+        parse_ok(&schema, &V::Float, "2.5")?,
         ParsedCell::Value(LoadedValueDraft::Float(2.5))
     );
     assert_eq!(
-        parse_ok(&schema, "bool", "true")?,
+        parse_ok(&schema, &V::Bool, "true")?,
         ParsedCell::Value(LoadedValueDraft::Bool(true))
     );
     for rejected in [
         "TRUE", "True", "FALSE", "False", "1", "yes", "Y", "0", "no", "N",
     ] {
-        parse_err(&schema, "bool", rejected)?;
+        parse_err(&schema, &V::Bool, rejected)?;
     }
     assert_eq!(
-        parse_ok(&schema, "string", "hello world")?,
+        parse_ok(&schema, &V::String, "hello world")?,
         ParsedCell::Value(LoadedValueDraft::String("hello world".to_string()))
     );
     // string context should NOT coerce these as booleans
     assert_eq!(
-        parse_ok(&schema, "string", "1")?,
+        parse_ok(&schema, &V::String, "1")?,
         ParsedCell::Value(LoadedValueDraft::String("1".to_string()))
     );
     assert_eq!(
-        parse_ok(&schema, "string", "yes")?,
+        parse_ok(&schema, &V::String, "yes")?,
         ParsedCell::Value(LoadedValueDraft::String("yes".to_string()))
     );
     assert_eq!(
-        parse_ok(&schema, "string", r#""hello, world""#)?,
+        parse_ok(&schema, &V::String, r#""hello, world""#)?,
         ParsedCell::Value(LoadedValueDraft::String("hello, world".to_string()))
     );
     Ok(())
@@ -289,11 +284,15 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
     )?;
 
     assert_eq!(
-        parse_ok(&schema, "Rarity", "Rare")?,
+        parse_ok(&schema, &V::Enum(EnumName::new("Rarity").unwrap()), "Rare")?,
         ParsedCell::Value(LoadedValueDraft::enum_variant("Rarity", "Rare"))
     );
     assert_eq!(
-        parse_ok(&schema, "Rarity", "Rarity::Rare")?,
+        parse_ok(
+            &schema,
+            &V::Enum(EnumName::new("Rarity").unwrap()),
+            "Rarity::Rare"
+        )?,
         ParsedCell::Value(LoadedValueDraft::enum_variant("Rarity", "Rare"))
     );
     Ok(())
@@ -303,12 +302,12 @@ fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
 fn parses_formatted_string_cell_references() -> TestResult {
     let schema = compile_schema("table Item { name: string; }")?;
     assert_eq!(
-        parse_value(&schema, "string", r#""{self.name}""#)?,
+        parse_value(&schema, &V::String, r#""{self.name}""#)?,
         LoadedValueDraft::String("{self.name}".to_string())
     );
     let value = parse_value(
         &schema,
-        "string",
+        &V::String,
         r#"f"{self.name} {&Item::sword.name} {&Item::shield.name}""#,
     )?;
     let LoadedValueDraft::FormattedString(value) = value else {
@@ -351,15 +350,23 @@ fn flag_enum_cells_use_integer_masks() -> TestResult {
         "#,
     )?;
     assert_eq!(
-        parse_ok(&schema, "Permission", "5")?,
+        parse_ok(&schema, &V::Enum(EnumName::new("Permission").unwrap()), "5")?,
         ParsedCell::Value(LoadedValueDraft::enum_value("Permission", 5))
     );
     assert_has_code(
-        &parse_err(&schema, "Permission", "Read | Write")?,
+        &parse_err(
+            &schema,
+            &V::Enum(EnumName::new("Permission").unwrap()),
+            "Read | Write",
+        )?,
         CellValueErrorCode::InvalidEnumVariant,
     );
     assert_eq!(
-        parse_ok(&schema, "Permission", "Read")?,
+        parse_ok(
+            &schema,
+            &V::Enum(EnumName::new("Permission").unwrap()),
+            "Read"
+        )?,
         ParsedCell::Value(LoadedValueDraft::enum_variant("Permission", "Read"))
     );
 
@@ -397,7 +404,14 @@ fn flag_enum_dict_keys_keep_single_variant_identity() -> TestResult {
         "Role",
         [(
             "limits",
-            parse_value(&schema, "{Permission: int}", "Read: 3")?,
+            parse_value(
+                &schema,
+                &V::Dict(
+                    Box::new(V::Enum(EnumName::new("Permission").unwrap())),
+                    Box::new(V::Int),
+                ),
+                "Read: 3",
+            )?,
         )],
     );
     let model = build_model(builder)?;
@@ -425,7 +439,11 @@ fn parses_positional_object_cells_using_field_order() -> TestResult {
         "#,
     )?;
 
-    let stats = parse_value(&schema, "Stats", "100, 50")?;
+    let stats = parse_value(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "100, 50",
+    )?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("monster_1", "Monster", [("stats", stats)]);
     let model = build_model(builder)?;
@@ -457,7 +475,11 @@ fn parses_named_object_cells_and_omits_skipped_fields() -> TestResult {
         "#,
     )?;
 
-    let stats = parse_value(&schema, "Stats", "speed: 2.0, hp: 100")?;
+    let stats = parse_value(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "speed: 2.0, hp: 100",
+    )?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("monster_1", "Monster", [("stats", stats)]);
     let model = build_model(builder)?;
@@ -489,8 +511,16 @@ fn named_and_positional_object_cells_skip_explicit_underscore_values() -> TestRe
         "#,
     )?;
 
-    let named = parse_value(&schema, "Stats", "hp: 100, attack: _, speed: 2.0")?;
-    let positional = parse_value(&schema, "Stats", "100, _, 2.0")?;
+    let named = parse_value(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "hp: 100, attack: _, speed: 2.0",
+    )?;
+    let positional = parse_value(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "100, _, 2.0",
+    )?;
 
     for stats in [named, positional] {
         let mut builder = CfdDataModel::builder(&schema);
@@ -520,7 +550,11 @@ fn rejects_duplicate_named_object_fields() -> TestResult {
         "#,
     )?;
 
-    let err = parse_err(&schema, "Stats", "hp: 100, hp: 200, attack: 50")?;
+    let err = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "hp: 100, hp: 200, attack: 50",
+    )?;
     assert_has_code(&err, CellValueErrorCode::DuplicateField);
     Ok(())
 }
@@ -536,13 +570,25 @@ fn rejects_mixed_unknown_and_excess_object_fields() -> TestResult {
         "#,
     )?;
 
-    let mixed = parse_err(&schema, "Stats", "hp: 100, 50")?;
+    let mixed = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "hp: 100, 50",
+    )?;
     assert_has_code(&mixed, CellValueErrorCode::MixedObjectStyle);
 
-    let unknown = parse_err(&schema, "Stats", "hp: 100, missing: 1")?;
+    let unknown = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "hp: 100, missing: 1",
+    )?;
     assert_has_code(&unknown, CellValueErrorCode::UnknownField);
 
-    let too_many = parse_err(&schema, "Stats", "100, 50, 10")?;
+    let too_many = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "100, 50, 10",
+    )?;
     assert_has_code(&too_many, CellValueErrorCode::Syntax);
     Ok(())
 }
@@ -559,10 +605,18 @@ fn rejects_empty_object_field_values() -> TestResult {
         "#,
     )?;
 
-    let named = parse_err(&schema, "Stats", "hp: , attack: 2")?;
+    let named = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "hp: , attack: 2",
+    )?;
     assert_has_code(&named, CellValueErrorCode::Syntax);
 
-    let positional = parse_err(&schema, "Stats", "100,,3")?;
+    let positional = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        "100,,3",
+    )?;
     assert_has_code(&positional, CellValueErrorCode::Syntax);
     Ok(())
 }
@@ -571,25 +625,25 @@ fn rejects_empty_object_field_values() -> TestResult {
 fn parses_omitted_and_option_cells() -> TestResult {
     let schema = compile_schema("")?;
 
-    assert_eq!(parse_ok(&schema, "int", "")?, ParsedCell::Omitted);
-    assert_eq!(parse_ok(&schema, "int", "_")?, ParsedCell::Omitted);
+    assert_eq!(parse_ok(&schema, &V::Int, "")?, ParsedCell::Omitted);
+    assert_eq!(parse_ok(&schema, &V::Int, "_")?, ParsedCell::Omitted);
     assert_eq!(
-        parse_ok(&schema, "Option<int>", "None")?,
+        parse_ok(&schema, &V::Option(Box::new(V::Int)), "None")?,
         ParsedCell::Value(LoadedValueDraft::OptionNone)
     );
     assert_eq!(
-        parse_ok(&schema, "Option<int>", "Some(3)")?,
+        parse_ok(&schema, &V::Option(Box::new(V::Int)), "Some(3)")?,
         ParsedCell::Value(LoadedValueDraft::OptionSome(Box::new(
             LoadedValueDraft::Int(3)
         )))
     );
     assert_eq!(
-        parse_ok(&schema, "Option<int>", "3")?,
+        parse_ok(&schema, &V::Option(Box::new(V::Int)), "3")?,
         ParsedCell::Value(LoadedValueDraft::OptionSome(Box::new(
             LoadedValueDraft::Int(3)
         )))
     );
-    let bare_none = parse_err(&schema, "int", "None")?;
+    let bare_none = parse_err(&schema, &V::Int, "None")?;
     assert_has_code(&bare_none, CellValueErrorCode::TypeMismatch);
     Ok(())
 }
@@ -599,7 +653,7 @@ fn parses_array_cells_with_pipe_delimiters() -> TestResult {
     let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_ok(&schema, "[int]", "1 | 2 | 3")?,
+        parse_ok(&schema, &V::Array(Box::new(V::Int)), "1 | 2 | 3")?,
         ParsedCell::Value(LoadedValueDraft::Array(vec![
             LoadedValueDraft::Int(1),
             LoadedValueDraft::Int(2),
@@ -628,7 +682,7 @@ fn parses_nested_objects_inside_array_cells() -> TestResult {
     assert_eq!(
         parse_ok(
             &schema,
-            "[Monster]",
+            &V::Array(Box::new(V::Object(TypeName::new("Monster").unwrap()))),
             "{slime, 5, {100, 50}} | {goblin, 10, {200, 80}}"
         )?,
         ParsedCell::Value(LoadedValueDraft::Array(vec![
@@ -670,7 +724,11 @@ fn rejects_object_array_elements_without_object_boundaries() -> TestResult {
         "#,
     )?;
 
-    let err = parse_err(&schema, "[Stats]", "100, 50 | 200, 80")?;
+    let err = parse_err(
+        &schema,
+        &V::Array(Box::new(V::Object(TypeName::new("Stats").unwrap()))),
+        "100, 50 | 200, 80",
+    )?;
     assert_has_code(&err, CellValueErrorCode::MissingBoundary);
     Ok(())
 }
@@ -692,13 +750,25 @@ fn rejects_nested_composite_values_without_boundaries() -> TestResult {
         "#,
     )?;
 
-    let missing_array = parse_err(&schema, "Zone", "forest, 1 | 2, {100, 50}, {hp: 10}")?;
+    let missing_array = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Zone").unwrap()),
+        "forest, 1 | 2, {100, 50}, {hp: 10}",
+    )?;
     assert_has_code(&missing_array, CellValueErrorCode::MissingBoundary);
 
-    let missing_object = parse_err(&schema, "Zone", "forest, [1 | 2], 100, {hp: 10}")?;
+    let missing_object = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Zone").unwrap()),
+        "forest, [1 | 2], 100, {hp: 10}",
+    )?;
     assert_has_code(&missing_object, CellValueErrorCode::MissingBoundary);
 
-    let missing_dict = parse_err(&schema, "Zone", "forest, [1 | 2], {100, 50}, hp: 10")?;
+    let missing_dict = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Zone").unwrap()),
+        "forest, [1 | 2], {100, 50}, hp: 10",
+    )?;
     assert_has_code(&missing_dict, CellValueErrorCode::MissingBoundary);
     Ok(())
 }
@@ -707,20 +777,20 @@ fn rejects_nested_composite_values_without_boundaries() -> TestResult {
 fn rejects_comma_arrays_and_bare_special_strings() -> TestResult {
     let schema = compile_schema("")?;
 
-    let comma_array = parse_err(&schema, "[string]", "[weapon, melee]")?;
+    let comma_array = parse_err(&schema, &V::Array(Box::new(V::String)), "[weapon, melee]")?;
     assert_has_code(&comma_array, CellValueErrorCode::Syntax);
 
     for text in ["hello, world", "fire|ice", "key: value"] {
-        let err = parse_err(&schema, "string", text)?;
+        let err = parse_err(&schema, &V::String, text)?;
         assert_has_code(&err, CellValueErrorCode::StringNeedsQuotes);
     }
 
     assert_eq!(
-        parse_ok(&schema, "string", r#""_""#)?,
+        parse_ok(&schema, &V::String, r#""_""#)?,
         ParsedCell::Value(LoadedValueDraft::String("_".to_string()))
     );
     assert_eq!(
-        parse_ok(&schema, "string", r#""null""#)?,
+        parse_ok(&schema, &V::String, r#""null""#)?,
         ParsedCell::Value(LoadedValueDraft::String("null".to_string()))
     );
     Ok(())
@@ -735,38 +805,72 @@ fn rejects_invalid_dict_entries_and_key_types() -> TestResult {
         "#,
     )?;
 
-    let missing_colon = parse_err(&schema, "{string: int}", "hp 10")?;
+    let missing_colon = parse_err(
+        &schema,
+        &V::Dict(Box::new(V::String), Box::new(V::Int)),
+        "hp 10",
+    )?;
     assert_has_code(&missing_colon, CellValueErrorCode::Syntax);
 
-    let bad_int_key = parse_err(&schema, "{int: string}", "one: value")?;
+    let bad_int_key = parse_err(
+        &schema,
+        &V::Dict(Box::new(V::Int), Box::new(V::String)),
+        "one: value",
+    )?;
     assert_has_code(&bad_int_key, CellValueErrorCode::TypeMismatch);
 
-    let bad_enum_key = parse_err(&schema, "{Rarity: int}", "Missing: 1")?;
+    let bad_enum_key = parse_err(
+        &schema,
+        &V::Dict(
+            Box::new(V::Enum(EnumName::new("Rarity").unwrap())),
+            Box::new(V::Int),
+        ),
+        "Missing: 1",
+    )?;
     assert_has_code(&bad_enum_key, CellValueErrorCode::InvalidEnumVariant);
 
-    let invalid_key_type = parse_err(&schema, "{[int]: string}", "[1 | 2]: value")?;
+    let invalid_key_type = parse_err(
+        &schema,
+        &V::Dict(Box::new(V::Array(Box::new(V::Int))), Box::new(V::String)),
+        "[1 | 2]: value",
+    )?;
     assert_has_code(&invalid_key_type, CellValueErrorCode::TypeMismatch);
 
-    let missing_nested_value_boundary = parse_err(&schema, "{string: Stats}", "base: hp: 100")?;
+    let missing_nested_value_boundary = parse_err(
+        &schema,
+        &V::Dict(
+            Box::new(V::String),
+            Box::new(V::Object(TypeName::new("Stats").unwrap())),
+        ),
+        "base: hp: 100",
+    )?;
     assert_has_code(
         &missing_nested_value_boundary,
         CellValueErrorCode::MissingBoundary,
     );
 
-    let empty_string_key = parse_err(&schema, "{string: int}", ": 1")?;
+    let empty_string_key = parse_err(
+        &schema,
+        &V::Dict(Box::new(V::String), Box::new(V::Int)),
+        ": 1",
+    )?;
     assert_has_code(&empty_string_key, CellValueErrorCode::StringNeedsQuotes);
     Ok(())
 }
 
 #[test]
-fn unknown_declared_enum_names_are_treated_as_object_types() -> TestResult {
+fn unknown_compiled_object_names_report_unknown_type() -> TestResult {
     let schema = compile_schema(
         r#"
             table Item { key: string; }
         "#,
     )?;
 
-    let err = parse_err(&schema, "MissingEnum", "SomeVariant")?;
+    let err = parse_err(
+        &schema,
+        &V::Object(TypeName::new("MissingObject").unwrap()),
+        "SomeVariant",
+    )?;
     assert_has_code(&err, CellValueErrorCode::UnknownType);
     Ok(())
 }
@@ -782,15 +886,19 @@ fn parses_empty_arrays_dicts_and_objects_with_explicit_boundaries() -> TestResul
     )?;
 
     assert_eq!(
-        parse_ok(&schema, "[int]", "[]")?,
+        parse_ok(&schema, &V::Array(Box::new(V::Int)), "[]")?,
         ParsedCell::Value(LoadedValueDraft::Array(Vec::new()))
     );
     assert_eq!(
-        parse_ok(&schema, "{string: int}", "{}")?,
+        parse_ok(
+            &schema,
+            &V::Dict(Box::new(V::String), Box::new(V::Int)),
+            "{}"
+        )?,
         ParsedCell::Value(LoadedValueDraft::dict(std::iter::empty()))
     );
     assert_eq!(
-        parse_ok(&schema, "Stats", "{}")?,
+        parse_ok(&schema, &V::Object(TypeName::new("Stats").unwrap()), "{}")?,
         ParsedCell::Value(LoadedValueDraft::object_with_declared_type(
             std::iter::empty::<(&str, LoadedValueDraft)>()
         ))
@@ -813,7 +921,7 @@ fn keeps_delimiters_inside_quotes_and_nested_boundaries() -> TestResult {
     assert_eq!(
         parse_ok(
             &schema,
-            "Payload",
+            &V::Object(TypeName::new("Payload").unwrap()),
             r#"name: "hello, world", notes: ["a|b" | "c,d"], attrs: {"x:y": "v|1", plain: "a,b"}"#,
         )?,
         ParsedCell::Value(LoadedValueDraft::object_with_declared_type([
@@ -859,33 +967,26 @@ fn validates_polymorphic_type_markers_are_assignable_and_concrete() -> TestResul
         "#,
     )?;
 
-    let abstract_actual = parse_err(&schema, "Reward", "Reward{r1}")?;
+    let abstract_actual = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "Reward{r1}",
+    )?;
     assert_has_code(&abstract_actual, CellValueErrorCode::AbstractObjectType);
 
-    let unknown_actual = parse_err(&schema, "Reward", "MissingReward{r1}")?;
+    let unknown_actual = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "MissingReward{r1}",
+    )?;
     assert_has_code(&unknown_actual, CellValueErrorCode::UnknownType);
 
-    let unassignable = parse_err(&schema, "Reward", "Item{i1}")?;
+    let unassignable = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "Item{i1}",
+    )?;
     assert_has_code(&unassignable, CellValueErrorCode::ObjectTypeMismatch);
-    Ok(())
-}
-
-#[test]
-fn rejects_malformed_declared_types() -> TestResult {
-    let schema = compile_schema("")?;
-
-    for declared_type in [
-        "",
-        "[int",
-        "{string int}",
-        "{: int}",
-        "{string:}",
-        "[]",
-        "int extra",
-    ] {
-        let err = parse_err(&schema, declared_type, "1")?;
-        assert_has_code(&err, CellValueErrorCode::InvalidDeclaredType);
-    }
     Ok(())
 }
 
@@ -893,25 +994,25 @@ fn rejects_malformed_declared_types() -> TestResult {
 fn rejects_unbalanced_boundaries_and_invalid_string_escapes() -> TestResult {
     let schema = compile_schema("")?;
 
-    let unclosed_array = parse_err(&schema, "[int]", "[1 | 2")?;
+    let unclosed_array = parse_err(&schema, &V::Array(Box::new(V::Int)), "[1 | 2")?;
     assert_has_code(&unclosed_array, CellValueErrorCode::Syntax);
 
-    let mismatched = parse_err(&schema, "[int]", "[1}")?;
+    let mismatched = parse_err(&schema, &V::Array(Box::new(V::Int)), "[1}")?;
     assert_has_code(&mismatched, CellValueErrorCode::Syntax);
 
-    let extra_close = parse_err(&schema, "[int]", "1 | 2]")?;
+    let extra_close = parse_err(&schema, &V::Array(Box::new(V::Int)), "1 | 2]")?;
     assert_has_code(&extra_close, CellValueErrorCode::Syntax);
 
-    let unclosed_string = parse_err(&schema, "string", r#""hello"#)?;
+    let unclosed_string = parse_err(&schema, &V::String, r#""hello"#)?;
     assert_has_code(&unclosed_string, CellValueErrorCode::Syntax);
 
-    let invalid_escape = parse_err(&schema, "string", r#""\x""#)?;
+    let invalid_escape = parse_err(&schema, &V::String, r#""\x""#)?;
     assert_has_code(&invalid_escape, CellValueErrorCode::Syntax);
 
-    let trailing_escape = parse_err(&schema, "string", r#""abc\"#)?;
+    let trailing_escape = parse_err(&schema, &V::String, r#""abc\"#)?;
     assert_has_code(&trailing_escape, CellValueErrorCode::Syntax);
 
-    let unclosed_nested = parse_err(&schema, "[string]", r#"["a" | ["b"]"#)?;
+    let unclosed_nested = parse_err(&schema, &V::Array(Box::new(V::String)), r#"["a" | ["b"]"#)?;
     assert_has_code(&unclosed_nested, CellValueErrorCode::Syntax);
     Ok(())
 }
@@ -921,7 +1022,7 @@ fn rejects_non_finite_float_values() -> TestResult {
     let schema = compile_schema("")?;
 
     for text in ["NaN", "inf", "-inf", "infinity", "-infinity"] {
-        let err = parse_err(&schema, "float", text)?;
+        let err = parse_err(&schema, &V::Float, text)?;
         assert_has_code(&err, CellValueErrorCode::TypeMismatch);
     }
     Ok(())
@@ -932,31 +1033,38 @@ fn quoted_strings_require_internal_quotes_to_be_escaped() -> TestResult {
     let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_ok(&schema, "string", r#""a\"b""#)?,
+        parse_ok(&schema, &V::String, r#""a\"b""#)?,
         ParsedCell::Value(LoadedValueDraft::String("a\"b".to_string()))
     );
 
-    let err = parse_err(&schema, "string", r#""a"b""#)?;
+    let err = parse_err(&schema, &V::String, r#""a"b""#)?;
     assert_has_code(&err, CellValueErrorCode::Syntax);
     Ok(())
 }
 
 #[test]
-fn rejects_declared_type_and_nested_scan_edge_cases() -> TestResult {
+fn rejects_nested_scan_edge_cases() -> TestResult {
     let schema = compile_schema("")?;
 
-    for declared_type in ["{string int}", "{string: int", "[int}", "int?? extra"] {
-        let err = parse_err(&schema, declared_type, "1")?;
-        assert_has_code(&err, CellValueErrorCode::InvalidDeclaredType);
-    }
-
-    let nested_dict = parse_err(&schema, "[{string: int}]", "a: 1, b: 2")?;
+    let nested_dict = parse_err(
+        &schema,
+        &V::Array(Box::new(V::Dict(Box::new(V::String), Box::new(V::Int)))),
+        "a: 1, b: 2",
+    )?;
     assert_has_code(&nested_dict, CellValueErrorCode::MissingBoundary);
 
-    let nested_array = parse_err(&schema, "{string: [int]}", "ids: 1 | 2")?;
+    let nested_array = parse_err(
+        &schema,
+        &V::Dict(Box::new(V::String), Box::new(V::Array(Box::new(V::Int)))),
+        "ids: 1 | 2",
+    )?;
     assert_has_code(&nested_array, CellValueErrorCode::MissingBoundary);
 
-    let empty_dict_value = parse_err(&schema, "{string: int}", "a:")?;
+    let empty_dict_value = parse_err(
+        &schema,
+        &V::Dict(Box::new(V::String), Box::new(V::Int)),
+        "a:",
+    )?;
     assert_has_code(&empty_dict_value, CellValueErrorCode::TypeMismatch);
     Ok(())
 }
@@ -970,28 +1078,56 @@ fn object_type_markers_require_identifier_names_and_closed_boundaries() -> TestR
         "#,
     )?;
 
-    let invalid_marker_name = parse_err(&schema, "Reward", "1Reward{r1, 100}")?;
+    let invalid_marker_name = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "1Reward{r1, 100}",
+    )?;
     assert_has_code(&invalid_marker_name, CellValueErrorCode::StringNeedsQuotes);
 
-    let unclosed_marker = parse_err(&schema, "Reward", "CurrencyReward{r1, 100")?;
+    let unclosed_marker = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "CurrencyReward{r1, 100",
+    )?;
     assert_has_code(&unclosed_marker, CellValueErrorCode::Syntax);
 
-    let mismatched_marker = parse_err(&schema, "Reward", "CurrencyReward{r1, 100]")?;
+    let mismatched_marker = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "CurrencyReward{r1, 100]",
+    )?;
     assert_has_code(&mismatched_marker, CellValueErrorCode::Syntax);
 
-    let mismatched_before_marker = parse_err(&schema, "Reward", "CurrencyReward]{r1, 100}")?;
+    let mismatched_before_marker = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "CurrencyReward]{r1, 100}",
+    )?;
     assert_has_code(&mismatched_before_marker, CellValueErrorCode::Syntax);
 
-    let invalid_marker_continuation = parse_err(&schema, "Reward", "Currency-Reward{r1, 100}")?;
+    let invalid_marker_continuation = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "Currency-Reward{r1, 100}",
+    )?;
     assert_has_code(
         &invalid_marker_continuation,
         CellValueErrorCode::StringNeedsQuotes,
     );
 
-    let escaped_marker_brace = parse_err(&schema, "Reward", r#"CurrencyReward"{\"{r1, 100}"#)?;
+    let escaped_marker_brace = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        r#"CurrencyReward"{\"{r1, 100}"#,
+    )?;
     assert_has_code(&escaped_marker_brace, CellValueErrorCode::Syntax);
 
-    let marker_with_trailing_text = parse_err(&schema, "Reward", "CurrencyReward{r1, 100} x")?;
+    let marker_with_trailing_text = parse_err(
+        &schema,
+        &V::Object(TypeName::new("Reward").unwrap()),
+        "CurrencyReward{r1, 100} x",
+    )?;
     assert_has_code(
         &marker_with_trailing_text,
         CellValueErrorCode::StringNeedsQuotes,
@@ -1004,24 +1140,24 @@ fn string_values_accept_standard_escapes_and_reject_bare_boundaries() -> TestRes
     let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_ok(&schema, "string", r#""line\nnext\t\\\"""#)?,
+        parse_ok(&schema, &V::String, r#""line\nnext\t\\\"""#)?,
         ParsedCell::Value(LoadedValueDraft::String("line\nnext\t\\\"".to_string()))
     );
 
-    let null_err = parse_err(&schema, "string", "null")?;
+    let null_err = parse_err(&schema, &V::String, "null")?;
     assert_has_code(&null_err, CellValueErrorCode::StringNeedsQuotes);
 
-    let lone_quote = parse_err(&schema, "string", "\"")?;
+    let lone_quote = parse_err(&schema, &V::String, "\"")?;
     assert_has_code(&lone_quote, CellValueErrorCode::Syntax);
 
-    let trailing_escape_with_closing_quote = parse_err(&schema, "string", "\"abc\\\"")?;
+    let trailing_escape_with_closing_quote = parse_err(&schema, &V::String, "\"abc\\\"")?;
     assert_has_code(
         &trailing_escape_with_closing_quote,
         CellValueErrorCode::Syntax,
     );
 
     for text in ["has[bracket]", "has}brace"] {
-        let err = parse_err(&schema, "string", text)?;
+        let err = parse_err(&schema, &V::String, text)?;
         assert_has_code(&err, CellValueErrorCode::StringNeedsQuotes);
     }
     Ok(())
@@ -1051,7 +1187,7 @@ fn parses_full_nested_root_object_example() -> TestResult {
     assert_eq!(
         parse_ok(
             &schema,
-            "DropTable",
+            &V::Object(TypeName::new("DropTable").unwrap()),
             "rewards: [CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1}], weights: [60 | 40]",
         )?,
         ParsedCell::Value(LoadedValueDraft::object_with_declared_type([
@@ -1108,7 +1244,7 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     let rendered_names = render_cell_value(&names).map_err(|err| err.to_string())?;
     assert_eq!(rendered_names, r#"[weapon | "melee, close"]"#);
     assert_eq!(
-        parse_value(&schema, "[string]", &rendered_names)?,
+        parse_value(&schema, &V::Array(Box::new(V::String)), &rendered_names)?,
         LoadedValueDraft::Array(vec![
             LoadedValueDraft::String("weapon".to_string()),
             LoadedValueDraft::String("melee, close".to_string()),
@@ -1119,7 +1255,11 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     let rendered_reference = render_cell_value(&reference).map_err(|err| err.to_string())?;
     assert_eq!(rendered_reference, "&sword_01");
     assert_eq!(
-        parse_value(&schema, "&Item", &rendered_reference)?,
+        parse_value(
+            &schema,
+            &V::RecordRef(TypeName::new("Item").unwrap()),
+            &rendered_reference
+        )?,
         LoadedValueDraft::record_ref("sword_01")
     );
 
@@ -1128,7 +1268,11 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         render_cell_value(&optional_reference).map_err(|err| err.to_string())?;
     assert_eq!(rendered_optional, "&sword_01");
     assert_eq!(
-        parse_value(&schema, "Option<&Item>", &rendered_optional)?,
+        parse_value(
+            &schema,
+            &V::Option(Box::new(V::RecordRef(TypeName::new("Item").unwrap()))),
+            &rendered_optional
+        )?,
         LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("sword_01")))
     );
 
@@ -1139,7 +1283,11 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     let rendered_dict = render_cell_value(&dict).map_err(|err| err.to_string())?;
     assert_eq!(rendered_dict, r#"{"rare:drop": 10}"#);
     assert_eq!(
-        parse_value(&schema, "{string: int}", &rendered_dict)?,
+        parse_value(
+            &schema,
+            &V::Dict(Box::new(V::String), Box::new(V::Int)),
+            &rendered_dict
+        )?,
         LoadedValueDraft::dict([(
             LoadedDictKeyDraft::String("rare:drop".to_string()),
             LoadedValueDraft::Int(10),
@@ -1166,7 +1314,11 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     ));
     let rendered_stats = render_cell_value(&stats).map_err(|err| err.to_string())?;
     assert_eq!(rendered_stats, "Stats{attack: 20, hp: 100}");
-    let parsed_stats = parse_value(&schema, "Stats", &rendered_stats)?;
+    let parsed_stats = parse_value(
+        &schema,
+        &V::Object(TypeName::new("Stats").unwrap()),
+        &rendered_stats,
+    )?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("drop_1", "Drop", [("stats", parsed_stats)]);
     let model = build_model(builder)?;
@@ -1217,7 +1369,11 @@ fn parses_polymorphic_object_type_markers() -> TestResult {
     )?;
 
     assert_eq!(
-        parse_ok(&schema, "Reward", "CurrencyReward{r1, 100}")?,
+        parse_ok(
+            &schema,
+            &V::Object(TypeName::new("Reward").unwrap()),
+            "CurrencyReward{r1, 100}"
+        )?,
         ParsedCell::Value(LoadedValueDraft::object(
             "CurrencyReward",
             [
@@ -1243,7 +1399,11 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
     )?;
 
     assert_eq!(
-        parse_ok(&schema, "奖励", "金币奖励{r1, 100}")?,
+        parse_ok(
+            &schema,
+            &V::Object(TypeName::new("奖励").unwrap()),
+            "金币奖励{r1, 100}"
+        )?,
         ParsedCell::Value(LoadedValueDraft::object(
             "金币奖励",
             [
@@ -1269,11 +1429,19 @@ fn object_cells_reject_invalid_record_reference_forms() -> TestResult {
     )?;
 
     assert_has_code(
-        &parse_err(&schema, "Item", "@Item.item_1")?,
+        &parse_err(
+            &schema,
+            &V::Object(TypeName::new("Item").unwrap()),
+            "@Item.item_1",
+        )?,
         CellValueErrorCode::Syntax,
     );
     assert_has_code(
-        &parse_err(&schema, "Item", "@DropTable.drop_table.rewards[0]")?,
+        &parse_err(
+            &schema,
+            &V::Object(TypeName::new("Item").unwrap()),
+            "@DropTable.drop_table.rewards[0]",
+        )?,
         CellValueErrorCode::Syntax,
     );
     Ok(())
@@ -1294,36 +1462,63 @@ fn ref_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResul
     )?;
 
     assert_eq!(
-        parse_value(&schema, "&Item", "&item_1")?,
+        parse_value(
+            &schema,
+            &V::RecordRef(TypeName::new("Item").unwrap()),
+            "&item_1"
+        )?,
         LoadedValueDraft::record_ref("item_1")
     );
     assert_eq!(
-        parse_value(&schema, "Option<&Item>", "Some(&item_1)")?,
+        parse_value(
+            &schema,
+            &V::Option(Box::new(V::RecordRef(TypeName::new("Item").unwrap()))),
+            "Some(&item_1)"
+        )?,
         LoadedValueDraft::OptionSome(Box::new(LoadedValueDraft::record_ref("item_1")))
     );
     assert_eq!(
-        parse_value(&schema, "[&Item]", "&item_1 | &item_2")?,
+        parse_value(
+            &schema,
+            &V::Array(Box::new(V::RecordRef(TypeName::new("Item").unwrap()))),
+            "&item_1 | &item_2"
+        )?,
         LoadedValueDraft::Array(vec![
             LoadedValueDraft::record_ref("item_1"),
             LoadedValueDraft::record_ref("item_2"),
         ])
     );
     assert_eq!(
-        parse_value(&schema, "{string: &Item}", "main: &item_1")?,
+        parse_value(
+            &schema,
+            &V::Dict(
+                Box::new(V::String),
+                Box::new(V::RecordRef(TypeName::new("Item").unwrap()))
+            ),
+            "main: &item_1"
+        )?,
         LoadedValueDraft::dict([(
             LoadedDictKeyDraft::from("main"),
             LoadedValueDraft::record_ref("item_1"),
         )])
     );
     assert_eq!(
-        parse_value(&schema, "ItemReward", "item: &item_1")?,
+        parse_value(
+            &schema,
+            &V::Object(TypeName::new("ItemReward").unwrap()),
+            "item: &item_1"
+        )?,
         LoadedValueDraft::object_with_declared_type([(
             "item",
             LoadedValueDraft::record_ref("item_1"),
         )])
     );
     assert_has_code(
-        &parse_err(&schema, "ItemReward", "&item_1")?,
+        &parse_err(
+            &schema,
+            &V::Object(TypeName::new("ItemReward").unwrap()),
+            "&item_1",
+        )?,
         CellValueErrorCode::TypeMismatch,
     );
     Ok(())
@@ -1339,7 +1534,11 @@ fn direct_record_refs_reject_invalid_forms_and_keys() -> TestResult {
         "#,
     )?;
 
-    let path = parse_err(&schema, "&Item", "&item_1.name")?;
+    let path = parse_err(
+        &schema,
+        &V::RecordRef(TypeName::new("Item").unwrap()),
+        "&item_1.name",
+    )?;
     assert_has_code(&path, CellValueErrorCode::Syntax);
     assert!(
         path.diagnostics
@@ -1348,7 +1547,11 @@ fn direct_record_refs_reject_invalid_forms_and_keys() -> TestResult {
         "expected invalid record reference diagnostic, got {path:?}",
     );
 
-    let invalid_key = parse_err(&schema, "&Item", "&fire-ball")?;
+    let invalid_key = parse_err(
+        &schema,
+        &V::RecordRef(TypeName::new("Item").unwrap()),
+        "&fire-ball",
+    )?;
     assert_has_code(&invalid_key, CellValueErrorCode::Syntax);
     assert!(
         invalid_key
@@ -1359,7 +1562,7 @@ fn direct_record_refs_reject_invalid_forms_and_keys() -> TestResult {
     );
 
     assert_eq!(
-        parse_ok(&schema, "string", "&item_1.name")?,
+        parse_ok(&schema, &V::String, "&item_1.name")?,
         ParsedCell::Value(LoadedValueDraft::String("&item_1.name".to_string()))
     );
     Ok(())
@@ -1370,7 +1573,7 @@ fn string_cells_keep_at_prefixed_text_as_plain_strings() -> TestResult {
     let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_ok(&schema, "string", "@item_1")?,
+        parse_ok(&schema, &V::String, "@item_1")?,
         ParsedCell::Value(LoadedValueDraft::String("@item_1".to_string()))
     );
     Ok(())
@@ -1386,7 +1589,11 @@ fn object_cells_reject_bare_reference_keys_with_marker_hint() -> TestResult {
         "#,
     )?;
 
-    let err = parse_err(&schema, "&Item", "item_1")?;
+    let err = parse_err(
+        &schema,
+        &V::RecordRef(TypeName::new("Item").unwrap()),
+        "item_1",
+    )?;
     assert_has_code(&err, CellValueErrorCode::ReferenceNeedsMarker);
     assert!(
         err.diagnostics
@@ -1407,7 +1614,7 @@ fn object_cells_reject_invalid_at_references() -> TestResult {
     )?;
 
     for text in ["@item_1", "@drop_table.rewards[0]", "@Item.fire-ball"] {
-        let err = parse_err(&schema, "Item", text)?;
+        let err = parse_err(&schema, &V::Object(TypeName::new("Item").unwrap()), text)?;
         assert!(
             err.diagnostics.iter().any(|diag| matches!(
                 diag.code,
@@ -1438,7 +1645,11 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
         "#,
     )?;
 
-    let parsed = parse_value(&schema, "&Item", "&item_1")?;
+    let parsed = parse_value(
+        &schema,
+        &V::RecordRef(TypeName::new("Item").unwrap()),
+        "&item_1",
+    )?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "item_1",
@@ -1476,7 +1687,11 @@ fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestRe
         "#,
     )?;
 
-    let parsed = parse_value(&schema, "&Reward", "&reward_1")?;
+    let parsed = parse_value(
+        &schema,
+        &V::RecordRef(TypeName::new("Reward").unwrap()),
+        "&reward_1",
+    )?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "reward_1",
@@ -1505,7 +1720,11 @@ fn parses_dict_cells_with_schema_guided_keys() -> TestResult {
     let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_ok(&schema, "{string: int}", "alice: 10, bob: 20")?,
+        parse_ok(
+            &schema,
+            &V::Dict(Box::new(V::String), Box::new(V::Int)),
+            "alice: 10, bob: 20"
+        )?,
         ParsedCell::Value(LoadedValueDraft::dict([
             (LoadedDictKeyDraft::from("alice"), LoadedValueDraft::Int(10)),
             (LoadedDictKeyDraft::from("bob"), LoadedValueDraft::Int(20)),

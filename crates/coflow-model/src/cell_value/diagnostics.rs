@@ -12,7 +12,6 @@ pub struct CellValueDiagnostic {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CellValueErrorCode {
     Syntax,
-    InvalidDeclaredType,
     UnknownType,
     UnknownField,
     DuplicateField,
@@ -31,7 +30,6 @@ impl CellValueErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Syntax => "Syntax",
-            Self::InvalidDeclaredType => "InvalidDeclaredType",
             Self::UnknownType => "UnknownType",
             Self::UnknownField => "UnknownField",
             Self::DuplicateField => "DuplicateField",
@@ -51,15 +49,6 @@ pub(super) fn syntax(message: impl Into<String>) -> CellValueDiagnostics {
     CellValueDiagnostics {
         diagnostics: vec![CellValueDiagnostic {
             code: CellValueErrorCode::Syntax,
-            message: message.into(),
-        }],
-    }
-}
-
-pub(super) fn invalid_declared_type(message: impl Into<String>) -> CellValueDiagnostics {
-    CellValueDiagnostics {
-        diagnostics: vec![CellValueDiagnostic {
-            code: CellValueErrorCode::InvalidDeclaredType,
             message: message.into(),
         }],
     }

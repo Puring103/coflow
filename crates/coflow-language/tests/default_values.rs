@@ -35,7 +35,7 @@ table Rule {
 
     assert!(matches!(
         rule.field("label").and_then(|field| field.default.as_ref()),
-        Some(CftSchemaDefaultValue::FormattedString(source)) if source == "f\"rule {self.name}\""
+        Some(CftSchemaDefaultValue::FormattedString(source)) if source.source == "f\"rule {self.name}\""
     ));
     assert!(matches!(
         rule.field("braces").and_then(|field| field.default.as_ref()),

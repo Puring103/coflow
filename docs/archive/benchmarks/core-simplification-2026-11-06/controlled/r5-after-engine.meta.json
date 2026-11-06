@@ -1,0 +1,33 @@
+{
+  "label": "r5-after-engine",
+  "version": "after",
+  "round": 5,
+  "kind": "engine",
+  "args": [
+    "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\final-after\\core_simplification_perf.exe",
+    "all"
+  ],
+  "cwd": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx",
+  "environment_overrides": {
+    "CORE_SAMPLES": "3",
+    "COFLOW_LOG": "0"
+  },
+  "started_utc": "2026-11-06T09:37:55.224589+00:00",
+  "binary_sha256": {
+    "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\final-after\\core_simplification_perf.exe",
+    "sha256": "c2b7bf7ad5189d8695b288bbba5a34b369af2cfff419bc59fce53435a0c67248",
+    "bytes": 8231424
+  },
+  "runner_affinity": {
+    "process_mask": "0x4",
+    "system_mask": "0xfffff"
+  },
+  "child_pid": 40848,
+  "child_affinity": {
+    "process_mask": "0x4",
+    "system_mask": "0xfffff"
+  },
+  "exit_code": 0,
+  "total_wall_seconds": 3.598871700000018,
+  "ended_utc": "2026-11-06T09:37:58.823262+00:00"
+}

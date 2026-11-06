@@ -1,9 +1,8 @@
 use crate::data_model::{
-    DimensionValueDraft, LoadedDictKeyDraft, LoadedFieldReference, LoadedFormatSegment,
-    LoadedFormattedString, LoadedRecordDraft, LoadedValueDraft,
+    DimensionValueDraft, LoadedDictKeyDraft, LoadedRecordDraft, LoadedValueDraft,
 };
 use coflow_language::cfd::{
-    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdFormatSegment, CfdRecord, CfdValue,
+    CfdAst, CfdBitExpr, CfdBitExprKind, CfdBitOp, CfdField, CfdRecord, CfdValue,
 };
 use coflow_language::cft::{
     CftSchema, CftValueType, DimensionName, FieldName, RecordId, TypeName, VariantName,
@@ -168,7 +167,8 @@ fn lower_object_fields(
     let mut seen = BTreeSet::new();
     let mut diagnostics = Vec::new();
     for field in fields {
-        if field.name == "id" {
+        // id 仅保留给顶层记录身份；内联 data 可以声明同名业务字段。
+        if field.name == "id" && !schema_type.is_data() {
             diagnostics.extend(
                 error(
                     CfdTextErrorCode::ReservedIdField,
@@ -331,25 +331,7 @@ fn lower_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics
 
 fn lower_formatted_string(value: &CfdValue) -> Result<LoadedValueDraft, CfdTextDiagnostics> {
     match value {
-        CfdValue::FormattedString(value) => {
-            Ok(LoadedValueDraft::FormattedString(LoadedFormattedString {
-                source: value.source.clone(),
-                segments: value
-                    .segments
-                    .iter()
-                    .map(|segment| match segment {
-                        CfdFormatSegment::Text(text) => LoadedFormatSegment::Text(text.clone()),
-                        CfdFormatSegment::Reference(reference) => {
-                            LoadedFormatSegment::Reference(LoadedFieldReference {
-                                type_name: reference.type_name.clone(),
-                                id: reference.id.clone(),
-                                path: reference.path.clone(),
-                            })
-                        }
-                    })
-                    .collect(),
-            }))
-        }
+        CfdValue::FormattedString(value) => Ok(LoadedValueDraft::FormattedString(value.into())),
         _ => Err(error(
             CfdTextErrorCode::TypeMismatch,
             "expected formatted string",

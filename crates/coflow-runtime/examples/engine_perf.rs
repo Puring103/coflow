@@ -187,8 +187,12 @@ fn dimension_models(samples: usize, default_records: usize) {
     ",
     );
     let coflow_runtime::cell_value::ParsedCell::Value(caption) =
-        coflow_runtime::cell_value::parse_cell(&schema, "string", r#"f"{self.parent.name}""#)
-            .expect("valid formatted string")
+        coflow_runtime::cell_value::parse_schema_cell(
+            &schema,
+            &coflow_language::cft::CftValueType::String,
+            r#"f"{self.parent.name}""#,
+        )
+        .expect("valid formatted string")
     else {
         panic!("formatted string is a value");
     };

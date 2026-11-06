@@ -6,9 +6,9 @@ use crate::syntax::lexer::TokenKind;
 impl Parser<'_> {
     pub(super) fn parse_signed_int(&mut self) -> Result<SignedInt, CftDiagnostics> {
         let sign_span = self.eat(&TokenKind::Minus);
-        let token = self.peek().clone();
-        let span = sign_span.map_or(token.span, |span| span.join(token.span));
-        match token.kind {
+        let token_span = self.peek().span;
+        let span = sign_span.map_or(token_span, |span| span.join(token_span));
+        match self.peek().kind {
             TokenKind::Int(value) => {
                 self.bump();
                 let value = if sign_span.is_some() {

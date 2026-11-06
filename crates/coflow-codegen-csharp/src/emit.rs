@@ -548,7 +548,7 @@ fn default_node(
         V::String(value) => format!("global::Coflow.Loader.CfdDefaults.String({})", quote(value)),
         V::FormattedString(source) => format!(
             "global::Coflow.Loader.CfdDefaults.Template({})",
-            quote(source)
+            quote(&source.source)
         ),
         V::OptionNone => "global::Coflow.Loader.CfdDefaults.None()".into(),
         V::OptionSome(value) => format!(
@@ -667,7 +667,7 @@ fn const_node(value: &CftConstValue) -> Result<String> {
         V::String(value) => format!("global::Coflow.Loader.CfdDefaults.String({})", quote(value)),
         V::FormattedString(source) => format!(
             "global::Coflow.Loader.CfdDefaults.Template({})",
-            quote(source)
+            quote(&source.source)
         ),
         V::OptionNone => "global::Coflow.Loader.CfdDefaults.None()".into(),
         V::OptionSome(value) => format!(

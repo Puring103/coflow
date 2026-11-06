@@ -6,11 +6,15 @@ impl ValueResolver<'_, '_> {
         for info in types.types.values() {
             let module = &info.module;
             let definition = info.def;
-            for field in &definition.fields {
+            for (field, declared_type) in definition
+                .fields
+                .iter()
+                .zip(types.declared_field_types(info))
+            {
                 let Some(default) = &field.default else {
                     continue;
                 };
-                let expected = self.resolve_field_type(&field.ty).value_type().cloned();
+                let expected = declared_type.value_type().cloned();
                 let Some(expected) = expected else {
                     continue;
                 };

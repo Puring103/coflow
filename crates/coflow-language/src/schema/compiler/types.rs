@@ -1,5 +1,5 @@
 use super::inferred_type::{is_valid_dict_key, InferredType};
-use super::state::{FieldInfo, SymbolKind};
+use super::state::{FieldInfo, SymbolKind, TypeInfo};
 use super::ResolvedTypes;
 use crate::diagnostics::{CftDiagnostic, CftErrorCode};
 use crate::module::ModuleId;
@@ -225,7 +225,9 @@ impl ResolvedTypes<'_> {
 
     pub(super) fn validate_field_shapes(&mut self) {
         let mut diagnostics = Vec::new();
+        let mut declared_field_types = BTreeMap::new();
         for info in self.types.values() {
+            let mut resolved_fields = Vec::with_capacity(info.def.fields.len());
             let mut fields: BTreeMap<String, Span> = BTreeMap::new();
             for field in &info.def.fields {
                 if crate::is_cft_reserved_identifier(&field.name)
@@ -255,10 +257,21 @@ impl ResolvedTypes<'_> {
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
                 }
-                self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
+                let resolved = self.validate_field_type(&info.module, &field.ty, &mut diagnostics);
+                // 未知类型和重复字段也保留槽位，使缓存始终与声明字段一一对应。
+                resolved_fields.push(resolved);
             }
+            declared_field_types.insert(info.name.clone(), resolved_fields);
         }
         self.diagnostics.extend(diagnostics);
+        self.declared_field_types = declared_field_types;
+    }
+
+    /// 每个类型只查一次缓存，再按声明顺序消费；字段校验、继承、默认值和 lowering 共用结果。
+    pub(super) fn declared_field_types(&self, info: &TypeInfo<'_>) -> &[InferredType] {
+        let resolved = &self.declared_field_types[&info.name];
+        debug_assert_eq!(info.def.fields.len(), resolved.len());
+        resolved
     }
 
     pub(super) fn build_full_fields(&mut self) {
@@ -268,13 +281,14 @@ impl ResolvedTypes<'_> {
             .map(|name| {
                 let mut map = BTreeMap::new();
                 for info in self.ancestry_chain(name) {
-                    for field in &info.def.fields {
-                        let declared_ty = self.resolve_field_type(&field.ty);
+                    for (field, declared_ty) in
+                        info.def.fields.iter().zip(self.declared_field_types(&info))
+                    {
                         map.insert(
                             field.name.clone(),
                             FieldInfo {
                                 declaring_type: crate::TypeName::from_validated(info.name.clone()),
-                                inferred_type: declared_ty,
+                                inferred_type: declared_ty.clone(),
                                 dimension: super::annotations::field_dimension_name(field),
                                 span: field.span,
                             },
@@ -375,10 +389,8 @@ impl ResolvedTypes<'_> {
         }
     }
 
-    /// Resolves a `TypeRef` to an `InferredType` without emitting diagnostics. Errors
-    /// (unknown names, invalid dict keys) are reported once by
-    /// [`Self::validate_field_type`] during `validate_field_shapes`; later
-    /// passes that need the resolved type just consume the result here.
+    /// 为常量注解、引用目标等非字段入口解析类型，不重复产生已有诊断。
+    /// 已声明字段直接消费 [`Self::declared_field_types`] 缓存的校验结果。
     pub(super) fn resolve_field_type(&self, ty: &TypeRef) -> InferredType {
         match &ty.kind {
             TypeRefKind::Int => InferredType::int(),

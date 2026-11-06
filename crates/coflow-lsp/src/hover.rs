@@ -152,7 +152,7 @@ fn const_value_to_string(value: &CftConstValue) -> String {
         CftConstValue::Float(value) | CftConstValue::Double(value) => value.to_string(),
         CftConstValue::Bool(value) => value.to_string(),
         CftConstValue::String(value) => format!("{value:?}"),
-        CftConstValue::FormattedString(source) => source.clone(),
+        CftConstValue::FormattedString(value) => value.source.clone(),
         CftConstValue::Enum {
             enum_name, variant, ..
         } => format!("{enum_name}::{variant}"),

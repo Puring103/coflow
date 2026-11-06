@@ -4,6 +4,7 @@
 
 | 资料 | 类型 | 当前对应文档 |
 | --- | --- | --- |
+| [CFT/CFD 核心精简验证](benchmarks/core-simplification-2026-11-06/README.md) | 加载、解析、默认值与写入的配对测量及功能差异验证 | [语言演进契约](../language-design/05-language-evolution.zh-CN.md) |
 | [C# 完整预构建数据](benchmarks/csharp-prebuilt-2026-11-06.md) | 加载、选择与普通数据读取的 0.16.0 测量 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
 | [C# 稀疏视图](benchmarks/csharp-sparse-2026-11-05.md) | 共享存储与完整物化的内存和读取对照 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |
 | [C# 稀疏读取优化](benchmarks/csharp-sparse-read-2026-11-05.md) | 覆盖预绑定与泛型读取的配对测量 | [C# 运行时设计](../codegen-design/csharp-runtime.zh-CN.md) |

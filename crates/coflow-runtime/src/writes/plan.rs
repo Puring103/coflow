@@ -1,40 +1,71 @@
 use std::sync::Arc;
 
-use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet, WriteFieldPathSegment};
+use crate::api::{CfdSource, CfdSourceCatalog, Diagnostic, DiagnosticSet};
 use crate::cfd_loader::CfdWriter;
-use crate::data_model::{CfdValue, RecordOrigin};
+use crate::data_model::{CfdObject, CfdValue, RecordOrigin};
+use coflow_language::cft::RecordId;
+use std::collections::BTreeMap;
 
 use crate::indexes::{RecordRef, SourceId};
-use crate::mutation::PreparedMutationOp;
+use crate::mutation::{DimensionSourceCoordinate, PreparedMutationOp, RecordRestoreSnapshot};
 use crate::{ProjectSession, RecordCoordinate};
 
 use super::refs::{reference_update_actions, ReferenceUpdateAction};
-use super::target::{is_id_path, not_found, write_target_for_path, WriteTarget};
+use super::target::{not_found, WriteTarget};
 use super::writer::{
     dimension_source_for_file, lookup_source_writer, source_for_file, source_for_id,
 };
-use crate::write_rules;
 
-pub(crate) enum MutationExecutionPlan {
+/// 准备后的值与已解析的写入目标共同组成唯一执行表示，不再维护两套配对枚举。
+pub(crate) enum ExecutableMutationOp {
     Restore {
+        snapshot: RecordRestoreSnapshot,
         writer: Arc<CfdWriter>,
         sources: Vec<CfdSource>,
     },
-    Insert(InsertPlan),
-    WriteField(WriteFieldPlan),
+    Insert {
+        plan: InsertPlan,
+        coordinate: RecordCoordinate,
+        fields: BTreeMap<String, CfdValue>,
+    },
+    WriteField(FieldWrite),
     UnsetField(WriteFieldPlan),
-    WriteDimension(DimensionWritePlan),
-    Rename(RenamePlan),
+    WriteDimension {
+        plan: DimensionWritePlan,
+        record: RecordCoordinate,
+        coordinate: DimensionSourceCoordinate,
+        new_value: Option<CfdValue>,
+    },
+    Rename {
+        plan: RenamePlan,
+        new_id: RecordId,
+    },
     Delete(DeletePlan),
     Reorder(ReorderPlan),
     Transfer(TransferPlan),
     Noop {
         coordinate: RecordCoordinate,
     },
-    Folded,
+    Folded(crate::WriteOutcome),
+}
+
+pub(crate) struct FieldWrite {
+    pub(super) plan: WriteFieldPlan,
+    pub(super) value: CfdValue,
+    pub(super) materialized_top_level: Option<Arc<CfdObject>>,
+}
+
+impl FieldWrite {
+    pub(crate) fn batch_key(&self) -> (&std::path::Path, *const CfdWriter) {
+        (
+            self.plan.source.location.path(),
+            Arc::as_ptr(&self.plan.writer),
+        )
+    }
 }
 
 pub(crate) struct InsertPlan {
+    pub(super) display_path: String,
     pub(super) source: CfdSource,
     pub(super) writer: Arc<CfdWriter>,
 }
@@ -46,6 +77,7 @@ pub(crate) struct WriteFieldPlan {
 }
 
 pub(crate) struct DimensionWritePlan {
+    pub(super) display_path: String,
     pub(super) source: CfdSource,
     pub(super) manager: Arc<CfdWriter>,
 }
@@ -111,13 +143,18 @@ pub(crate) struct ResolvedRecordPosition {
     pub(super) origin: RecordOrigin,
 }
 
-impl MutationExecutionPlan {
+impl ExecutableMutationOp {
     /// 只有纯字段写入可以跨文件重组；结构、维度及引用改名操作形成顺序屏障。
-    pub(crate) fn field_batch_key(&self) -> Option<(&std::path::Path, *const CfdWriter)> {
+    pub(crate) const fn field_write(&self) -> Option<&FieldWrite> {
         match self {
-            Self::WriteField(plan) => {
-                Some((plan.source.location.path(), Arc::as_ptr(&plan.writer)))
-            }
+            Self::WriteField(write) => Some(write),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn deleted_record(&self) -> Option<&RecordCoordinate> {
+        match self {
+            Self::Delete(plan) => Some(&plan.coordinate),
             _ => None,
         }
     }
@@ -125,15 +162,12 @@ impl MutationExecutionPlan {
     pub(crate) const fn changes_generation(&self) -> bool {
         !matches!(
             self,
-            Self::Rename(RenamePlan::Noop { .. }) | Self::Noop { .. } | Self::Folded
+            Self::Rename {
+                plan: RenamePlan::Noop { .. },
+                ..
+            } | Self::Noop { .. }
+                | Self::Folded(_)
         )
-    }
-
-    pub(crate) fn can_batch_field_write_with(&self, other: &Self) -> bool {
-        let (Self::WriteField(left), Self::WriteField(right)) = (self, other) else {
-            return false;
-        };
-        Arc::ptr_eq(&left.writer, &right.writer) && left.source.location == right.source.location
     }
 }
 
@@ -141,124 +175,131 @@ impl MutationExecutionPlan {
 pub(crate) fn prepare_mutation_execution(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
-    op: &PreparedMutationOp,
+    op: PreparedMutationOp,
     allow_noop: bool,
-) -> Result<MutationExecutionPlan, DiagnosticSet> {
+) -> Result<ExecutableMutationOp, DiagnosticSet> {
     match op {
-        PreparedMutationOp::RestoreRecord { snapshot } => Ok(MutationExecutionPlan::Restore {
-            writer: catalog.writer(),
-            sources: snapshot
+        PreparedMutationOp::RestoreRecord { snapshot } => {
+            let sources = snapshot
                 .patches
                 .iter()
                 .map(|patch| source_for_file(session, &patch.file))
-                .collect::<Result<_, _>>()?,
-        }),
-        PreparedMutationOp::InsertRecord { file, .. } => {
-            let source = source_for_file(session, file)?;
+                .collect::<Result<_, _>>()?;
+            Ok(ExecutableMutationOp::Restore {
+                snapshot,
+                writer: catalog.writer(),
+                sources,
+            })
+        }
+        PreparedMutationOp::InsertRecord {
+            file,
+            actual_type,
+            id,
+            fields,
+        } => {
+            let source = source_for_file(session, &file)?;
             let writer = lookup_source_writer(catalog);
-            Ok(MutationExecutionPlan::Insert(InsertPlan { source, writer }))
-        }
-        PreparedMutationOp::SetField {
-            write_record,
-            path,
-            value,
-            ..
-        } if is_id_path(path) => {
-            let CfdValue::String(new_id) = value else {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "WRITE-RENAME",
-                    "WRITE",
-                    "record id writes require a string value",
-                )));
-            };
-            prepare_rename(session, catalog, write_record, new_id)
-                .map(MutationExecutionPlan::Rename)
-        }
-        PreparedMutationOp::SetField {
-            write_record,
-            path,
-            value,
-            ..
-        } => prepare_write_field(
-            session,
-            catalog,
-            &write_record.actual_type,
-            &write_record.id,
-            path,
-            value,
-            allow_noop,
-        )
-        .map(|plan| {
-            plan.map_or_else(
-                || MutationExecutionPlan::Noop {
-                    coordinate: write_record.clone(),
+            Ok(ExecutableMutationOp::Insert {
+                plan: InsertPlan {
+                    display_path: file,
+                    source,
+                    writer,
                 },
-                MutationExecutionPlan::WriteField,
-            )
-        }),
-        PreparedMutationOp::WriteDimensionValue { write_file, .. } => {
-            let source = dimension_source_for_file(session, write_file)?;
-            let manager = catalog.dimension_source_manager();
-            Ok(MutationExecutionPlan::WriteDimension(DimensionWritePlan {
-                source,
-                manager,
+                coordinate: RecordCoordinate::new(actual_type, id),
+                fields,
+            })
+        }
+        PreparedMutationOp::SetField {
+            target,
+            value,
+            materialized_top_level,
+        } => {
+            if allow_noop
+                && session.field_value(
+                    &target.coordinate.actual_type,
+                    &target.coordinate.id,
+                    &target.field_path,
+                ) == Some(&value)
+            {
+                return Ok(ExecutableMutationOp::Noop {
+                    coordinate: target.coordinate,
+                });
+            }
+            let source = source_for_id(session, target.source_id)?;
+            Ok(ExecutableMutationOp::WriteField(FieldWrite {
+                plan: WriteFieldPlan {
+                    target,
+                    source,
+                    writer: catalog.writer(),
+                },
+                value,
+                materialized_top_level,
             }))
         }
-        PreparedMutationOp::UnsetField {
-            write_record, path, ..
-        } => prepare_unset_field(
-            session,
-            catalog,
-            &write_record.actual_type,
-            &write_record.id,
-            path,
-        )
-        .map(MutationExecutionPlan::UnsetField),
+        PreparedMutationOp::WriteDimensionValue {
+            write_file,
+            record,
+            coordinate,
+            new_value,
+        } => {
+            let source = dimension_source_for_file(session, &write_file)?;
+            Ok(ExecutableMutationOp::WriteDimension {
+                plan: DimensionWritePlan {
+                    display_path: write_file,
+                    source,
+                    manager: catalog.dimension_source_manager(),
+                },
+                record,
+                coordinate,
+                new_value,
+            })
+        }
+        PreparedMutationOp::UnsetField { target } => {
+            let source = source_for_id(session, target.source_id)?;
+            Ok(ExecutableMutationOp::UnsetField(WriteFieldPlan {
+                target,
+                source,
+                writer: catalog.writer(),
+            }))
+        }
         PreparedMutationOp::RenameRecord { record, new_id, .. } => {
-            prepare_rename(session, catalog, record, new_id).map(MutationExecutionPlan::Rename)
+            let plan = prepare_rename(session, catalog, &record, &new_id)?;
+            Ok(ExecutableMutationOp::Rename { plan, new_id })
         }
         PreparedMutationOp::DeleteRecord { record, .. } => {
-            prepare_delete(session, catalog, record).map(MutationExecutionPlan::Delete)
+            prepare_delete(session, catalog, &record).map(ExecutableMutationOp::Delete)
         }
         PreparedMutationOp::SwapRecords { first, second, .. } => {
-            prepare_swap_records(session, catalog, first, second)
+            prepare_swap_records(session, catalog, &first, &second)
         }
         PreparedMutationOp::MoveRecord {
             record,
             target_index,
             ..
-        } => prepare_move_record(session, catalog, record, *target_index),
+        } => prepare_move_record(session, catalog, &record, target_index),
         PreparedMutationOp::TransferRecord {
             record,
             destination_file,
             target_index,
             ..
-        } => prepare_transfer_record(session, catalog, record, destination_file, *target_index),
-        PreparedMutationOp::FoldedSetField { .. }
-        | PreparedMutationOp::FoldedRenameRecord { .. }
-        | PreparedMutationOp::FoldedDeleteRecord { .. }
-        | PreparedMutationOp::CancelledInsert { .. } => Ok(MutationExecutionPlan::Folded),
+        } => prepare_transfer_record(session, catalog, &record, &destination_file, target_index),
+        PreparedMutationOp::FoldedSetField { record, .. } => Ok(ExecutableMutationOp::Folded(
+            crate::WriteOutcome::touch(record),
+        )),
+        PreparedMutationOp::FoldedDeleteRecord { record, .. } => {
+            Ok(ExecutableMutationOp::Folded(crate::WriteOutcome {
+                deleted: Some(record),
+                ..crate::WriteOutcome::default()
+            }))
+        }
+        PreparedMutationOp::CancelledInsert { record, .. } => {
+            Ok(ExecutableMutationOp::Folded(crate::WriteOutcome {
+                touched: vec![record.clone()],
+                inserted: Some(record),
+                ..crate::WriteOutcome::default()
+            }))
+        }
     }
-}
-
-fn prepare_unset_field(
-    session: &ProjectSession,
-    catalog: &CfdSourceCatalog,
-    actual_type: &str,
-    id: &str,
-    path: &[WriteFieldPathSegment],
-) -> Result<WriteFieldPlan, DiagnosticSet> {
-    let Some(record_ref) = session.records.get_by_coordinate(actual_type, id) else {
-        return Err(DiagnosticSet::one(not_found(actual_type, id)));
-    };
-    let target = write_target_for_path(session, record_ref, path);
-    let source = source_for_id(session, target.source_id)?;
-    let writer = lookup_source_writer(catalog);
-    Ok(WriteFieldPlan {
-        target,
-        source,
-        writer,
-    })
 }
 
 fn prepare_transfer_record(
@@ -267,7 +308,7 @@ fn prepare_transfer_record(
     record: &RecordCoordinate,
     destination_file: &str,
     target_index: usize,
-) -> Result<MutationExecutionPlan, DiagnosticSet> {
+) -> Result<ExecutableMutationOp, DiagnosticSet> {
     let record_ref = required_record_ref(session, record)?;
     if record_ref.display_path == destination_file {
         return Err(DiagnosticSet::one(Diagnostic::error(
@@ -304,7 +345,7 @@ fn prepare_transfer_record(
         )));
     }
     let before = order.get(target_index).copied().map(resolved_position);
-    Ok(MutationExecutionPlan::Transfer(TransferPlan {
+    Ok(ExecutableMutationOp::Transfer(TransferPlan {
         coordinate: record_ref.coordinate.clone(),
         source_origin: record_ref.origin.clone(),
         source_display_path: record_ref.display_path.clone(),
@@ -320,7 +361,7 @@ fn prepare_swap_records(
     catalog: &CfdSourceCatalog,
     first: &RecordCoordinate,
     second: &RecordCoordinate,
-) -> Result<MutationExecutionPlan, DiagnosticSet> {
+) -> Result<ExecutableMutationOp, DiagnosticSet> {
     let first_ref = required_record_ref(session, first)?;
     let second_ref = required_record_ref(session, second)?;
     if first_ref.coordinate.actual_type != second_ref.coordinate.actual_type {
@@ -332,12 +373,12 @@ fn prepare_swap_records(
     }
     ensure_same_container(first_ref, second_ref)?;
     if first_ref.id == second_ref.id {
-        return Ok(MutationExecutionPlan::Noop {
+        return Ok(ExecutableMutationOp::Noop {
             coordinate: first_ref.coordinate.clone(),
         });
     }
     let (source, writer) = reorder_writer(session, catalog, first_ref)?;
-    Ok(MutationExecutionPlan::Reorder(ReorderPlan {
+    Ok(ExecutableMutationOp::Reorder(ReorderPlan {
         source,
         writer,
         operation: ReorderOperation::Swap {
@@ -353,7 +394,7 @@ fn prepare_move_record(
     catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
     target_index: usize,
-) -> Result<MutationExecutionPlan, DiagnosticSet> {
+) -> Result<ExecutableMutationOp, DiagnosticSet> {
     let record_ref = required_record_ref(session, record)?;
     let container = record_container(record_ref);
     let mut order = session
@@ -378,14 +419,14 @@ fn prepare_move_record(
         )));
     }
     if target_index == old_index {
-        return Ok(MutationExecutionPlan::Noop {
+        return Ok(ExecutableMutationOp::Noop {
             coordinate: record_ref.coordinate.clone(),
         });
     }
     order.remove(old_index);
     let before = order.get(target_index).copied().map(resolved_position);
     let (source, writer) = reorder_writer(session, catalog, record_ref)?;
-    Ok(MutationExecutionPlan::Reorder(ReorderPlan {
+    Ok(ExecutableMutationOp::Reorder(ReorderPlan {
         source,
         writer,
         operation: ReorderOperation::MoveBefore {
@@ -464,64 +505,11 @@ fn reorder_invariant(message: &str) -> DiagnosticSet {
     ))
 }
 
-fn prepare_write_field(
-    session: &ProjectSession,
-    catalog: &CfdSourceCatalog,
-    actual_type: &str,
-    id: &str,
-    path: &[WriteFieldPathSegment],
-    new_value: &CfdValue,
-    allow_noop: bool,
-) -> Result<Option<WriteFieldPlan>, DiagnosticSet> {
-    let Some(record_ref) = session.records.get_by_coordinate(actual_type, id) else {
-        return Err(DiagnosticSet::one(not_found(actual_type, id)));
-    };
-    let Some(_record) = session.model.record(record_ref.id) else {
-        return Err(DiagnosticSet::one(not_found(actual_type, id)));
-    };
-    let target = write_target_for_path(session, record_ref, path);
-    let target_record = session
-        .model
-        .record(record_ref.id)
-        .ok_or_else(|| DiagnosticSet::one(not_found(actual_type, id)))?;
-    let expected = write_rules::expected_type_for_record_path(
-        session.schema(),
-        target_record,
-        &target.field_path,
-        "WRITE-SHAPE",
-        "WRITE",
-    )?;
-    write_rules::validate_value_for_write(
-        session,
-        session.schema(),
-        &expected,
-        new_value,
-        "WRITE-SHAPE",
-        "WRITE",
-    )?;
-    if allow_noop
-        && session.field_value(
-            &target.coordinate.actual_type,
-            &target.coordinate.id,
-            &target.field_path,
-        ) == Some(new_value)
-    {
-        return Ok(None);
-    }
-    let source = source_for_id(session, target.source_id)?;
-    let writer = lookup_source_writer(catalog);
-    Ok(Some(WriteFieldPlan {
-        target,
-        source,
-        writer,
-    }))
-}
-
 fn prepare_rename(
     session: &ProjectSession,
     catalog: &CfdSourceCatalog,
     record: &RecordCoordinate,
-    new_id: &str,
+    new_id: &RecordId,
 ) -> Result<RenamePlan, DiagnosticSet> {
     let Some(target_ref) = session
         .records
@@ -532,7 +520,7 @@ fn prepare_rename(
             &record.id,
         )));
     };
-    if record.id() == new_id {
+    if record.id == *new_id {
         return Ok(RenamePlan::Noop {
             coordinate: target_ref.coordinate.clone(),
         });

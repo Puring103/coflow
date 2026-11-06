@@ -23,7 +23,6 @@ mod refs;
 mod render;
 mod scan;
 mod strings;
-mod types;
 
 use crate::LoadedValueDraft;
 use coflow_language::cft::{CftSchema, CftValueType};
@@ -36,30 +35,11 @@ pub use render::{render_cell_value, CellRenderError};
 use scan::strip_outer_pair;
 pub(crate) use strings::parse_formatted_string;
 use strings::parse_string;
-use types::CellType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedCell {
     Omitted,
     Value(LoadedValueDraft),
-}
-
-/// Parses one cell value using a CFT declared type as context.
-///
-/// # Errors
-///
-/// Returns diagnostics when the cell text does not match the declared type.
-pub fn parse_cell(
-    schema: &CftSchema,
-    declared_type: &str,
-    text: &str,
-) -> Result<ParsedCell, CellValueDiagnostics> {
-    let declared_type = CellType::parse(schema, declared_type)?;
-    let text = text.trim();
-    if text.is_empty() || text == "_" {
-        return Ok(ParsedCell::Omitted);
-    }
-    parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
 }
 
 /// Parses one cell using an already compiled schema type.
@@ -72,12 +52,11 @@ pub fn parse_schema_cell(
     declared_type: &CftValueType,
     text: &str,
 ) -> Result<ParsedCell, CellValueDiagnostics> {
-    let declared_type = CellType::from_schema_type(declared_type);
     let text = text.trim();
     if text.is_empty() || text == "_" {
         return Ok(ParsedCell::Omitted);
     }
-    parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
+    parse_value(schema, declared_type, text, ValueContext::Root).map(ParsedCell::Value)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,29 +77,29 @@ impl ValueContext {
 )]
 fn parse_value(
     schema: &CftSchema,
-    ty: &CellType,
+    ty: &CftValueType,
     text: &str,
     context: ValueContext,
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     let text = text.trim();
     match ty {
-        CellType::Option(_) if text == "None" => Ok(LoadedValueDraft::OptionNone),
-        CellType::Option(inner) => {
+        CftValueType::Option(_) if text == "None" => Ok(LoadedValueDraft::OptionNone),
+        CftValueType::Option(inner) => {
             let value = constructor_inner(text, "Some").unwrap_or(text);
             parse_value(schema, inner, value, ValueContext::Nested)
                 .map(|value| LoadedValueDraft::OptionSome(Box::new(value)))
         }
-        CellType::Int => Ok(LoadedValueDraft::Int(i64::from(
+        CftValueType::Int => Ok(LoadedValueDraft::Int(i64::from(
             text.parse::<i32>().map_err(|_| type_mismatch("int"))?,
         ))),
-        CellType::Long => Ok(LoadedValueDraft::Int(
+        CftValueType::Long => Ok(LoadedValueDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int"))?,
         )),
-        CellType::Float | CellType::Double => {
+        CftValueType::Float | CftValueType::Double => {
             let value = text
                 .parse::<f64>()
                 .map_err(|_| type_mismatch("floating point number"))?;
-            let value = if *ty == CellType::Float {
+            let value = if *ty == CftValueType::Float {
                 f64::from(value as f32)
             } else {
                 value
@@ -131,20 +110,20 @@ fn parse_value(
                 Err(type_mismatch("finite float"))
             }
         }
-        CellType::Bool => match text {
+        CftValueType::Bool => match text {
             "true" => Ok(LoadedValueDraft::Bool(true)),
             "false" => Ok(LoadedValueDraft::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
-        CellType::String if text.starts_with("f\"") => {
+        CftValueType::String if text.starts_with("f\"") => {
             parse_formatted_string(text).map(LoadedValueDraft::FormattedString)
         }
-        CellType::String => parse_string(text).map(LoadedValueDraft::String),
-        CellType::Enum(enum_name) => parse_enum(schema, enum_name, text),
-        CellType::Ref(type_name) => parse_ref(schema, type_name, text),
-        CellType::Type(type_name) => parse_object(schema, type_name, text, context),
-        CellType::Array(inner) => parse_array(schema, inner, text, context),
-        CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),
+        CftValueType::String => parse_string(text).map(LoadedValueDraft::String),
+        CftValueType::Enum(enum_name) => parse_enum(schema, enum_name, text),
+        CftValueType::RecordRef(type_name) => parse_ref(schema, type_name, text),
+        CftValueType::Object(type_name) => parse_object(schema, type_name, text, context),
+        CftValueType::Array(inner) => parse_array(schema, inner, text, context),
+        CftValueType::Dict(key, value) => parse_dict(schema, key, value, text, context),
     }
 }
 

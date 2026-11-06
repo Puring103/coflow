@@ -1,5 +1,5 @@
 use super::diagnostics::{syntax, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
-use crate::{LoadedFieldReference, LoadedFormatSegment, LoadedFormattedString};
+use crate::LoadedFormattedString;
 
 pub(super) fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
     let text = text.trim();
@@ -50,37 +50,12 @@ pub(super) fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
 pub(crate) fn parse_formatted_string(
     text: &str,
 ) -> Result<LoadedFormattedString, CellValueDiagnostics> {
-    let source = text.trim().to_string();
-    let (ast, errors) =
-        coflow_language::cfd::parse_cfd(&format!("cell: Value {{ field: {source} }}"));
-    if let Some(error) = errors.first() {
-        return Err(syntax(error.message.clone()));
-    }
-    let Some(coflow_language::cfd::CfdValue::FormattedString(value)) = ast
-        .records
-        .first()
-        .and_then(|record| record.fields.first())
-        .map(|field| &field.value)
-    else {
+    let value = coflow_language::cfd::parse_cfd_value(text.trim())
+        .map_err(|error| syntax(error.message))?;
+    let coflow_language::cfd::CfdValue::FormattedString(value) = value else {
         return Err(syntax("expected an explicit f\"...\" template"));
     };
-    let segments = value
-        .segments
-        .iter()
-        .map(|segment| match segment {
-            coflow_language::cfd::CfdFormatSegment::Text(text) => {
-                LoadedFormatSegment::Text(text.clone())
-            }
-            coflow_language::cfd::CfdFormatSegment::Reference(reference) => {
-                LoadedFormatSegment::Reference(LoadedFieldReference {
-                    type_name: reference.type_name.clone(),
-                    id: reference.id.clone(),
-                    path: reference.path.clone(),
-                })
-            }
-        })
-        .collect();
-    Ok(LoadedFormattedString { source, segments })
+    Ok((&value).into())
 }
 
 pub(super) fn string_needs_quotes(text: &str) -> bool {

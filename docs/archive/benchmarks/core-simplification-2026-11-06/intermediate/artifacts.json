@@ -1,0 +1,36 @@
+{
+  "baseline": {
+    "coflow": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\coflow.exe",
+      "sha256": "217789f0a7334b72eae6f29c0089c514bf1ce0875a0c0bc8c02242f2cbcad891",
+      "bytes": 19316736
+    },
+    "core_simplification_perf": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\core_simplification_perf.exe",
+      "sha256": "04a4b65987a2bdf4272b127fc6a7bcdfdcd5fbacd0df01724009f3a91831c1c7",
+      "bytes": 8212992
+    },
+    "language_regression_probe": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\baseline\\language_regression_probe.exe",
+      "sha256": "142a3bcd5db4e05f065f904d10707d44d8356774f57fd86c31f586e73b8c9359",
+      "bytes": 3652608
+    }
+  },
+  "after": {
+    "coflow": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\coflow.exe",
+      "sha256": "8a2b9b815a0d22486defb62f68a5398dc4575482ab9cc8aa6e4bbdb8d7664cbf",
+      "bytes": 19205120
+    },
+    "core_simplification_perf": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\core_simplification_perf.exe",
+      "sha256": "33103e28bbed5415975b92d816b9a88be2ece6fd07f35e9afec57bc64e6c7a20",
+      "bytes": 8216064
+    },
+    "language_regression_probe": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\language_regression_probe.exe",
+      "sha256": "b45de62dcd718b019d0a52e5a8f3c8f4b9de265e9b7fa8e65bede1fdc2defa8e",
+      "bytes": 3632128
+    }
+  }
+}

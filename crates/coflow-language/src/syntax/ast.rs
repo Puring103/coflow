@@ -209,7 +209,7 @@ pub enum DefaultExprKind {
     OptionNone,
     OptionSome(Box<DefaultExpr>),
     String(String),
-    FormattedString(String),
+    FormattedString(std::sync::Arc<crate::cfd::CfdFormattedString>),
 
     BitExpr {
         op: DefaultBitOp,

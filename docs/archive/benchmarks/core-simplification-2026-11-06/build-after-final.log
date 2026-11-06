@@ -1,0 +1,4 @@
+   Compiling coflow-runtime v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-runtime)
+   Compiling coflow-lsp v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-lsp)
+   Compiling coflow v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after)
+    Finished `release` profile [optimized] target(s) in 30.34s

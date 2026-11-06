@@ -52,33 +52,25 @@ pub(crate) fn parse_expression(
     expected: &coflow_language::cft::CftValueType,
     source: &str,
 ) -> Result<crate::LoadedValueDraft, DiagnosticSet> {
-    let wrapped = format!("request: Request {{ value: {source} }}");
-    let (ast, diagnostics) = coflow_language::cfd::parse_cfd(&wrapped);
-    if !diagnostics.is_empty()
-        || ast.records.len() != 1
-        || ast.records[0].fields.len() != 1
-        || !ast.dimensions.is_empty()
-    {
-        return Err(DiagnosticSet::one(Diagnostic::error(
+    let value = coflow_language::cfd::parse_cfd_value(source).map_err(|diagnostic| {
+        DiagnosticSet::one(Diagnostic::error(
             "CLI-VALUE",
             "CFD",
-            format!("expected one CFD expression: {diagnostics:?}"),
-        )));
-    }
-    lower::lower_value_resolved(schema, &ast.records[0].fields[0].value, expected, false).map_err(
-        |errors| {
-            DiagnosticSet::one(Diagnostic::error(
-                "CLI-VALUE",
-                "CFD",
-                errors
-                    .diagnostics
-                    .iter()
-                    .map(|e| e.message.as_str())
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            ))
-        },
-    )
+            format!("expected one CFD expression: {}", diagnostic.message),
+        ))
+    })?;
+    lower::lower_value_resolved(schema, &value, expected, false).map_err(|errors| {
+        DiagnosticSet::one(Diagnostic::error(
+            "CLI-VALUE",
+            "CFD",
+            errors
+                .diagnostics
+                .iter()
+                .map(|e| e.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; "),
+        ))
+    })
 }
 
 /// Parses `.cfd` text into source-neutral input records.

@@ -2,8 +2,8 @@ use crate::api::{CfdSourceCatalog, DiagnosticSet};
 use std::collections::{BTreeSet, HashMap};
 
 use crate::writes::{
-    prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op, MutationBatchFailure,
-    MutationExecutionPlan, MutationImpact,
+    prepare_mutation_execution, rebuild_after_mutation, stage_mutation_op, ExecutableMutationOp,
+    FieldWrite, MutationBatchFailure, MutationImpact,
 };
 use crate::ProjectSession;
 
@@ -13,8 +13,12 @@ use super::{
 };
 
 struct ExecutableMutation {
-    planned: PlannedMutationOp,
-    execution: MutationExecutionPlan,
+    index: usize,
+    op_name: &'static str,
+    record: Option<crate::RecordCoordinate>,
+    file: Option<String>,
+    impact: MutationImpact,
+    execution: ExecutableMutationOp,
 }
 
 impl ProjectSession {
@@ -47,7 +51,7 @@ impl ProjectSession {
             return report_without_publish(self, write_ok, failed);
         }
 
-        let staged_catalog = CfdSourceCatalog::staged_writes();
+        let staged_catalog = CfdSourceCatalog::staged_writes(std::sync::Arc::clone(&self.schema));
         let executable = match prepare_execution_plans(self, &staged_catalog, planned) {
             Ok(executable) => executable,
             Err(failure) => {
@@ -105,7 +109,7 @@ where
         Ok(rebuilt) => rebuilt,
         Err(diagnostics) => {
             if let Some(last) = executable.last() {
-                failed.push(failed_op(&last.planned, diagnostics));
+                failed.push(failed_op(last, diagnostics));
             }
             return report_without_publish(session, false, failed);
         }
@@ -117,6 +121,7 @@ where
         failed,
         executable,
         staged,
+        impact,
         rebuilt,
         prepare_additional_files,
     )
@@ -130,12 +135,16 @@ fn stage_executable(
     let mut staged = Vec::with_capacity(executable.len());
     let mut cursor = 0;
     while cursor < executable.len() {
-        if executable[cursor].execution.field_batch_key().is_some() {
+        if executable[cursor].execution.field_write().is_some() {
             let end = executable[cursor..]
                 .iter()
-                .position(|item| item.execution.field_batch_key().is_none())
+                .position(|item| item.execution.field_write().is_none())
                 .map_or(executable.len(), |offset| cursor + offset);
-            match stage_independent_field_writes(session, &executable[cursor..end]) {
+            let fields = executable[cursor..end]
+                .iter()
+                .filter_map(|item| item.execution.field_write().map(|write| (item, write)))
+                .collect::<Vec<_>>();
+            match stage_independent_field_writes(session, &fields) {
                 Ok(applied) => staged.extend(applied),
                 Err(failure) => {
                     return Err(failure);
@@ -144,25 +153,24 @@ fn stage_executable(
             cursor = end;
         } else {
             let item = &executable[cursor];
-            match stage_mutation_op(session, &item.planned.op, &item.execution) {
+            match stage_mutation_op(session, &item.execution) {
                 Ok(outcome) => {
-                    let mut applied = applied_op(&item.planned, outcome);
-                    if let super::PreparedMutationOp::DeleteRecord { record, .. } = &item.planned.op
-                    {
+                    let mut applied = applied_op(item, outcome);
+                    if let Some(record) = item.execution.deleted_record() {
                         match catalog
                             .writer()
                             .take_record_restore(record, session.project.root_dir())
                         {
                             Ok(snapshot) => applied.restore = Some(snapshot),
                             Err(diagnostics) => {
-                                return Err(failed_op(&item.planned, diagnostics));
+                                return Err(failed_op(item, diagnostics));
                             }
                         }
                     }
                     staged.push(applied);
                 }
                 Err(diagnostics) => {
-                    return Err(failed_op(&item.planned, diagnostics));
+                    return Err(failed_op(item, diagnostics));
                 }
             }
             cursor += 1;
@@ -182,7 +190,7 @@ fn mutation_impact(
         executable
             .iter()
             .zip(staged)
-            .map(|(item, applied)| (&item.planned.op, &applied.outcome)),
+            .map(|(item, applied)| (&item.impact, &applied.outcome)),
     )
 }
 
@@ -194,6 +202,7 @@ fn publish_staged<F>(
     mut failed: Vec<MutationFailedOp>,
     executable: &[ExecutableMutation],
     staged: Vec<MutationAppliedOp>,
+    impact: MutationImpact,
     rebuilt: crate::sessions::session_build::SessionBuildOutput,
     prepare_additional_files: F,
 ) -> MutationReport
@@ -203,14 +212,13 @@ where
         &[MutationAppliedOp],
     ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
 {
-    let impact = mutation_impact(executable, &staged);
     let writer = catalog.writer();
     let new_session = rebuilt.session;
     let mut additional_files = match prepare_additional_files(&new_session, &staged) {
         Ok(files) => files,
         Err(diagnostics) => {
             if let Some(last) = executable.last() {
-                failed.push(failed_op(&last.planned, diagnostics));
+                failed.push(failed_op(last, diagnostics));
             }
             return report_without_publish(session, false, failed);
         }
@@ -222,7 +230,7 @@ where
         .collect::<Vec<_>>();
     if let Err(diagnostics) = writer.add_project_file_updates(additional_files) {
         if let Some(last) = executable.last() {
-            failed.push(failed_op(&last.planned, diagnostics));
+            failed.push(failed_op(last, diagnostics));
         }
         return report_without_publish(session, false, failed);
     }
@@ -253,7 +261,7 @@ where
         Ok(files) => files,
         Err(diagnostics) => {
             if let Some(last) = executable.last() {
-                failed.push(failed_op(&last.planned, diagnostics));
+                failed.push(failed_op(last, diagnostics));
             }
             return report_without_publish(session, false, failed);
         }
@@ -305,7 +313,7 @@ where
         &[MutationAppliedOp],
     ) -> Result<Vec<ProjectFileUpdate>, DiagnosticSet>,
 {
-    let catalog = CfdSourceCatalog::staged_writes();
+    let catalog = CfdSourceCatalog::staged_writes(std::sync::Arc::clone(&session.schema));
     let writer = catalog.writer();
     let mut operations = request.ops.into_iter().peekable();
     let mut candidate: Option<crate::sessions::session_build::SessionBuildOutput> = None;
@@ -315,6 +323,7 @@ where
     let mut write_ok = true;
     let mut offset = 0;
     let mut project_updates = std::collections::BTreeMap::new();
+    let mut total_impact = MutationImpact::default();
     while let Some(first) = operations.next() {
         let restore = matches!(first, super::MutationOp::RestoreRecord { .. });
         let identity_change = changes_record_identity(&first);
@@ -370,6 +379,7 @@ where
             }
         };
         let impact = mutation_impact(&group_execution, &group_applied);
+        total_impact.merge(&impact);
         let rebuilt = writer.source_overrides().and_then(|overrides| {
             let preloaded = writer.take_preloaded_sources()?;
             rebuild_after_mutation(current, &impact, &overrides, preloaded)
@@ -392,7 +402,7 @@ where
             }
             Err(diagnostics) => {
                 if let Some(last) = group_execution.last() {
-                    failed.push(failed_op(&last.planned, diagnostics));
+                    failed.push(failed_op(last, diagnostics));
                 }
                 return report_without_publish(session, false, failed);
             }
@@ -411,6 +421,7 @@ where
         failed,
         &executable,
         applied,
+        total_impact,
         rebuilt,
         prepare_additional_files,
     )
@@ -418,13 +429,12 @@ where
 
 fn stage_independent_field_writes(
     session: &ProjectSession,
-    executable: &[ExecutableMutation],
+    executable: &[(&ExecutableMutation, &FieldWrite)],
 ) -> Result<Vec<MutationAppliedOp>, MutationFailedOp> {
     let mut source_groups = HashMap::new();
     let mut groups: Vec<Vec<usize>> = Vec::new();
-    for (index, item) in executable.iter().enumerate() {
-        let key = item.execution.field_batch_key();
-        let group = *source_groups.entry(key).or_insert_with(|| {
+    for (index, (_, write)) in executable.iter().enumerate() {
+        let group = *source_groups.entry(write.batch_key()).or_insert_with(|| {
             groups.push(Vec::new());
             groups.len() - 1
         });
@@ -441,17 +451,14 @@ fn stage_independent_field_writes(
         }
         let batch = group
             .iter()
-            .map(|&index| {
-                let item = &executable[index];
-                (&item.planned.op, &item.execution)
-            })
+            .map(|&index| executable[index].1)
             .collect::<Vec<_>>();
         match crate::writes::stage_field_mutation_batch(session, &batch) {
             Ok(outcomes) => applied.extend(
                 group
                     .iter()
                     .zip(outcomes)
-                    .map(|(&index, outcome)| applied_op(&executable[index].planned, outcome)),
+                    .map(|(&index, outcome)| applied_op(executable[index].0, outcome)),
             ),
             Err(MutationBatchFailure { index, diagnostics }) => {
                 let index = group[index.min(group.len() - 1)];
@@ -459,8 +466,7 @@ fn stage_independent_field_writes(
                     .as_ref()
                     .is_none_or(|(previous, _)| index < *previous)
                 {
-                    first_failure =
-                        Some((index, failed_op(&executable[index].planned, diagnostics)));
+                    first_failure = Some((index, failed_op(executable[index].0, diagnostics)));
                 }
             }
         }
@@ -477,9 +483,9 @@ fn stage_without_generation(
 ) -> MutationReport {
     let mut applied = Vec::with_capacity(executable.len());
     for item in executable {
-        match stage_mutation_op(session, &item.planned.op, &item.execution) {
-            Ok(outcome) => applied.push(applied_op(&item.planned, outcome)),
-            Err(diagnostics) => failed.push(failed_op(&item.planned, diagnostics)),
+        match stage_mutation_op(session, &item.execution) {
+            Ok(outcome) => applied.push(applied_op(item, outcome)),
+            Err(diagnostics) => failed.push(failed_op(item, diagnostics)),
         }
     }
     applied.sort_by_key(|item| item.index);
@@ -516,28 +522,38 @@ fn prepare_execution_plans(
     planned
         .into_iter()
         .map(|planned| {
-            match prepare_mutation_execution(session, catalog, &planned.op, allow_noop) {
-                Ok(execution) => Ok(ExecutableMutation { planned, execution }),
-                Err(diagnostics) => Err(failed_op(&planned, diagnostics)),
-            }
+            let index = planned.index;
+            let (op_name, record, file) = planned.op.report_metadata();
+            let impact = MutationImpact::for_operation(&planned.op);
+            let execution = prepare_mutation_execution(session, catalog, planned.op, allow_noop)
+                .map_err(|diagnostics| {
+                    MutationFailedOp::from_diagnostics(index, op_name, diagnostics)
+                })?;
+            Ok(ExecutableMutation {
+                index,
+                op_name,
+                record,
+                file,
+                impact,
+                execution,
+            })
         })
         .collect()
 }
 
-fn applied_op(planned: &PlannedMutationOp, outcome: crate::WriteOutcome) -> MutationAppliedOp {
-    let (op, record, file) = planned.op.report_metadata();
+fn applied_op(item: &ExecutableMutation, outcome: crate::WriteOutcome) -> MutationAppliedOp {
     MutationAppliedOp {
         restore: None,
-        index: planned.index,
-        op: op.to_string(),
-        record,
-        file,
+        index: item.index,
+        op: item.op_name.to_string(),
+        record: item.record.clone(),
+        file: item.file.clone(),
         outcome,
     }
 }
 
-fn failed_op(planned: &PlannedMutationOp, diagnostics: DiagnosticSet) -> MutationFailedOp {
-    MutationFailedOp::from_diagnostics(planned.index, planned.op.report_metadata().0, diagnostics)
+fn failed_op(item: &ExecutableMutation, diagnostics: DiagnosticSet) -> MutationFailedOp {
+    MutationFailedOp::from_diagnostics(item.index, item.op_name, diagnostics)
 }
 
 fn report_without_publish(
@@ -582,16 +598,16 @@ mod batch_tests {
     use std::fs;
 
     fn fixture() -> (tempfile::TempDir, ProjectSession) {
+        fixture_with_schema("table Item { number: int = 0; label: string = \"\"; }\n")
+    }
+
+    fn fixture_with_schema(schema: &str) -> (tempfile::TempDir, ProjectSession) {
         let directory = tempfile::tempdir().expect("field batch project");
         fs::create_dir(directory.path().join("data")).expect("data directory");
         fs::write(directory.path().join("coflow.yaml"),
             "schema: schema.cft\ndata: data/\ncodegen:\n  - language: csharp\n    dir: generated/csharp\n",
         ).expect("config");
-        fs::write(
-            directory.path().join("schema.cft"),
-            "table Item { number: int = 0; label: string = \"\"; }\n",
-        )
-        .expect("schema");
+        fs::write(directory.path().join("schema.cft"), schema).expect("schema");
         fs::write(
             directory.path().join("data/a.cfd"),
             "a1: Item { number: 1 }\na2: Item { number: 2 }\n",
@@ -633,11 +649,11 @@ mod batch_tests {
     #[test]
     fn interleaved_files_share_one_field_batch_per_source() {
         let (_directory, session) = fixture();
-        let catalog = CfdSourceCatalog::staged_writes();
+        let catalog = CfdSourceCatalog::staged_writes(std::sync::Arc::clone(&session.schema));
         let (planned, failed, ok, stopped) = plan_mutations(&session, interleaved_request());
         assert!(ok && failed.is_empty() && !stopped);
         let executable = prepare_execution_plans(&session, &catalog, planned).expect("plans");
-        let applied = stage_independent_field_writes(&session, &executable).expect("staging");
+        let applied = stage_executable(&session, &catalog, &executable).expect("staging");
         assert_eq!(applied.len(), 4);
         assert_eq!(catalog.writer().field_batch_parse_count(), 4);
         assert_eq!(
@@ -714,6 +730,151 @@ mod batch_tests {
         assert_eq!(
             report.applied.iter().map(|op| op.index).collect::<Vec<_>>(),
             [0, 1, 2, 3]
+        );
+    }
+    #[test]
+    fn existing_record_can_reference_a_pending_insert_before_rename() {
+        let (_directory, mut session) = fixture_with_schema(
+            "table Item { number: int = 0; label: string = \"\"; target: [&Item] = []; }",
+        );
+        let report = session.apply_mutation(
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![
+                    MutationOp::InsertRecord {
+                        file: "data/a.cfd".into(),
+                        actual_type: "Item".into(),
+                        id: "new".into(),
+                        fields: crate::MutationFields::Empty,
+                        materialization: crate::DefaultMaterialization::Minimal,
+                    },
+                    set(
+                        "a1",
+                        "target",
+                        CfdValue::Array(vec![CfdValue::Ref("new".try_into().expect("id"))]),
+                    ),
+                    MutationOp::RenameRecord {
+                        record: RecordCoordinate::try_new("Item", "new").expect("coordinate"),
+                        file: None,
+                        new_id: "renamed".into(),
+                    },
+                ],
+            },
+            |_, _| Ok(Vec::new()),
+        );
+        assert!(
+            report.write_ok && report.check_ok && report.generation_changed,
+            "{report:?}"
+        );
+        assert_eq!(
+            report.applied.iter().map(|op| op.index).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert_eq!(
+            session.field_value("Item", "a1", &[CfdPathSegment::Field("target".into())]),
+            Some(&CfdValue::Array(vec![CfdValue::Ref(
+                "renamed".try_into().expect("id")
+            )]))
+        );
+        assert_eq!(report.affected_files, ["data/a.cfd"]);
+        assert!(session.record_view("Item", "new").is_none());
+        assert!(session.record_view("Item", "renamed").is_some());
+    }
+
+    #[test]
+    fn inserted_field_and_delete_still_fold_without_publishing() {
+        let (directory, mut session) = fixture();
+        let before = fs::read(directory.path().join("data/a.cfd")).expect("before");
+        let report = session.apply_mutation(
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![
+                    MutationOp::InsertRecord {
+                        file: "data/a.cfd".into(),
+                        actual_type: "Item".into(),
+                        id: "new".into(),
+                        fields: crate::MutationFields::Empty,
+                        materialization: crate::DefaultMaterialization::Minimal,
+                    },
+                    set("new", "number", CfdValue::Int(7)),
+                    MutationOp::DeleteRecord {
+                        record: RecordCoordinate::try_new("Item", "new").expect("coordinate"),
+                        file: None,
+                    },
+                ],
+            },
+            |_, _| Ok(Vec::new()),
+        );
+        assert!(
+            report.write_ok && report.check_ok && !report.generation_changed,
+            "{report:?}"
+        );
+        assert_eq!(report.applied.len(), 3);
+        assert_eq!(report.written_files, Vec::<String>::new());
+        assert_eq!(
+            fs::read(directory.path().join("data/a.cfd")).expect("after"),
+            before
+        );
+        assert!(session.record_view("Item", "new").is_none());
+    }
+
+    #[test]
+    fn rename_preserves_nested_options_in_base_and_dimension_references() {
+        let (_directory, mut session) = fixture_with_schema(
+            "table Item { number: int = 0; label: string = \"\"; @localized target: Option<Option<&Item>> = None; }",
+        );
+        let nested_ref = |id: &str| {
+            CfdValue::OptionSome(Box::new(CfdValue::OptionSome(Box::new(CfdValue::Ref(
+                id.try_into().expect("id"),
+            )))))
+        };
+        let report = session.apply_mutation(
+            MutationRequest {
+                stop_on_write_error: true,
+                ops: vec![
+                    MutationOp::InsertRecord {
+                        file: "data/a.cfd".into(),
+                        actual_type: "Item".into(),
+                        id: "new".into(),
+                        fields: crate::MutationFields::Empty,
+                        materialization: crate::DefaultMaterialization::Minimal,
+                    },
+                    set("a1", "target", nested_ref("new")),
+                    MutationOp::SetDimensionValue {
+                        file: Some("data/ja.cfd".into()),
+                        coordinate: crate::DimensionValueCoordinate {
+                            actual_type: "Item".try_into().expect("type"),
+                            record_id: "a1".try_into().expect("id"),
+                            field: "target".try_into().expect("field"),
+                            dimension: "language".try_into().expect("dimension"),
+                            variant: "ja".try_into().expect("variant"),
+                            path: vec![],
+                        },
+                        expected: crate::DimensionValueExpectation::Any,
+                        value: MutationValue::Cfd(nested_ref("new")),
+                    },
+                    MutationOp::RenameRecord {
+                        record: RecordCoordinate::try_new("Item", "new").expect("coordinate"),
+                        file: None,
+                        new_id: "renamed".into(),
+                    },
+                ],
+            },
+            |_, _| Ok(Vec::new()),
+        );
+        assert!(report.write_ok && report.check_ok, "{report:?}");
+        assert_eq!(report.affected_files, ["data/a.cfd", "data/ja.cfd"]);
+        let record = session.record_view("Item", "a1").expect("host").record;
+        assert_eq!(record.field("target"), Some(&nested_ref("renamed")));
+        let dimension = record.dimension_field("target").expect("dimension");
+        assert_eq!(
+            dimension
+                .variants
+                .get("ja")
+                .expect("variant")
+                .value
+                .as_ref(),
+            &nested_ref("renamed")
         );
     }
 }

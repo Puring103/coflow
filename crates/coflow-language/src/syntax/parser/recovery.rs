@@ -92,11 +92,12 @@ impl Parser<'_> {
             if brace_depth == 0 && self.pos > declaration_start && self.at_declaration_start() {
                 return;
             }
-            match self.bump().kind {
+            match self.peek().kind {
                 TokenKind::LBrace => brace_depth = brace_depth.saturating_add(1),
                 TokenKind::RBrace => brace_depth = brace_depth.saturating_sub(1),
                 _ => {}
             }
+            self.bump();
         }
     }
 

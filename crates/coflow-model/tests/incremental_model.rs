@@ -559,9 +559,12 @@ fn new_template_cycle_preserves_full_diagnostics() {
         [("text", "good".into())],
     )];
     let previous = builder(&schema, &inputs, &[]).build().unwrap();
-    let cell_value::ParsedCell::Value(cycle) =
-        cell_value::parse_cell(&schema, "string", r#"f"{self.text}""#).unwrap()
-    else {
+    let cell_value::ParsedCell::Value(cycle) = cell_value::parse_schema_cell(
+        &schema,
+        &coflow_language::cft::CftValueType::String,
+        r#"f"{self.text}""#,
+    )
+    .unwrap() else {
         panic!("formatted string");
     };
     inputs[0].fields.insert("text".into(), cycle);

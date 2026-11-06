@@ -990,3 +990,184 @@ fn rewrites_polymorphic_objects_and_arrays_as_valid_cfd() {
     };
     assert_eq!(rewritten_additional.len(), expected_additional_len);
 }
+
+#[test]
+fn model_structural_and_dimension_writes_reuse_validated_candidates() {
+    let directory = tempfile::tempdir().expect("candidate artifacts");
+    let path = directory.path().join("items.cfd");
+    fs::write(&path, "a: Item { title: \"A\" }\n").expect("source");
+    let schema = std::sync::Arc::new(compile_schema("table Item { @localized title: string; }"));
+    let source = empty_source(&path);
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
+    writer
+        .insert_record(&InsertRecordRequest {
+            source: &source,
+            record_id: "b",
+            actual_type: "Item",
+            fields: &std::collections::BTreeMap::from([(
+                "title".into(),
+                CfdValue::String("B".into()),
+            )]),
+            schema: &schema,
+            before: None,
+        })
+        .expect("insert");
+    assert_eq!(writer.parse_count(), 2);
+    assert_eq!(writer.lower_count(), 0);
+    let inserted = writer
+        .take_preloaded_sources()
+        .expect("insert artifact")
+        .remove(&crate::normalize_path(&path))
+        .expect("lowered insert");
+    assert_eq!(inserted.records.len(), 2);
+    assert_eq!(writer.lower_count(), 1);
+    assert!(writer
+        .take_parsed_sources()
+        .expect("AST released")
+        .is_empty());
+
+    writer
+        .write_dimension_value(&crate::api::WriteDimensionValueRequest {
+            source: &source,
+            schema: crate::api::DimensionSourceSchema {
+                schema: &schema,
+                dimension: schema.resolve_dimension("language").expect("language"),
+                source_type: schema.resolve_type("Item").expect("type"),
+                source_field: schema.field("Item", "title").expect("field"),
+            },
+            source_id: &"b".try_into().expect("record id"),
+            variant: &"ja".try_into().expect("variant"),
+            new_value: Some(&CfdValue::String("日本語".into())),
+        })
+        .expect("dimension");
+    assert_eq!(writer.parse_count(), 4);
+    assert_eq!(writer.lower_count(), 1);
+    let loaded = writer
+        .take_preloaded_sources()
+        .expect("dimension artifact")
+        .remove(&crate::normalize_path(&path))
+        .expect("lowered dimension");
+    assert_ne!(loaded.dimensions, Vec::new());
+    assert_eq!(writer.lower_count(), 2);
+    let expected = crate::cfd_loader::CfdLoader::load_partial(
+        crate::api::CfdLoadContext {
+            schema: &schema,
+            source_text: Some(&loaded.source),
+        },
+        &source,
+    )
+    .expect("ordinary load");
+    assert_eq!(loaded.records, expected.records);
+    assert_eq!(loaded.dimensions, expected.dimensions);
+    assert_eq!(loaded.diagnostics, expected.diagnostics);
+    assert!(writer
+        .take_parsed_sources()
+        .expect("AST released")
+        .is_empty());
+}
+
+#[test]
+fn model_writer_lowers_only_latest_candidates_and_keeps_one_pending_ast() {
+    let directory = tempfile::tempdir().expect("bounded pending AST");
+    let a = directory.path().join("a.cfd");
+    let b = directory.path().join("b.cfd");
+    fs::write(&a, "a: Item { value: 1 }\n").expect("first source");
+    fs::write(&b, "b: Item { value: 2 }\n").expect("second source");
+    let schema = std::sync::Arc::new(compile_schema("table Item { value: int = 0; }"));
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
+    let insert = |path: &Path, id: &str| {
+        writer
+            .insert_record(&InsertRecordRequest {
+                source: &empty_source(path),
+                record_id: id,
+                actual_type: "Item",
+                fields: &std::collections::BTreeMap::new(),
+                schema: &schema,
+                before: None,
+            })
+            .expect("insert candidate");
+    };
+    let pending_count = || {
+        writer
+            .workspace
+            .lock()
+            .expect("workspace")
+            .files
+            .values()
+            .filter(|file| matches!(file.artifact, Some(super::CandidateArtifact::Parsed(_))))
+            .count()
+    };
+    for index in 0..10 {
+        insert(&a, &format!("added{index}"));
+    }
+    assert_eq!(writer.lower_count(), 0);
+    assert_eq!(pending_count(), 1);
+    insert(&b, "other");
+    assert_eq!(writer.lower_count(), 1);
+    assert_eq!(pending_count(), 1);
+
+    // 换回首个文件，并连续删除、恢复；最终降低必须对应恢复后的完整文本。
+    writer
+        .delete_record(&DeleteRecordRequest {
+            origin: &origin_for(&a),
+            record_id: "added0",
+            actual_type: "Item",
+        })
+        .expect("delete candidate");
+    assert_eq!(writer.lower_count(), 2);
+    let restore = writer
+        .take_record_restore(
+            &crate::RecordCoordinate::try_new("Item", "added0").expect("coordinate"),
+            directory.path(),
+        )
+        .expect("restore snapshot");
+    for patch in &restore.patches {
+        writer
+            .restore_source_patch(&directory.path().join(&patch.file), patch)
+            .expect("restore candidate");
+    }
+    assert_eq!(writer.lower_count(), 2);
+    assert_eq!(pending_count(), 1);
+    let loaded = writer.take_preloaded_sources().expect("latest artifacts");
+    assert_eq!(writer.lower_count(), 3);
+    assert_eq!(pending_count(), 0);
+    assert_eq!(loaded[&crate::normalize_path(&a)].records.len(), 11);
+    assert_eq!(loaded[&crate::normalize_path(&b)].records.len(), 2);
+    for (path, artifact) in &loaded {
+        let expected = crate::cfd_loader::CfdLoader::load_partial(
+            crate::api::CfdLoadContext {
+                schema: &schema,
+                source_text: Some(&artifact.source),
+            },
+            &empty_source(path),
+        )
+        .expect("independent load");
+        assert_eq!(artifact.records, expected.records);
+        assert_eq!(artifact.diagnostics, expected.diagnostics);
+    }
+    writer.publish().expect("publish final candidates");
+    writer
+        .write_source(&a, "a: Item { value: 3 }\n")
+        .expect("new candidate");
+    writer
+        .publish()
+        .expect("publication releases unconsumed AST");
+    assert!(writer
+        .workspace
+        .lock()
+        .expect("workspace")
+        .pending_model_source
+        .is_none());
+    writer
+        .write_source(&b, "b: Item { value: 4 }\n")
+        .expect("writer reused after publication");
+    assert_eq!(writer.lower_count(), 3);
+    assert_eq!(
+        writer
+            .take_preloaded_sources()
+            .expect("new generation")
+            .len(),
+        1
+    );
+    assert_eq!(writer.lower_count(), 4);
+}

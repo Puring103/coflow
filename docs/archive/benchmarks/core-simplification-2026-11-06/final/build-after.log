@@ -1,0 +1,10 @@
+   Compiling coflow-language v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-language)
+   Compiling coflow-model v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-model)
+   Compiling coflow-format v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-format)
+   Compiling coflow-codegen v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-codegen)
+   Compiling coflow-checker v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-checker)
+   Compiling coflow-codegen-csharp v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-codegen-csharp)
+   Compiling coflow-runtime v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-runtime)
+   Compiling coflow-lsp v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after\crates\coflow-lsp)
+   Compiling coflow v0.16.0 (C:\Users\wtlll\AppData\Local\Temp\coflow-core-perf-20261106-km2bdldx\after)
+    Finished `release` profile [optimized] target(s) in 46.79s

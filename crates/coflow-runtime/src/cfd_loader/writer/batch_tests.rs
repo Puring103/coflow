@@ -11,7 +11,7 @@ use crate::cfd_loader::load_cfd_model;
 use crate::{CfdDictKey, CfdFormattedString, CfdObject, CfdValue, RecordOrigin};
 use coflow_language::cft::{build_schema, parse_modules, CftFile, CftSchema, ModuleId};
 
-fn schema() -> CftSchema {
+fn schema() -> std::sync::Arc<CftSchema> {
     let modules = parse_modules([CftFile::from_source(
         ModuleId::from("main"),
         r#"
@@ -28,7 +28,7 @@ fn schema() -> CftSchema {
         }
     "#,
     )]);
-    build_schema(&modules).expect("batch schema")
+    std::sync::Arc::new(build_schema(&modules).expect("batch schema"))
 }
 
 fn field(name: &str) -> Segment {
@@ -92,7 +92,7 @@ fn compare_with_sequential(source: &str, edits: &[Edit], expected_parses: Option
             schema: &schema,
         })
         .collect::<Vec<_>>();
-    let sequential = CfdWriter::new();
+    let sequential = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     for (index, request) in requests.iter().enumerate() {
         sequential
             .write_field(request)
@@ -100,7 +100,7 @@ fn compare_with_sequential(source: &str, edits: &[Edit], expected_parses: Option
                 panic!("sequential field write {index}: {diagnostics:?}");
             });
     }
-    let writer = CfdWriter::new();
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     let outcomes = writer.write_field_batch(&requests).expect("field batch");
     assert_eq!(outcomes.len(), requests.len());
     let result = writer
@@ -346,7 +346,7 @@ fn failed_batch_keeps_original_workspace_and_reports_first_bad_operation() {
             schema: &schema,
         })
         .collect::<Vec<_>>();
-    let writer = CfdWriter::new();
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     let failure = writer
         .write_field_batch(&requests)
         .expect_err("invalid generated source");
@@ -394,7 +394,7 @@ fn check_prefix_node_budget(
             256, max_nodes, 10_000_000,
         ),
     };
-    let sequential = CfdWriter::new();
+    let sequential = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     let sequential_failure = requests.iter().enumerate().find_map(|(index, request)| {
         sequential
             .write_field_batch_with_options(std::slice::from_ref(request), options)
@@ -405,7 +405,7 @@ fn check_prefix_node_budget(
         sequential_failure.as_ref().map(|(index, _)| *index),
         expected_failure
     );
-    let batch = CfdWriter::new();
+    let batch = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     let result = batch.write_field_batch_with_options(&requests, options);
     if let Some((index, diagnostics)) = sequential_failure {
         let failure = result.expect_err("intermediate node budget must remain enforced");
@@ -513,7 +513,7 @@ fn batch_publication_detects_external_edits_without_overwriting_them() {
     let schema = schema();
     let path_segments = [field("number")];
     let value = CfdValue::Int(2);
-    let writer = CfdWriter::new();
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     writer
         .write_field_batch(&[WriteCellRequest {
             origin: &origin,
@@ -548,7 +548,7 @@ fn later_insert_does_not_hide_an_earlier_source_expression_error() {
         rendered: String::new(),
     });
     let value = CfdValue::Int(2);
-    let writer = CfdWriter::new();
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     let failure = writer
         .write_field_batch(&[
             WriteCellRequest {
@@ -575,7 +575,7 @@ fn later_insert_does_not_hide_an_earlier_source_expression_error() {
 }
 
 #[test]
-fn later_text_staging_discards_the_previous_lowered_candidate() {
+fn later_text_staging_replaces_the_previous_lowered_candidate() {
     let directory = tempfile::tempdir().expect("source generation");
     let path = directory.path().join("items.cfd");
     fs::write(&path, "a: Item { number: 1 }\n").expect("seed");
@@ -586,7 +586,7 @@ fn later_text_staging_discards_the_previous_lowered_candidate() {
     let schema = schema();
     let segments = [field("number")];
     let value = CfdValue::Int(2);
-    let writer = CfdWriter::new();
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
@@ -601,9 +601,17 @@ fn later_text_staging_discards_the_previous_lowered_candidate() {
     writer
         .write_source(&path, "a: Item { number: 99 }\n")
         .expect("later structural write");
-    assert!(writer
+    let loaded = writer
         .take_preloaded_sources()
-        .expect("invalidated lowered source")
+        .expect("latest lowered source")
+        .remove(&crate::normalize_path(&path))
+        .expect("candidate");
+    assert_eq!(loaded.source.as_ref(), "a: Item { number: 99 }\n");
+    assert_eq!(writer.parse_count(), 3);
+    assert_eq!(writer.lower_count(), 1);
+    assert!(writer
+        .take_parsed_sources()
+        .expect("AST released")
         .is_empty());
     writer.publish().expect("publish latest text");
     assert_eq!(
@@ -628,7 +636,7 @@ fn preloaded_source_keeps_unrelated_lowering_diagnostics() {
     let schema = schema();
     let segments = [field("number")];
     let value = CfdValue::Int(2);
-    let writer = CfdWriter::new();
+    let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
     writer
         .write_field(&WriteCellRequest {
             origin: &origin,
@@ -683,7 +691,7 @@ fn deferred_parent_materialization_matches_eager_writer_text() {
             crate::api::FieldMaterialization::Record(&object),
             crate::api::FieldMaterialization::Value(&eager),
         ] {
-            let writer = CfdWriter::new();
+            let writer = CfdWriter::for_model(std::sync::Arc::clone(&schema));
             writer
                 .write_field(&WriteCellRequest {
                     origin: &origin,

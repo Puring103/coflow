@@ -60,50 +60,53 @@ impl Parser<'_> {
     }
 
     fn parse_default_primary(&mut self) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
+        let token_span = self.peek().span;
+        match &mut self.tokens[self.pos].kind {
             TokenKind::Int(value) => {
+                let value = *value;
                 self.bump();
-                self.node(StructureKind::DefaultValue, token.span, [], || {
+                self.node(StructureKind::DefaultValue, token_span, [], || {
                     DefaultExpr {
                         kind: DefaultExprKind::Int(value),
-                        span: token.span,
+                        span: token_span,
                     }
                 })
             }
             TokenKind::Float(value) => {
+                let value = *value;
                 self.bump();
-                self.node(StructureKind::DefaultValue, token.span, [], || {
+                self.node(StructureKind::DefaultValue, token_span, [], || {
                     DefaultExpr {
                         kind: DefaultExprKind::Float(value),
-                        span: token.span,
+                        span: token_span,
                     }
                 })
             }
             TokenKind::True => {
                 self.bump();
-                self.node(StructureKind::DefaultValue, token.span, [], || {
+                self.node(StructureKind::DefaultValue, token_span, [], || {
                     DefaultExpr {
                         kind: DefaultExprKind::Bool(true),
-                        span: token.span,
+                        span: token_span,
                     }
                 })
             }
             TokenKind::False => {
                 self.bump();
-                self.node(StructureKind::DefaultValue, token.span, [], || {
+                self.node(StructureKind::DefaultValue, token_span, [], || {
                     DefaultExpr {
                         kind: DefaultExprKind::Bool(false),
-                        span: token.span,
+                        span: token_span,
                     }
                 })
             }
             TokenKind::String(value) => {
+                let value = std::mem::take(value);
                 self.bump();
-                self.node(StructureKind::DefaultValue, token.span, [], || {
+                self.node(StructureKind::DefaultValue, token_span, [], || {
                     DefaultExpr {
                         kind: DefaultExprKind::String(value),
-                        span: token.span,
+                        span: token_span,
                     }
                 })
             }
@@ -112,7 +115,7 @@ impl Parser<'_> {
             TokenKind::LBracket => self.parse_array_default(),
             TokenKind::LBrace => self.parse_braced_default(),
             TokenKind::Amp => self.parse_record_reference_default(),
-            TokenKind::Minus => self.parse_negative_default(token.span.start),
+            TokenKind::Minus => self.parse_negative_default(token_span.start),
             TokenKind::LParen => {
                 let opener = self.expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?;
                 let mut value = self.nested(StructureKind::DefaultValue, opener, |parser| {
@@ -152,18 +155,26 @@ impl Parser<'_> {
             .expect_simple(&TokenKind::FormattedStringEnd, CftErrorCode::ExpectedToken)?
             .end;
         let span = Span::new(start, end);
-        let source = self.source[start..end].to_string();
         // 默认值与 CFD 共用基础插值语法，避免表达式和调用进入数据加载路径。
-        let (_, errors) = crate::cfd::parse_cfd(&format!("value: Value {{ text: {source} }}"));
-        if let Some(error) = errors.first() {
-            return self.err_at(
-                CftErrorCode::InvalidDefaultExpression,
-                span,
-                error.message.clone(),
-            );
-        }
+        let value = match crate::cfd::parse_value_span(self.source, span) {
+            Ok(crate::cfd::CfdValue::FormattedString(value)) => value,
+            Ok(_) => {
+                return self.err_at(
+                    CftErrorCode::InvalidDefaultExpression,
+                    span,
+                    "expected a formatted string default",
+                )
+            }
+            Err(error) => {
+                return self.err_at(
+                    CftErrorCode::InvalidDefaultExpression,
+                    error.span,
+                    error.message,
+                )
+            }
+        };
         self.node(StructureKind::DefaultValue, span, [], || DefaultExpr {
-            kind: DefaultExprKind::FormattedString(source),
+            kind: DefaultExprKind::FormattedString(std::sync::Arc::new(value)),
             span,
         })
     }
@@ -192,9 +203,8 @@ impl Parser<'_> {
         start: usize,
     ) -> Result<Parsed<DefaultExpr>, CftDiagnostics> {
         self.bump();
-        let next = self.peek().clone();
-        let span = Span::new(start, next.span.end);
-        match next.kind {
+        let span = Span::new(start, self.peek().span.end);
+        match self.peek().kind {
             TokenKind::Int(value) => {
                 self.bump();
                 let Some(negated) = value.checked_neg() else {
@@ -375,7 +385,7 @@ impl Parser<'_> {
         let opener = self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let start = opener.start;
         if self.at(&TokenKind::RBrace) {
-            let end = self.bump().span.end;
+            let end = self.bump().end;
             let span = Span::new(start, end);
             return self.node(StructureKind::DefaultValue, opener, [], || DefaultExpr {
                 kind: DefaultExprKind::Object(Vec::new()),

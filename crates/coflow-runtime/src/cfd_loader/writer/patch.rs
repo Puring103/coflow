@@ -273,7 +273,6 @@ fn insert_field_patch(
 }
 
 fn has_independent_syntax(value: &CfdValue, rendered: &str) -> bool {
-    const PREFIX: &str = "patch: Patch { value: ";
     fn contains_source(value: &CfdValue) -> bool {
         match value {
             CfdValue::FormattedString(_) => true,
@@ -289,12 +288,8 @@ fn has_independent_syntax(value: &CfdValue, rendered: &str) -> bool {
     }
     // 模板携带原始源码。只有封闭的单个值才能合批，防止后续补丁意外修复
     // 本应在当前操作报告的未闭合字符串、注释或额外字段。
-    let wrapped = format!("{PREFIX}{rendered} }}");
-    let (ast, diagnostics) = coflow_language::cfd::parse_cfd(&wrapped);
-    diagnostics.is_empty()
-        && ast.records.len() == 1
-        && ast.records[0].fields.len() == 1
-        && ast.records[0].fields[0].value.span().end == PREFIX.len() + rendered.len()
+    coflow_language::cfd::parse_cfd_value(rendered)
+        .is_ok_and(|value| value.span().end == rendered.len())
 }
 
 fn replacement_serialization_depth(source: &str, offset: usize, value: &CfdValue) -> usize {

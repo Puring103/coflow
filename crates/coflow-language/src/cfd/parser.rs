@@ -19,6 +19,29 @@ pub(crate) fn parse(source: &str, options: CfdParseOptions) -> (CfdAst, Vec<CfdS
     (ast, p.diagnostics)
 }
 
+pub(super) fn parse_value_span(
+    source: &str,
+    span: Span,
+    options: CfdParseOptions,
+) -> Result<CfdValue, CfdSyntaxDiagnostic> {
+    if source.get(span.start..span.end).is_none() {
+        return Err(CfdSyntaxDiagnostic {
+            message: "invalid CFD value source span".to_string(),
+            span,
+        });
+    }
+    // 限定可读取的结束位置，起始位置仍使用原文件坐标，不构造虚拟记录。
+    let mut parser = Parser::new(&source[..span.end], options);
+    parser.pos = span.start;
+    parser.skip_ws_and_comments();
+    let value = parser.parse_value()?;
+    parser.skip_ws_and_comments();
+    if !parser.is_eof() {
+        return Err(parser.error("expected exactly one CFD value"));
+    }
+    Ok(value)
+}
+
 enum TopLevel {
     Records(Vec<CfdRecord>),
     Dimension(CfdDimensionBlock),

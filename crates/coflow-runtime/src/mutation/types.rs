@@ -306,18 +306,12 @@ pub(crate) enum PreparedMutationOp {
         fields: BTreeMap<String, CfdValue>,
     },
     SetField {
-        record: RecordCoordinate,
-        write_record: RecordCoordinate,
-        write_file: String,
-        path: Vec<crate::api::WriteFieldPathSegment>,
+        target: crate::writes::WriteTarget,
         value: CfdValue,
         materialized_top_level: Option<std::sync::Arc<crate::data_model::CfdObject>>,
     },
     UnsetField {
-        record: RecordCoordinate,
-        write_record: RecordCoordinate,
-        write_file: String,
-        path: Vec<CfdPathSegment>,
+        target: crate::writes::WriteTarget,
     },
     WriteDimensionValue {
         record: RecordCoordinate,
@@ -353,11 +347,6 @@ pub(crate) enum PreparedMutationOp {
         record: RecordCoordinate,
         write_file: String,
         path: CfdPath,
-    },
-    FoldedRenameRecord {
-        old_record: RecordCoordinate,
-        new_record: RecordCoordinate,
-        write_file: String,
     },
     FoldedDeleteRecord {
         record: RecordCoordinate,
@@ -395,15 +384,15 @@ impl PreparedMutationOp {
             Self::CancelledInsert { record, write_file } => {
                 located("insert_record", record, write_file)
             }
-            Self::SetField {
-                record, write_file, ..
+            Self::SetField { target, .. } => {
+                located("set_field", &target.coordinate, &target.display_path)
             }
-            | Self::FoldedSetField {
+            Self::FoldedSetField {
                 record, write_file, ..
             } => located("set_field", record, write_file),
-            Self::UnsetField {
-                record, write_file, ..
-            } => located("unset_field", record, write_file),
+            Self::UnsetField { target } => {
+                located("unset_field", &target.coordinate, &target.display_path)
+            }
             Self::WriteDimensionValue {
                 record,
                 new_value,
@@ -429,15 +418,6 @@ impl PreparedMutationOp {
                     new_id.clone(),
                 )),
                 report_file.clone(),
-            ),
-            Self::FoldedRenameRecord {
-                new_record,
-                write_file,
-                ..
-            } => (
-                "rename_record",
-                Some(new_record.clone()),
-                Some(write_file.clone()),
             ),
             Self::DeleteRecord {
                 record,

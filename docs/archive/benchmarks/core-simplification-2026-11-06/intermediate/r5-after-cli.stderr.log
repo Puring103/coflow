@@ -1,0 +1,4 @@
+RUN batch_same_file records=10000 files=10
+PASS batch_same_file p50=1863.309ms
+RUN batch_cross_file records=10000 files=10
+PASS batch_cross_file p50=2251.807ms

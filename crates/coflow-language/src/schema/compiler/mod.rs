@@ -48,6 +48,7 @@ pub(super) struct SymbolTable<'a> {
 pub(super) struct ResolvedTypes<'a> {
     symbol_table: SymbolTable<'a>,
     diagnostics: Vec<CftDiagnostic>,
+    declared_field_types: BTreeMap<String, Vec<inferred_type::InferredType>>,
     full_fields: BTreeMap<String, BTreeMap<String, FieldInfo>>,
     inheritance_chains: BTreeMap<String, Vec<String>>,
     resolved_aliases: BTreeMap<String, inferred_type::InferredType>,
@@ -108,6 +109,7 @@ impl<'a> ResolvedTypes<'a> {
         Self {
             symbol_table,
             diagnostics: Vec::new(),
+            declared_field_types: BTreeMap::new(),
             full_fields: BTreeMap::new(),
             inheritance_chains: BTreeMap::new(),
             resolved_aliases: BTreeMap::new(),

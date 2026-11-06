@@ -117,20 +117,22 @@ impl Parser<'_> {
                 break;
             }
         }
-        let declaration = self.bump();
-        let kind = match declaration.kind {
+        let declaration_span = self.peek().span;
+        let kind = match self.peek().kind {
             TokenKind::Table => Some(TypeKind::Table),
             TokenKind::Data => Some(TypeKind::Data),
             TokenKind::Singleton => Some(TypeKind::Singleton),
             TokenKind::Type => None,
             _ => {
+                self.bump();
                 return self.err_at(
                     CftErrorCode::ExpectedToken,
-                    declaration.span,
+                    declaration_span,
                     "expected table, data, singleton, or type alias",
-                )
+                );
             }
         };
+        self.bump();
         let name = self.expect_ident()?;
         let Some(kind) = kind else {
             self.expect_simple(&TokenKind::Equal, CftErrorCode::ExpectedToken)?;
@@ -324,24 +326,24 @@ impl Parser<'_> {
     }
 
     fn expect_type_close(&mut self) -> Result<Span, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
-            TokenKind::Greater => Ok(self.bump().span),
+        let span = self.peek().span;
+        match self.peek().kind {
+            TokenKind::Greater => Ok(self.bump()),
             TokenKind::GreaterGreater => {
-                let split = token.span.start + 1;
+                let split = span.start + 1;
                 self.tokens[self.pos] = Token {
                     kind: TokenKind::Greater,
-                    span: Span::new(split, token.span.end),
+                    span: Span::new(split, span.end),
                 };
-                Ok(Span::new(token.span.start, split))
+                Ok(Span::new(span.start, split))
             }
             TokenKind::GreaterEq => {
-                let split = token.span.start + 1;
+                let split = span.start + 1;
                 self.tokens[self.pos] = Token {
                     kind: TokenKind::Equal,
-                    span: Span::new(split, token.span.end),
+                    span: Span::new(split, span.end),
                 };
-                Ok(Span::new(token.span.start, split))
+                Ok(Span::new(span.start, split))
             }
             _ => self.err(CftErrorCode::ExpectedToken, "expected `>`"),
         }

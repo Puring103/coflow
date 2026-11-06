@@ -48,14 +48,20 @@ pub(crate) const CFD_WRITER_CAPABILITIES: WriterCapabilities = WriterCapabilitie
 /// Writer for `.cfd` text sources.
 #[derive(Debug, Default)]
 pub(crate) struct CfdWriter {
-    workspace: Arc<Mutex<WriteWorkspace>>,
+    workspace: Mutex<WriteWorkspace>,
+    model_schema: Option<Arc<coflow_language::cft::CftSchema>>,
     #[cfg(test)]
     field_batch_parses: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    parses: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    lowerings: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Debug, Default)]
 struct WriteWorkspace {
     deletions: Vec<crate::SourceRestorePatch>,
+    pending_model_source: Option<std::path::PathBuf>,
     files: std::collections::BTreeMap<std::path::PathBuf, WorkspaceFile>,
 }
 
@@ -64,16 +70,26 @@ struct WorkspaceFile {
     original: Option<Vec<u8>>,
     current: String,
     deleted: bool,
-    preloaded: Option<crate::api::LoadedCfdSource>,
+    artifact: Option<CandidateArtifact>,
+}
+
+/// 每个调用方只保存下一阶段真正使用的产物，模型重建不累积语法树。
+#[derive(Debug)]
+enum CandidateArtifact {
+    Parsed(CfdAst),
+    Lowered(crate::api::LoadedCfdSource),
 }
 
 impl CfdWriter {
     #[must_use]
     pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn for_model(schema: Arc<coflow_language::cft::CftSchema>) -> Self {
         Self {
-            workspace: Arc::new(Mutex::new(WriteWorkspace::default())),
-            #[cfg(test)]
-            field_batch_parses: std::sync::atomic::AtomicUsize::new(0),
+            model_schema: Some(schema),
+            ..Self::default()
         }
     }
 
@@ -111,45 +127,70 @@ impl CfdWriter {
                 original: Some(original),
                 current: text.clone(),
                 deleted: false,
-                preloaded: None,
+                artifact: None,
             },
         );
         drop(workspace);
         Ok(text)
     }
 
+    #[cfg(test)]
+    pub(crate) fn parse_count(&self) -> usize {
+        self.parses.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lower_count(&self) -> usize {
+        self.lowerings.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(clippy::unused_self, reason = "测试记录真实解析次数。")
+    )]
+    fn parse_source(&self, path: &Path, text: &str) -> Result<CfdAst, DiagnosticSet> {
+        #[cfg(test)]
+        self.parses
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let (ast, diagnostics) = parse_cfd(text);
+        ensure_parse_ok(path, text, &diagnostics)?;
+        Ok(ast)
+    }
+
     fn read_or_parse(&self, path: &Path) -> Result<(String, CfdAst), DiagnosticSet> {
         let text = self.read_source(path)?;
-        let (ast, diagnostics) = parse_cfd(&text);
-        ensure_parse_ok(path, &text, &diagnostics)?;
+        let ast = self.parse_source(path, &text)?;
         Ok((text, ast))
     }
 
     fn write_source(&self, path: &Path, new_source: &str) -> Result<(), DiagnosticSet> {
-        let (_, diagnostics) = parse_cfd(new_source);
-        ensure_parse_ok(path, new_source, &diagnostics)?;
-        self.stage_source(path, new_source.to_string())
+        let ast = self.parse_source(path, new_source)?;
+        self.stage_parsed_source(path, new_source.to_string(), ast)
     }
 
-    /// 已经校验的候选文本直接转移所有权，避免批次收尾再次解析和复制整份源码。
-    fn stage_source(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
-        self.stage_preloaded_source(path, new_source, None)
-    }
-
-    fn stage_preloaded_source(
+    /// 候选文本和验证后的语法树成对传递；模型侧只暂存当前文件的一棵 AST。
+    fn stage_parsed_source(
         &self,
         path: &Path,
         new_source: String,
-        preloaded: Option<crate::api::LoadedCfdSource>,
+        ast: CfdAst,
     ) -> Result<(), DiagnosticSet> {
         let mut workspace = self.workspace.lock().map_err(|_| {
             DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
+        if workspace
+            .pending_model_source
+            .as_ref()
+            .is_some_and(|pending| pending != path)
+        {
+            self.lower_pending_source(&mut workspace)?;
+        }
+        let artifact = CandidateArtifact::Parsed(ast);
         if let Some(file) = workspace.files.get_mut(path) {
             file.deleted = false;
             file.current = new_source;
-            // 同一文件的结构/维度操作会替换文本，先前字段批次的降低结果随之失效。
-            file.preloaded = preloaded;
+            // 文本与解析产物一起替换，结构和维度写入也复用最终候选解析。
+            file.artifact = Some(artifact);
         } else {
             let original = match std::fs::read(path) {
                 Ok(bytes) => Some(bytes),
@@ -167,11 +208,47 @@ impl CfdWriter {
                     original,
                     current: new_source,
                     deleted: false,
-                    preloaded,
+                    artifact: Some(artifact),
                 },
             );
         }
+        if self.model_schema.is_some() {
+            // 同文件后续候选直接替换；换文件或重建接收产物时才降低，避免重复扫描失效版本。
+            workspace.pending_model_source = Some(path.to_path_buf());
+        }
         drop(workspace);
+        Ok(())
+    }
+
+    fn lower_pending_source(&self, workspace: &mut WriteWorkspace) -> Result<(), DiagnosticSet> {
+        let Some(path) = workspace.pending_model_source.take() else {
+            return Ok(());
+        };
+        let Some(schema) = &self.model_schema else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "pending model source requires a schema",
+            )));
+        };
+        let Some(file) = workspace.files.get_mut(&path) else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "pending model source disappeared",
+            )));
+        };
+        let Some(CandidateArtifact::Parsed(ast)) = file.artifact.take() else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "pending model source lost its validated AST",
+            )));
+        };
+        #[cfg(test)]
+        self.lowerings
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let loaded =
+            crate::cfd_loader::CfdLoader::load_parsed_partial(schema, &path, &file.current, &ast);
+        drop(ast);
+        file.artifact = Some(CandidateArtifact::Lowered(loaded));
         Ok(())
     }
 
@@ -185,13 +262,41 @@ impl CfdWriter {
         let mut workspace = self.workspace.lock().map_err(|_| {
             DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
         })?;
+        self.lower_pending_source(&mut workspace)?;
         let sources = workspace
             .files
             .iter_mut()
-            .filter_map(|(path, file)| {
-                file.preloaded
-                    .take()
-                    .map(|loaded| (crate::normalize_path(path), loaded))
+            .filter_map(|(path, file)| match file.artifact.take() {
+                Some(CandidateArtifact::Lowered(loaded)) => {
+                    Some((crate::normalize_path(path), loaded))
+                }
+                other => {
+                    file.artifact = other;
+                    None
+                }
+            })
+            .collect();
+        drop(workspace);
+        Ok(sources)
+    }
+
+    /// CLI 候选缓存沿用 writer 验证的语法树，避免无用降低和发布后的重复解析。
+    pub(crate) fn take_parsed_sources(
+        &self,
+    ) -> Result<std::collections::BTreeMap<std::path::PathBuf, CfdAst>, DiagnosticSet> {
+        let mut workspace = self.workspace.lock().map_err(|_| {
+            DiagnosticSet::one(diag("CFD-WRITE", "mutation write workspace is poisoned"))
+        })?;
+        self.lower_pending_source(&mut workspace)?;
+        let sources = workspace
+            .files
+            .iter_mut()
+            .filter_map(|(path, file)| match file.artifact.take() {
+                Some(CandidateArtifact::Parsed(ast)) => Some((crate::normalize_path(path), ast)),
+                other => {
+                    file.artifact = other;
+                    None
+                }
             })
             .collect();
         drop(workspace);
@@ -253,7 +358,7 @@ impl CfdWriter {
                     original: update.expected,
                     current,
                     deleted: false,
-                    preloaded: None,
+                    artifact: None,
                 },
             );
         }
@@ -317,6 +422,7 @@ fn publish_workspace(
         })
         .collect();
     workspace.files.clear();
+    workspace.pending_model_source = None;
     Ok(published)
 }
 

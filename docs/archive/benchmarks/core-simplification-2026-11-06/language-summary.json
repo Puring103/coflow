@@ -1,0 +1,35 @@
+{
+  "baseline_revision": "06a3ac49",
+  "total_cases": 1337,
+  "identical_nonpanic_results": 1260,
+  "successful_template_representation_only": 60,
+  "intended_observable_changes": {
+    "narrowed_template_diagnostic_span": 4,
+    "trailing_comment_newly_accepted": 4,
+    "extra_fields_or_records_newly_rejected": 2,
+    "invalid_input_still_rejected_with_updated_message": 3
+  },
+  "unexplained_new_regressions": 0,
+  "known_baseline_panics_present_in_after": [
+    "abstract",
+    "abstract ",
+    "sealed",
+    "sealed "
+  ],
+  "coverage": {
+    "parser_and_truncated_source": 425,
+    "field_type_unknown_alias_inheritance_diagnostics": 28,
+    "parser_and_schema_structure_budget_cases": 864,
+    "formatted_default_cases": 6,
+    "formatted_cell_cases": 14
+  },
+  "limitations": [
+    "Deterministic targeted corpus, not exhaustive fuzzing.",
+    "Four known baseline EOF modifier panics are retained and excluded from successful semantic comparisons.",
+    "Template Debug representation changed as intended; budget acceptance and diagnostic boundaries remained equal.",
+    "Performance conclusions require the separately recorded timing samples."
+  ],
+  "after_snapshot": "final-after",
+  "after_probe_sha256": "7b34fd552e7900d185142abaaa2492a6cc46b3b7b4683ba5baa27678fb6eb57f",
+  "initial_after_result_changes": 0
+}

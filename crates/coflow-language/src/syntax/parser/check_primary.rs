@@ -136,58 +136,62 @@ impl Parser<'_> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Parsed<CheckExpr>, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
+        let token_span = self.peek().span;
+        match &mut self.tokens[self.pos].kind {
             TokenKind::Int(value) => {
+                let value = *value;
                 self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
+                self.node(StructureKind::CheckAst, token_span, [], || CheckExpr {
                     kind: CheckExprKind::Int(value),
-                    span: token.span,
+                    span: token_span,
                 })
             }
             TokenKind::Float(value) => {
+                let value = *value;
                 self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
+                self.node(StructureKind::CheckAst, token_span, [], || CheckExpr {
                     kind: CheckExprKind::Float(value),
-                    span: token.span,
+                    span: token_span,
                 })
             }
             TokenKind::True => {
                 self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
+                self.node(StructureKind::CheckAst, token_span, [], || CheckExpr {
                     kind: CheckExprKind::Bool(true),
-                    span: token.span,
+                    span: token_span,
                 })
             }
             TokenKind::False => {
                 self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
+                self.node(StructureKind::CheckAst, token_span, [], || CheckExpr {
                     kind: CheckExprKind::Bool(false),
-                    span: token.span,
+                    span: token_span,
                 })
             }
             TokenKind::String(value) => {
+                let value = std::mem::take(value);
                 self.bump();
-                self.node(StructureKind::CheckAst, token.span, [], || CheckExpr {
+                self.node(StructureKind::CheckAst, token_span, [], || CheckExpr {
                     kind: CheckExprKind::String(value),
-                    span: token.span,
+                    span: token_span,
                 })
             }
             TokenKind::FormattedStringStart => self.parse_formatted_string(),
             TokenKind::Ident(value) => {
+                let value = std::mem::take(value);
                 self.bump();
                 let first = NameRef {
                     name: value,
-                    span: token.span,
+                    span: token_span,
                 };
                 let mut segments = vec![first];
-                let mut end = token.span.end;
+                let mut end = token_span.end;
                 while self.eat(&TokenKind::DoubleColon).is_some() {
                     let segment = self.expect_ident()?;
                     end = segment.span.end;
                     segments.push(segment);
                 }
-                let span = Span::new(token.span.start, end);
+                let span = Span::new(token_span.start, end);
                 if segments.len() > 2 {
                     return self.err_at(
                         CftErrorCode::InvalidCheckStatement,
@@ -237,14 +241,15 @@ impl Parser<'_> {
         let mut segments = Vec::new();
         let mut depths = Vec::new();
         while !self.at(&TokenKind::FormattedStringEnd) {
-            let token = self.peek().clone();
-            match token.kind {
+            let token_span = self.peek().span;
+            match &mut self.tokens[self.pos].kind {
                 TokenKind::FormattedStringText(value) => {
+                    let value = std::mem::take(value);
                     self.bump();
-                    segments.push(CheckFormatSegment::Text(value, token.span));
+                    segments.push(CheckFormatSegment::Text(value, token_span));
                 }
                 TokenKind::FormattedStringExprStart => {
-                    let opener = self.bump().span;
+                    let opener = self.bump();
                     let expr = self.nested(StructureKind::CheckAst, opener, |parser| {
                         parser.parse_or_expr()
                     })?;

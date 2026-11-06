@@ -1,8 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::api::DiagnosticSet;
-use crate::data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
-use crate::RecordId;
+use crate::data_model::{CfdEnumValue, CfdObject, CfdValue};
 use coflow_language::cft::{
     CftField, CftSchema, CftSchemaDefaultValue, CftValueType, FieldName, TypeName,
     ValueDependencyMode,
@@ -53,11 +52,7 @@ pub(crate) fn declared_field_default(
     materializer.schema_only = true;
     field.default.as_ref().map_or(Ok(None), |default| {
         materializer
-            .materialize_schema_default(
-                &field.value_type,
-                default,
-                DefaultMaterialization::EditableShape,
-            )
+            .materialize_schema_default(&field.value_type, default)
             .map(Some)
     })
 }
@@ -66,35 +61,9 @@ pub(crate) fn complete_declared_defaults(
     schema: &CftSchema,
     value: &mut CfdValue,
 ) -> Result<(), DiagnosticSet> {
-    match value {
-        CfdValue::Object(object) => {
-            let provided = object.fields.keys().map(ToString::to_string).collect();
-            let mut materializer = DefaultValueMaterializer::new(schema);
-            materializer.schema_only = true;
-            let defaults = materializer.fields_for_type(
-                object.actual_type(),
-                DefaultMaterialization::EditableShape,
-                Some(&provided),
-            )?;
-            object.fields.extend(defaults);
-            for value in object.fields.values_mut() {
-                complete_declared_defaults(schema, value)?;
-            }
-        }
-        CfdValue::OptionSome(value) => complete_declared_defaults(schema, value)?,
-        CfdValue::Array(values) => {
-            for value in values {
-                complete_declared_defaults(schema, value)?;
-            }
-        }
-        CfdValue::Dict(values) => {
-            for (_, value) in values {
-                complete_declared_defaults(schema, value)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
+    let mut materializer = DefaultValueMaterializer::new(schema);
+    materializer.schema_only = true;
+    materializer.complete_value_fields(value)
 }
 
 pub(super) fn default_missing_fields_for_type(
@@ -189,11 +158,9 @@ impl<'a> DefaultValueMaterializer<'a> {
             }
             let value = if self.schema_only {
                 match &field.default {
-                    Some(default) => Some(self.materialize_schema_default(
-                        &field.value_type,
-                        default,
-                        materialization,
-                    )?),
+                    Some(default) => {
+                        Some(self.materialize_schema_default(&field.value_type, default)?)
+                    }
                     None => None,
                 }
             } else {
@@ -260,11 +227,7 @@ impl<'a> DefaultValueMaterializer<'a> {
     fn editable_for_field(&mut self, field: &CftField) -> Result<Option<CfdValue>, DiagnosticSet> {
         if let Some(default) = field.default.as_ref() {
             return self
-                .materialize_schema_default(
-                    &field.value_type,
-                    default,
-                    DefaultMaterialization::EditableShape,
-                )
+                .materialize_schema_default(&field.value_type, default)
                 .map(Some);
         }
         // 引用和抽象 object 没有无歧义的类型默认值；省略后由编辑器暴露缺失状态。
@@ -285,11 +248,7 @@ impl<'a> DefaultValueMaterializer<'a> {
 
     fn create_field_draft(&mut self, field: &CftField) -> CreateRecordFieldDraft {
         if let Some(default) = field.default.as_ref() {
-            return match self.materialize_schema_default(
-                &field.value_type,
-                default,
-                DefaultMaterialization::EditableShape,
-            ) {
+            return match self.materialize_schema_default(&field.value_type, default) {
                 Ok(value) => CreateRecordFieldDraft {
                     name: field.name.to_string(),
                     value: Some(value),
@@ -321,131 +280,49 @@ impl<'a> DefaultValueMaterializer<'a> {
         }
     }
 
-    // 默认值物化与类型枚举逐项对应，集中处理可避免递归规则分散后产生语义偏差。
-    #[allow(clippy::too_many_lines)]
     fn materialize_schema_default(
         &mut self,
         ty: &CftValueType,
         default: &CftSchemaDefaultValue,
-        materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
-        match default {
-            CftSchemaDefaultValue::OptionNone => Ok(CfdValue::OptionNone),
-            CftSchemaDefaultValue::OptionSome(value) => match ty {
-                CftValueType::Option(inner) => self
-                    .materialize_schema_default(inner, value, materialization)
-                    .map(|value| CfdValue::OptionSome(Box::new(value))),
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::Int(value) => Ok(CfdValue::Int(*value)),
-            CftSchemaDefaultValue::Float(value) => Ok(CfdValue::Float(*value)),
-            CftSchemaDefaultValue::Bool(value) => Ok(CfdValue::Bool(*value)),
-            CftSchemaDefaultValue::String(value) => Ok(CfdValue::String(value.clone())),
-            CftSchemaDefaultValue::FormattedString(source) => Ok(CfdValue::FormattedString(
-                crate::data_model::CfdFormattedString {
-                    source: source.clone(),
-                    rendered: source.clone(),
-                },
-            )),
-            CftSchemaDefaultValue::Enum {
-                enum_name,
-                variant,
-                value,
-            } => {
-                let mut enum_value = self
-                    .schema
-                    .enum_value_from_int(enum_name, *value)
-                    .map_or_else(
-                        || CfdEnumValue {
-                            enum_name: enum_name.clone(),
-                            variant: Some(variant.clone()),
-                            value: *value,
-                        },
-                        Into::into,
-                    );
-                if self
-                    .schema
-                    .resolve_enum(enum_name)
-                    .is_some_and(|schema_enum| schema_enum.is_flag)
-                {
-                    enum_value.variant = None;
+        let loaded = coflow_model::lower_schema_default(self.schema, ty, default)
+            .map_err(|message| one_mutation_error("MUTATION-DEFAULT", message))?;
+        let mut value = crate::value_drafts::convert_default(self.schema, ty, loaded)
+            .map_err(|message| one_mutation_error("MUTATION-DEFAULT", message))?;
+        // 显式字段先进入值树，再按调用方策略补齐，避免展开被 None 等值终止的默认递归。
+        self.complete_value_fields(&mut value)?;
+        Ok(value)
+    }
+
+    fn complete_value_fields(&mut self, value: &mut CfdValue) -> Result<(), DiagnosticSet> {
+        match value {
+            CfdValue::Object(object) => {
+                // 已提供的子对象也沿用当前策略；生成的新字段已递归完成，无需重复遍历。
+                for value in object.fields.values_mut() {
+                    self.complete_value_fields(value)?;
                 }
-                Ok(CfdValue::Enum(enum_value))
+                let provided = object.fields.keys().map(ToString::to_string).collect();
+                let defaults = self.fields_for_type(
+                    object.actual_type(),
+                    DefaultMaterialization::EditableShape,
+                    Some(&provided),
+                )?;
+                object.fields.extend(defaults);
             }
-            CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
-            CftSchemaDefaultValue::EmptyObject => match ty {
-                CftValueType::Object(name) => {
-                    let fields = self.fields_for_type(name, materialization, None)?;
-                    Ok(CfdValue::Object(Box::new(CfdObject::new(
-                        name.clone(),
-                        fields,
-                    ))))
+            CfdValue::OptionSome(value) => self.complete_value_fields(value)?,
+            CfdValue::Array(values) => {
+                for value in values {
+                    self.complete_value_fields(value)?;
                 }
-                CftValueType::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::Array(values) => match ty {
-                CftValueType::Array(inner) => values
-                    .iter()
-                    .map(|value| self.materialize_schema_default(inner, value, materialization))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(CfdValue::Array),
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::Dictionary(entries) => match ty {
-                CftValueType::Dict(key_type, value_type) => {
-                    let mut values = Vec::with_capacity(entries.len());
-                    for (key, value) in entries {
-                        let key =
-                            self.materialize_schema_default(key_type, key, materialization)?;
-                        let key = match key {
-                            CfdValue::Int(value) => CfdDictKey::Int(value),
-                            CfdValue::String(value) => CfdDictKey::String(value),
-                            CfdValue::Enum(value) => CfdDictKey::Enum(value),
-                            _ => return self.zero_for_ty(ty, materialization),
-                        };
-                        let value =
-                            self.materialize_schema_default(value_type, value, materialization)?;
-                        values.push((key, value));
-                    }
-                    Ok(CfdValue::Dict(values))
+            }
+            CfdValue::Dict(values) => {
+                for (_, value) in values {
+                    self.complete_value_fields(value)?;
                 }
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::Object { type_name, fields } => match ty {
-                CftValueType::Object(expected)
-                    if self.schema.is_assignable(type_name, expected) =>
-                {
-                    let mut values = self.fields_for_type(type_name, materialization, None)?;
-                    for (name, value) in fields {
-                        let Some(field) = self.schema.field(type_name, name) else {
-                            return self.zero_for_ty(ty, materialization);
-                        };
-                        let value = self.materialize_schema_default(
-                            &field.value_type,
-                            value,
-                            materialization,
-                        )?;
-                        values.insert(name.clone(), value);
-                    }
-                    Ok(CfdValue::Object(Box::new(CfdObject::new(
-                        type_name.clone(),
-                        values,
-                    ))))
-                }
-                _ => self.zero_for_ty(ty, materialization),
-            },
-            CftSchemaDefaultValue::RecordReference { type_name, id: key } => match ty {
-                CftValueType::RecordRef(expected)
-                    if self.schema.is_assignable(type_name, expected) =>
-                {
-                    RecordId::new(key)
-                        .map(CfdValue::Ref)
-                        .map_err(|error| one_mutation_error("MUTATION-DEFAULT", error.to_string()))
-                }
-                _ => self.zero_for_ty(ty, materialization),
-            },
+            }
+            _ => {}
         }
+        Ok(())
     }
 
     fn zero_for_ty(
@@ -569,6 +446,7 @@ fn ensure_type_can_materialize(schema: &CftSchema, type_name: &str) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::panic, reason = "回归测试在值结构不符时立即失败。")]
     #![allow(clippy::expect_used)]
 
     use super::*;
@@ -577,6 +455,245 @@ mod tests {
     fn schema(source: &str) -> CftSchema {
         let modules = parse_modules([CftFile::from_source(ModuleId::from("main"), source)]);
         build_schema(&modules).expect("schema")
+    }
+
+    #[test]
+    fn recursive_declared_defaults_respect_explicit_overrides_in_every_creation_path() {
+        let schema = schema(
+            "data Node { child: Option<Node> = Some(Node { child: None }); label: string = \"leaf\"; } \
+             table Holder { root: Node = {}; }",
+        );
+        let editable =
+            default_object_for_type(&schema, "Node", DefaultMaterialization::EditableShape)
+                .expect("finite editable default");
+        let Some(CfdValue::OptionSome(child)) = editable.field("child") else {
+            panic!("explicit child");
+        };
+        let CfdValue::Object(child) = child.as_ref() else {
+            panic!("child object");
+        };
+        assert_eq!(child.field("child"), Some(&CfdValue::OptionNone));
+        assert_eq!(child.field("label"), Some(&CfdValue::String("leaf".into())));
+
+        let expected = CfdValue::Object(Box::new(editable));
+        let field = schema.field("Holder", "root").expect("root field");
+        assert_eq!(
+            declared_field_default(&schema, field).expect("declared default"),
+            Some(expected.clone())
+        );
+        let draft = create_record_draft_for_type(&schema, "Holder").expect("record draft");
+        assert_eq!(draft.fields[0].value, Some(expected.clone()));
+
+        let mut builder = crate::CfdDataModel::builder(&schema);
+        builder.add_record(
+            "holder",
+            "Holder",
+            std::iter::empty::<(&str, crate::LoadedValueDraft)>(),
+        );
+        let model = builder.build().expect("model defaults");
+        let holder = model.records().next().expect("holder").1;
+        assert_eq!(holder.field("root"), Some(&expected));
+
+        let minimal = default_object_for_type(&schema, "Node", DefaultMaterialization::Minimal)
+            .expect("minimal draft");
+        assert!(minimal.fields.is_empty());
+    }
+
+    #[test]
+    fn declared_object_drafts_keep_editable_initial_values_out_of_business_defaults() {
+        fn child(value: &CfdValue) -> &CfdObject {
+            match value {
+                CfdValue::Object(value) => value,
+                CfdValue::OptionSome(value) => child(value),
+                CfdValue::Array(values) => child(&values[0]),
+                CfdValue::Dict(values) => child(&values[0].1),
+                _ => panic!("child object"),
+            }
+        }
+        let schema = schema(
+            r#"
+            data Child { required: int; optional: int = 2; }
+            table Holder {
+                empty: Child = {};
+                explicit: Child = Child { optional: 3 };
+                option: Option<Child> = Some(Child { optional: 3 });
+                array: [Child] = [Child { optional: 3 }];
+                dict: {string: Child} = { "x": Child { optional: 3 } };
+            }
+        "#,
+        );
+
+        let draft = create_record_draft_for_type(&schema, "Holder").expect("record draft");
+        for field in &draft.fields {
+            let editable = child(field.value.as_ref().expect("editable value"));
+            assert_eq!(field.source, CreateFieldSource::SchemaDefault);
+            assert!(field.required.is_none());
+            assert_eq!(editable.field("required"), Some(&CfdValue::Int(0)));
+            let optional = if field.name == "empty" { 2 } else { 3 };
+            assert_eq!(editable.field("optional"), Some(&CfdValue::Int(optional)));
+
+            let schema_field = schema.field("Holder", &field.name).expect("schema field");
+            let mut declared = declared_field_default(&schema, schema_field)
+                .expect("declared default")
+                .expect("default value");
+            assert!(child(&declared).field("required").is_none());
+            assert_eq!(
+                child(&declared).field("optional"),
+                Some(&CfdValue::Int(optional))
+            );
+            complete_declared_defaults(&schema, &mut declared).expect("declared completion");
+            assert!(child(&declared).field("required").is_none());
+        }
+
+        // 业务加载仍报告省略的必填字段；草稿中的 0 仅服务于创建交互。
+        let mut builder = crate::CfdDataModel::builder(&schema);
+        builder.add_record(
+            "holder",
+            "Holder",
+            std::iter::empty::<(&str, crate::LoadedValueDraft)>(),
+        );
+        let diagnostics = builder
+            .build()
+            .expect_err("missing required default fields");
+        assert!(diagnostics
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code == crate::CfdErrorCode::MissingRequiredField));
+        for field in &draft.fields {
+            assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+                matches!(
+                    diagnostic.primary.as_ref().and_then(|label| label.path.segments.first()),
+                    Some(crate::CfdPathSegment::Field(name)) if name.as_str() == field.name
+                )
+            }));
+        }
+    }
+
+    #[test]
+    fn composite_declared_defaults_match_model_materialization() {
+        let schema = schema(
+            r#"
+            @flag enum Permission { Read = 1, Write = 2, Execute = 4 }
+            table Item {}
+            data Child { value: int = 1; }
+            data Bundle {
+                number: int = 1;
+                wide: long = 2147483648;
+                scale: float = 0.1;
+                valid: bool = true;
+                label: string = "ok";
+                optional: Option<int> = Some(2);
+                absent: Option<int> = None;
+                items: [&Item] = [&Item::item];
+                empty: [int] = [];
+                index: {string: int} = { "one": 1 };
+                flags: Permission = Permission::Read | Permission::Write;
+                keyed: {Permission: int} = { Permission::Read: 3, Permission::Read | Permission::Write: 7 };
+                synthetic_keys: {Permission: int} = { Permission::None: 0, Permission::Everything: 9 };
+                empty_flags: Permission = Permission::None;
+                full_flags: Permission = Permission::Everything;
+                child: Child = Child { value: 5 };
+                blank: Child = {};
+            }
+            table Holder { bundle: Bundle = {}; }
+        "#,
+        );
+        let editable =
+            default_object_for_type(&schema, "Bundle", DefaultMaterialization::EditableShape)
+                .expect("composite editable defaults");
+        let mut builder = crate::CfdDataModel::builder(&schema);
+        builder.add_record(
+            "item",
+            "Item",
+            std::iter::empty::<(&str, crate::LoadedValueDraft)>(),
+        );
+        builder.add_record(
+            "holder",
+            "Holder",
+            std::iter::empty::<(&str, crate::LoadedValueDraft)>(),
+        );
+        let model = builder.build().expect("composite model defaults");
+        let holder = model
+            .record_by_type_id("Holder", "holder")
+            .and_then(|handle| model.record(handle))
+            .expect("holder");
+        assert_eq!(
+            holder.field("bundle"),
+            Some(&CfdValue::Object(Box::new(editable)))
+        );
+    }
+
+    #[test]
+    fn declared_template_drafts_preserve_source_previews_until_model_evaluation() {
+        fn assert_source_preview(value: &CfdValue) -> usize {
+            match value {
+                CfdValue::FormattedString(value) => {
+                    assert_eq!(value.rendered, value.source);
+                    assert!(value.source.starts_with("f\""));
+                    1
+                }
+                CfdValue::OptionSome(value) => assert_source_preview(value),
+                CfdValue::Object(value) => value.fields.values().map(assert_source_preview).sum(),
+                CfdValue::Array(values) => values.iter().map(assert_source_preview).sum(),
+                CfdValue::Dict(values) => values
+                    .iter()
+                    .map(|(_, value)| assert_source_preview(value))
+                    .sum(),
+                _ => 0,
+            }
+        }
+        let schema = schema(
+            r#"
+            data Child { id: int = 3; label: string = f"child {self.id}"; }
+            table Item {
+                label: string = f"item {self.id}";
+                child: Child = {};
+                optional: Option<string> = Some(f"optional {self.id}");
+                texts: [string] = [f"list {self.id}"];
+                lookup: {string: string} = { "x": f"dict {self.id}" };
+            }
+        "#,
+        );
+
+        let draft = create_record_draft_for_type(&schema, "Item").expect("template draft");
+        assert_eq!(
+            draft
+                .fields
+                .iter()
+                .filter_map(|field| field.value.as_ref())
+                .map(assert_source_preview)
+                .sum::<usize>(),
+            5
+        );
+        let field = schema.field("Item", "label").expect("label");
+        let loaded = coflow_model::lower_schema_default(
+            &schema,
+            &field.value_type,
+            field.default.as_ref().expect("default"),
+        )
+        .expect("lower template");
+        assert!(
+            matches!(crate::value_drafts::convert(&schema, &field.value_type, loaded).expect("ordinary input"),
+            CfdValue::FormattedString(value) if value.source == "f\"item {self.id}\"" && value.rendered.is_empty())
+        );
+
+        let mut builder = crate::CfdDataModel::builder(&schema);
+        builder.add_record(
+            "one",
+            "Item",
+            std::iter::empty::<(&str, crate::LoadedValueDraft)>(),
+        );
+        let model = builder.build().expect("evaluate templates");
+        let item = model.records().next().expect("item").1;
+        assert!(
+            matches!(item.field("label"), Some(CfdValue::FormattedString(value)) if value.rendered == "item one")
+        );
+        let Some(CfdValue::Object(child)) = item.field("child") else {
+            panic!("child");
+        };
+        assert!(
+            matches!(child.field("label"), Some(CfdValue::FormattedString(value)) if value.rendered == "child 3")
+        );
     }
 
     #[test]

@@ -1,0 +1,59 @@
+{
+  "label": "r2-after-cli",
+  "version": "after",
+  "round": 2,
+  "kind": "cli",
+  "args": [
+    "C:\\Program Files\\nodejs\\node.EXE",
+    "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\core-simplification-2026-11-06\\cli-matrix.mjs",
+    "--cli",
+    "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\coflow.exe",
+    "--case",
+    "batch_same_file,batch_cross_file",
+    "--records",
+    "10000",
+    "--files",
+    "10",
+    "--fields",
+    "20",
+    "--samples",
+    "3",
+    "--warmups",
+    "1",
+    "--batch",
+    "1000",
+    "--variants",
+    "0",
+    "--topology",
+    "none",
+    "--timeout-ms",
+    "300000",
+    "--output",
+    "C:\\Users\\wtlll\\Desktop\\projects\\coflow\\docs\\archive\\benchmarks\\core-simplification-2026-11-06\\r2-after-cli.results.json"
+  ],
+  "cwd": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx",
+  "started_utc": "2026-11-06T09:11:27.487365+00:00",
+  "environment_overrides": {
+    "COFLOW_LOG": "0"
+  },
+  "binary_sha256": {
+    "coflow": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\coflow.exe",
+      "sha256": "8a2b9b815a0d22486defb62f68a5398dc4575482ab9cc8aa6e4bbdb8d7664cbf",
+      "bytes": 19205120
+    },
+    "core_simplification_perf": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\core_simplification_perf.exe",
+      "sha256": "33103e28bbed5415975b92d816b9a88be2ece6fd07f35e9afec57bc64e6c7a20",
+      "bytes": 8216064
+    },
+    "language_regression_probe": {
+      "path": "C:\\Users\\wtlll\\AppData\\Local\\Temp\\coflow-core-perf-20261106-km2bdldx\\bin\\after\\language_regression_probe.exe",
+      "sha256": "b45de62dcd718b019d0a52e5a8f3c8f4b9de265e9b7fa8e65bede1fdc2defa8e",
+      "bytes": 3632128
+    }
+  },
+  "exit_code": 0,
+  "total_wall_seconds": 21.0130122999999,
+  "ended_utc": "2026-11-06T09:11:48.501839+00:00"
+}

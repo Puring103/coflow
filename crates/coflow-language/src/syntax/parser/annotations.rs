@@ -45,30 +45,33 @@ impl Parser<'_> {
     }
 
     fn parse_annotation_arg(&mut self) -> Result<AnnotationArg, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
+        let span = self.peek().span;
+        match &mut self.tokens[self.pos].kind {
             TokenKind::Ident(_) => self
                 .expect_ident_with_code(CftErrorCode::ExpectedIdentifier)
                 .map(AnnotationArg::Name),
             TokenKind::String(value) => {
+                let value = std::mem::take(value);
                 self.bump();
-                Ok(AnnotationArg::String(value, token.span))
+                Ok(AnnotationArg::String(value, span))
             }
             TokenKind::Int(value) => {
+                let value = *value;
                 self.bump();
-                Ok(AnnotationArg::Int(value, token.span))
+                Ok(AnnotationArg::Int(value, span))
             }
             TokenKind::Float(value) => {
+                let value = *value;
                 self.bump();
-                Ok(AnnotationArg::Float(value, token.span))
+                Ok(AnnotationArg::Float(value, span))
             }
             TokenKind::True => {
                 self.bump();
-                Ok(AnnotationArg::Bool(true, token.span))
+                Ok(AnnotationArg::Bool(true, span))
             }
             TokenKind::False => {
                 self.bump();
-                Ok(AnnotationArg::Bool(false, token.span))
+                Ok(AnnotationArg::Bool(false, span))
             }
             TokenKind::UIntOverflow(_) => self.err(
                 CftErrorCode::InvalidIntLiteral,
@@ -91,14 +94,15 @@ impl Parser<'_> {
         {
             let _bucket = self.expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)?;
             self.expect_simple(&TokenKind::Equal, CftErrorCode::InvalidAnnotationSyntax)?;
-            let token = self.peek().clone();
-            if let TokenKind::String(value) = token.kind {
+            let span = self.peek().span;
+            if let TokenKind::String(value) = &mut self.tokens[self.pos].kind {
+                let value = std::mem::take(value);
                 self.bump();
-                return Ok(AnnotationArg::String(value, token.span));
+                return Ok(AnnotationArg::String(value, span));
             }
             return self.err_at(
                 CftErrorCode::InvalidAnnotationSyntax,
-                token.span,
+                span,
                 "expected string literal for @localized bucket",
             );
         }

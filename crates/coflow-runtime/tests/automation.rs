@@ -49,6 +49,52 @@ fn run(
 }
 
 #[test]
+fn rename_preserves_template_interpolation_in_cft_and_cfd() {
+    let root = fixture();
+    fs::write(
+        root.path().join("schema.cft"),
+        r#"
+        table Item {
+            name: string;
+            label: string = f"默认\n {&Item::a.name}";
+        }
+    "#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("data/items.cfd"),
+        r#"
+        a: Item { name: "first" }
+        b: Item { name: "second", label: f"显式 {&Item::a.name}" }
+    "#,
+    )
+    .unwrap();
+    let result = run(
+        root.path(),
+        "data.rename",
+        &[("type", "Item"), ("id", "a"), ("new-id", "renamed")],
+        None,
+    );
+    assert_eq!(result.status, Status::Success, "{result:?}");
+    for file in ["schema.cft", "data/items.cfd"] {
+        let source = fs::read_to_string(root.path().join(file)).unwrap();
+        assert!(source.contains("{&Item::renamed.name}"), "{source}");
+        assert!(!source.contains("{&Item::a.name}"), "{source}");
+    }
+    let record = run(
+        root.path(),
+        "data.get",
+        &[("type", "Item"), ("id", "b")],
+        None,
+    );
+    assert_eq!(record.status, Status::Success, "{record:?}");
+    assert_eq!(
+        record.result["fields"]["label"]["source"],
+        "f\"显式 {&Item::renamed.name}\""
+    );
+}
+
+#[test]
 fn text_search_reads_full_nested_and_projected_values() {
     let root = fixture();
     fs::write(

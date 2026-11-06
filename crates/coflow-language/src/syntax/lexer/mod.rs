@@ -2,8 +2,8 @@ mod tokens;
 
 use crate::diagnostics::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexical::{
-    decode_simple_escape, is_identifier_continue, is_identifier_start, scan_number_literal,
-    scan_string_literal, scan_trivia, tokenize_lossless, LosslessTokenKind, NumberLiteralError,
+    decode_simple_escape, is_identifier_continue, is_identifier_start, lossless_tokens,
+    scan_number_literal, scan_string_literal, scan_trivia, LosslessTokenKind, NumberLiteralError,
     StringLiteralError,
 };
 use crate::module::ModuleId;
@@ -487,7 +487,8 @@ impl<'a> Lexer<'a> {
     fn find_formatted_expr_end(&self, start: usize) -> Result<usize, CftDiagnostics> {
         let mut brace_depth = 0_usize;
         let fragment = &self.source[start..self.end];
-        for token in tokenize_lossless(fragment) {
+        // 只扫描到本次插值的结束符，不能为每个插值重新分词整个文件后缀。
+        for token in lossless_tokens(fragment) {
             match token.kind {
                 LosslessTokenKind::String => {
                     let scan =

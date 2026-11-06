@@ -1,15 +1,14 @@
 use crate::{LoadedDictKeyDraft, LoadedValueDraft};
-use coflow_language::cft::CftSchema;
+use coflow_language::cft::{CftSchema, CftValueType};
 
 use super::diagnostics::{missing_boundary, syntax, type_mismatch, CellValueDiagnostics};
 use super::scan::{find_top_level_char, split_top_level, strip_outer_pair};
 use super::strings::parse_string;
-use super::types::CellType;
 use super::{parse_value, ValueContext};
 
 pub(super) fn parse_array(
     schema: &CftSchema,
-    inner: &CellType,
+    inner: &CftValueType,
     text: &str,
     context: ValueContext,
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
@@ -30,10 +29,10 @@ pub(super) fn parse_array(
     Ok(LoadedValueDraft::Array(out))
 }
 
-fn reject_comma_array_item(inner: &CellType, item: &str) -> Result<(), CellValueDiagnostics> {
+fn reject_comma_array_item(inner: &CftValueType, item: &str) -> Result<(), CellValueDiagnostics> {
     if find_top_level_char(item, ',')?.is_some() {
         return match inner {
-            CellType::Type(_) | CellType::Dict(_, _) => Err(missing_boundary(
+            CftValueType::Object(_) | CftValueType::Dict(_, _) => Err(missing_boundary(
                 "array elements with composite values must use boundaries",
             )),
             _ => Err(syntax("array elements must be separated with `|`")),
@@ -44,8 +43,8 @@ fn reject_comma_array_item(inner: &CellType, item: &str) -> Result<(), CellValue
 
 pub(super) fn parse_dict(
     schema: &CftSchema,
-    key: &CellType,
-    value: &CellType,
+    key: &CftValueType,
+    value: &CftValueType,
     text: &str,
     context: ValueContext,
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
@@ -75,26 +74,32 @@ pub(super) fn parse_dict(
 
 fn parse_dict_key(
     schema: &CftSchema,
-    key: &CellType,
+    key: &CftValueType,
     text: &str,
 ) -> Result<LoadedDictKeyDraft, CellValueDiagnostics> {
     let text = text.trim();
     match key {
-        CellType::String => parse_string(text).map(LoadedDictKeyDraft::String),
-        CellType::Int => Ok(LoadedDictKeyDraft::Int(i64::from(
+        CftValueType::String => parse_string(text).map(LoadedDictKeyDraft::String),
+        CftValueType::Int => Ok(LoadedDictKeyDraft::Int(i64::from(
             text.parse::<i32>().map_err(|_| type_mismatch("int key"))?,
         ))),
-        CellType::Long => Ok(LoadedDictKeyDraft::Int(
+        CftValueType::Long => Ok(LoadedDictKeyDraft::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int key"))?,
         )),
-        CellType::Enum(enum_name) => {
+        CftValueType::Enum(enum_name) => {
             let LoadedValueDraft::EnumVariant { variant, .. } =
                 super::parse_enum_variant(schema, enum_name, text)?
             else {
                 return Err(type_mismatch("enum key"));
             };
-            Ok(LoadedDictKeyDraft::enum_variant(enum_name, variant))
+            Ok(LoadedDictKeyDraft::enum_variant(
+                enum_name.as_str(),
+                variant,
+            ))
         }
-        other => Err(type_mismatch(&format!("dict key {}", other.display()))),
+        other => Err(type_mismatch(&format!(
+            "dict key {}",
+            other.display_label()
+        ))),
     }
 }

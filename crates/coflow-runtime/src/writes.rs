@@ -10,16 +10,16 @@ mod stage;
 mod target;
 mod writer;
 
-use crate::api::{DiagnosticSet, WriteFieldPathSegment};
+use crate::api::DiagnosticSet;
 use crate::data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdValue};
 use coflow_language::cft::{FieldName, TypeName};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, RecordCoordinate};
 use crate::checks::impact::{ChangedField, ChangedProjection, ChangedRecordFields, CheckImpact};
-use crate::indexes::RecordRef;
-pub(crate) use plan::{prepare_mutation_execution, MutationExecutionPlan};
+pub(crate) use plan::{prepare_mutation_execution, ExecutableMutationOp, FieldWrite};
 pub(crate) use stage::{stage_field_mutation_batch, stage_mutation_op, MutationBatchFailure};
+pub(crate) use target::WriteTarget;
 
 #[derive(Debug, Default)]
 pub(crate) struct MutationImpact {
@@ -31,19 +31,14 @@ pub(crate) struct MutationImpact {
 
 impl MutationImpact {
     pub(crate) fn from_operations<'a>(
-        operations: impl IntoIterator<
-            Item = (
-                &'a crate::mutation::PreparedMutationOp,
-                &'a crate::WriteOutcome,
-            ),
-        >,
+        operations: impl IntoIterator<Item = (&'a Self, &'a crate::WriteOutcome)>,
     ) -> Self {
         let mut impact = Self::default();
         for (operation, outcome) in operations {
             impact
                 .affected_files
                 .extend(outcome.affected_files.iter().cloned());
-            impact.add_operation_change(operation);
+            impact.merge(operation);
             for touched in &outcome.touched {
                 impact
                     .record_changes
@@ -70,6 +65,30 @@ impl MutationImpact {
         impact
     }
 
+    pub(crate) fn for_operation(operation: &crate::mutation::PreparedMutationOp) -> Self {
+        let mut impact = Self::default();
+        impact.add_operation_change(operation);
+        impact
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.affected_files
+            .extend(other.affected_files.iter().cloned());
+        self.membership_types
+            .extend(other.membership_types.iter().cloned());
+        self.structural_change |= other.structural_change;
+        for (record, change) in &other.record_changes {
+            match change {
+                ChangedRecordFields::All => self.add_all(record.clone()),
+                ChangedRecordFields::Fields(fields) => {
+                    for field in fields {
+                        self.add_field(record.clone(), field.clone());
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn check_impact(&self, schema: &coflow_language::cft::CftSchema) -> CheckImpact {
         let mut memberships = BTreeSet::new();
         for actual_type in &self.membership_types {
@@ -87,15 +106,11 @@ impl MutationImpact {
     fn add_operation_change(&mut self, operation: &crate::mutation::PreparedMutationOp) {
         use crate::mutation::PreparedMutationOp;
         match operation {
-            PreparedMutationOp::SetField {
-                write_record, path, ..
-            }
-            | PreparedMutationOp::UnsetField {
-                write_record, path, ..
-            } => self.add_path(
-                write_record.clone(),
+            PreparedMutationOp::SetField { target, .. }
+            | PreparedMutationOp::UnsetField { target } => self.add_path(
+                target.coordinate.clone(),
                 &CfdPath {
-                    segments: path.clone(),
+                    segments: target.field_path.clone(),
                 },
             ),
             PreparedMutationOp::FoldedSetField { record, path, .. } => {
@@ -132,14 +147,6 @@ impl MutationImpact {
                     record.actual_type.clone(),
                     new_id.clone(),
                 ));
-            }
-            PreparedMutationOp::FoldedRenameRecord {
-                old_record,
-                new_record,
-                ..
-            } => {
-                self.add_structural_record(old_record);
-                self.add_structural_record(new_record);
             }
             PreparedMutationOp::SwapRecords { first, second, .. } => {
                 self.add_all(first.clone());
@@ -199,15 +206,6 @@ pub(crate) fn record_value_at_path<'a>(
     record.value_at_path(path)
 }
 
-pub(crate) fn effective_write_target_for_path(
-    session: &ProjectSession,
-    host_ref: &RecordRef,
-    path: &[WriteFieldPathSegment],
-) -> (RecordCoordinate, String, Vec<WriteFieldPathSegment>) {
-    let target = target::write_target_for_path(session, host_ref, path);
-    (target.coordinate, target.display_path, target.field_path)
-}
-
 pub(crate) fn rebuild_after_mutation(
     session: &ProjectSession,
     impact: &MutationImpact,
@@ -241,22 +239,20 @@ mod tests {
     #[test]
     fn mutation_impact_unions_precise_paths_and_structural_changes_absorb_them() {
         let record = coordinate("sword");
-        let price = PreparedMutationOp::SetField {
+        let price = MutationImpact::for_operation(&PreparedMutationOp::FoldedSetField {
             record: record.clone(),
-            write_record: record.clone(),
             write_file: "items.cfd".to_string(),
-            path: vec![CfdPathSegment::Field("price".to_string())],
-            value: CfdValue::Int(10),
-            materialized_top_level: None,
-        };
-        let name = PreparedMutationOp::SetField {
+            path: CfdPath {
+                segments: vec![CfdPathSegment::Field("price".to_string())],
+            },
+        });
+        let name = MutationImpact::for_operation(&PreparedMutationOp::FoldedSetField {
             record: record.clone(),
-            write_record: record.clone(),
             write_file: "items.cfd".to_string(),
-            path: vec![CfdPathSegment::Field("name".to_string())],
-            value: CfdValue::String("Sword".to_string()),
-            materialized_top_level: None,
-        };
+            path: CfdPath {
+                segments: vec![CfdPathSegment::Field("name".to_string())],
+            },
+        });
         let touched = crate::WriteOutcome::touch(record.clone());
         let operations = [(&price, &touched), (&name, &touched)];
         let impact = MutationImpact::from_operations(operations);
@@ -275,10 +271,10 @@ mod tests {
         );
         assert!(impact.membership_types.is_empty());
 
-        let deleted = PreparedMutationOp::DeleteRecord {
+        let deleted = MutationImpact::for_operation(&PreparedMutationOp::DeleteRecord {
             record: record.clone(),
             report_file: Some("items.cfd".to_string()),
-        };
+        });
         let deleted_outcome = crate::WriteOutcome {
             deleted: Some(record.clone()),
             ..Default::default()

@@ -136,6 +136,142 @@ fn data_model_reuses_shared_schema_default_subgraphs() {
 }
 
 #[test]
+fn shared_explicit_defaults_keep_record_context_and_declaration_identity() {
+    let schema = compile_schema(
+        r#"
+            table Base {}
+            table Derived : Base {}
+            table Sibling : Base {}
+            data Node { child: Option<Node> = Some(Node { child: None }); }
+            table First {
+                labels: [string] = [f"first {self.id}"];
+                targets: [&Base] = [&Derived::target];
+                nodes: [Node] = [Node { child: None }];
+            }
+            table Second { labels: [string] = [f"second {self.id}"]; }
+        "#,
+    );
+    let build = |target_type| {
+        let mut builder = CfdDataModel::builder(&schema);
+        for (id, type_name) in [
+            ("target", target_type),
+            ("one", "First"),
+            ("two", "First"),
+            ("three", "Second"),
+        ] {
+            builder.add_record(
+                id,
+                type_name,
+                std::iter::empty::<(&str, LoadedValueDraft)>(),
+            );
+        }
+        builder.build()
+    };
+    let model = build("Derived").expect("shared defaults build");
+    for (id, type_name, prefix) in [
+        ("one", "First", "first"),
+        ("two", "First", "first"),
+        ("three", "Second", "second"),
+    ] {
+        let record = model
+            .record_by_type_id(type_name, id)
+            .and_then(|handle| model.record(handle))
+            .expect("record");
+        let Some(CfdValue::Array(labels)) = record.field("labels") else {
+            panic!("labels");
+        };
+        assert!(matches!(
+            &labels[0], CfdValue::FormattedString(value) if value.rendered == format!("{prefix} {id}")
+        ));
+        if type_name == "First" {
+            let Some(CfdValue::Array(nodes)) = record.field("nodes") else {
+                panic!("nodes");
+            };
+            let CfdValue::Object(node) = &nodes[0] else {
+                panic!("node");
+            };
+            assert_eq!(node.field("child"), Some(&CfdValue::OptionNone));
+            assert_eq!(
+                record.field("targets"),
+                Some(&CfdValue::Array(vec![CfdValue::Ref(
+                    RecordId::new("target").expect("target id")
+                )]))
+            );
+        }
+    }
+    let diagnostics = build("Sibling").expect_err("explicit reference type remains Derived");
+    assert_has_code(&diagnostics, CfdErrorCode::RefTargetTypeMismatch);
+}
+
+#[test]
+fn flag_default_dictionary_keys_match_explicit_masks_and_builtin_members() {
+    let schema = compile_schema(
+        r#"
+            @flag enum Permission { Read = 1, Write = 2, Execute = 4 }
+            table Item {
+                keys: {Permission: int} = {
+                    Permission::None: 0,
+                    Permission::Read: 1,
+                    Permission::Read | Permission::Write: 3,
+                    Permission::Everything: 7,
+                };
+                empty: Permission = Permission::None;
+                full: Permission = Permission::Everything;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "defaults",
+        "Item",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
+    builder.add_record(
+        "cached",
+        "Item",
+        std::iter::empty::<(&str, LoadedValueDraft)>(),
+    );
+    builder.add_record(
+        "explicit",
+        "Item",
+        [(
+            "keys",
+            LoadedValueDraft::dict([0, 1, 3, 7].map(|mask| {
+                (
+                    LoadedDictKeyDraft::EnumValue {
+                        enum_name: "Permission".into(),
+                        value: mask,
+                    },
+                    LoadedValueDraft::Int(mask),
+                )
+            })),
+        )],
+    );
+    let model = builder.build().expect("flag mask defaults build");
+    let defaults = model
+        .record_by_type_id("Item", "defaults")
+        .and_then(|handle| model.record(handle))
+        .expect("default record");
+    let explicit = model
+        .record_by_type_id("Item", "explicit")
+        .and_then(|handle| model.record(handle))
+        .expect("explicit record");
+    assert_eq!(defaults.field("keys"), explicit.field("keys"));
+    let cached = model
+        .record_by_type_id("Item", "cached")
+        .and_then(|handle| model.record(handle))
+        .expect("cached default record");
+    assert_eq!(cached.field("keys"), explicit.field("keys"));
+    for (field, mask) in [("empty", 0), ("full", 7)] {
+        let Some(CfdValue::Enum(value)) = defaults.field(field) else {
+            panic!("flag value");
+        };
+        assert_eq!(value.value, mask);
+        assert!(value.variant.is_none());
+    }
+}
+
+#[test]
 fn dimension_field_lookup_reads_record_owned_overlay() {
     let schema = compile_schema(
         r#"

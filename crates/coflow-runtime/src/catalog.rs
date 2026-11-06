@@ -29,9 +29,9 @@ impl Default for CfdSourceCatalog {
 }
 
 impl CfdSourceCatalog {
-    pub(crate) fn staged_writes() -> Self {
+    pub(crate) fn staged_writes(schema: Arc<coflow_language::cft::CftSchema>) -> Self {
         Self {
-            writer: Arc::new(CfdWriter::new()),
+            writer: Arc::new(CfdWriter::for_model(schema)),
         }
     }
 

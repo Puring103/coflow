@@ -82,6 +82,9 @@ struct CacheStats {
     schema_compilations: usize,
     source_discoveries: usize,
     cfd_parses: usize,
+    writer_parses: usize,
+    writer_lowerings: usize,
+    writer_ast_transfers: usize,
 }
 
 /// 路径身份属于候选输入代次；同一文件的所有记录共享一次反向映射和展示路径。
@@ -142,10 +145,6 @@ impl OperationCache {
                     .push((path.clone(), index));
             }
             self.files.insert(path, Arc::new(source));
-            #[cfg(test)]
-            {
-                self.stats.cfd_parses += 1;
-            }
         } else {
             self.files.remove(&path);
         }
@@ -286,6 +285,10 @@ impl Candidate {
                 let text = String::from_utf8(file.contents)
                     .map_err(|error| Failure::request(error.to_string()))?;
                 let (ast, errors) = coflow_language::cfd::parse_cfd(&text);
+                #[cfg(test)]
+                {
+                    cache.stats.cfd_parses += 1;
+                }
                 cache.replace_source(
                     file.absolute.clone(),
                     Some(CandidateSource {
@@ -366,6 +369,10 @@ impl Candidate {
         }
         let source = if let Some(text) = text {
             let (ast, errors) = coflow_language::cfd::parse_cfd(&text);
+            #[cfg(test)]
+            {
+                cache.stats.cfd_parses += 1;
+            }
             Some(CandidateSource {
                 absolute: path.into(),
                 path: self.display_path(path)?,
@@ -382,12 +389,35 @@ impl Candidate {
 
     pub(crate) fn publish_writer(&self, writer: &crate::cfd_loader::CfdWriter) -> Result<()> {
         let updates = writer.source_overrides()?;
+        let mut parsed = writer.take_parsed_sources()?;
+        #[cfg(test)]
+        {
+            let mut cache = self.cache.borrow_mut();
+            cache.stats.writer_parses += writer.parse_count();
+            cache.stats.writer_lowerings += writer.lower_count();
+            cache.stats.writer_ast_transfers += parsed.len();
+        }
         writer.publish()?;
         for update in updates {
-            self.refresh_source(
-                &update.normalized_path,
-                (!update.deleted).then_some(update.source),
-            )?;
+            if let Some(ast) = parsed.remove(&update.normalized_path) {
+                // writer 已验证这一版文本，候选缓存直接接管对应 AST。
+                if self.cache.borrow().sources_loaded {
+                    let path = update.normalized_path;
+                    let source = CandidateSource {
+                        absolute: path.clone(),
+                        path: self.display_path(&path)?,
+                        text: update.source,
+                        ast,
+                        malformed: false,
+                    };
+                    self.cache.borrow_mut().replace_source(path, Some(source));
+                }
+            } else {
+                self.refresh_source(
+                    &update.normalized_path,
+                    (!update.deleted).then_some(update.source),
+                )?;
+            }
         }
         Ok(())
     }
@@ -1359,8 +1389,11 @@ mod cache_tests {
         let stats = &candidate.cache.borrow().stats;
         assert_eq!(stats.schema_compilations, 1);
         assert_eq!(stats.source_discoveries, 1);
-        // 64 个初始文件各解析一次，之后只重新解析被修改的 64 个文件。
-        assert_eq!(stats.cfd_parses, 128);
+        // 初始文件由缓存解析一次；writer 的候选 AST 直接移交，不降低、不重解析。
+        assert_eq!(stats.cfd_parses, 64);
+        assert_eq!(stats.writer_parses, 128);
+        assert_eq!(stats.writer_lowerings, 0);
+        assert_eq!(stats.writer_ast_transfers, 64);
     }
 
     #[test]
@@ -1389,8 +1422,11 @@ mod cache_tests {
         candidate.apply_operations(&operations).unwrap();
         let (_, validation) = candidate.finish(&Arguments::default(), true).unwrap();
         assert!(validation.passed());
-        // 初始文件及最终候选各解析一次，批次不会逐条刷新文件缓存。
-        assert_eq!(candidate.cache.borrow().stats.cfd_parses, 2);
+        // 缓存只解析初始文件，批量候选使用 writer 验证后的 AST。
+        assert_eq!(candidate.cache.borrow().stats.cfd_parses, 1);
+        assert_eq!(candidate.cache.borrow().stats.writer_parses, 2);
+        assert_eq!(candidate.cache.borrow().stats.writer_lowerings, 0);
+        assert_eq!(candidate.cache.borrow().stats.writer_ast_transfers, 1);
         assert_eq!(
             fs::read_to_string(root.path().join("data/0.cfd")).unwrap(),
             source
@@ -1427,8 +1463,9 @@ mod cache_tests {
         candidate.apply_operations(&operations).unwrap();
         let (_, validation) = candidate.finish(&Arguments::default(), true).unwrap();
         assert!(validation.passed());
-        // 32 个交错操作只产生 8 个初始解析和 8 个最终候选刷新。
-        assert_eq!(candidate.cache.borrow().stats.cfd_parses, 16);
+        // 32 个交错操作只解析 8 个初始缓存文件，并接收 8 个最终候选 AST。
+        assert_eq!(candidate.cache.borrow().stats.cfd_parses, 8);
+        assert_eq!(candidate.cache.borrow().stats.writer_ast_transfers, 8);
         snapshot.verify(&project).unwrap();
     }
 
@@ -1460,7 +1497,8 @@ mod cache_tests {
         let stats = &candidate.cache.borrow().stats;
         assert_eq!(stats.schema_compilations, 1);
         assert_eq!(stats.source_discoveries, 1);
-        assert_eq!(stats.cfd_parses, 9);
+        assert_eq!(stats.cfd_parses, 3);
+        assert_eq!(stats.writer_ast_transfers, 6);
     }
 
     #[test]

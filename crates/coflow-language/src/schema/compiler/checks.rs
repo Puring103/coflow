@@ -442,9 +442,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 );
                 if let Some(dimension) = field.dimension {
                     self.dimensions.insert(dimension);
-                    return InferredType::Dimension(Box::new(field.inferred_type.read_type()));
+                    return InferredType::Dimension(Box::new(field.inferred_type));
                 }
-                return field.inferred_type.read_type();
+                return field.inferred_type;
             }
             if name == "id"
                 && self
@@ -628,9 +628,9 @@ impl<'a, 'b> CheckTypeAnalyzer<'a, 'b> {
                 if let Some(field) = field {
                     if let Some(dimension) = field.dimension {
                         self.dimensions.insert(dimension);
-                        return InferredType::Dimension(Box::new(field.inferred_type.read_type()));
+                        return InferredType::Dimension(Box::new(field.inferred_type));
                     }
-                    return field.inferred_type.read_type();
+                    return field.inferred_type;
                 }
                 if type_known {
                     self.diag(

@@ -136,28 +136,40 @@ fn visit(
             }
         }
         (_, A::FormattedString(formatted)) => {
-            for segment in &formatted.segments {
-                if let coflow_language::cfd::CfdFormatSegment::Reference(reference) = segment {
-                    if reference.id.as_deref() == Some(&record.id)
-                        && schema.is_assignable(
-                            &record.actual_type,
-                            reference.type_name.as_deref().unwrap_or(host_type),
-                        )
-                    {
-                        let target = reference
-                            .type_name
-                            .as_ref()
-                            .map(|target| format!("{target}::"))
-                            .unwrap_or_default();
-                        patches.push((
-                            reference.span,
-                            format!("&{target}{new_id}.{}", reference.path.join(".")),
-                        ));
-                    }
-                }
-            }
+            visit_template(schema, formatted, record, new_id, host_type, patches);
         }
         _ => {}
+    }
+}
+
+fn visit_template(
+    schema: &CftSchema,
+    formatted: &coflow_language::cfd::CfdFormattedString,
+    record: &RecordTarget,
+    new_id: &str,
+    host_type: &str,
+    patches: &mut Vec<(Span, String)>,
+) {
+    // 引用位置包含插值花括号，重写保留模板结构并直接使用原文件坐标。
+    for segment in &formatted.segments {
+        if let coflow_language::cfd::CfdFormatSegment::Reference(reference) = segment {
+            if reference.id.as_deref() == Some(&record.id)
+                && schema.is_assignable(
+                    &record.actual_type,
+                    reference.type_name.as_deref().unwrap_or(host_type),
+                )
+            {
+                let target = reference
+                    .type_name
+                    .as_ref()
+                    .map(|target| format!("{target}::"))
+                    .unwrap_or_default();
+                patches.push((
+                    reference.span,
+                    format!("{{&{target}{new_id}.{}}}", reference.path.join(".")),
+                ));
+            }
+        }
     }
 }
 
@@ -201,15 +213,7 @@ fn rename_schema_references(
                 Item::Type(ty) => {
                     for field in &ty.fields {
                         if let Some(default) = &field.default {
-                            visit_default(
-                                schema,
-                                default,
-                                module.source(),
-                                &ty.name,
-                                record,
-                                new_id,
-                                &mut patches,
-                            );
+                            visit_default(schema, default, &ty.name, record, new_id, &mut patches);
                         }
                     }
                     for check in &ty.checks {
@@ -219,7 +223,6 @@ fn rename_schema_references(
                 Item::Const(constant) => visit_default(
                     schema,
                     &constant.value,
-                    module.source(),
                     &record.actual_type,
                     record,
                     new_id,
@@ -298,7 +301,6 @@ fn rename_rule_members(
 fn visit_default(
     schema: &CftSchema,
     expression: &coflow_language::cft::syntax::ast::DefaultExpr,
-    source: &str,
     host_type: &str,
     record: &RecordTarget,
     new_id: &str,
@@ -334,60 +336,31 @@ fn visit_default(
                 }
             }
         }
-        E::FormattedString(_) => {
-            if let Some(text) = source.get(expression.span.start..expression.span.end) {
-                let prefix = "value: Value { field: ";
-                let ast = coflow_language::cfd::parse_cfd(&format!("{prefix}{text} }}")).0;
-                if let Some(value) = ast
-                    .records
-                    .first()
-                    .and_then(|record| record.fields.first())
-                    .map(|field| &field.value)
-                {
-                    let mut local = Vec::new();
-                    visit(
-                        schema,
-                        &CftValueType::String,
-                        value,
-                        record,
-                        new_id,
-                        host_type,
-                        &mut local,
-                    );
-                    patches.extend(local.into_iter().map(|(span, value)| {
-                        (
-                            Span::new(
-                                span.start - prefix.len() + expression.span.start,
-                                span.end - prefix.len() + expression.span.start,
-                            ),
-                            value,
-                        )
-                    }));
-                }
-            }
+        E::FormattedString(value) => {
+            visit_template(schema, value, record, new_id, host_type, patches);
         }
         E::OptionSome(value) => {
-            visit_default(schema, value, source, host_type, record, new_id, patches);
+            visit_default(schema, value, host_type, record, new_id, patches);
         }
         E::Array(values) => {
             for value in values {
-                visit_default(schema, value, source, host_type, record, new_id, patches);
+                visit_default(schema, value, host_type, record, new_id, patches);
             }
         }
         E::Object(fields) | E::TypedObject { fields, .. } => {
             for (_, value) in fields {
-                visit_default(schema, value, source, host_type, record, new_id, patches);
+                visit_default(schema, value, host_type, record, new_id, patches);
             }
         }
         E::Dictionary(values) => {
             for (key, value) in values {
-                visit_default(schema, key, source, host_type, record, new_id, patches);
-                visit_default(schema, value, source, host_type, record, new_id, patches);
+                visit_default(schema, key, host_type, record, new_id, patches);
+                visit_default(schema, value, host_type, record, new_id, patches);
             }
         }
         E::BitExpr { lhs, rhs, .. } => {
-            visit_default(schema, lhs, source, host_type, record, new_id, patches);
-            visit_default(schema, rhs, source, host_type, record, new_id, patches);
+            visit_default(schema, lhs, host_type, record, new_id, patches);
+            visit_default(schema, rhs, host_type, record, new_id, patches);
         }
         _ => {}
     }

@@ -1,0 +1,1428 @@
+{
+  "protocol": "5 serial AB/BA engine-only rounds on logical CPU2 (P core, mask 0x4), 1 warmup + 3 samples per process; 15 samples per metric per version",
+  "comparison": "negative change_percent means faster; descriptive sample statistics, no P95/P99 or memory claims",
+  "metrics": [
+    {
+      "metric": "schema_compile_primitive",
+      "fixture": {
+        "types": 200,
+        "fields_per_type": 13,
+        "bytes": 38290,
+        "sha256": "e70af66cb842c5989e0e3783fd77e278a25140649156a52f6d1fbe13e3ff5667"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 4.3986,
+          "after_median_ms": 4.5847999999999995,
+          "change_percent": 4.233165097985703
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 4.9985,
+          "after_median_ms": 4.2661,
+          "change_percent": -14.652395718715617
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 5.0539000000000005,
+          "after_median_ms": 4.5882,
+          "change_percent": -9.214665901580975
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 4.4306,
+          "after_median_ms": 4.7501,
+          "change_percent": 7.21121292827156
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 4.7208,
+          "after_median_ms": 4.8814,
+          "change_percent": 3.401965768513815
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          5.1933,
+          4.3986,
+          4.3616,
+          5.5774,
+          4.9985,
+          4.806900000000001,
+          5.0758,
+          5.0539000000000005,
+          4.5558,
+          6.3041,
+          4.3965000000000005,
+          4.4306,
+          4.7208,
+          5.9677999999999995,
+          4.3201
+        ],
+        "median_ms": 4.806900000000001,
+        "min_ms": 4.3201,
+        "max_ms": 6.3041,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          4.5847999999999995,
+          4.2599,
+          5.9224000000000006,
+          4.7784,
+          4.2661,
+          4.2101999999999995,
+          4.9942,
+          4.5882,
+          4.4159999999999995,
+          4.7082,
+          5.3075,
+          4.7501,
+          4.8814,
+          4.3401000000000005,
+          9.5345
+        ],
+        "median_ms": 4.7082,
+        "min_ms": 4.2101999999999995,
+        "max_ms": 9.5345,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -2.053298383573632
+    },
+    {
+      "metric": "schema_compile_template",
+      "fixture": {
+        "types": 200,
+        "fields_per_type": 13,
+        "bytes": 107890,
+        "sha256": "85f9ba2af98c4d68846e20295162a44ba58b3c1b03942285764ab30817832e5a"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 858.3978,
+          "after_median_ms": 6.6783,
+          "change_percent": -99.22200406385012
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 859.841,
+          "after_median_ms": 6.1241,
+          "change_percent": -99.28776366793396
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 901.1723000000001,
+          "after_median_ms": 6.9214,
+          "change_percent": -99.23195597556649
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 859.0907,
+          "after_median_ms": 6.9338999999999995,
+          "change_percent": -99.19287916863726
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 849.1192,
+          "after_median_ms": 6.2837,
+          "change_percent": -99.25997433575876
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          857.741,
+          858.3978,
+          869.7036,
+          852.2744,
+          863.6803,
+          859.841,
+          941.2956,
+          897.8376000000001,
+          901.1723000000001,
+          849.5076,
+          879.8832,
+          859.0907,
+          849.1005,
+          887.8996999999999,
+          849.1192
+        ],
+        "median_ms": 859.841,
+        "min_ms": 849.1005,
+        "max_ms": 941.2956,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          7.7923,
+          6.4661,
+          6.6783,
+          6.1241,
+          7.018,
+          5.920800000000001,
+          6.9214,
+          6.9674000000000005,
+          6.1739999999999995,
+          6.939500000000001,
+          6.9338999999999995,
+          6.3193,
+          6.2837,
+          7.3466,
+          6.1443
+        ],
+        "median_ms": 6.6783,
+        "min_ms": 5.920800000000001,
+        "max_ms": 7.7923,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -99.22330989101474
+    },
+    {
+      "metric": "schema_compile_alias_inheritance",
+      "fixture": {
+        "types": 200,
+        "fields_per_type": 13,
+        "bytes": 75922,
+        "sha256": "a579787eab992bf0ef0068c60647f8321e0536d1ddc774f6cc0c463991791146"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 8.5893,
+          "after_median_ms": 8.4056,
+          "change_percent": -2.1387074616092128
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 8.4068,
+          "after_median_ms": 7.966600000000001,
+          "change_percent": -5.236237331683869
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 9.075899999999999,
+          "after_median_ms": 7.879600000000001,
+          "change_percent": -13.181061933251781
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 8.9266,
+          "after_median_ms": 7.950499999999999,
+          "change_percent": -10.934734389353185
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 9.908999999999999,
+          "after_median_ms": 8.0195,
+          "change_percent": -19.068523564436358
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          9.2372,
+          8.5893,
+          8.0094,
+          8.6247,
+          8.4068,
+          7.8247,
+          11.8847,
+          8.300099999999999,
+          9.075899999999999,
+          8.346499999999999,
+          12.8213,
+          8.9266,
+          11.203899999999999,
+          9.908999999999999,
+          8.297
+        ],
+        "median_ms": 8.6247,
+        "min_ms": 7.8247,
+        "max_ms": 12.8213,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          7.6030999999999995,
+          8.4056,
+          9.6445,
+          8.2471,
+          7.966600000000001,
+          7.7406999999999995,
+          7.879600000000001,
+          7.4536999999999995,
+          17.4635,
+          7.4893,
+          7.950499999999999,
+          8.6919,
+          8.0195,
+          7.617299999999999,
+          8.311
+        ],
+        "median_ms": 7.966600000000001,
+        "min_ms": 7.4536999999999995,
+        "max_ms": 17.4635,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -7.630410333113035
+    },
+    {
+      "metric": "model_default_scalar",
+      "fixture": {
+        "records": 5000,
+        "schema_sha256": "5a3113982763207869ada1f6c3f8a2b19aedccb0bcc5457d4169d3368d38f5f7",
+        "schema_bytes": 249
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 19.8306,
+          "after_median_ms": 19.782799999999998,
+          "change_percent": -0.24104162254294792
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 18.6879,
+          "after_median_ms": 19.7426,
+          "change_percent": 5.643758795798348
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 18.945300000000003,
+          "after_median_ms": 20.6169,
+          "change_percent": 8.823296543205949
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 18.046,
+          "after_median_ms": 20.5101,
+          "change_percent": 13.654549484650346
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 19.5703,
+          "after_median_ms": 19.691,
+          "change_percent": 0.6167508929346921
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          24.5941,
+          19.8306,
+          19.3322,
+          23.2759,
+          17.654,
+          18.6879,
+          24.3964,
+          18.945300000000003,
+          18.2442,
+          25.1111,
+          17.9033,
+          18.046,
+          23.3414,
+          19.5703,
+          17.4478
+        ],
+        "median_ms": 19.3322,
+        "min_ms": 17.4478,
+        "max_ms": 25.1111,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          22.5825,
+          19.364800000000002,
+          19.782799999999998,
+          22.1239,
+          19.006999999999998,
+          19.7426,
+          23.7206,
+          20.6169,
+          18.811899999999998,
+          22.531,
+          19.9879,
+          20.5101,
+          24.8592,
+          18.2155,
+          19.691
+        ],
+        "median_ms": 19.9879,
+        "min_ms": 18.2155,
+        "max_ms": 24.8592,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": 3.391750550894357
+    },
+    {
+      "metric": "model_default_array",
+      "fixture": {
+        "records": 5000,
+        "schema_sha256": "d200fc63739d7e021ddec2acf0c5acb6ab059e5ed2606541a75189a1b9def543",
+        "schema_bytes": 450
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 62.861700000000006,
+          "after_median_ms": 67.5672,
+          "change_percent": 7.485480029970537
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 66.99549999999999,
+          "after_median_ms": 66.8587,
+          "change_percent": -0.20419281892066765
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 66.65939999999999,
+          "after_median_ms": 68.497,
+          "change_percent": 2.75670048035237
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 65.28299999999999,
+          "after_median_ms": 67.47930000000001,
+          "change_percent": 3.3642755388080037
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 66.79400000000001,
+          "after_median_ms": 66.3965,
+          "change_percent": -0.5951133335329595
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          64.911,
+          62.861700000000006,
+          62.3559,
+          67.1365,
+          64.00210000000001,
+          66.99549999999999,
+          66.65939999999999,
+          80.91969999999999,
+          65.7881,
+          65.28299999999999,
+          61.677299999999995,
+          68.49130000000001,
+          66.1017,
+          74.0028,
+          66.79400000000001
+        ],
+        "median_ms": 66.1017,
+        "min_ms": 61.677299999999995,
+        "max_ms": 80.91969999999999,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          67.9901,
+          64.14309999999999,
+          67.5672,
+          66.8587,
+          66.64240000000001,
+          75.2245,
+          67.00150000000001,
+          69.7007,
+          68.497,
+          67.47930000000001,
+          66.53920000000001,
+          69.77980000000001,
+          66.3965,
+          68.37440000000001,
+          63.733799999999995
+        ],
+        "median_ms": 67.47930000000001,
+        "min_ms": 63.733799999999995,
+        "max_ms": 75.2245,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": 2.084061378149138
+    },
+    {
+      "metric": "model_default_template",
+      "fixture": {
+        "records": 5000,
+        "schema_sha256": "23516dbd98c58e9ae4abaf41bd1a76a6aaacf018555b50f65e48b2a1a787912b",
+        "schema_bytes": 365
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 67.9861,
+          "after_median_ms": 45.851099999999995,
+          "change_percent": -32.55812585219626
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 72.9254,
+          "after_median_ms": 52.6909,
+          "change_percent": -27.74684814893027
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 68.86359999999999,
+          "after_median_ms": 43.581799999999994,
+          "change_percent": -36.71286427081941
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 68.3942,
+          "after_median_ms": 45.0809,
+          "change_percent": -34.08666231931947
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 68.3442,
+          "after_median_ms": 48.3959,
+          "change_percent": -29.187992543624773
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          75.1734,
+          67.9861,
+          64.7476,
+          72.9254,
+          81.5865,
+          66.9912,
+          66.0847,
+          70.99,
+          68.86359999999999,
+          69.54140000000001,
+          65.9364,
+          68.3942,
+          79.1927,
+          66.3349,
+          68.3442
+        ],
+        "median_ms": 68.3942,
+        "min_ms": 64.7476,
+        "max_ms": 81.5865,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          45.851099999999995,
+          48.6349,
+          44.7149,
+          57.3598,
+          49.2091,
+          52.6909,
+          43.132600000000004,
+          44.7381,
+          43.581799999999994,
+          46.1374,
+          44.6438,
+          45.0809,
+          48.3959,
+          57.9726,
+          45.7082
+        ],
+        "median_ms": 45.851099999999995,
+        "min_ms": 43.132600000000004,
+        "max_ms": 57.9726,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -32.96054343789386
+    },
+    {
+      "metric": "new_read_session_defaults",
+      "fixture": {
+        "records": 5000,
+        "files": 50,
+        "sha256": "f87d52e0cceab1170493b172ea17a2ad09f6804cf3b9eeac9735d3c69b1ffc84"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 46.1984,
+          "after_median_ms": 46.3822,
+          "change_percent": 0.3978492761653962
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 47.096199999999996,
+          "after_median_ms": 135.6952,
+          "change_percent": 188.1234579435284
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 57.6445,
+          "after_median_ms": 43.8305,
+          "change_percent": -23.964124938198783
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 46.838699999999996,
+          "after_median_ms": 46.9167,
+          "change_percent": 0.1665289600266462
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 48.2999,
+          "after_median_ms": 48.740899999999996,
+          "change_percent": 0.9130453686239326
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          46.1984,
+          44.676300000000005,
+          49.68,
+          47.096199999999996,
+          66.1854,
+          46.3889,
+          59.044399999999996,
+          57.6445,
+          56.478300000000004,
+          49.501999999999995,
+          46.838699999999996,
+          45.014199999999995,
+          48.2999,
+          49.725699999999996,
+          48.2395
+        ],
+        "median_ms": 48.2999,
+        "min_ms": 44.676300000000005,
+        "max_ms": 66.1854,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          47.923,
+          46.3822,
+          44.046299999999995,
+          56.1088,
+          422.0198,
+          135.6952,
+          44.195499999999996,
+          43.8305,
+          43.710100000000004,
+          47.6837,
+          44.3996,
+          46.9167,
+          44.8975,
+          49.4913,
+          48.740899999999996
+        ],
+        "median_ms": 46.9167,
+        "min_ms": 43.710100000000004,
+        "max_ms": 422.0198,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -2.863774045080847
+    },
+    {
+      "metric": "set_scalar",
+      "fixture": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "sha256": "5d51400a5d009d87c2c4b26d3f6a26a3171bb05dab54790b23e9ebd266ff1974"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 12.1986,
+          "after_median_ms": 9.6922,
+          "change_percent": -20.546620103946367
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 10.6171,
+          "after_median_ms": 28.596799999999998,
+          "change_percent": 169.34662007516175
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 24.6186,
+          "after_median_ms": 10.5452,
+          "change_percent": -57.16572022779525
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 11.3893,
+          "after_median_ms": 16.568800000000003,
+          "change_percent": 45.47689498037635
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 12.6465,
+          "after_median_ms": 11.9781,
+          "change_percent": -5.285256790416327
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          12.8539,
+          12.1986,
+          9.2767,
+          50.6529,
+          9.8789,
+          10.6171,
+          45.613,
+          24.6186,
+          16.5229,
+          12.9622,
+          11.3893,
+          10.8867,
+          9.142900000000001,
+          12.75,
+          12.6465
+        ],
+        "median_ms": 12.6465,
+        "min_ms": 9.142900000000001,
+        "max_ms": 50.6529,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          10.761,
+          9.6922,
+          9.4894,
+          21.5867,
+          36.3218,
+          28.596799999999998,
+          10.366800000000001,
+          10.5452,
+          10.7615,
+          88.3675,
+          16.568800000000003,
+          11.6205,
+          11.9781,
+          11.708,
+          11.9848
+        ],
+        "median_ms": 11.708,
+        "min_ms": 9.4894,
+        "max_ms": 88.3675,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -7.421025580200046
+    },
+    {
+      "metric": "batch_same_file_1000",
+      "fixture": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "sha256": "5d51400a5d009d87c2c4b26d3f6a26a3171bb05dab54790b23e9ebd266ff1974"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 25.6426,
+          "after_median_ms": 22.0139,
+          "change_percent": -14.151061124846942
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 27.2813,
+          "after_median_ms": 25.1576,
+          "change_percent": -7.7844530869130235
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 33.565999999999995,
+          "after_median_ms": 23.1111,
+          "change_percent": -31.1472919025204
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 25.854100000000003,
+          "after_median_ms": 23.6614,
+          "change_percent": -8.48105329522204
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 25.1101,
+          "after_median_ms": 22.604599999999998,
+          "change_percent": -9.978056638563771
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          25.9203,
+          24.137999999999998,
+          25.6426,
+          26.384700000000002,
+          33.0343,
+          27.2813,
+          33.565999999999995,
+          31.3873,
+          36.753099999999996,
+          24.8517,
+          25.854100000000003,
+          34.1215,
+          25.1101,
+          25.0578,
+          33.657399999999996
+        ],
+        "median_ms": 26.384700000000002,
+        "min_ms": 24.137999999999998,
+        "max_ms": 36.753099999999996,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          21.8751,
+          22.0139,
+          23.8146,
+          24.6579,
+          27.7151,
+          25.1576,
+          22.8503,
+          23.1111,
+          26.0435,
+          23.6614,
+          26.218700000000002,
+          23.5277,
+          20.962999999999997,
+          22.604599999999998,
+          27.2497
+        ],
+        "median_ms": 23.6614,
+        "min_ms": 20.962999999999997,
+        "max_ms": 27.7151,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -10.321512088445207
+    },
+    {
+      "metric": "batch_cross_file_1000",
+      "fixture": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "sha256": "5d51400a5d009d87c2c4b26d3f6a26a3171bb05dab54790b23e9ebd266ff1974"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 130.98940000000002,
+          "after_median_ms": 122.4543,
+          "change_percent": -6.5158707498469415
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 131.86919999999998,
+          "after_median_ms": 145.71200000000002,
+          "change_percent": 10.497371637956432
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 135.8381,
+          "after_median_ms": 146.37220000000002,
+          "change_percent": 7.754893509258465
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 160.8787,
+          "after_median_ms": 141.2786,
+          "change_percent": -12.183154140355434
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 124.6491,
+          "after_median_ms": 128.98239999999998,
+          "change_percent": 3.4763989471243484
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          125.00810000000001,
+          140.3424,
+          130.98940000000002,
+          131.7111,
+          191.44729999999998,
+          131.86919999999998,
+          135.8381,
+          132.5087,
+          141.85819999999998,
+          145.7566,
+          190.6147,
+          160.8787,
+          120.8566,
+          124.6491,
+          133.9806
+        ],
+        "median_ms": 133.9806,
+        "min_ms": 120.8566,
+        "max_ms": 191.44729999999998,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          113.44999999999999,
+          128.4644,
+          122.4543,
+          147.6885,
+          138.3365,
+          145.71200000000002,
+          119.2028,
+          156.521,
+          146.37220000000002,
+          128.8176,
+          155.1998,
+          141.2786,
+          130.3308,
+          128.2346,
+          128.98239999999998
+        ],
+        "median_ms": 130.3308,
+        "min_ms": 113.44999999999999,
+        "max_ms": 156.521,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -2.7241257316357737
+    },
+    {
+      "metric": "insert_one",
+      "fixture": {
+        "records": 5000,
+        "files": 1,
+        "fields": 20,
+        "sha256": "e859ec90e4ed781984a6e8f9bdeb21a5194b1c8f3be7b9a8f2c76879a6da58fc"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 25.961000000000002,
+          "after_median_ms": 28.2276,
+          "change_percent": 8.730788490427944
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 26.0659,
+          "after_median_ms": 23.5433,
+          "change_percent": -9.677778246674773
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 24.9449,
+          "after_median_ms": 23.498,
+          "change_percent": -5.800384046438345
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 26.5351,
+          "after_median_ms": 24.4727,
+          "change_percent": -7.772346816103958
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 25.3321,
+          "after_median_ms": 24.7683,
+          "change_percent": -2.2256346690562534
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          24.5194,
+          30.0835,
+          25.961000000000002,
+          26.0659,
+          27.796999999999997,
+          24.1314,
+          26.0179,
+          24.9449,
+          23.2387,
+          26.5351,
+          23.423,
+          27.397399999999998,
+          26.028599999999997,
+          25.3232,
+          25.3321
+        ],
+        "median_ms": 25.961000000000002,
+        "min_ms": 23.2387,
+        "max_ms": 30.0835,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          25.6921,
+          32.2181,
+          28.2276,
+          23.5433,
+          23.3558,
+          24.015,
+          23.4226,
+          25.573900000000002,
+          23.498,
+          24.4727,
+          36.8093,
+          24.0725,
+          25.0098,
+          24.4779,
+          24.7683
+        ],
+        "median_ms": 24.4779,
+        "min_ms": 23.3558,
+        "max_ms": 36.8093,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -5.7127999691845455
+    },
+    {
+      "metric": "insert_batch_10",
+      "fixture": {
+        "records": 5000,
+        "files": 1,
+        "fields": 20,
+        "sha256": "e859ec90e4ed781984a6e8f9bdeb21a5194b1c8f3be7b9a8f2c76879a6da58fc"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 54.8054,
+          "after_median_ms": 56.5725,
+          "change_percent": 3.224317311797731
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 68.5934,
+          "after_median_ms": 53.7352,
+          "change_percent": -21.661267702140442
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 51.8831,
+          "after_median_ms": 54.544200000000004,
+          "change_percent": 5.129030455003658
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 54.9259,
+          "after_median_ms": 56.0763,
+          "change_percent": 2.0944581700072407
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 54.2934,
+          "after_median_ms": 51.9285,
+          "change_percent": -4.355778050370763
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          54.8054,
+          52.3772,
+          55.183099999999996,
+          72.7135,
+          61.4201,
+          68.5934,
+          55.8865,
+          51.3119,
+          51.8831,
+          54.3915,
+          56.8817,
+          54.9259,
+          51.7408,
+          54.2934,
+          54.7405
+        ],
+        "median_ms": 54.8054,
+        "min_ms": 51.3119,
+        "max_ms": 72.7135,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          66.9713,
+          54.626099999999994,
+          56.5725,
+          53.7352,
+          54.0599,
+          51.1605,
+          52.7841,
+          54.544200000000004,
+          57.1234,
+          56.0763,
+          51.6831,
+          68.363,
+          50.6619,
+          53.0746,
+          51.9285
+        ],
+        "median_ms": 54.0599,
+        "min_ms": 50.6619,
+        "max_ms": 68.363,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -1.360267418903971
+    },
+    {
+      "metric": "dimension_set",
+      "fixture": {
+        "records": 10000,
+        "files": 10,
+        "fields": 20,
+        "sha256": "5d51400a5d009d87c2c4b26d3f6a26a3171bb05dab54790b23e9ebd266ff1974"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 5.9213,
+          "after_median_ms": 5.986400000000001,
+          "change_percent": 1.0994207353115293
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 5.5908,
+          "after_median_ms": 6.2245,
+          "change_percent": 11.334692709451243
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 6.4076,
+          "after_median_ms": 6.1711,
+          "change_percent": -3.6909295211935866
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 5.898300000000001,
+          "after_median_ms": 5.6477,
+          "change_percent": -4.248681823576295
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 5.8697,
+          "after_median_ms": 5.8267,
+          "change_percent": -0.7325757704823133
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          5.9213,
+          6.8322,
+          5.3409,
+          6.3981,
+          5.5908,
+          5.0922,
+          7.1895999999999995,
+          5.6789,
+          6.4076,
+          5.898300000000001,
+          5.2417,
+          6.2881,
+          5.8697,
+          6.6465,
+          5.3946000000000005
+        ],
+        "median_ms": 5.898300000000001,
+        "min_ms": 5.0922,
+        "max_ms": 7.1895999999999995,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          5.986400000000001,
+          6.9307,
+          5.7802,
+          6.2245,
+          5.8469999999999995,
+          10.9956,
+          6.6883,
+          6.1711,
+          5.9005,
+          5.3734,
+          5.7042,
+          5.6477,
+          5.8267,
+          6.0486,
+          5.434699999999999
+        ],
+        "median_ms": 5.9005,
+        "min_ms": 5.3734,
+        "max_ms": 10.9956,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": 0.03729888272892001
+    },
+    {
+      "metric": "nested_array_1000",
+      "fixture": {
+        "array_elements": 100000,
+        "source_sha256": "c4c389fed36cdd110315541f10a9173dff4c1fd3c706b931f8ef346d8a057ca1"
+      },
+      "rounds": 5,
+      "samples_per_version": 15,
+      "paired_rounds": [
+        {
+          "round": 1,
+          "baseline_median_ms": 57.813700000000004,
+          "after_median_ms": 54.7669,
+          "change_percent": -5.270031151785826
+        },
+        {
+          "round": 2,
+          "baseline_median_ms": 59.836,
+          "after_median_ms": 55.5608,
+          "change_percent": -7.144862624506986
+        },
+        {
+          "round": 3,
+          "baseline_median_ms": 63.11460000000001,
+          "after_median_ms": 53.5704,
+          "change_percent": -15.122016142065398
+        },
+        {
+          "round": 4,
+          "baseline_median_ms": 60.3708,
+          "after_median_ms": 56.8847,
+          "change_percent": -5.774480377931058
+        },
+        {
+          "round": 5,
+          "baseline_median_ms": 57.0879,
+          "after_median_ms": 55.1392,
+          "change_percent": -3.413507941262506
+        }
+      ],
+      "baseline": {
+        "samples_ms": [
+          57.813700000000004,
+          53.2301,
+          58.9944,
+          67.85679999999999,
+          59.1131,
+          59.836,
+          63.11460000000001,
+          58.484899999999996,
+          64.9097,
+          57.3547,
+          72.37010000000001,
+          60.3708,
+          57.0879,
+          73.7978,
+          57.0008
+        ],
+        "median_ms": 59.1131,
+        "min_ms": 53.2301,
+        "max_ms": 73.7978,
+        "sources": [
+          "r1-baseline-engine.stdout.ndjson",
+          "r2-baseline-engine.stdout.ndjson",
+          "r3-baseline-engine.stdout.ndjson",
+          "r4-baseline-engine.stdout.ndjson",
+          "r5-baseline-engine.stdout.ndjson"
+        ]
+      },
+      "after": {
+        "samples_ms": [
+          54.7669,
+          56.874300000000005,
+          54.597100000000005,
+          55.5608,
+          54.2259,
+          65.571,
+          51.6243,
+          53.5704,
+          54.3633,
+          112.6199,
+          55.7523,
+          56.8847,
+          56.4807,
+          54.1922,
+          55.1392
+        ],
+        "median_ms": 55.1392,
+        "min_ms": 51.6243,
+        "max_ms": 112.6199,
+        "sources": [
+          "r1-after-engine.stdout.ndjson",
+          "r2-after-engine.stdout.ndjson",
+          "r3-after-engine.stdout.ndjson",
+          "r4-after-engine.stdout.ndjson",
+          "r5-after-engine.stdout.ndjson"
+        ]
+      },
+      "change_percent": -6.722536967271219
+    }
+  ]
+}

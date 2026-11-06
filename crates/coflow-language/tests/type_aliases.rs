@@ -158,3 +158,30 @@ fn object_aliases_are_transparent_in_check_type_positions() {
     )
     .expect("object aliases should work in records queries");
 }
+
+#[test]
+fn inherited_alias_fields_keep_resolved_types_and_defaults() {
+    let schema = compile(
+        r#"
+            type Scores = {string: Option<[long]>};
+            abstract table Base { scores: Scores = {"ready": Some([3])}; }
+            table Child: Base { check Valid { scores.len() > 0; } }
+        "#,
+    )
+    .expect("inherited alias type and default should compile together");
+    let parent = schema.resolve_type("Base").expect("Base");
+    let child = schema.resolve_type("Child").expect("Child");
+    let parent_field = parent.field("scores").expect("parent scores");
+    let child_field = child.field("scores").expect("child scores");
+    assert_eq!(parent_field, child_field);
+    assert_eq!(
+        child_field.value_type,
+        CftValueType::Dict(
+            Box::new(CftValueType::String),
+            Box::new(CftValueType::Option(Box::new(CftValueType::Array(
+                Box::new(CftValueType::Long)
+            )))),
+        )
+    );
+    assert!(child_field.default.is_some());
+}

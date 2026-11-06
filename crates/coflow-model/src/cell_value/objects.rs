@@ -1,5 +1,5 @@
 use crate::LoadedValueDraft;
-use coflow_language::cft::CftSchema;
+use coflow_language::cft::{CftField, CftSchema};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::diagnostics::{
@@ -8,7 +8,6 @@ use super::diagnostics::{
 };
 use super::markers::{is_type_marker_name, looks_like_bare_record_id};
 use super::scan::{find_marker_open_brace, find_top_level_char, split_top_level, strip_outer_pair};
-use super::types::{full_fields, FieldMeta};
 use super::{parse_value, ValueContext};
 
 pub(super) fn parse_object(
@@ -115,7 +114,7 @@ fn validate_actual_type(
 fn parse_named_object(
     schema: &CftSchema,
     actual_type: Option<String>,
-    fields: &[FieldMeta],
+    fields: &[&CftField],
     parts: &[&str],
     colon_positions: &[Option<usize>],
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
@@ -155,7 +154,7 @@ fn parse_named_object(
         }
         out.insert(
             name.to_string(),
-            parse_value(schema, &field.ty, value_text, ValueContext::Nested)?,
+            parse_value(schema, &field.value_type, value_text, ValueContext::Nested)?,
         );
     }
     Ok(object_value(actual_type, out))
@@ -164,7 +163,7 @@ fn parse_named_object(
 fn parse_positional_object(
     schema: &CftSchema,
     actual_type: Option<String>,
-    fields: &[FieldMeta],
+    fields: &[&CftField],
     parts: &[&str],
 ) -> Result<LoadedValueDraft, CellValueDiagnostics> {
     if parts.len() > fields.len() {
@@ -181,8 +180,8 @@ fn parse_positional_object(
             return Err(syntax("positional object field has an empty value"));
         }
         out.insert(
-            field.name.clone(),
-            parse_value(schema, &field.ty, part, ValueContext::Nested)?,
+            field.name.to_string(),
+            parse_value(schema, &field.value_type, part, ValueContext::Nested)?,
         );
     }
     Ok(object_value(actual_type, out))
@@ -234,4 +233,20 @@ fn object_content(text: &str) -> ObjectContent<'_> {
         content: text,
         has_boundary: false,
     }
+}
+
+fn full_fields<'a>(
+    schema: &'a CftSchema,
+    type_name: &str,
+) -> Result<Vec<&'a CftField>, CellValueDiagnostics> {
+    let Some(schema_type) = schema.resolve_type(type_name) else {
+        return Err(CellValueDiagnostics {
+            diagnostics: vec![CellValueDiagnostic {
+                code: CellValueErrorCode::UnknownType,
+                message: format!("unknown type `{type_name}`"),
+            }],
+        });
+    };
+    // 单元格直接借用编译后的字段类型，不维护第二套类型树。
+    Ok(schema_type.all_fields().collect())
 }

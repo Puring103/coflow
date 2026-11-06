@@ -7,25 +7,24 @@ use crate::data_model::CfdValue;
 use coflow_language::cft::RecordId;
 use std::collections::BTreeSet;
 
-use crate::mutation::PreparedMutationOp;
 use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
 
 use super::plan::{
-    DeletePlan, DimensionRecordAction, DimensionWritePlan, InsertPlan, MutationExecutionPlan,
-    RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, TransferPlan, WriteFieldPlan,
+    DeletePlan, DimensionRecordAction, DimensionWritePlan, ExecutableMutationOp, FieldWrite,
+    InsertPlan, RenamePlan, RenameWritePlan, ReorderOperation, ReorderPlan, TransferPlan,
+    WriteFieldPlan,
 };
 
-#[allow(clippy::too_many_lines)]
 pub(crate) fn stage_mutation_op(
     session: &ProjectSession,
-    op: &PreparedMutationOp,
-    execution: &MutationExecutionPlan,
+    execution: &ExecutableMutationOp,
 ) -> Result<WriteOutcome, DiagnosticSet> {
-    match (op, execution) {
-        (
-            PreparedMutationOp::RestoreRecord { snapshot },
-            MutationExecutionPlan::Restore { writer, sources },
-        ) => {
+    match execution {
+        ExecutableMutationOp::Restore {
+            snapshot,
+            writer,
+            sources,
+        } => {
             for (patch, source) in snapshot.patches.iter().zip(sources) {
                 writer.restore_source_patch(source.location.path(), patch)?;
             }
@@ -39,135 +38,51 @@ pub(crate) fn stage_mutation_op(
                 ..WriteOutcome::default()
             })
         }
-        (
-            PreparedMutationOp::InsertRecord {
-                file,
-                actual_type,
-                id,
-                fields,
-                ..
-            },
-            MutationExecutionPlan::Insert(plan),
-        ) => stage_insert_record(session, plan, file, id, actual_type, fields),
-        (
-            PreparedMutationOp::SetField {
-                record,
-                value,
-                materialized_top_level,
-                ..
-            },
-            MutationExecutionPlan::WriteField(plan),
-        ) => stage_write_field(
-            session,
+        ExecutableMutationOp::Insert {
             plan,
-            record,
-            value,
-            materialized_top_level
+            coordinate,
+            fields,
+        } => stage_insert_record(session, plan, coordinate, fields),
+        ExecutableMutationOp::WriteField(write) => stage_write_field(
+            session,
+            &write.plan,
+            &write.value,
+            write
+                .materialized_top_level
                 .as_deref()
                 .map(crate::api::FieldMaterialization::Record),
         ),
-        (
-            PreparedMutationOp::WriteDimensionValue {
-                record,
-                coordinate,
-                new_value,
-                write_file,
-            },
-            MutationExecutionPlan::WriteDimension(plan),
-        ) => stage_write_dimension_value(
+        ExecutableMutationOp::WriteDimension {
+            plan,
+            record,
+            coordinate,
+            new_value,
+        } => stage_write_dimension_value(
             session,
             plan,
             record,
             coordinate,
             new_value.as_ref(),
-            write_file,
+            &plan.display_path,
         ),
-        (
-            PreparedMutationOp::SetField { record, value, .. },
-            MutationExecutionPlan::Rename(plan),
-        ) => {
-            let CfdValue::String(new_id) = value else {
-                return Err(plan_mismatch("rename execution value is not a string"));
-            };
-            stage_rename_record_id(session, plan, record, new_id)
-        }
-        (
-            PreparedMutationOp::UnsetField {
-                write_record, path, ..
-            },
-            MutationExecutionPlan::UnsetField(plan),
-        ) => {
-            let schema = session.schema();
+        ExecutableMutationOp::UnsetField(plan) => {
             let writer_outcome = plan.writer.unset_field(
                 &plan.target.origin,
                 &plan.target.coordinate.id,
                 &plan.target.coordinate.actual_type,
-                path,
-                schema,
+                &plan.target.field_path,
+                session.schema(),
             )?;
-            Ok(field_write_outcome(plan, write_record, writer_outcome))
+            Ok(field_write_outcome(plan, writer_outcome))
         }
-        (
-            PreparedMutationOp::RenameRecord { record, new_id, .. },
-            MutationExecutionPlan::Rename(plan),
-        ) => stage_rename_record_id(session, plan, record, new_id),
-        (PreparedMutationOp::DeleteRecord { record, .. }, MutationExecutionPlan::Delete(plan)) => {
-            stage_delete_record(session, plan, record)
+        ExecutableMutationOp::Rename { plan, new_id } => {
+            stage_rename_record_id(session, plan, new_id)
         }
-        (
-            PreparedMutationOp::SwapRecords { .. } | PreparedMutationOp::MoveRecord { .. },
-            MutationExecutionPlan::Reorder(plan),
-        ) => stage_reorder_records(plan),
-        (PreparedMutationOp::TransferRecord { .. }, MutationExecutionPlan::Transfer(plan)) => {
-            stage_transfer_record(session, plan)
-        }
-        (PreparedMutationOp::SetField { .. }, MutationExecutionPlan::Noop { coordinate }) => {
-            Ok(WriteOutcome::touch(coordinate.clone()))
-        }
-        (PreparedMutationOp::FoldedSetField { record, .. }, MutationExecutionPlan::Folded) => {
-            Ok(WriteOutcome::touch(record.clone()))
-        }
-        (
-            PreparedMutationOp::FoldedRenameRecord {
-                old_record,
-                new_record,
-                ..
-            },
-            MutationExecutionPlan::Folded,
-        ) => Ok(WriteOutcome {
-            touched: vec![old_record.clone(), new_record.clone()],
-            inserted: None,
-            deleted: None,
-            renamed: Some((old_record.clone(), new_record.clone())),
-            reordered: false,
-            affected_files: Vec::new(),
-            diagnostics: DiagnosticSet::empty(),
-        }),
-        (PreparedMutationOp::FoldedDeleteRecord { record, .. }, MutationExecutionPlan::Folded) => {
-            Ok(WriteOutcome {
-                touched: Vec::new(),
-                inserted: None,
-                deleted: Some(record.clone()),
-                renamed: None,
-                reordered: false,
-                affected_files: Vec::new(),
-                diagnostics: DiagnosticSet::empty(),
-            })
-        }
-        (PreparedMutationOp::CancelledInsert { record, .. }, MutationExecutionPlan::Folded) => {
-            Ok(WriteOutcome {
-                touched: vec![record.clone()],
-                inserted: Some(record.clone()),
-                deleted: None,
-                renamed: None,
-                reordered: false,
-                affected_files: Vec::new(),
-                diagnostics: DiagnosticSet::empty(),
-            })
-        }
-        _ => Err(plan_mismatch(
-            "prepared mutation and writer execution plan do not match",
-        )),
+        ExecutableMutationOp::Delete(plan) => stage_delete_record(session, plan, &plan.coordinate),
+        ExecutableMutationOp::Reorder(plan) => stage_reorder_records(plan),
+        ExecutableMutationOp::Transfer(plan) => stage_transfer_record(session, plan),
+        ExecutableMutationOp::Noop { coordinate } => Ok(WriteOutcome::touch(coordinate.clone())),
+        ExecutableMutationOp::Folded(outcome) => Ok(outcome.clone()),
     }
 }
 
@@ -178,87 +93,57 @@ pub(crate) struct MutationBatchFailure {
 
 pub(crate) fn stage_field_mutation_batch(
     session: &ProjectSession,
-    batch: &[(&PreparedMutationOp, &MutationExecutionPlan)],
+    batch: &[&FieldWrite],
 ) -> Result<Vec<WriteOutcome>, MutationBatchFailure> {
-    let Some((_, MutationExecutionPlan::WriteField(first_plan))) = batch.first() else {
-        return Err(MutationBatchFailure {
-            index: 0,
-            diagnostics: plan_mismatch("field batch does not start with a field write"),
-        });
+    let Some(first) = batch.first() else {
+        return Ok(Vec::new());
     };
     let mut requests = Vec::with_capacity(batch.len());
-    for (index, (op, execution)) in batch.iter().enumerate() {
-        let (
-            PreparedMutationOp::SetField {
-                value,
-                materialized_top_level,
-                ..
-            },
-            MutationExecutionPlan::WriteField(plan),
-        ) = (op, execution)
-        else {
-            return Err(MutationBatchFailure {
-                index,
-                diagnostics: plan_mismatch("field batch contains a non-field mutation"),
-            });
-        };
-        if !batch[0].1.can_batch_field_write_with(execution) {
+    for (index, write) in batch.iter().enumerate() {
+        if first.batch_key() != write.batch_key() {
             return Err(MutationBatchFailure {
                 index,
                 diagnostics: plan_mismatch("field batch spans more than one resolved source"),
             });
         }
+        let plan = &write.plan;
         requests.push(WriteCellRequest {
             origin: &plan.target.origin,
             record_id: &plan.target.coordinate.id,
             actual_type: &plan.target.coordinate.actual_type,
             field_path: &plan.target.field_path,
-            new_value: value,
-            materialized_top_level: materialized_top_level
+            new_value: &write.value,
+            materialized_top_level: write
+                .materialized_top_level
                 .as_deref()
                 .map(crate::api::FieldMaterialization::Record),
             schema: session.schema(),
         });
     }
-    let writer_outcomes = first_plan
+    let outcomes = first
+        .plan
         .writer
         .write_field_batch(&requests)
         .map_err(|failure| MutationBatchFailure {
             index: failure.index,
             diagnostics: failure.diagnostics,
         })?;
-    if writer_outcomes.len() != batch.len() {
+    if outcomes.len() != batch.len() {
         return Err(MutationBatchFailure {
             index: 0,
             diagnostics: plan_mismatch("writer returned the wrong number of field batch outcomes"),
         });
     }
-    batch
+    Ok(batch
         .iter()
-        .enumerate()
-        .zip(writer_outcomes)
-        .map(|((index, (op, execution)), writer_outcome)| {
-            let (
-                PreparedMutationOp::SetField { record, .. },
-                MutationExecutionPlan::WriteField(plan),
-            ) = (op, execution)
-            else {
-                return Err(MutationBatchFailure {
-                    index,
-                    diagnostics: plan_mismatch(
-                        "validated field batch changed before outcome assembly",
-                    ),
-                });
-            };
-            Ok(field_write_outcome(plan, record, writer_outcome))
-        })
-        .collect()
+        .zip(outcomes)
+        .map(|(write, outcome)| field_write_outcome(&write.plan, outcome))
+        .collect())
 }
 
 fn stage_write_field(
     session: &ProjectSession,
     plan: &WriteFieldPlan,
-    host_record: &RecordCoordinate,
     new_value: &CfdValue,
     materialized_top_level: Option<crate::api::FieldMaterialization<'_>>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
@@ -273,7 +158,7 @@ fn stage_write_field(
         schema,
     };
     let writer_outcome = plan.writer.write_field(&request)?;
-    Ok(field_write_outcome(plan, host_record, writer_outcome))
+    Ok(field_write_outcome(plan, writer_outcome))
 }
 
 fn stage_write_dimension_value(
@@ -325,15 +210,10 @@ fn stage_write_dimension_value(
 
 fn field_write_outcome(
     plan: &WriteFieldPlan,
-    host_record: &RecordCoordinate,
     writer_outcome: crate::api::WriteOutcome,
 ) -> WriteOutcome {
     WriteOutcome {
-        touched: if host_record == &plan.target.coordinate {
-            vec![host_record.clone()]
-        } else {
-            vec![host_record.clone(), plan.target.coordinate.clone()]
-        },
+        touched: vec![plan.target.coordinate.clone()],
         inserted: None,
         deleted: None,
         renamed: None,
@@ -346,17 +226,10 @@ fn field_write_outcome(
 fn stage_rename_record_id(
     session: &ProjectSession,
     plan: &RenamePlan,
-    host_record: &RecordCoordinate,
-    new_id: &str,
+    new_id: &RecordId,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let plan = match plan {
-        RenamePlan::Noop { coordinate } => {
-            let mut outcome = WriteOutcome::touch(coordinate.clone());
-            if host_record != coordinate {
-                outcome.touched.insert(0, host_record.clone());
-            }
-            return Ok(outcome);
-        }
+        RenamePlan::Noop { coordinate } => return Ok(WriteOutcome::touch(coordinate.clone())),
         RenamePlan::Write(plan) => plan,
     };
     let plan: &RenameWritePlan = plan;
@@ -374,8 +247,7 @@ fn stage_rename_record_id(
         affected_files.insert(action.display_path().to_string());
     }
     let old_id = plan.old_coordinate.id.clone();
-    let new_dimension_key = RecordId::new(new_id)
-        .map_err(|_| plan_mismatch("new record id became invalid before dimension staging"))?;
+    let new_dimension_key = new_id.clone();
     rewrite_dimension_records(
         session,
         &plan.dimension_actions,
@@ -386,10 +258,7 @@ fn stage_rename_record_id(
 
     let new_coordinate =
         RecordCoordinate::new(plan.old_coordinate.actual_type.clone(), new_dimension_key);
-    let mut touched = vec![plan.old_coordinate.clone(), new_coordinate.clone()];
-    if host_record != &plan.old_coordinate {
-        touched.insert(0, host_record.clone());
-    }
+    let touched = vec![plan.old_coordinate.clone(), new_coordinate.clone()];
     Ok(WriteOutcome {
         touched,
         inserted: None,
@@ -404,30 +273,27 @@ fn stage_rename_record_id(
 fn stage_insert_record(
     session: &ProjectSession,
     plan: &InsertPlan,
-    file: &str,
-    record_id: &str,
-    actual_type: &str,
+    coordinate: &RecordCoordinate,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<WriteOutcome, DiagnosticSet> {
     let schema = session.schema();
     let request = InsertRecordRequest {
         source: &plan.source,
-        record_id,
-        actual_type,
+        record_id: &coordinate.id,
+        actual_type: &coordinate.actual_type,
         fields,
         schema,
         before: None,
     };
     let writer_outcome = plan.writer.insert_record(&request)?;
-    let inserted = RecordCoordinate::try_new(actual_type, record_id)
-        .map_err(|_| plan_mismatch("insert coordinate became invalid before staging"))?;
+    let inserted = coordinate.clone();
     Ok(WriteOutcome {
         touched: vec![inserted.clone()],
         inserted: Some(inserted),
         deleted: None,
         renamed: None,
         reordered: false,
-        affected_files: vec![file.to_string()],
+        affected_files: vec![plan.display_path.clone()],
         diagnostics: writer_outcome.diagnostics,
     })
 }
