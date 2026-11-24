@@ -1,4 +1,3 @@
-import { DiagnosticCenter } from './features/diagnostics/components/DiagnosticCenter'
 import { EditorErrorBoundary } from './features/diagnostics/components/EditorErrorBoundary'
 import { installGlobalErrorHandlers } from './features/diagnostics/incidentReporter'
 import { StrictMode } from 'react'
@@ -13,7 +12,6 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <EditorErrorBoundary><App /></EditorErrorBoundary>
-      <DiagnosticCenter />
     </QueryClientProvider>
   </StrictMode>
 )

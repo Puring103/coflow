@@ -13,7 +13,7 @@ export function FoldoutBody({ expanded, immediate, children }: { expanded: boole
     previous.current = expanded
     if (!element) return
     const height = element.getBoundingClientRect().height
-    const opacity = animation.current ? getComputedStyle(element).opacity : expanded ? '.65' : '1'
+    const opacity = animation.current ? getComputedStyle(element).opacity : expanded ? '0' : '1'
     animation.current?.cancel()
     animation.current = null
     element.style.removeProperty('height')
@@ -28,9 +28,12 @@ export function FoldoutBody({ expanded, immediate, children }: { expanded: boole
       if (!expanded) setRetained(false)
       return
     }
+    const naturalHeight = element.getBoundingClientRect().height
+    // 动画期间始终裁切子字段，避免内容先于高度变化显示。
+    element.style.overflow = 'clip'
     const motion = element.animate([
-      { height: `${expanded && !retained ? 0 : height}px`, opacity, overflow: 'clip' },
-      { height: `${expanded ? element.scrollHeight : 0}px`, opacity: expanded ? 1 : 0, overflow: 'clip' },
+      { height: `${expanded && !retained ? 0 : height}px`, opacity },
+      { height: `${expanded ? naturalHeight : 0}px`, opacity: expanded ? 1 : 0 },
     ], { duration: motionDuration('layout'), easing: motionToken('layout-ease'), fill: 'both' })
     animation.current = motion
     motion.onfinish = () => {
@@ -41,6 +44,8 @@ export function FoldoutBody({ expanded, immediate, children }: { expanded: boole
         element.style.overflow = 'clip'
         element.style.opacity = '0'
         setRetained(false)
+      } else {
+        element.style.removeProperty('overflow')
       }
       motion.cancel()
       animation.current = null

@@ -106,8 +106,7 @@ function ValueChip({ value, refTargetType, highlightQuery }: { value: FieldValue
       return <span className="vc vc-str" title={value.value.source}><RichTextString text={value.value.rendered} renderText={text => highlightSearchText(text, highlightQuery)} /></span>
     case 'enum':
       return (
-        <span className="vc vc-enum">
-          <span className="vc-enum-dot" />
+        <span className="vc vc-enum" style={{ '--enum-color': typeColor(value.value.enum_name) } as CSSProperties}>
           {highlightSearchText(enumVariantText(value), highlightQuery)}
         </span>
       )

@@ -6,13 +6,12 @@ import { Icon } from '../../../shared/ui/Icon'
 import './DiagnosticCenter.css'
 export function DiagnosticCenter() {
   const incidents = useSyncExternalStore(subscribeIncidents, incidentSnapshot)
-  const [open, setOpen] = useState(false)
   const [preview, setPreview] = useState('')
   const [failure, setFailure] = useState('')
   const [includeDetails, setIncludeDetails] = useState(false)
   const desktop = '__TAURI_INTERNALS__' in window
   useEffect(() => {
-    if (!open || !desktop) return
+    if (!desktop) return
     let active = true
     void invoke<{ logging_error?: string; environment?: { write_failures: number; dropped_events: number } }>('diagnostic_snapshot').then(status => {
       if (!active) return
@@ -20,7 +19,7 @@ export function DiagnosticCenter() {
       else if (status.environment && (status.environment.write_failures || status.environment.dropped_events)) setFailure(`日志写入失败 ${status.environment.write_failures} 次，丢弃事件 ${status.environment.dropped_events} 条。`)
     }).catch(error => { if (active) setFailure(`无法读取日志状态：${String(error)}`) })
     return () => { active = false }
-  }, [open, desktop])
+  }, [desktop])
   async function prepare() {
     try {
       const host = desktop ? await invoke('diagnostic_snapshot') : { browser: navigator.userAgent }
@@ -33,16 +32,8 @@ export function DiagnosticCenter() {
     const link = document.createElement('a'); link.href = url; link.download = 'coflow-diagnostics.json'; link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  return <aside className="diagnostic-center">
-    <button className="btn btn-outlined diagnostic-center-trigger" aria-expanded={open} aria-controls="diagnostic-center-panel" onClick={() => setOpen(!open)}>
-      <Icon name="info" size={13} aria-hidden />
-      日志与反馈{incidents.length ? ` (${incidents.length})` : ''}
-    </button>
-    {open && <section id="diagnostic-center-panel" aria-label="日志与反馈" role="dialog">
-      <header>
-        <strong>日志与反馈</strong>
-        <button className="btn btn-outlined" onClick={() => setOpen(false)}><Icon name="close" size={13} aria-hidden />关闭</button>
-      </header>
+  return <section className="diagnostic-center" aria-label="日志与反馈">
+      <h3>日志与反馈</h3>
       <p className="diagnostic-center-description">日志保存在本机。反馈时请说明操作步骤、预期结果和实际结果，并附上预览确认后的诊断文件。</p>
       {loggingFailure && <p className="diagnostic-center-error" role="alert"><Icon name="error" size={14} aria-hidden /><span>日志通道暂不可用，以下错误详情仍保留在当前窗口。</span></p>}
       {failure && <p className="diagnostic-center-error" role="alert"><Icon name="error" size={14} aria-hidden /><span>{failure}</span></p>}
@@ -66,6 +57,5 @@ export function DiagnosticCenter() {
         <pre>{item.details}</pre>
         <button className="btn btn-outlined" onClick={() => { void (desktop ? writeText(`${item.id}\n${item.details}`) : navigator.clipboard.writeText(`${item.id}\n${item.details}`)).catch(error => setFailure(`复制失败：${String(error)}`)) }}><Icon name="copy" size={13} aria-hidden />复制详情</button>
       </details>)}
-    </section>}
-  </aside>
+  </section>
 }

@@ -41,7 +41,7 @@ pub(crate) fn lock_project_settings(project_root: &Path) -> Result<Vec<fs::File>
     Ok(locks)
 }
 
-fn settings_path(project_root: &Path) -> PathBuf {
+pub(crate) fn settings_path(project_root: &Path) -> PathBuf {
     project_root.join("editor-setting").join(SETTINGS_FILE)
 }
 

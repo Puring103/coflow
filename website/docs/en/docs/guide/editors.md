@@ -20,4 +20,4 @@ Download the release VSIX, choose “Install from VSIX” in VS Code, open the w
 
 ## Feedback
 
-Open “Logs and feedback” to review recent incidents and generate a diagnostic preview. Review the content before downloading and submitting it. The entry is available without an open project. See [Diagnostics and troubleshooting](../reference/09-diagnostics/01-diagnostics.md).
+When the editor interface crashes, “Logs and feedback” opens automatically. Review recent incidents and generate a diagnostic preview. Check the preview before downloading and submitting it. See [Diagnostics and troubleshooting](../reference/09-diagnostics/01-diagnostics.md).

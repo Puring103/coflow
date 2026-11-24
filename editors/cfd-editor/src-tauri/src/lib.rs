@@ -53,7 +53,23 @@ pub fn run() -> tauri::Result<()> {
     let diagnostics = diagnostics::Diagnostics(
         coflow_observability::initialize("editor").map_err(|error| error.to_string()),
     );
-    tauri::Builder::default()
+    let log_directory = diagnostics
+        .0
+        .as_ref()
+        .ok()
+        .map(|logging| logging.directory.clone());
+    if let Some(directory) = log_directory.clone() {
+        let editor_thread = std::thread::current().id();
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            // 先写入 panic 记录，再为退出的桌面主线程打开本机日志目录。
+            previous(info);
+            if std::thread::current().id() == editor_thread {
+                let _ = open::open_path(&directory);
+            }
+        }));
+    }
+    let result = tauri::Builder::default()
         .manage(diagnostics)
         .plugin(tauri_plugin_dialog::init())
         // 桌面剪贴板通过原生接口访问，不触发 WebView 的站点授权弹窗。
@@ -138,5 +154,12 @@ pub fn run() -> tauri::Result<()> {
             uninstall_project_frontend_plugin,
             set_project_frontend_plugin_enabled,
         ])
-        .run(tauri::generate_context!())
+        .run(tauri::generate_context!());
+    if result.is_err() {
+        coflow_observability::tracing::error!(event = "editor_runtime_failed");
+        if let Some(directory) = log_directory {
+            let _ = open::open_path(&directory);
+        }
+    }
+    result
 }

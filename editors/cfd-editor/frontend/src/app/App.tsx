@@ -179,8 +179,8 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     projectSettings, setProjectSettings, generation, history, setErrorMsg,
   )
 
-  const { shortNameSaving, shortNameRevision, saveShortNameField } = useShortNameSettings(
-    projectSettings, setProjectSettings, generation, lookups, setErrorMsg,
+  const { shortNameSaving, shortNameRevision, saveShortNameField, refreshShortNames } = useShortNameSettings(
+    setProjectSettings, generation, lookups, setErrorMsg,
   )
   const [projectAction, setProjectAction] = useState<'build' | null>(null)
   const [buildPending, setBuildPending] = useState<boolean | null>(null)
@@ -735,6 +735,23 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
     project,
     generation,
     refresh: refreshFromBootstrap,
+    refreshSettings: settings => {
+      if (JSON.stringify(projectSettings?.short_name_fields) !== JSON.stringify(settings.short_name_fields)) {
+        refreshShortNames()
+      }
+      // 共享配置热更新时保留工作区与正在调整的本机展示状态。
+      setProjectSettings(current => {
+        if (!current) return current
+        const next = { ...current }
+        let changed = false
+        for (const key of ['graph_positions', 'short_name_fields', 'views', 'record_groups'] as const) {
+          if (JSON.stringify(current[key]) === JSON.stringify(settings[key])) continue
+          Object.assign(next, { [key]: settings[key] })
+          changed = true
+        }
+        return changed ? next : current
+      })
+    },
     reportError: reportSessionError,
   })
 
@@ -2609,7 +2626,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
           onSelectFiles={() => {
             setNavigationCollapsed(false)
             setActivePane('files')
-            focusFileTree()
+            requestAnimationFrame(focusFileTree)
           }}
           onSelectChanges={() => {
             setNavigationCollapsed(false)
@@ -2627,7 +2644,7 @@ export default function App({ browserSettings = MOCK_EDITOR_SETTINGS }: AppProps
             <Icon name={navigationCollapsed ? "panel-left-closed" : "panel-left"} size={17} />
           </button>
         </div>
-        <div className="sidebar" ref={sidebarRef}>
+        <div className="sidebar" ref={sidebarRef} inert={navigationCollapsed}>
           {activePane === 'files' && (
             <>
               {project ? (

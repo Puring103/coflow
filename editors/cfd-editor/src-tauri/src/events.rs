@@ -1,5 +1,6 @@
 use cfd_editor_core::{
-    EditorEvent, EditorEventSink, PROJECT_RELOADED_EVENT, PROJECT_WATCH_ERROR_EVENT,
+    EditorEvent, EditorEventSink, PROJECT_RELOADED_EVENT, PROJECT_SETTINGS_CHANGED_EVENT,
+    PROJECT_WATCH_ERROR_EVENT,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -23,6 +24,14 @@ impl EditorEventSink for TauriEditorEventSink {
                     coflow_observability::tracing::error!(
                         event = "event_delivery_failed",
                         name = PROJECT_RELOADED_EVENT
+                    );
+                }
+            }
+            EditorEvent::ProjectSettingsChanged(session_id) => {
+                if self.app.emit(PROJECT_SETTINGS_CHANGED_EVENT, session_id).is_err() {
+                    coflow_observability::tracing::error!(
+                        event = "event_delivery_failed",
+                        name = PROJECT_SETTINGS_CHANGED_EVENT
                     );
                 }
             }

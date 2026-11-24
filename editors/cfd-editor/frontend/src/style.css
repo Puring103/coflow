@@ -2738,15 +2738,17 @@ body.record-drag-active, body.record-drag-active * { cursor: grabbing !important
   gap: 5px;
   color: var(--text);
   font-size: var(--fs-ui);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 14%, transparent);
 }
 .vc-enum::before {
   content: '';
   width: 6px; height: 6px;
   border-radius: 50%;
-  background: var(--purple);
+  background: var(--enum-color, var(--purple));
   flex-shrink: 0;
 }
-.vc-enum-dot { display: none; }
 /* 引用摘要和编辑控件共用颜色、边框与高度；正文内部不再叠加第二层底色。 */
 .vc-ref, .dc-pill-wrap-ref {
   --reference-fill: color-mix(in srgb, var(--ref-color, var(--accent)) 8%, var(--bg-1));
@@ -3736,15 +3738,14 @@ select.dc-pill-select:hover, select.dc-pill-select:focus, .dc-row:hover select.d
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
-/* Enum pill — --enum-color themed. Background is opaque for the same
- * reason as the ref pill above (native popup color inheritance). */
+/* 枚举控件使用类型色，底色保留表格分组和差异提示。 */
 select.dc-pill-select.dc-pill-select-enum, input.dc-pill-select.dc-pill-select-enum {
   border: 1px solid color-mix(in srgb, var(--enum-color, var(--purple)) 18%, transparent);
-  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 6%, var(--bg-2));
+  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 14%, transparent);
 }
 select.dc-pill-select.dc-pill-select-enum:hover, input.dc-pill-select.dc-pill-select-enum:hover, .dc-row:hover select.dc-pill-select.dc-pill-select-enum, td:hover select.dc-pill-select.dc-pill-select-enum, .dc-node-card:hover select.dc-pill-select.dc-pill-select-enum {
   border-color: color-mix(in srgb, var(--enum-color, var(--purple)) 45%, transparent);
-  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 10%, var(--bg-1));
+  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 19%, transparent);
 }
 /* Ref controls display only record keys; target type stays in the tooltip. */
 .dc-pill-wrap {
@@ -3772,7 +3773,7 @@ select.dc-pill-select.dc-pill-select-enum:hover, input.dc-pill-select.dc-pill-se
 
 select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-select-enum:focus {
   border-color: var(--enum-color, var(--purple));
-  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 12%, var(--bg-1));
+  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 22%, transparent);
 }
 
 .dc-pill-input-wrap {
@@ -4188,12 +4189,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: height 180ms ease;
 }
-.diag-panel.collapsed {
-  height: var(--h-toolbar) !important;
-}
-.diag-panel.resizing { transition: none; }
 
 .diag-resizer {
   position: absolute;
@@ -4586,7 +4582,7 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
   .app .layout-navigation { flex-basis: 175px; width: 175px; }
   .app .global-search-bar { padding-left: 8px; padding-right: 8px; gap: 5px; }
 }
-.app.navigation-collapsed .sidebar { visibility: hidden; pointer-events: none; }
+.app.navigation-collapsed .sidebar { visibility: hidden; opacity: 0; pointer-events: none; }
 .app.navigation-collapsed .sidebar-splitter { visibility: hidden; pointer-events: none; }
 .app .view-add-menu { padding: 5px; border-radius: 8px; box-shadow: 0 8px 28px #0003; }
 .app .view-add-menu button { min-height: 32px; border-radius: 5px; }
@@ -4668,11 +4664,18 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 .app .data-table .cell-key { color: var(--accent); font-weight: 500; }
 .app .data-table td[data-field="name"] { font-weight: 500; }
 .app .data-table td { border-right-color: transparent; border-bottom-color: var(--border); font-variant-numeric: tabular-nums; padding-left: 10px; padding-right: 10px; }
-.app .data-table .dc-pill-select, .app .data-table .dc-pill-select-enum { background-color: transparent; border-color: transparent; color: var(--text); box-shadow: none; }
-.app .data-table td:hover .dc-pill-select, .app .data-table .dc-pill-select:focus { background-color: var(--bg-2); border-color: var(--border-strong); }
-.app .data-table .dc-pill-select:focus { outline: 1px solid var(--accent); }
+.app .data-table td.pill-cell { padding: 0; }
+.app .data-table .dc-pill-select:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+/* 下拉贴合真实行高，仍由表格决定布局与选框的位置。 */
+.data-table td:not(.complex-cell) .cell-dropdown { position: absolute; inset: 0; display: flex; align-items: stretch; }
+.cell-dropdown > span { display: flex; flex: 1; min-width: 0; align-items: stretch; }
+.data-table .cell-dropdown .dc-pill-select,
+.data-table .cell-dropdown .dc-pill-wrap-ref { height: auto; align-self: stretch; border-radius: 0; }
+.data-table .cell-dropdown .dc-load-error { align-self: center; }
 .app .data-table .dc-pill-input-wrap { display: flex; align-items: center; min-width: 0; gap: 7px; padding-right: 2px; }
 .app .data-table .dc-pill-input-wrap > input { min-width: 0; flex: 1; width: 0; }
+.data-table .cell-dropdown .searchable-reference-wrap { height: auto; align-self: stretch; }
+.data-table .cell-dropdown .searchable-reference-wrap > input.dc-pill-select { height: auto; }
 .app .data-table .dc-load-error { width: 14px; height: 14px; font-size: 9px; flex-shrink: 0; }
 .app .data-table input[type="checkbox"] { accent-color: var(--accent); }
 .app .data-table .sticky-key-column { border-right: 1px solid var(--border); border-right-color: var(--border); }
@@ -4744,21 +4747,15 @@ select.dc-pill-select.dc-pill-select-enum:focus, input.dc-pill-select.dc-pill-se
 /* 文本和模板共用 string 字段，模式选择与正文保持同一编辑行。 */
 
 /* 折叠只改变容器尺寸，保留内容才能完成收起和展开动画。 */
-.app .layout-navigation { transition: width 180ms ease, flex-basis 180ms ease; overflow: hidden; }
-.app .layout-navigation.resizing { transition: none; }
+.app .layout-navigation { overflow: hidden; }
 .app .sidebar { flex: 1 1 auto; min-height: 0; }
-.app .diag-panel { transition: height 180ms ease; }
-.app .diag-panel.resizing { transition: none; }
-.app .diag-panel.collapsed .diag-body { visibility: hidden; }
+.app .diag-panel.collapsed .diag-body { visibility: hidden; opacity: 0; }
 /* 全局 reset 清除了 dialog 默认的 auto margin，显式恢复视口居中。 */
 .view-discard-dialog { position: fixed; inset: 0; margin: auto; padding: 22px; max-width: min(420px, calc(100vw - 40px)); border: 1px solid var(--border); border-radius: 10px; background: var(--bg-1); color: var(--text); box-shadow: 0 16px 60px #0005; }
 .view-discard-dialog::backdrop { background: #0006; }
 .view-discard-dialog h3 { margin: 0 0 12px; }
 .view-discard-dialog p { color: var(--text-dim); }
 .view-discard-dialog .view-editor-actions { padding: 16px 0 0; }
-@media (prefers-reduced-motion: reduce) {
-  .app .layout-navigation, .app .diag-panel { transition: none; }
-}
 
 .structured-view-content { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .structured-view-content > .view-container { min-width: 0; }
@@ -4865,9 +4862,7 @@ input.searchable-select.searchable-select-reference,
 
 .cell-string-preview.empty-preview, .dc-empty-collection { color: var(--text-mute); font-style: italic; }
 .dc-empty-collection { display: block; padding: 5px 8px; font-size: 12px; }
-[data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select { background-color: transparent; border-color: transparent; }
 [data-theme] .dc-inspector-compact .searchable-reference-wrap > input.searchable-select { background-color: transparent; }
-[data-theme] .dc-inspector-compact input.searchable-select.dc-pill-select:not(.dc-pill-select-ref):focus { background-color: var(--bg-3); }
 
 /* 单元格只提供有限预览，整行共享用户高度；完整编辑复用按需打开的详情内容。 */
 .data-table td { position: relative; }
@@ -4934,7 +4929,7 @@ input.searchable-select.searchable-select-reference,
 }
 .context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div,
 .editor-settings[open] > div {
-  animation: editor-fade-in var(--motion-feedback) linear;
+  animation: editor-expand-in var(--motion-expand) var(--motion-enter-ease);
 }
 .create-record-backdrop, .help-overlay, .reference-panel-overlay { animation: editor-fade-in var(--motion-enter) linear; }
 .create-record-dialog, .help-box, .view-discard-dialog[open], .project-search-dialog[open] {
@@ -4948,6 +4943,7 @@ input.searchable-select.searchable-select-reference,
 .cell-complex-content, .cell-string-preview { transition: box-shadow var(--motion-feedback) linear; }
 .app .layout-navigation { transition: width var(--motion-layout) var(--motion-layout-ease), flex-basis var(--motion-layout) var(--motion-layout-ease); }
 .app .diag-panel { transition: height var(--motion-layout) var(--motion-layout-ease); }
+.app .sidebar, .app .diag-body { transition: opacity var(--motion-layout) linear, visibility var(--motion-layout); }
 .app .layout-navigation.resizing, .app .diag-panel.resizing { transition: none; }
 .dc-fold-arrow > svg { transition: transform 120ms var(--motion-enter-ease); }
 .dc-row-foldout[aria-expanded="true"] .dc-fold-arrow > svg { transform: rotate(90deg); }
@@ -4966,6 +4962,7 @@ input.searchable-select.searchable-select-reference,
 dialog::backdrop { transition: opacity var(--motion-exit) linear; }
 dialog[data-motion-exiting="true"]::backdrop { opacity: 0; }
 @keyframes editor-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes editor-expand-in { from { opacity: 0; translate: 0 -6px; } to { opacity: 1; translate: 0 0; } }
 @keyframes editor-window-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .context-menu, .searchable-select-menu, .view-add-menu, .tab-overflow-menu, .project-menu[open] > div,
@@ -4974,7 +4971,7 @@ dialog[data-motion-exiting="true"]::backdrop { opacity: 0; }
   .icon-spin, .update-icon-spinning { animation: none; }
   .btn, .ctx-item, .view-picker-tab, .tree-item, .reference-open, .cell-expand-button,
   .cell-complex-content, .cell-string-preview, .dc-fold-arrow > svg,
-  .tree-heading-chev, .app .layout-navigation, .app .diag-panel { transition: none; }
+  .tree-heading-chev, .app .layout-navigation, .app .diag-panel, .app .sidebar, .app .diag-body { transition: none; }
   .graph-view-wrap.is-hovering .graph-node.hover-dim:not(.selected),
   .graph-view-wrap.is-hovering .graph-node.hover-highlight:not(.selected),
   .graph-view-wrap.is-hovering .react-flow__edge.hover-dim:not(.selected) { transition: none; }
@@ -5090,7 +5087,7 @@ dialog[data-motion-exiting="true"]::backdrop { opacity: 0; }
 .activity-bar { --selection-fill: var(--bg-4); }
 .file-tree { --selection-fill: color-mix(in srgb, var(--accent) 16%, transparent); }
 .data-table td:not(.complex-cell) { vertical-align: top; text-align: left; }
-.data-table td:not(.complex-cell) .cell-edit-wrap { align-items: flex-start; justify-content: flex-start; }
+.data-table td:not(.complex-cell) .cell-edit-wrap:not(.cell-dropdown) { align-items: flex-start; justify-content: flex-start; }
 .cell-selection-motion { position: fixed; pointer-events: none; border: 1px solid var(--accent); box-sizing: border-box; z-index: 20; }
 [data-cell-motion]::after { visibility: hidden; }
 [data-cell-motion] .cell-string-preview, [data-cell-motion] .cell-complex-content { outline-color: transparent !important; }

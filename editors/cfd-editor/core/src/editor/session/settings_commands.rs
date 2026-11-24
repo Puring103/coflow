@@ -16,8 +16,11 @@ use crate::editor::types::{
 impl SessionStore {
     pub fn get_project_settings(&self, id: u32) -> Result<EditorProjectSettings, EditorError> {
         let entry = self.session(id)?;
-        let session = entry.state.read();
-        read_project_settings(&session.project_root)
+        let mut session = entry.state.write();
+        let settings = read_project_settings(&session.project_root)?;
+        // 缩略名来自共享设置，读入后下一次引用查询使用磁盘上的新配置。
+        session.ref_target_cache.clear();
+        Ok(settings)
     }
 
     /// 缩略名是编辑器展示设置；只接受类型的字符串字段，不改变记录身份。

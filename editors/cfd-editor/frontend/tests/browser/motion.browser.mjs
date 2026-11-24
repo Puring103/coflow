@@ -12,6 +12,8 @@ before(async () => {
   browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined })
   page = await browser.newPage({ viewport: { width: 1100, height: 850 } })
   page.setDefaultTimeout(5000)
+  // 首次导航包含 Vite 转换与依赖预构建，测量动效仍使用较短的交互超时。
+  page.setDefaultNavigationTimeout(30000)
   page.on('pageerror', error => errors.push(error.message))
 })
 after(async () => { await browser?.close(); await server?.close() })
@@ -19,7 +21,7 @@ beforeEach(async () => {
   errors.length = 0
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.goto(`${server.resolvedUrls.local[0]}tests/browser/motion.html`)
-  await page.waitForFunction(() => window.motionTest && document.querySelector('td[data-field="name"]'))
+  await page.waitForFunction(() => window.motionTest && document.querySelector('td[data-field="name"]'), null, { timeout: 15000 })
 })
 const open = async () => {
   await page.evaluate(() => window.motionTest.open())
@@ -383,6 +385,53 @@ test('foldout keeps header geometry and reverses collapse continuously', async (
   await body.evaluate(e => e.getAnimations().forEach(a => a.finish()))
   await header.evaluate(e => e.click())
   await body.waitFor({ state: 'detached' })
+  assert.deepEqual(errors, [])
+})
+
+test('enum input fills its cell and its menu animates open', async () => {
+  await page.goto(server.resolvedUrls.local[0])
+  const cell = page.locator('td[data-field="quality"]').first()
+  const input = cell.getByRole('combobox')
+  await input.waitFor()
+  const geometry = await input.evaluate(element => {
+    const cell = element.closest('td')
+    const field = element.getBoundingClientRect()
+    const bounds = cell.getBoundingClientRect()
+    return {
+      gaps: [field.left - bounds.left, field.top - bounds.top, bounds.right - field.right, bounds.bottom - field.bottom],
+      background: getComputedStyle(element).backgroundColor,
+      heights: [element, element.parentElement, element.closest('.cell-dropdown'), cell].map(node =>
+        [node.className, node.getBoundingClientRect().height]),
+    }
+  })
+  assert.ok(geometry.gaps.every(gap => Math.abs(gap) <= 1), JSON.stringify(geometry))
+  assert.notEqual(geometry.background, 'rgba(0, 0, 0, 0)')
+  await input.click()
+  const menu = page.getByRole('listbox')
+  await menu.waitFor()
+  assert.equal(await menu.evaluate(element => getComputedStyle(element).animationName), 'editor-expand-in')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  assert.equal(await menu.evaluate(element => getComputedStyle(element).animationName), 'none')
+  assert.deepEqual(errors, [])
+})
+
+test('sidebar expands through an intermediate width', async () => {
+  await page.goto(server.resolvedUrls.local[0])
+  const sidebar = page.locator('.layout-navigation')
+  const openWidth = await sidebar.evaluate(element => element.getBoundingClientRect().width)
+  await page.getByRole('button', { name: '折叠侧栏' }).click()
+  await page.waitForFunction(() => document.querySelector('.layout-navigation').getBoundingClientRect().width === 48)
+  const expanded = await page.getByRole('button', { name: '展开侧栏' }).evaluate(async button => {
+    button.click()
+    await new Promise(requestAnimationFrame)
+    const sidebar = button.closest('.layout-navigation')
+    for (const animation of sidebar.getAnimations()) {
+      animation.pause()
+      animation.currentTime = 70
+    }
+    return sidebar.getBoundingClientRect().width
+  })
+  assert.ok(expanded > 48 && expanded < openWidth, `${expanded} of ${openWidth}`)
   assert.deepEqual(errors, [])
 })
 

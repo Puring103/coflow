@@ -122,7 +122,7 @@ Exit code 0 means complete success, 1 validation failure, unmet state or incompl
 
 ## Editor logs and feedback
 
-“Logs and feedback” is available even without an open project, including from the error screen. Review recent incidents and copy the error identifier and details. Generate a diagnostic preview and review it before downloading. Error text and stacks are excluded by default; include them only when needed, and remove information you do not want to share from the preview. Use “Submit issue” to describe reproduction steps, expected results, and actual results, and attach the diagnostic file.
+When the editor interface crashes, “Logs and feedback” opens automatically. Review recent incidents and copy the error identifier and details. Generate a diagnostic preview and review it before downloading. Error text and stacks are optional. Remove information you do not want to share from the preview. Use “Submit issue” to describe reproduction steps, expected results, and actual results, and attach the diagnostic file.
 
 Logs remain local and are not uploaded automatically. “Open log directory” opens the local files. On Windows, editor logs default to `%LOCALAPPDATA%\Coflow\logs\editor`. Logs have size and retention limits; export soon after an incident.
 

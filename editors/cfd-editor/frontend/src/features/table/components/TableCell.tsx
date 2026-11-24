@@ -180,7 +180,7 @@ function EditableCellBuiltIn({
   // Enum
   if (canEdit && (shownValue.kind === 'enum' || (shownValue.kind === 'option_none' && enumType))) {
     return (
-      <div className="cell-edit-wrap">
+      <div className="cell-edit-wrap cell-dropdown">
         <EnumDirectSelect
           value={shownValue as FieldValue & { kind: 'enum' | 'option_none' }}
           enumType={enumType}
@@ -196,7 +196,7 @@ function EditableCellBuiltIn({
   // Ref
   if (canEdit && (shownValue.kind === 'ref' || (shownValue.kind === 'option_none' && refTargetType))) {
     return (
-      <div className="cell-edit-wrap">
+      <div className="cell-edit-wrap cell-dropdown">
         <RefDirectSelect
           value={shownValue as FieldValue & { kind: 'ref' | 'option_none' }}
           onCommit={commitAndRestoreFocus}

@@ -1,22 +1,18 @@
-.diagnostic-center { position: fixed; right: 12px; bottom: 8px; z-index: 10000; font-size: 12px; color: var(--text); }
-.diagnostic-center-trigger { background: var(--bg-1); }
+.editor-crash { height: 100%; overflow: auto; padding: 24px; color: var(--text); }
+.editor-crash > header { max-width: 620px; margin: 0 auto 16px; }
 /* 日志面板和主编辑区共享语义色，明暗主题均保留一致的文字层级。 */
-.diagnostic-center section {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  width: min(620px, calc(100vw - 24px));
-  max-height: min(75vh, calc(100vh - 64px));
-  overflow: auto;
+.diagnostic-center {
+  max-width: 620px;
+  margin: 0 auto;
   padding: 16px;
   background: var(--bg-1);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 32px #0003;
   line-height: 1.6;
+  font-size: 12px;
 }
-.diagnostic-center header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.diagnostic-center header strong { font-size: 14px; }
+.diagnostic-center h3 { font-size: 14px; margin-bottom: 12px; }
 .diagnostic-center .btn { min-height: 28px; height: auto; white-space: normal; }
 .diagnostic-center a { text-decoration: none; }
 .diagnostic-center-description { color: var(--text-dim); font-weight: 400; }

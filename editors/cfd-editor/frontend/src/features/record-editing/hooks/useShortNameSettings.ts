@@ -6,9 +6,8 @@ import { emptyProjectSettings } from '../../workspace/hooks/useProjectSettings'
 import { ProjectGenerationController } from '../../workspace/state/editorState'
 import { EditorLookupController } from '../../workspace/state/editorLookups'
 
-// 缩略名保存成功后统一失效引用缓存，所有记录展示使用同一修订号。
+// 缩略名变更后统一失效引用缓存，所有记录展示使用同一修订号。
 export function useShortNameSettings(
-  projectSettings: EditorProjectSettings | null,
   setProjectSettings: Dispatch<SetStateAction<EditorProjectSettings | null>>,
   generation: ProjectGenerationController,
   lookups: EditorLookupController,
@@ -17,6 +16,10 @@ export function useShortNameSettings(
   const [shortNameSaving, setShortNameSaving] = useState(false)
   const [shortNameRevision, setShortNameRevision] = useState(0)
   const saveQueue = useRef(Promise.resolve())
+  const refreshShortNames = useCallback(() => {
+    lookups.invalidateRefTargets()
+    setShortNameRevision(revision => revision + 1)
+  }, [lookups])
   const saveShortNameField = useCallback(async (actualType: string, field: string | null) => {
     const identity = generation.currentIdentity()
     if (!identity) return
@@ -31,7 +34,7 @@ export function useShortNameSettings(
       }
       if (generation.currentSession() !== identity.sessionId) return
       // 设置保存成功后刷新引用缓存，所有展示位置一起切换到新字段。
-      lookups.invalidateRefTargets()
+      refreshShortNames()
       setProjectSettings(current => {
         const base = current ?? emptyProjectSettings()
         const fields = { ...base.short_name_fields }
@@ -39,12 +42,11 @@ export function useShortNameSettings(
         else fields[actualType] = field
         return { ...base, short_name_fields: fields }
       })
-      setShortNameRevision(revision => revision + 1)
     } catch (error) {
       if (generation.currentSession() === identity.sessionId) setErrorMsg(`保存缩略名失败: ${errorMessage(error)}`)
     } finally {
       setShortNameSaving(false)
     }
-  }, [generation, lookups, projectSettings?.short_name_fields, setProjectSettings])
-  return { shortNameSaving, shortNameRevision, saveShortNameField }
+  }, [generation, refreshShortNames, setProjectSettings, setErrorMsg])
+  return { shortNameSaving, shortNameRevision, saveShortNameField, refreshShortNames }
 }

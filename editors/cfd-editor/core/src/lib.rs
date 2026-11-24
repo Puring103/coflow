@@ -12,5 +12,6 @@ pub use editor::{EditorError, ProjectBootstrap, SessionStore};
 pub use host::EditorHost;
 pub use watcher::{
     EditorEvent, EditorEventSink, NoopEditorEventSink, ProjectReloadedPayload,
-    ProjectWatchErrorPayload, PROJECT_RELOADED_EVENT, PROJECT_WATCH_ERROR_EVENT,
+    ProjectWatchErrorPayload, PROJECT_RELOADED_EVENT, PROJECT_SETTINGS_CHANGED_EVENT,
+    PROJECT_WATCH_ERROR_EVENT,
 };

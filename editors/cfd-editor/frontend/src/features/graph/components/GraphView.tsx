@@ -232,7 +232,7 @@ export function GraphView({ viewKey, savedPositions, onSavePositions, savedCompa
   }, [viewKey])
 
   useEffect(() => {
-    if (savedPositions) retainedPositions.current = new Map(Object.entries(savedPositions)
+    retainedPositions.current = new Map(Object.entries(savedPositions ?? {})
       .map(([id, [x, y]]) => [id, { x, y }]))
   }, [savedPositions, viewKey])
 

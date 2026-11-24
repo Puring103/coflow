@@ -16,12 +16,14 @@ const DEBOUNCE: Duration = Duration::from_millis(350);
 /// 前端监听的 Tauri 事件名。核心定义一次，主机层与前端只引用此处。
 pub const PROJECT_RELOADED_EVENT: &str = "project_reloaded";
 pub const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
+pub const PROJECT_SETTINGS_CHANGED_EVENT: &str = "project_settings_changed";
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum EditorEvent {
     ProjectReloaded(ProjectReloadedPayload),
     ProjectWatchError(ProjectWatchErrorPayload),
+    ProjectSettingsChanged(u32),
 }
 
 pub trait EditorEventSink: Send + Sync + 'static {
@@ -196,21 +198,29 @@ fn watch_loop(
     rx: &mpsc::Receiver<notify::Result<Event>>,
 ) {
     let mut pending_paths: Vec<PathBuf> = Vec::new();
+    let settings_path = crate::editor::settings_path(project_root);
     while let Ok(result) = rx.recv() {
         match result {
             Ok(event) => {
-                if !is_relevant_event(&event) {
+                if !is_relevant_event(&event, &settings_path) {
                     continue;
                 }
                 pending_paths.extend(event.paths);
                 loop {
                     match rx.recv_timeout(DEBOUNCE) {
-                        Ok(Ok(event)) if is_relevant_event(&event) => {
+                        Ok(Ok(event)) if is_relevant_event(&event, &settings_path) => {
                             pending_paths.extend(event.paths);
                         }
                         Ok(Ok(_)) => {}
                         Ok(Err(err)) => emit_watch_error(events, session_id, err.to_string()),
                         Err(RecvTimeoutError::Timeout) => {
+                            // 共享设置独立刷新，保留业务数据代次及撤销历史。
+                            if pending_paths
+                                .iter()
+                                .any(|path| is_settings_path(path, &settings_path))
+                            {
+                                events.emit(EditorEvent::ProjectSettingsChanged(session_id));
+                            }
                             let changes = sessions.external_project_file_changes(
                                 session_id,
                                 &filter_relevant_paths(&pending_paths),
@@ -242,11 +252,34 @@ fn watch_loop(
     }
 }
 
-fn is_relevant_event(event: &Event) -> bool {
+fn is_settings_path(path: &Path, settings_path: &Path) -> bool {
+    // 替换文件会报告目标文件，移动整个配置目录时可能只报告目录。
+    [Some(settings_path), settings_path.parent()]
+        .into_iter()
+        .flatten()
+        .any(|expected| {
+            path.file_name()
+                .zip(expected.file_name())
+                .is_some_and(|(path_name, expected_name)| {
+                    if cfg!(windows) {
+                        path_name.eq_ignore_ascii_case(expected_name)
+                    } else {
+                        path_name == expected_name
+                    }
+                })
+                && coflow_runtime::normalized_path_identity(path)
+                    == coflow_runtime::normalized_path_identity(expected)
+        })
+}
+
+fn is_relevant_event(event: &Event, settings_path: &Path) -> bool {
     if matches!(event.kind, EventKind::Access(_)) {
         return false;
     }
-    event.paths.iter().any(|path| !is_ignored_path(path))
+    event
+        .paths
+        .iter()
+        .any(|path| !is_ignored_path(path) || is_settings_path(path, settings_path))
 }
 
 fn is_ignored_path(path: &Path) -> bool {
@@ -358,7 +391,7 @@ mod tests {
                 assert_eq!(event.bootstrap.revision, before.revision + 1);
                 assert_eq!(event.bootstrap.session_id, before.session_id);
             }
-            super::EditorEvent::ProjectWatchError(_) => panic!("expected reload"),
+            _ => panic!("expected reload"),
         }
         std::fs::write(&schema, "table Item { value: MissingType; }").expect("edit schema");
         assert!(!super::emit_reload(
@@ -376,7 +409,7 @@ mod tests {
                     .iter()
                     .any(|diagnostic| diagnostic.code != "EDITOR-INTERNAL"));
             }
-            super::EditorEvent::ProjectReloaded(_) => panic!("expected structured error"),
+            _ => panic!("expected structured error"),
         };
     }
 
@@ -528,15 +561,80 @@ mod tests {
     }
 
     #[test]
-    fn project_state_directory_does_not_trigger_reload() {
+    fn editor_settings_have_a_separate_watch_path() {
         let paths = vec![
-            PathBuf::from("project/.coflow/editor.json"),
+            PathBuf::from("project/editor-setting/editor.json"),
+            PathBuf::from("project/editor-setting/editor.lock"),
             PathBuf::from("project/data/items.cfd"),
         ];
 
+        let settings_path = crate::editor::settings_path(std::path::Path::new("project"));
+        assert!(super::is_settings_path(&paths[0], &settings_path));
+        assert!(!super::is_settings_path(&paths[1], &settings_path));
         assert_eq!(
             filter_relevant_paths(&paths),
             vec![PathBuf::from("project/data/items.cfd")]
+        );
+    }
+
+    #[test]
+    fn external_settings_edit_emits_event_without_reloading_data() {
+        struct ChannelEvents(std::sync::mpsc::Sender<super::EditorEvent>);
+        impl super::EditorEventSink for ChannelEvents {
+            fn emit(&self, event: super::EditorEvent) {
+                let _ = self.0.send(event);
+            }
+        }
+
+        let root = tempfile::tempdir().expect("project");
+        let config = root.path().join("coflow.yaml");
+        std::fs::write(
+            &config,
+            "schema: schema.cft\ndata: data.cfd\ncodegen: [{ language: csharp, dir: generated }]\n",
+        )
+        .expect("config");
+        std::fs::write(
+            root.path().join("schema.cft"),
+            "table Item { name: string; }",
+        )
+        .expect("schema");
+        std::fs::write(root.path().join("data.cfd"), r#"a: Item { name: "label" }"#).expect("data");
+        let settings = crate::editor::settings_path(root.path());
+        std::fs::create_dir(root.path().join("editor-setting")).expect("settings directory");
+        let sessions = std::sync::Arc::new(super::SessionStore::new().expect("store"));
+        let project = sessions.load_project(&config).expect("load");
+        let registry = std::sync::Arc::new(super::ProjectWatchRegistry::default());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        registry
+            .watch_session(
+                sessions.clone(),
+                std::sync::Arc::new(ChannelEvents(sender)),
+                &project,
+            )
+            .expect("watch");
+        // 同目录替换与外部编辑器的原子保存路径一致。
+        let staged = settings.with_extension("tmp");
+        std::fs::write(&staged, r#"{"version":1,"short_name_fields":{"Item":"name"}}"#)
+            .expect("stage settings");
+        std::fs::rename(staged, settings).expect("publish settings");
+        assert!(matches!(
+            receiver.recv_timeout(std::time::Duration::from_secs(5)),
+            Ok(super::EditorEvent::ProjectSettingsChanged(id)) if id == project.session_id
+        ));
+        let settings = sessions
+            .get_project_settings(project.session_id)
+            .expect("read settings");
+        assert_eq!(
+            settings.short_name_fields.get("Item").map(String::as_str),
+            Some("name")
+        );
+        let file = coflow_runtime::path_to_slash(&root.path().join("data.cfd"));
+        assert_eq!(
+            sessions
+                .get_file_records(project.session_id, &file)
+                .expect("data")
+                .revision,
+            project.revision
         );
     }
 
